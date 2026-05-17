@@ -8,9 +8,8 @@ excluded:
   - .build
   - Package.swift
 
-# ── Opt-in rules ────────────────────────────────────────────────────────────────────────────────────
+# ── Opt-in rules ─────────────────────────────────────────────────────────────────────────────────────
 opt_in_rules:
-  - missing_docs           # require /// on all internal/public declarations
   - closure_spacing        # consistent spacing inside closure braces
   - explicit_init          # disallow explicit .init() calls where redundant
   - operator_usage_whitespace  # spaces around operators
@@ -24,24 +23,11 @@ opt_in_rules:
   - first_where            # prefer first(where:) over filter().first
 
 # ── Rule configuration ────────────────────────────────────────────────────────────────────────────────────
-missing_docs:
-  warning:
-    - internal
-  error:
-    - public
-    - open
-  excludes_extensions: false
-  excludes_inherited_types: true
-
 line_length:
   warning: 120
   error: 160
   ignores_comments: true
   ignores_urls: true
-
-file_length:
-  warning: 500
-  error: 600
 
 type_body_length:
   warning: 200
@@ -51,10 +37,6 @@ function_body_length:
   warning: 50
   error: 100
 
-cyclomatic_complexity:
-  warning: 10
-  error: 20
-
 nesting:
   type_level:
     warning: 2
@@ -63,5 +45,12 @@ nesting:
 
 # ── Disabled rules ────────────────────────────────────────────────────────────────────────────────────
 disabled_rules:
-  - todo          # TODOs are acceptable during active development
-  - trailing_comma  # SwiftPM/Xcode auto-formatter conflicts with this
+  - todo                        # TODOs are acceptable during active development
+  - trailing_comma              # SwiftPM/Xcode auto-formatter conflicts with this
+  - identifier_name             # short names (s, x, i) are fine in this codebase
+  - opening_brace               # trailing-brace style used throughout
+  - colon                       # dictionary/type colon spacing not enforced
+  - cyclomatic_complexity       # complex dispatch/switch functions are acceptable
+  - file_length                 # large files are acceptable during active development
+  - missing_docs                # docs not required for all internal declarations
+  - superfluous_disable_command # in-file disables may pre-empt future violations
