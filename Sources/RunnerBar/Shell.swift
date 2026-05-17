@@ -1,7 +1,5 @@
 import Foundation
 
-// swiftlint:disable colon identifier_name opening_brace
-
 /// Executes shell commands synchronously.
 enum Shell {
     /// Result of a shell command execution.
@@ -35,4 +33,3 @@ enum Shell {
         return Result(output: output, exitCode: process.terminationStatus)
     }
 }
-// swiftlint:enable colon identifier_name opening_brace
