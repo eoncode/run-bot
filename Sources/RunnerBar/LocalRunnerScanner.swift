@@ -40,25 +40,23 @@ struct LocalRunnerScanner {
         var models: [String: RunnerModel] = [:]
 
         // Source 1: extract WorkingDirectory paths from LaunchAgent plists.
-        // Runner name is parsed from the filename for display; gitHubUrl is NOT
-        // derived here — the filename encoding is lossy for hyphenated org names.
         let (launchAgentModels, launchAgentPaths) = scanLaunchAgents()
 
         // Source 2: .runner JSON is authoritative — provides correct gitHubUrl.
-        // Seeded with LaunchAgent WorkingDirectory paths so custom-location
-        // runners are always found without any app-level persistence.
         for model in scanRunnerJSONFiles(extraRoots: launchAgentPaths) {
             models[model.id] = model
         }
 
-        // Merge LaunchAgent-only entries (runners with no .runner JSON found).
-        // These have gitHubUrl = nil so the enricher will skip API calls for them,
-        // preventing bogus 404s from malformed filename-derived scopes.
+        // Collect the set of runnerNames already covered by JSON models.
+        // LaunchAgent stubs are only added when NO JSON model shares the same
+        // runnerName — prevents duplicates when the same runner name appears
+        // in both a plist filename and a .runner JSON file.
+        let jsonRunnerNames = Set(models.values.map { $0.runnerName })
         for model in launchAgentModels {
-            let compositeKey = model.runnerName
-            let coveredByJSON = models.values.contains { $0.runnerName == model.runnerName }
-            guard !coveredByJSON, models[compositeKey] == nil else { continue }
-            models[compositeKey] = model
+            guard !jsonRunnerNames.contains(model.runnerName) else { continue }
+            if models[model.runnerName] == nil {
+                models[model.runnerName] = model
+            }
         }
 
         // Source 3: mark which runners are currently live.
@@ -74,14 +72,6 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 1: LaunchAgents
 
-    /// Scans `~/Library/LaunchAgents/actions.runner.*.plist`.
-    ///
-    /// Returns:
-    /// - `models`: Runner stubs with `runnerName` parsed from filename and
-    ///   `gitHubUrl = nil`. The nil gitHubUrl prevents the enricher from
-    ///   constructing a malformed API scope from the lossy filename encoding.
-    /// - `installPaths`: `WorkingDirectory` values read from each plist, passed
-    ///   to `scanRunnerJSONFiles` as extra search roots.
     private func scanLaunchAgents() -> (models: [RunnerModel], installPaths: Set<String>) {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -98,19 +88,14 @@ struct LocalRunnerScanner {
             guard filename.hasPrefix(prefix) else { continue }
             let remainder = String(filename.dropFirst(prefix.count))
             let parts = remainder.components(separatedBy: ".")
-            // Last component is the runner name; earlier components are owner+repo
-            // but we intentionally do NOT reconstruct gitHubUrl from them.
             let runnerName = parts.last ?? "runner"
 
-            // Read WorkingDirectory — the runner's actual install path.
             if let plist = NSDictionary(contentsOf: url),
                let workDir = plist["WorkingDirectory"] as? String,
                !workDir.isEmpty {
                 installPaths.insert(workDir)
             }
 
-            // gitHubUrl is intentionally nil here. The .runner JSON (Source 2)
-            // provides the correct URL once the install dir is searched.
             models.append(RunnerModel(
                 runnerName: runnerName,
                 gitHubUrl: nil,
