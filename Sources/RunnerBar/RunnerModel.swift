@@ -7,31 +7,50 @@ import SwiftUI
 /// Discovered by scanning LaunchAgent plists in ~/Library/LaunchAgents.
 struct RunnerModel: Identifiable, Equatable {
     // MARK: Stored
-    let id: UUID
+
+    /// String-based ID so LocalRunnerScanner can use runnerName as the dedup key.
+    let id: String
     let runnerName: String
     let installPath: String?
     let gitHubUrl: String?
-    /// Launchctl / process running state. Mutated by optimistic UI updates and
-    /// confirmed on the next full refresh() scan.
+    let agentId: Int?
+    let workFolder: String?
+    let labels: [String]
+
+    /// Launchctl / process running state. `var` so optimistic UI updates and
+    /// the Source-3 live-service check can both mutate it in-place on the array.
     var isRunning: Bool
-    /// GitHub API-reported status. Set by RunnerStatusEnricher.
+
+    /// GitHub API-reported status. `var` — set by RunnerStatusEnricher.
     var githubStatus: String?   // "online" | "offline" | "busy" | nil
 
+    /// GitHub API busy flag. `var` — set by RunnerStatusEnricher.
+    var isBusy: Bool
+
     // MARK: - Init
+
     init(
-        id: UUID = UUID(),
+        id: String? = nil,
         runnerName: String,
-        installPath: String?,
         gitHubUrl: String?,
+        agentId: Int?,
+        workFolder: String?,
+        installPath: String?,
         isRunning: Bool,
-        githubStatus: String? = nil
+        labels: [String] = [],
+        githubStatus: String? = nil,
+        isBusy: Bool = false
     ) {
-        self.id = id
+        self.id = id ?? runnerName
         self.runnerName = runnerName
-        self.installPath = installPath
         self.gitHubUrl = gitHubUrl
+        self.agentId = agentId
+        self.workFolder = workFolder
+        self.installPath = installPath
         self.isRunning = isRunning
+        self.labels = labels
         self.githubStatus = githubStatus
+        self.isBusy = isBusy
     }
 
     // MARK: - Derived display
@@ -39,11 +58,8 @@ struct RunnerModel: Identifiable, Equatable {
     /// Human-readable status label shown in the settings runner row.
     var displayStatus: String {
         if isRunning {
-            switch githubStatus {
-            case "busy":   return "running"
-            case "online": return "online"
-            default:       return "running"
-            }
+            if isBusy || githubStatus == "busy" { return "running" }
+            return "running"
         } else {
             switch githubStatus {
             case "online": return "online"
@@ -58,7 +74,7 @@ struct RunnerModel: Identifiable, Equatable {
     /// Dot color category used by `SettingsView.localRunnerDotColor(for:)`.
     var statusColor: StatusColor {
         if isRunning {
-            if githubStatus == "busy" { return .busy }
+            if isBusy || githubStatus == "busy" { return .busy }
             return .running
         } else {
             if githubStatus == "online" || githubStatus == "busy" { return .idle }
