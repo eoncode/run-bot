@@ -25,7 +25,7 @@ import SwiftUI
 //      statusItemRect = button.window!.frame   ← already in screen coords
 //      panelX = statusItemRect.midX - contentW/2   ← re-centred each resize
 //      panelTopY = statusItemRect.minY - gap       ← locked at open time
-//      y (frame origin) = panelTopY - totalH       ← recomputed each resize
+//      y (frame origin) = max(visibleFrame.minY, panelTopY - totalH) ← clamped
 //              ❌ NEVER re-derive panelTopY from statusItemRect inside
 //                 resizeAndRepositionPanel() — menu bar hide/show shifts
 //                 statusItemRect.minY, moving the panel under the notch.
@@ -284,6 +284,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Panel resize
 
+    /// Resizes and repositions the panel to fit the current preferredContentSize,
+    /// clamped to [minWidth..maxWidth] × [60..maxHeight].
+    ///
+    /// posY is additionally clamped to never fall below visibleFrame.minY so the
+    /// panel cannot slide off the bottom of the screen when the content is tall.
+    ///
     /// ❌ NEVER re-derive panelTopY here.
     /// ❌ NEVER call from a background thread.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
@@ -303,7 +309,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let totalH = contentH + arrowHeight
 
         let posX = statusItemRect.midX - contentW / 2
-        let posY = topY - totalH
+        let rawPosY = topY - totalH
+        // Clamp so the panel never drops below the visible screen area.
+        let screenMinY = NSScreen.main?.visibleFrame.minY ?? 0
+        let posY = max(rawPosY, screenMinY)
 
         panel.setFrame(NSRect(x: posX, y: posY, width: contentW, height: totalH),
                        display: true, animate: false)
