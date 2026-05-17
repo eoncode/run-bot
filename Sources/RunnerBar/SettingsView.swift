@@ -4,11 +4,14 @@ import SwiftUI
 // MARK: - SettingsView
 /// Settings view — complete implementation for all phases 1-6.
 ///
-/// HEIGHT CONTRACT (mirrors PopoverMainView RULE 5):
+/// HEIGHT CONTRACT:
 /// headerBar is OUTSIDE the ScrollView — back button always visible.
-/// ScrollView is capped at screenScrollMaxHeight = visibleFrame.height * 0.80.
+/// ScrollView uses maxHeight: .infinity to fill all remaining panel space.
+/// AppDelegate.resizeAndRepositionPanel() clamps the panel to 85% visibleFrame.
+/// No extra cap needed here — the panel cap IS the scroll boundary.
 /// ❌ NEVER move headerBar inside the ScrollView.
-/// ❌ NEVER use GeometryReader for the cap — it freezes at initial layout height.
+/// ❌ NEVER add a fixed maxHeight cap to the ScrollView.
+/// ❌ NEVER use GeometryReader for the height.
 /// ❌ NEVER add idealHeight to the root frame.
 ///
 /// WIDTH CONTRACT:
@@ -46,25 +49,20 @@ struct SettingsView: View {
         "Remove runner \"\(runnerPendingRemoval?.runnerName ?? "this runner")\""
     }
 
-    /// Mirrors PopoverMainView.screenScrollMaxHeight.
-    /// 80% of visible screen height — leaves headroom for the pinned header bar.
-    /// ❌ NEVER replace with GeometryReader — freezes at initial layout height.
-    private var screenScrollMaxHeight: CGFloat {
-        (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
             Divider()
-            // ScrollView capped at screenScrollMaxHeight, exactly like PopoverMainView.
+            // maxHeight: .infinity — fills all space the panel gives us.
+            // AppDelegate caps the panel at 85% visibleFrame. That IS the limit.
             // ❌ NEVER move headerBar inside this ScrollView.
+            // ❌ NEVER replace .infinity with a fixed number.
             // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
             // UNDER ANY CIRCUMSTANCE.
             ScrollView(.vertical, showsIndicators: true) {
                 sectionsStack
             }
-            .frame(maxHeight: screenScrollMaxHeight)
+            .frame(maxHeight: .infinity)
         }
         .frame(idealWidth: 480, maxWidth: .infinity)
         .onAppear(perform: onAppearAction)
