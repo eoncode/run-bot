@@ -14,6 +14,11 @@ import SwiftUI
 /// directory already contains a `.runner` file the Add Runner button is
 /// disabled and an inline warning is shown, preventing silent overwrites.
 ///
+/// On successful registration the install directory is persisted to
+/// `LocalRunnerStore.shared.installedPaths` so that subsequent scans always
+/// find the runner regardless of whether the path falls inside one of the
+/// default search roots.
+///
 /// Requires a GitHub token (`gh auth login`, GH_TOKEN, or GITHUB_TOKEN).
 struct AddRunnerSheet: View {
     @Binding var isPresented: Bool
@@ -301,6 +306,9 @@ struct AddRunnerSheet: View {
                 isRegistering    = false
                 registrationStep = ""
                 if exitCode == 0 {
+                    // Persist the install path so LocalRunnerScanner always finds
+                    // this runner even if it lives outside the default search roots.
+                    LocalRunnerStore.shared.addInstalledPath(dir)
                     isPresented = false
                     onComplete()
                 } else {

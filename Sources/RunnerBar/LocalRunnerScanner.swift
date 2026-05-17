@@ -8,13 +8,14 @@ import Foundation
 /// 1. **LaunchAgents** — `~/Library/LaunchAgents/actions.runner.*.plist`
 ///    Parses `owner`, `repo`, and `runnerName` from the plist filename.
 ///
-/// 2. **`.runner` JSON files** — searches known runner install paths only
-///    (NOT `~` wholesale, which triggers macOS TCC permission dialogs for
-///    Desktop/Documents/Downloads). Searches:
+/// 2. **`.runner` JSON files** — searches a set of known runner install paths
+///    PLUS any extra paths provided by the caller (e.g. paths persisted by
+///    `LocalRunnerStore` after an Add Runner registration).
+///    Does NOT scan `~` wholesale to avoid macOS TCC permission dialogs for
+///    Desktop/Documents/Downloads (macOS 14+). Default known paths:
 ///    `~/actions-runner`, `~/runner`, `~/github-runner`, `/opt/actions-runner`,
 ///    `/opt/runner`, `/usr/local/actions-runner`, `/usr/local/runner`
-///    up to depth 6. This avoids the TCC prompt while still covering all
-///    common self-hosted runner install locations.
+///    up to depth 6.
 ///
 /// 3. **Live service check** — `launchctl list | grep actions.runner`
 ///    Flags which runners currently have an active launchd service, indicating
@@ -33,12 +34,18 @@ struct LocalRunnerScanner {
     // MARK: - Public API
 
     /// Performs the full 3-source scan and returns deduplicated `RunnerModel` results.
+    ///
+    /// - Parameter extraPaths: Additional absolute install-directory paths to include
+    ///   in the `.runner` JSON search. Typically the paths persisted by
+    ///   `LocalRunnerStore.installedPaths` after an Add Runner registration so that
+    ///   runners installed outside the default search roots are always discovered.
+    ///
     /// This is a synchronous, blocking call — always invoke from a background thread.
-    func scan() -> [RunnerModel] {
+    func scan(extraPaths: [String] = []) -> [RunnerModel] {
         var models: [String: RunnerModel] = [:]
 
         // Source 2 first: .runner JSON is most authoritative — richer data.
-        for model in scanRunnerJSONFiles() {
+        for model in scanRunnerJSONFiles(extraPaths: extraPaths) {
             models[model.id] = model
         }
 
@@ -99,15 +106,15 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 2: .runner JSON files
 
-    /// Searches known runner install locations only — avoids scanning `~` wholesale
-    /// which would trigger macOS TCC prompts for Desktop/Documents/Downloads (macOS 14+).
-    private func scanRunnerJSONFiles() -> [RunnerModel] {
+    /// Searches known runner install locations plus any caller-supplied extra paths.
+    /// Avoids scanning `~` wholesale to prevent macOS TCC prompts (macOS 14+).
+    private func scanRunnerJSONFiles(extraPaths: [String]) -> [RunnerModel] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         // Known self-hosted runner install directories — explicit paths only.
         // ⚠️ DO NOT add `~` or `$HOME` here: broad home-dir scans trigger TCC dialogs.
         // ⚠️ Each path is single-quoted before shell interpolation so that home
         // directories containing spaces (e.g. /Users/First Last) don't break find.
-        let rawPaths = [
+        var rawPaths = [
             "\(home)/actions-runner",
             "\(home)/runner",
             "\(home)/github-runner",
@@ -116,6 +123,11 @@ struct LocalRunnerScanner {
             "/usr/local/actions-runner",
             "/usr/local/runner",
         ]
+        // Append extra paths registered via Add Runner sheet, deduplicating.
+        for extra in extraPaths where !rawPaths.contains(extra) {
+            rawPaths.append(extra)
+        }
+
         let searchPaths = rawPaths.map { "'\($0)'" }.joined(separator: " ")
 
         let raw = shell(
