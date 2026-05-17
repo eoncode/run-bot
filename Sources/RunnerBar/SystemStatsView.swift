@@ -1,4 +1,3 @@
-// swiftlint:disable identifier_name opening_brace
 import SwiftUI
 
 // MARK: - SystemStatsView
@@ -104,7 +103,6 @@ struct DiskPillBadge: View {
             .padding(.vertical, 2)
             .background(pillColor.opacity(0.15), in: Capsule())
             .overlay(Capsule().strokeBorder(pillColor.opacity(0.35), lineWidth: 0.5))
-            // Never let the capsule be compressed
             .fixedSize()
     }
 
@@ -138,7 +136,6 @@ struct HeaderStatsBar: View {
                 currentPct: statsVM.stats.cpuPct
             )
 
-            // Thin vertical separator; fixed height tied to sparkline height
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
 
@@ -156,9 +153,6 @@ struct HeaderStatsBar: View {
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
 
-            // DISK chip + usage pill inline, before Spacer.
-            // DiskPillBadge receives usedPct — same value as SparklineView.currentPct —
-            // so pill color always matches the sparkline stroke and value text.
             HStack(spacing: 5) {
                 let diskUsedPct = statsVM.stats.diskTotalGB > 0
                     ? (statsVM.stats.diskUsedGB / statsVM.stats.diskTotalGB) * 100
