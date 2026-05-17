@@ -10,7 +10,7 @@ import SwiftUI
 /// AppDelegate.resizeAndRepositionPanel() clamps the panel to 85% visibleFrame.
 /// No extra cap needed here — the panel cap IS the scroll boundary.
 /// ❌ NEVER move headerBar inside the ScrollView.
-/// ❌ NEVER add a fixed maxHeight cap to the ScrollView.
+/// ❌ NEVER replace .infinity with a fixed number.
 /// ❌ NEVER use GeometryReader for the height.
 /// ❌ NEVER add idealHeight to the root frame.
 ///
@@ -200,11 +200,11 @@ struct SettingsView: View {
             Text(runner.displayStatus).font(.caption).foregroundColor(Color.rbTextSecondary)
                 .lineLimit(1).fixedSize()
             if runner.isRunning {
-                Button(action: { lifecycleAction { RunnerLifecycleService.shared.stop(runner: runner) } },
+                Button(action: { performStop(runner: runner) },
                        label: { Text("Stop").font(.caption2) })
                 .buttonStyle(.bordered).help("Stop runner service")
             } else {
-                Button(action: { lifecycleAction { RunnerLifecycleService.shared.start(runner: runner) } },
+                Button(action: { performResume(runner: runner) },
                        label: { Text("Resume").font(.caption2) })
                 .buttonStyle(.bordered).help("Start runner service")
             }
@@ -217,14 +217,74 @@ struct SettingsView: View {
         }
     }
 
-    private func lifecycleAction(_ action: @escaping () -> Void) {
+    // MARK: - Resume / Stop actions
+
+    /// Tapping Resume:
+    /// 1. Optimistically flip dot to green immediately (main thread, instant UI)
+    /// 2. Run svc.sh install + start on background thread
+    /// 3. Dispatch back to main thread and call refresh() to confirm truth from launchctl
+    private func performResume(runner: RunnerModel) {
+        log("SettingsView › performResume — runner=\(runner.runnerName) isRunning=\(runner.isRunning)")
+        // Step 1: instant optimistic UI flip so dot goes green NOW
+        log("SettingsView › performResume — calling optimisticallySetRunning(\(runner.runnerName), isRunning: true)")
+        LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
+        log("SettingsView › performResume — optimistic flip done, dispatching svc.sh to background")
+        // Step 2: run the actual svc.sh on background thread
         DispatchQueue.global(qos: .userInitiated).async {
-            action()
-            DispatchQueue.main.async { localRunnerStore.refresh() }
+            log("SettingsView › performResume background — calling RunnerLifecycleService.start for \(runner.runnerName)")
+            let ok = RunnerLifecycleService.shared.start(runner: runner)
+            log("SettingsView › performResume background — start() returned \(ok) for \(runner.runnerName)")
+            if !ok {
+                // If start actually failed, revert the optimistic flip
+                log("SettingsView › performResume background — start FAILED, reverting optimistic flip for \(runner.runnerName)")
+                DispatchQueue.main.async {
+                    log("SettingsView › performResume main — reverting optimistic flip (isRunning → false) for \(runner.runnerName)")
+                    LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
+                }
+            }
+            // Step 3: always do a real refresh from launchctl after script completes
+            log("SettingsView › performResume background — dispatching MainActor refresh() for \(runner.runnerName)")
+            DispatchQueue.main.async {
+                log("SettingsView › performResume main — calling LocalRunnerStore.shared.refresh() for confirmed state")
+                LocalRunnerStore.shared.refresh()
+            }
+        }
+    }
+
+    /// Tapping Stop:
+    /// 1. Optimistically flip dot to red immediately (main thread, instant UI)
+    /// 2. Run svc.sh stop + uninstall on background thread
+    /// 3. Dispatch back to main thread and call refresh() to confirm truth from launchctl
+    private func performStop(runner: RunnerModel) {
+        log("SettingsView › performStop — runner=\(runner.runnerName) isRunning=\(runner.isRunning)")
+        // Step 1: instant optimistic UI flip so dot goes red NOW
+        log("SettingsView › performStop — calling optimisticallySetRunning(\(runner.runnerName), isRunning: false)")
+        LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
+        log("SettingsView › performStop — optimistic flip done, dispatching svc.sh to background")
+        // Step 2: run the actual svc.sh on background thread
+        DispatchQueue.global(qos: .userInitiated).async {
+            log("SettingsView › performStop background — calling RunnerLifecycleService.stop for \(runner.runnerName)")
+            let ok = RunnerLifecycleService.shared.stop(runner: runner)
+            log("SettingsView › performStop background — stop() returned \(ok) for \(runner.runnerName)")
+            if !ok {
+                // If stop actually failed, revert the optimistic flip
+                log("SettingsView › performStop background — stop FAILED, reverting optimistic flip for \(runner.runnerName)")
+                DispatchQueue.main.async {
+                    log("SettingsView › performStop main — reverting optimistic flip (isRunning → true) for \(runner.runnerName)")
+                    LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
+                }
+            }
+            // Step 3: always do a real refresh from launchctl after script completes
+            log("SettingsView › performStop background — dispatching MainActor refresh() for \(runner.runnerName)")
+            DispatchQueue.main.async {
+                log("SettingsView › performStop main — calling LocalRunnerStore.shared.refresh() for confirmed state")
+                LocalRunnerStore.shared.refresh()
+            }
         }
     }
 
     private func localRunnerDotColor(for runner: RunnerModel) -> Color {
+        log("SettingsView › localRunnerDotColor for \(runner.runnerName) statusColor=\(runner.statusColor) isRunning=\(runner.isRunning) githubStatus=\(runner.githubStatus ?? "nil")")
         switch runner.statusColor {
         case .running: return Color.rbSuccess
         case .busy:    return Color.rbWarning
@@ -451,7 +511,7 @@ struct SettingsView: View {
             let ok = RunnerLifecycleService.shared.remove(runner: runner)
             DispatchQueue.main.async {
                 if !ok { removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs." }
-                localRunnerStore.refresh()
+                LocalRunnerStore.shared.refresh()
             }
         }
     }
