@@ -41,6 +41,12 @@ final class LocalRunnerStore: ObservableObject, @unchecked Sendable {
         qos: .userInitiated
     )
 
+    /// Set to `true` when `refresh()` is called while a scan is already in
+    /// progress. The in-flight scan checks this flag on completion and
+    /// immediately kicks off a second scan so the caller's request is never
+    /// silently dropped — even if the 30 s polling timer raced us here.
+    private var pendingRefresh: Bool = false
+
     // MARK: - Init
 
     private init() {}
@@ -51,6 +57,10 @@ final class LocalRunnerStore: ObservableObject, @unchecked Sendable {
     /// array is **fully reassigned** on the main thread when done so SwiftUI
     /// always sees a new value and re-renders every observer.
     ///
+    /// If a scan is already running, sets `pendingRefresh = true` so the
+    /// in-flight scan will immediately kick off a second scan on completion
+    /// rather than silently dropping the request.
+    ///
     /// `@MainActor` enforces the main-thread call-site contract at compile time.
     /// `isScanning = true` is set synchronously before dispatching background
     /// work to close the race window where two rapid calls could both pass the guard.
@@ -58,40 +68,58 @@ final class LocalRunnerStore: ObservableObject, @unchecked Sendable {
     /// ⚠️ REGRESSION GUARD: `isScanning = true` must remain synchronous here.
     @MainActor
     func refresh() {
-        log("LocalRunnerStore › refresh() called — isScanning=\(isScanning) runners.count=\(runners.count)")
+        log("LocalRunnerStore › refresh() called — isScanning=\(isScanning) pendingRefresh=\(pendingRefresh) runners.count=\(runners.count)")
         guard !isScanning else {
-            log("LocalRunnerStore › refresh() SKIPPED — already scanning")
+            // Don't drop the request — mark it pending so the in-flight scan
+            // will re-run immediately when it finishes.
+            pendingRefresh = true
+            log("LocalRunnerStore › refresh() DEFERRED — scan in progress, pendingRefresh set to true")
             return
         }
         isScanning = true
-        log("LocalRunnerStore › refresh() — isScanning set to true, dispatching background scan")
+        pendingRefresh = false
+        log("LocalRunnerStore › refresh() — isScanning=true pendingRefresh=false, dispatching background scan")
+        _runScan()
+    }
+
+    // MARK: - Private scan implementation
+
+    /// Internal: dispatches the actual scan+enrich work. Must only be called
+    /// from the main thread with `isScanning` already set to `true`.
+    @MainActor
+    private func _runScan() {
+        log("LocalRunnerStore › _runScan() — dispatching to background queue")
         queue.async { [weak self] in
             guard let self else {
-                log("LocalRunnerStore › refresh() background — self is nil, aborting")
+                log("LocalRunnerStore › _runScan() background — self is nil, aborting")
                 return
             }
-            log("LocalRunnerStore › refresh() background — starting scanner.scan()")
-            // Phase 1: local scan — install paths are derived from LaunchAgent
-            // plists (WorkingDirectory key), so no UserDefaults persistence needed.
-            // This approach survives app reinstalls since plists live in ~/Library.
+            log("LocalRunnerStore › _runScan() background — starting scanner.scan()")
             var result = self.scanner.scan()
-            log("LocalRunnerStore › refresh() background — scanner.scan() returned \(result.count) runner(s): \(result.map { "\($0.runnerName)(isRunning=\($0.isRunning))" })")
-            // Phase 4: enrich with live GitHub API status (skipped if no token)
+            log("LocalRunnerStore › _runScan() background — scanner returned \(result.count) runner(s): \(result.map { "\($0.runnerName)(isRunning=\($0.isRunning))" })")
             if githubToken() != nil {
-                log("LocalRunnerStore › refresh() background — token present, calling enricher")
+                log("LocalRunnerStore › _runScan() background — token present, calling enricher")
                 result = self.enricher.enrich(runners: result)
-                log("LocalRunnerStore › refresh() background — enricher returned \(result.count) runner(s): \(result.map { "\($0.runnerName)(isRunning=\($0.isRunning),status=\($0.displayStatus))" })")
+                log("LocalRunnerStore › _runScan() background — enricher returned \(result.count) runner(s): \(result.map { "\($0.runnerName)(isRunning=\($0.isRunning),status=\($0.displayStatus))" })")
             } else {
-                log("LocalRunnerStore › refresh() background — no token, skipping enricher")
+                log("LocalRunnerStore › _runScan() background — no token, skipping enricher")
             }
-            // CRITICAL: runners must be reassigned (not mutated in-place) so
-            // SwiftUI's @Published diffing fires and all observers re-render.
-            // Must be on main thread — @MainActor-isolated properties.
+            // Hop back to main for all @Published mutations.
             DispatchQueue.main.async {
-                log("LocalRunnerStore › refresh() main — assigning \(result.count) runner(s) to self.runners (was \(self.runners.count))")
-                self.runners = result  // full reassignment — SwiftUI WILL diff and re-render
+                log("LocalRunnerStore › _runScan() main — assigning \(result.count) runner(s) (was \(self.runners.count)) pendingRefresh=\(self.pendingRefresh)")
+                // CRITICAL: full array reassignment so @Published fires and SwiftUI re-renders.
+                self.runners = result
                 self.isScanning = false
-                log("LocalRunnerStore › refresh() main — done. runners.count=\(self.runners.count) isScanning=false")
+                log("LocalRunnerStore › _runScan() main — runners updated, isScanning=false")
+                // If another refresh() was requested while we were scanning, run it now.
+                if self.pendingRefresh {
+                    log("LocalRunnerStore › _runScan() main — pendingRefresh=true, starting follow-up scan immediately")
+                    self.pendingRefresh = false
+                    self.isScanning = true
+                    self._runScan()
+                } else {
+                    log("LocalRunnerStore › _runScan() main — no pending refresh, scan chain complete")
+                }
             }
         }
     }
@@ -117,7 +145,7 @@ final class LocalRunnerStore: ObservableObject, @unchecked Sendable {
         if !found {
             log("LocalRunnerStore › optimisticallySetRunning — WARNING: runner '\(runnerName)' NOT FOUND in runners array (count=\(runners.count))")
         }
-        // Reassign the whole array — this is what makes @Published fire
+        // Reassign the whole array — this is what makes @Published fire and SwiftUI re-render.
         log("LocalRunnerStore › optimisticallySetRunning — reassigning runners array to trigger SwiftUI re-render")
         runners = updated
         log("LocalRunnerStore › optimisticallySetRunning — done, runners.count=\(runners.count)")
