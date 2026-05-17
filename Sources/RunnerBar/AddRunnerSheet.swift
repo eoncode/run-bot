@@ -61,7 +61,7 @@ struct AddRunnerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Add runner").font(.headline)
+            Text("Add new runner").font(.headline)
 
             Picker("Scope", selection: $scopeType) {
                 ForEach(ScopeType.allCases) { s in Text(s.rawValue).tag(s) }
@@ -133,7 +133,7 @@ struct AddRunnerSheet: View {
                             Text("Registering…")
                         }
                     } else {
-                        Text("Add Runner")
+                        Text("Add new runner")
                     }
                 }
                 .keyboardShortcut(.defaultAction)
