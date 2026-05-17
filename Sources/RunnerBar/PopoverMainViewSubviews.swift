@@ -1,3 +1,4 @@
+// swiftlint:disable colon opening_brace
 import SwiftUI
 
 // MARK: - SectionHeaderLabel
@@ -150,12 +151,6 @@ struct ActionRowView: View {
         }
         .frame(maxWidth: .infinity)
         .background(
-            // Card background with left-edge color indicator.
-            // The indicator is a plain Rectangle overlaid at the leading edge.
-            // The parent .clipShape(RoundedRectangle) clips all four corners of
-            // everything inside — including this Rectangle — so the top-left and
-            // bottom-left corners of the strip are rounded by the card itself,
-            // producing a perfect left-side half-pill flush with the card edge.
             RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
                 .fill(Color.rbSurfaceElevated)
                 .overlay(
@@ -187,24 +182,12 @@ struct ActionRowView: View {
         .onAppear {
             let status = rowStatus
             previousStatus = status
-            // In-progress rows auto-expand to compact mode (in_progress jobs only).
-            // Terminal/queued rows start fully collapsed — user must tap to expand.
             expandState = (status == .inProgress) ? false : nil
         }
         .onChange(of: rowStatus) { newStatus in
-            // fix: RunnerStore populates async — onAppear often fires before
-            // groupStatus is inProgress, leaving expandState == nil and hiding
-            // inline jobs. Auto-expand the first time we see inProgress.
-            // Guard: only expand if user hasn't manually collapsed (expandState == nil).
-            // ⚠️ Never remove the expandState == nil guard — without it this would
-            // override a user-triggered full-expand collapse back to auto-compact.
             if newStatus == .inProgress && expandState == nil {
                 withAnimation(.easeInOut(duration: 0.15)) { expandState = false }
             }
-            // ⚠️ Only auto-collapse when genuinely transitioning FROM inProgress
-            // TO a terminal state. Without the previousStatus guard this fires
-            // on every displayTick re-render for already-terminal rows, instantly
-            // collapsing any user-triggered expand. Never remove previousStatus check.
             if previousStatus == .inProgress && (newStatus == .success || newStatus == .failed) {
                 withAnimation(.easeInOut(duration: 0.15)) { expandState = nil }
             }
@@ -239,7 +222,6 @@ struct ActionRowView: View {
                 .font(.system(size: 12))
                 .foregroundColor(group.isDimmed ? .secondary : .primary)
                 .lineLimit(1).truncationMode(.tail).layoutPriority(1)
-            // Branch pill — ⎇ icon + branch name
             if let branch = group.headBranch {
                 HStack(spacing: 3) {
                     Image(systemName: "arrow.triangle.branch")
@@ -297,3 +279,4 @@ struct ActionRowView: View {
         }
     }
 }
+// swiftlint:enable colon opening_brace
