@@ -50,7 +50,8 @@ struct StatusIcon {
         img.lockFocus()
 
         // Background circle
-        let bgPath = NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: size - 2, height: size - 2))
+        let rect = NSRect(x: 1, y: 1, width: size - 2, height: size - 2)
+        let bgPath = NSBezierPath(ovalIn: rect)
         color.withAlphaComponent(0.15).setFill()
         bgPath.fill()
 
