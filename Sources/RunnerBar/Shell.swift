@@ -34,3 +34,12 @@ enum Shell {
         return Result(output: output, exitCode: process.terminationStatus)
     }
 }
+
+// MARK: - Backward-compatibility shim
+// Legacy call-sites use shell("cmd", timeout: N) -> String.
+// Delegates to Shell.run(_:); the timeout parameter is accepted but not
+// enforced (Shell.run uses waitUntilExit which is sufficient for existing callers).
+@discardableResult
+func shell(_ command: String, timeout: TimeInterval = 20) -> String {
+    Shell.run(command).output
+}
