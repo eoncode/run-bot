@@ -49,3 +49,6 @@ disabled_rules:
   - missing_docs                # docs not required for all internal declarations
   - superfluous_disable_command # in-file disables may pre-empt future violations
   - line_length                 # long lines are acceptable in this codebase
+  - function_body_length        # long view bodies are acceptable in SwiftUI
+  - operator_usage_whitespace   # conflicts with SwiftUI DSL patterns
+  - vertical_whitespace_opening_braces  # conflicts with SwiftUI DSL patterns
