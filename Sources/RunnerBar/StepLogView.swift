@@ -86,14 +86,12 @@ struct StepLogView: View {
                 if let urlString = job.htmlUrl, let url = URL(string: urlString) {
                     Button(
                         action: { NSWorkspace.shared.open(url) },
-                        label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "safari").font(.caption)
-                                Text("GitHub").font(.caption)
-                            }
-                            .foregroundColor(Color.rbTextSecondary)
-                            .fixedSize()
+                        label: { HStack(spacing: 3) {
+                            Image(systemName: "safari").font(.caption)
+                            Text("GitHub").font(.caption)
                         }
+                        .foregroundColor(Color.rbTextSecondary)
+                        .fixedSize() }
                     )
                     .buttonStyle(.plain)
                     .help("Open job on GitHub")
