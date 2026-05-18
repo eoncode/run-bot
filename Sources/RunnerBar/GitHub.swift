@@ -228,11 +228,11 @@ func fetchRegistrationToken(scope: String) -> String? {
         log("fetchRegistrationToken › no data for \(endpoint)")
         return nil
     }
-    log("fetchRegistrationToken › \(endpoint) \(outputData.count)b raw=\(String(data: outputData, encoding: .utf8)?.prefix(200) ?? "")")
+    // NOTE: raw response intentionally not logged — it contains a short-lived token.
+    log("fetchRegistrationToken › \(endpoint) \(outputData.count)b raw=[REDACTED]")
     struct TokenResponse: Decodable { let token: String }
     guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
-        log("fetchRegistrationToken › decode failed: "
-            + "\(String(data: outputData, encoding: .utf8)?.prefix(200) ?? "")")
+        log("fetchRegistrationToken › decode failed for \(endpoint) (\(outputData.count)b)")
         return nil
     }
     log("fetchRegistrationToken › got token (first 4): \(resp.token.prefix(4))...")
@@ -257,11 +257,11 @@ func fetchRemovalToken(scope: String) -> String? {
         log("fetchRemovalToken › no data returned for \(endpoint)")
         return nil
     }
-    let rawString = String(data: outputData, encoding: .utf8) ?? ""
-    log("fetchRemovalToken › raw response (\(outputData.count)b): \(rawString.prefix(200))")
+    // NOTE: raw response intentionally not logged — it contains a short-lived token.
+    log("fetchRemovalToken › raw response (\(outputData.count)b): [REDACTED]")
     struct TokenResponse: Decodable { let token: String }
     guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
-        log("fetchRemovalToken › decode failed. raw=\(rawString.prefix(200))")
+        log("fetchRemovalToken › decode failed for \(endpoint) (\(outputData.count)b)")
         return nil
     }
     log("fetchRemovalToken › got removal token (first 4): \(resp.token.prefix(4))...")
