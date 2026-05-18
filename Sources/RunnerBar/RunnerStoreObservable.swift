@@ -9,10 +9,9 @@ import SwiftUI
 /// Call `reload(localRunnerStore:)` to pull the latest state from `RunnerStore.shared`
 /// and `LocalRunnerStore` onto the main thread.
 ///
-/// ⚠️ NOT @MainActor: AppDelegate creates this as a stored property (`private let observable`)
-/// in a synchronous nonisolated context. @MainActor would make init() and reload() async
-/// from outside the actor and break AppDelegate.swift:40 and AppDelegate.swift:281.
-/// RunnerStore.onChange always fires on DispatchQueue.main so thread safety is preserved.
+/// ⚠️ @MainActor: ensures all Published mutations happen on the main actor.
+/// AppDelegate creates this as a stored property; init() is safe because
+/// AppDelegate itself runs on the main thread at launch.
 final class RunnerStoreObservable: ObservableObject {
     /// Mirrors `RunnerStore.shared.runners` (remote GitHub API runners).
     @Published private(set) var runners: [Runner] = []
@@ -35,6 +34,7 @@ final class RunnerStoreObservable: ObservableObject {
     /// ❌ NEVER make this async or move it off the main thread.
     /// ❌ NEVER call this from popoverDidClose() — clobbers savedNavState.
     /// If your an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed is major major major.
+    @MainActor
     func reload(localRunnerStore: LocalRunnerStore = LocalRunnerStore.shared) {
         let store = RunnerStore.shared
         log("RunnerStoreObservable › reload — actions=\(store.actions.count) jobs=\(store.jobs.count) runners=\(store.runners.count) localRunners=\(localRunnerStore.runners.count)")

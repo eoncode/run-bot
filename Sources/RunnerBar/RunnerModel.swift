@@ -12,7 +12,7 @@ struct RunnerModel: Identifiable, Equatable {
     let id: String
     let runnerName: String
     let installPath: String?
-    let gitHubUrl: String?
+    var gitHubUrl: String?   // var — LocalRunnerScanner may patch this after init
     let agentId: Int?
     let workFolder: String?
     let labels: [String]
