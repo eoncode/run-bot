@@ -39,13 +39,13 @@ struct SettingsView: View {
     @ObservedObject private var notifications = NotificationPrefsStore.shared
     @ObservedObject private var legal = LegalPrefsStore.shared
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
-    @StateObject private var scopeStore = ScopeStore.shared
-    @State private var newScope = ""
+    @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var isAuthenticated = (githubToken() != nil)
     @State private var hasLoadedOnce = false
     @State private var runnerPendingRemoval: RunnerModel?
     @State private var showAddRunnerSheet = false
+    @State private var showAddScopeSheet = false
     @State private var removeErrorMessage: String?
     @State private var isSigningOut = false
 
@@ -79,6 +79,7 @@ struct SettingsView: View {
         .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
         .onDisappear { ScopeStore.shared.onMutate = nil }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
+        .sheet(isPresented: $showAddScopeSheet)  { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .modifier(removalAlertModifier)
     }
 
@@ -180,7 +181,6 @@ struct SettingsView: View {
     }
 
     private func localRunnerRow(_ runner: RunnerModel) -> some View {
-        // #490 / #491: Full row navigates to RunnerDetailView via onSelectRunner callback.
         Button(action: { onSelectRunner(runner) }) {
             localRunnerRowContent(runner)
         }
@@ -223,7 +223,6 @@ struct SettingsView: View {
                        label: { Text("Resume").font(.caption2) })
                 .buttonStyle(.bordered).help("Start runner service")
             }
-            // #490: chevron replaces cog — row navigates to RunnerDetailView.
             Image(systemName: "chevron.right")
                 .font(.caption2)
                 .foregroundColor(Color.rbTextTertiary)
@@ -294,10 +293,7 @@ struct SettingsView: View {
     }
 
     private func localRunnerDotColor(for runner: RunnerModel) -> Color {
-        let sc = runner.statusColor
-        let w = runner.lifecycleWarning ?? "none"
-        log("SettingsView > localRunnerDotColor runner=\(runner.runnerName) statusColor=\(sc) lifecycleWarning=\(w) isRunning=\(runner.isRunning) githubStatus=\(runner.githubStatus ?? "none")")
-        switch sc {
+        switch runner.statusColor {
         case .running: return Color.rbSuccess
         case .busy:    return Color.rbWarning
         case .idle:    return Color.rbTextTertiary
@@ -307,33 +303,90 @@ struct SettingsView: View {
 
     // MARK: - Remote runner scopes
 
-    private var remoteScopesSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private var remoteScopesSectionHeader: some View {
+        HStack {
             Text("Remote runner scopes")
                 .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 2)
+            Spacer()
+            Button(action: { showAddScopeSheet = true }) {
+                Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
+            }
+            .buttonStyle(.plain).help("Add a remote scope")
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 2)
+    }
+
+    private var remoteScopesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            remoteScopesSectionHeader
             Text("GitHub repos or orgs whose runners are fetched via the API.")
                 .font(.caption).foregroundColor(Color.rbTextSecondary)
                 .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
-            ForEach(scopeStore.scopes, id: \.self) { scopeStr in
-                HStack {
-                    Text(scopeStr).font(.system(size: 12))
-                    Spacer()
-                    Button(action: { ScopeStore.shared.remove(scopeStr); RunnerStore.shared.start() },
-                           label: { Image(systemName: "minus.circle").foregroundColor(Color.rbDanger) })
-                    .buttonStyle(.plain)
+            if scopeStore.entries.isEmpty {
+                Text("No remote scopes added")
+                    .font(.caption).foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
+            } else {
+                ForEach(scopeStore.entries) { entry in
+                    scopeRow(entry)
                 }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 2)
             }
-            HStack {
-                TextField("e.g. myorg  or  myorg/myrepo", text: $newScope)
-                    .textFieldStyle(.roundedBorder).font(.system(size: 12)).onSubmit { submitScope() }
-                Button(action: submitScope, label: { Image(systemName: "plus.circle") })
-                    .buttonStyle(.plain)
-                    .disabled(newScope.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
         }
+    }
+
+    private func scopeRow(_ entry: ScopeEntry) -> some View {
+        let isRepo = entry.scope.contains("/")
+        return HStack(spacing: 8) {
+            // Type badge
+            Text(isRepo ? "Repo" : "Org")
+                .font(.caption2)
+                .foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.rbSurfaceElevated))
+                .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+
+            Text(entry.scope)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer()
+
+            // Enable / disable toggle
+            Toggle("", isOn: Binding(
+                get: { entry.isEnabled },
+                set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .help(entry.isEnabled ? "Pause monitoring this scope" : "Resume monitoring this scope")
+            .scaleEffect(0.8, anchor: .trailing)
+
+            // Remove button
+            Button(action: {
+                ScopeStore.shared.remove(id: entry.id)
+                RunnerStore.shared.start()
+            }) {
+                Image(systemName: "minus.circle")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbDanger)
+            }
+            .buttonStyle(.plain)
+            .help("Remove scope")
+        }
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: RBRadius.small)
+                .fill(entry.isEnabled ? Color.rbSurfaceElevated : Color.rbSurface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+                .padding(.horizontal, RBSpacing.xs)
+        )
+        .opacity(entry.isEnabled ? 1.0 : 0.5)
     }
 
     // MARK: - Notifications
@@ -416,7 +469,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 8)
             Divider().padding(.leading, RBSpacing.md)
-            Text("Run `gh auth login` in Terminal, or set GH_TOKEN / GITHUB_TOKEN env var.")
+            Text("Run `gh auth login` in Terminal to authenticate.")
                 .font(.caption).foregroundColor(Color.rbTextSecondary)
                 .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
         }
@@ -471,14 +524,6 @@ struct SettingsView: View {
                 .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
-    }
-
-    private func submitScope() {
-        let trimmed = newScope.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        ScopeStore.shared.add(trimmed)
-        RunnerStore.shared.start()
-        newScope = ""
     }
 
     private func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
