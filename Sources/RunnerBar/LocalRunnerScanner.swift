@@ -153,7 +153,7 @@ struct LocalRunnerScanner {
             "/opt/actions-runner",
             "/opt/runner",
             "/usr/local/actions-runner",
-            "/usr/local/runner",
+            "/usr/local/runner"
         ]
         for extra in extraRoots where !rawPaths.contains(extra) {
             rawPaths.append(extra)
