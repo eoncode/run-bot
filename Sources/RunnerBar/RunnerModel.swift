@@ -17,6 +17,19 @@ struct RunnerModel: Identifiable, Equatable {
     let workFolder: String?
     let labels: [String]
 
+    // MARK: - Fields from .runner JSON (#491)
+
+    /// Operating system string from `.runner` JSON `platform` key (e.g. "linux", "osx").
+    let platform: String?
+    /// Architecture from `.runner` JSON `platformArchitecture` key (e.g. "X64", "ARM64").
+    let platformArchitecture: String?
+    /// Agent version string from `.runner` JSON `agentVersion` key (e.g. "2.320.0").
+    let agentVersion: String?
+    /// Whether the runner was registered as ephemeral from `.runner` JSON `ephemeral` key.
+    let isEphemeral: Bool
+    /// GitHub runner group name. Populated by RunnerStatusEnricher via the GitHub API.
+    var runnerGroup: String?
+
     /// Launchctl / process running state. `var` so optimistic UI updates and
     /// the Source-3 live-service check can both mutate it in-place on the array.
     var isRunning: Bool
@@ -46,7 +59,12 @@ struct RunnerModel: Identifiable, Equatable {
         labels: [String] = [],
         githubStatus: String? = nil,
         isBusy: Bool = false,
-        lifecycleWarning: String? = nil
+        lifecycleWarning: String? = nil,
+        platform: String? = nil,
+        platformArchitecture: String? = nil,
+        agentVersion: String? = nil,
+        isEphemeral: Bool = false,
+        runnerGroup: String? = nil
     ) {
         self.id = id ?? runnerName
         self.runnerName = runnerName
@@ -59,6 +77,11 @@ struct RunnerModel: Identifiable, Equatable {
         self.githubStatus = githubStatus
         self.isBusy = isBusy
         self.lifecycleWarning = lifecycleWarning
+        self.platform = platform
+        self.platformArchitecture = platformArchitecture
+        self.agentVersion = agentVersion
+        self.isEphemeral = isEphemeral
+        self.runnerGroup = runnerGroup
     }
 
     // MARK: - Derived display

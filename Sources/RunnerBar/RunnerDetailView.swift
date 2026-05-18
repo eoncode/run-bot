@@ -93,27 +93,52 @@ struct RunnerDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Runner Info")
             infoCard {
+                // GitHub URL
                 if let url = runner.gitHubUrl {
                     infoRow(label: "GitHub URL", value: url, copyable: true)
                     Divider().padding(.leading, RBSpacing.md)
                 }
+                // Agent ID
                 if let agentId = runner.agentId {
                     infoRow(label: "Agent ID", value: String(agentId))
                     Divider().padding(.leading, RBSpacing.md)
                 }
+                // OS / Architecture
+                let osArch = [runner.platform, runner.platformArchitecture]
+                    .compactMap { $0 }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " / ")
+                if !osArch.isEmpty {
+                    infoRow(label: "OS / Arch", value: osArch)
+                    Divider().padding(.leading, RBSpacing.md)
+                }
+                // Runner version
+                if let version = runner.agentVersion {
+                    infoRow(label: "Version", value: version)
+                    Divider().padding(.leading, RBSpacing.md)
+                }
+                // Install path
                 if let installPath = runner.installPath {
                     infoRow(label: "Install path", value: installPath, copyable: true)
                     Divider().padding(.leading, RBSpacing.md)
                 }
-                infoRow(
-                    label: "Work folder",
-                    value: runner.workFolder ?? "_work"
-                )
+                // Work folder
+                infoRow(label: "Work folder", value: runner.workFolder ?? "_work")
+                Divider().padding(.leading, RBSpacing.md)
+                // Ephemeral mode
+                infoRow(label: "Ephemeral", value: runner.isEphemeral ? "Yes" : "No")
+                // Labels
                 if !runner.labels.isEmpty {
                     Divider().padding(.leading, RBSpacing.md)
                     infoRow(label: "Labels", value: runner.labels.joined(separator: ", "))
                 }
+                // Runner group (populated via GitHub API by RunnerStatusEnricher)
+                if let group = runner.runnerGroup {
+                    Divider().padding(.leading, RBSpacing.md)
+                    infoRow(label: "Runner group", value: group)
+                }
                 Divider().padding(.leading, RBSpacing.md)
+                // Status
                 infoRow(label: "Status", value: runner.displayStatus)
             }
         }
@@ -160,7 +185,10 @@ struct RunnerDetailView: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if copyable {
-                Button(action: { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string) }) {
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                }) {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 10))
                         .foregroundColor(Color.rbTextTertiary)

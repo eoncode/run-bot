@@ -6,7 +6,7 @@ import Foundation
 /// requiring a GitHub API token. Uses three complementary scan sources:
 ///
 /// 1. **LaunchAgents** — `~/Library/LaunchAgents/actions.runner.*.plist`
-///    Reads the `WorkingDirectory` key from each plist so the runner’s exact
+///    Reads the `WorkingDirectory` key from each plist so the runner's exact
 ///    install path is known for any custom location. The plist label is also
 ///    used to derive a `gitHubUrl` fallback (`https://github.com/<owner>/<repo>`)
 ///    for runners whose `.runner` JSON omits the field (e.g. installed via
@@ -14,7 +14,8 @@ import Foundation
 ///
 /// 2. **`.runner` JSON files** — searches the known default install paths
 ///    PLUS any `WorkingDirectory` paths extracted from LaunchAgent plists.
-///    Provides `gitHubUrl`, `runnerName`, `agentId`, and `workFolder`.
+///    Provides `gitHubUrl`, `runnerName`, `agentId`, `workFolder`,
+///    `platform`, `platformArchitecture`, `agentVersion`, `ephemeral`. (#491)
 ///    Default roots: `~/actions-runner`, `~/runner`, `~/github-runner`,
 ///    `/opt/actions-runner`, `/opt/runner`, `/usr/local/actions-runner`,
 ///    `/usr/local/runner` up to depth 6.
@@ -29,6 +30,11 @@ struct LocalRunnerScanner {
         let runnerName: String?
         let agentId: Int?
         let workFolder: String?
+        // #491 — additional fields present in the GitHub runner .runner JSON
+        let platform: String?
+        let platformArchitecture: String?
+        let agentVersion: String?
+        let ephemeral: Bool?
     }
 
     // MARK: - Public API
@@ -174,7 +180,11 @@ struct LocalRunnerScanner {
                     agentId: json.agentId,
                     workFolder: json.workFolder,
                     installPath: url.deletingLastPathComponent().path,
-                    isRunning: false
+                    isRunning: false,
+                    platform: json.platform,
+                    platformArchitecture: json.platformArchitecture,
+                    agentVersion: json.agentVersion,
+                    isEphemeral: json.ephemeral ?? false
                 )
             }
     }
