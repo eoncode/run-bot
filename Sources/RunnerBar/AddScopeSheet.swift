@@ -26,7 +26,7 @@ struct AddScopeSheet: View {
     @State private var orgs: [String] = []
     @State private var repos: [String] = []
     @State private var isFetching = false
-    @State private var errorMessage: String? = nil
+    @State private var errorMessage: String?
     @State private var usePicker = false
 
     private var pickerItems: [String] {
