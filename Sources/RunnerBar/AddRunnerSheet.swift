@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // swiftlint:disable type_body_length
@@ -66,6 +67,21 @@ struct AddRunnerSheet: View {
     @State private var registrationStep = ""
     @State private var errorMessage: String?
 
+    // MARK: Pre-existing state (Add pre-existing only)
+
+    /// The folder path the user selected via NSOpenPanel.
+    @State private var existingDir = ""
+    /// Runner name parsed from the `.runner` JSON inside `existingDir`.
+    @State private var detectedName = ""
+    /// GitHub URL parsed from the `.runner` JSON inside `existingDir`.
+    @State private var detectedGitHubURL = ""
+    /// Shown when the selected folder has no valid `.runner` file or it can't be parsed.
+    @State private var existingError: String?
+    /// Editable fallback shown when `.runner` JSON has no `gitHubUrl` (rare, org-scoped runners).
+    @State private var githubURLOverride = ""
+    /// Whether a plist already exists for this runner name (duplicate detection).
+    @State private var isDuplicate = false
+
     // MARK: - Body
 
     var body: some View {
@@ -79,7 +95,10 @@ struct AddRunnerSheet: View {
                 }
             }
             .pickerStyle(.segmented)
-            .onChange(of: addMode) { _ in resetAddNewState() }
+            .onChange(of: addMode) { _ in
+                resetAddNewState()
+                resetExistingState()
+            }
 
             Divider()
 
@@ -101,7 +120,6 @@ struct AddRunnerSheet: View {
 
     @ViewBuilder
     private var addNewFormBody: some View {
-        // Scope picker
         Picker("Scope", selection: $scopeType) {
             ForEach(ScopeType.allCases) { s in Text(s.rawValue).tag(s) }
         }
@@ -135,19 +153,16 @@ struct AddRunnerSheet: View {
             text: $labelsText
         )
 
-        // Install directory field
         VStack(alignment: .leading, spacing: 4) {
             Text("Runner install directory").font(.caption).foregroundColor(.secondary)
             TextField("", text: $installDir)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 11, design: .monospaced))
-
             Text(
                 "Each runner needs its own unique folder. Use the runner name as the last path component, e.g. ~/actions-runner/my-runner."
             )
             .font(.caption2)
             .foregroundColor(.secondary)
-
             if dirAlreadyConfigured {
                 Label(
                     "This folder already has a runner configured. Choose a different path.",
@@ -179,9 +194,7 @@ struct AddRunnerSheet: View {
             Button(action: register) {
                 if isRegistering {
                     HStack(spacing: 6) {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .frame(width: 14, height: 14)
+                        ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
                         Text("Registering…")
                     }
                 } else {
@@ -193,26 +206,80 @@ struct AddRunnerSheet: View {
         }
     }
 
-    // MARK: - Add Pre-Existing Form Body (Phase 2 placeholder)
+    // MARK: - Add Pre-Existing Form Body
 
     @ViewBuilder
     private var addExistingFormBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Select a folder that already contains a configured runner.")
-                .font(.caption)
-                .foregroundColor(.secondary)
 
-            // TODO: Phase 2 — folder picker + .runner JSON detection
-            // TODO: Phase 3 — import action + plist write + duplicate validation
-            Text("Coming soon")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 24)
+            // Folder picker row
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Runner install folder").font(.caption).foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    Text(existingDir.isEmpty ? "No folder selected" : existingDir)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(existingDir.isEmpty ? .secondary : .primary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Choose…") { pickExistingFolder() }
+                        .controlSize(.small)
+                }
+                .padding(8)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
+            }
+
+            // Detected fields (shown once a valid folder is picked)
+            if !detectedName.isEmpty {
+                labeledReadOnly("Runner name (detected)", value: detectedName)
+
+                if detectedGitHubURL.isEmpty {
+                    // Fallback: let user supply the GitHub URL manually
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("GitHub URL").font(.caption).foregroundColor(.secondary)
+                        TextField("https://github.com/owner/repo", text: $githubURLOverride)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, design: .monospaced))
+                        Text("The .runner file has no GitHub URL. Paste the repo or org URL above.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    labeledReadOnly("GitHub URL (detected)", value: detectedGitHubURL)
+                }
+            }
+
+            // Error state
+            if let err = existingError {
+                Label(err, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(8)
+                    .background(Color.red.opacity(0.08))
+                    .cornerRadius(6)
+            }
+
+            // Duplicate warning
+            if isDuplicate {
+                Label(
+                    "This runner is already tracked by RunnerBar.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundColor(.orange)
+            }
 
             HStack {
                 Spacer()
                 Button("Cancel") { isPresented = false }.keyboardShortcut(.cancelAction)
+                Button("Import Runner", action: importExistingRunner)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canImport)
             }
         }
     }
@@ -241,7 +308,27 @@ struct AddRunnerSheet: View {
         }
     }
 
-    // MARK: - Helpers
+    /// Read-only display field used in the pre-existing form.
+    @ViewBuilder
+    private func labeledReadOnly(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundColor(.secondary)
+            Text(value)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
+        }
+    }
+
+    // MARK: - Helpers (Add new)
 
     private var effectiveScope: String { scopeType == .repo ? selectedRepo : selectedOrg }
 
@@ -259,7 +346,107 @@ struct AddRunnerSheet: View {
             && !dirAlreadyConfigured
     }
 
-    /// Resets all "Add new" form state. Called when switching away from .addNew mode.
+    // MARK: - Helpers (Add pre-existing)
+
+    /// The GitHub URL to use for the import: detected from .runner or the manual override.
+    private var effectiveGitHubURL: String {
+        detectedGitHubURL.isEmpty ? githubURLOverride.trimmingCharacters(in: .whitespaces)
+                                  : detectedGitHubURL
+    }
+
+    private var canImport: Bool {
+        !detectedName.isEmpty
+            && existingError == nil
+            && !isDuplicate
+            && !effectiveGitHubURL.isEmpty
+    }
+
+    /// Checks whether a LaunchAgent plist already exists for this runner name.
+    private func checkDuplicate(runnerName: String) -> Bool {
+        let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents").path
+        guard let entries = try? FileManager.default
+            .contentsOfDirectory(atPath: launchAgentsDir) else { return false }
+        return entries.contains {
+            $0.hasPrefix("actions.runner.") && $0.contains(".".appending(runnerName) + ".plist")
+        }
+    }
+
+    // MARK: - Actions (Add pre-existing)
+
+    /// Opens an NSOpenPanel restricted to directories, reads and validates the .runner JSON.
+    private func pickExistingFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select the runner install folder (must contain a .runner file)"
+        panel.prompt = "Select"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        // Reset previous state
+        resetExistingState()
+        existingDir = url.path
+
+        // Validate .runner file is present
+        let runnerFileURL = url.appendingPathComponent(".runner")
+        guard FileManager.default.fileExists(atPath: runnerFileURL.path) else {
+            existingError = "No .runner file found in the selected folder. Is this a valid runner install directory?"
+            return
+        }
+
+        // Decode .runner JSON
+        guard let data = try? Data(contentsOf: runnerFileURL) else {
+            existingError = "Could not read .runner file."
+            return
+        }
+
+        struct RunnerJSON: Decodable {
+            let gitHubUrl: String?
+            let runnerName: String?
+        }
+
+        guard let json = try? JSONDecoder().decode(RunnerJSON.self, from: data) else {
+            existingError = "Could not parse .runner file. It may be malformed."
+            return
+        }
+
+        detectedName = json.runnerName ?? url.lastPathComponent
+        detectedGitHubURL = json.gitHubUrl ?? ""
+
+        // Check for duplicate
+        isDuplicate = checkDuplicate(runnerName: detectedName)
+
+        log("AddRunnerSheet › pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
+    }
+
+    /// Derives scope from the GitHub URL, writes the LaunchAgent plist, and dismisses.
+    private func importExistingRunner() {
+        guard canImport else { return }
+
+        // Derive scope: strip "https://github.com/" prefix
+        let scope = effectiveGitHubURL
+            .replacingOccurrences(of: "https://github.com/", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        guard !scope.isEmpty else {
+            existingError = "Could not derive a scope from the GitHub URL. Please check the URL."
+            return
+        }
+
+        writeLaunchAgentPlist(
+            scope: scope,
+            runnerName: detectedName,
+            workingDirectory: existingDir
+        )
+
+        isPresented = false
+        onComplete()
+    }
+
+    // MARK: - State reset helpers
+
+    /// Resets all "Add new" form state. Called when switching modes.
     private func resetAddNewState() {
         runnerName       = ""
         labelsText       = "self-hosted,macOS"
@@ -276,6 +463,18 @@ struct AddRunnerSheet: View {
             loadScopes()
         }
     }
+
+    /// Resets all "Add pre-existing" form state. Called when switching modes or re-picking folder.
+    private func resetExistingState() {
+        existingDir       = ""
+        detectedName      = ""
+        detectedGitHubURL = ""
+        existingError     = nil
+        githubURLOverride = ""
+        isDuplicate       = false
+    }
+
+    // MARK: - Scopes loader
 
     private func loadScopes() {
         isLoadingScopes = true
@@ -296,6 +495,8 @@ struct AddRunnerSheet: View {
         DispatchQueue.main.async { registrationStep = msg }
     }
 
+    // MARK: - Register (Add new)
+
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func register() {
         guard canRegister else { return }
@@ -308,7 +509,6 @@ struct AddRunnerSheet: View {
         let dir    = installDir.trimmingCharacters(in: .whitespaces)
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // Security: only allow paths inside the user's home directory.
             let homeDir     = FileManager.default.homeDirectoryForCurrentUser
                 .resolvingSymlinksInPath().path
             let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
@@ -326,7 +526,6 @@ struct AddRunnerSheet: View {
                 return
             }
 
-            // 1. Create install directory.
             do {
                 try FileManager.default.createDirectory(atPath: dir,
                                                         withIntermediateDirectories: true)
@@ -340,7 +539,6 @@ struct AddRunnerSheet: View {
 
             let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
-            // 2. Download + unpack runner package if config.sh is absent.
             if !FileManager.default.fileExists(atPath: configPath) {
                 setStep("Downloading runner package…")
                 guard let downloadURL = fetchRunnerDownloadURL() else {
@@ -366,7 +564,6 @@ struct AddRunnerSheet: View {
                 }
             }
 
-            // 3. Fetch registration token.
             setStep("Fetching registration token…")
             guard let token = fetchRegistrationToken(scope: scope) else {
                 DispatchQueue.main.async {
@@ -376,7 +573,6 @@ struct AddRunnerSheet: View {
                 return
             }
 
-            // 4. Run config.sh to register the runner with GitHub.
             setStep("Configuring runner…")
             let ghURL      = "https://github.com/\(scope)"
             let configExit = runRegistrationCommand(dir: dir, ghURL: ghURL,
@@ -389,19 +585,6 @@ struct AddRunnerSheet: View {
                 return
             }
 
-            // 5. Write a minimal LaunchAgent plist so LocalRunnerScanner can find
-            //    this runner on every future scan via the WorkingDirectory key.
-            //
-            //    We write the plist directly with FileManager rather than calling
-            //    `svc.sh install` because svc.sh requires an interactive user
-            //    session (`launchctl bootstrap`) and exits 1 when invoked from an
-            //    app-launched Process. Writing the plist ourselves achieves the
-            //    same result with no elevated permissions.
-            //
-            //    The plist is intentionally minimal: it stores WorkingDirectory so
-            //    the scanner resolves the install path, but does NOT set RunAtLoad
-            //    or ProgramArguments — the user can enable auto-start separately
-            //    via the lifecycle controls (Phase 2).
             setStep("Registering service…")
             writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
 
@@ -414,6 +597,8 @@ struct AddRunnerSheet: View {
         }
     }
 
+    // MARK: - Plist writer (shared by both modes)
+
     /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/`.
     /// The plist contains the `WorkingDirectory` key so `LocalRunnerScanner`
     /// can locate the runner on every scan without any UserDefaults persistence.
@@ -423,13 +608,11 @@ struct AddRunnerSheet: View {
     func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
-        // Normalise scope into owner + repo components for the filename.
-        // scope is "owner/repo" (repo-scoped) or "orgname" (org-scoped).
-        let scopeParts   = scope.components(separatedBy: "/")
-        let owner        = scopeParts[0]
-        let repo         = scopeParts.count > 1 ? scopeParts[1] : scopeParts[0]
-        let label        = "actions.runner.\(owner).\(repo).\(runnerName)"
-        let plistURL     = launchAgentsDir.appendingPathComponent("\(label).plist")
+        let scopeParts = scope.components(separatedBy: "/")
+        let owner      = scopeParts[0]
+        let repo       = scopeParts.count > 1 ? scopeParts[1] : scopeParts[0]
+        let label      = "actions.runner.\(owner).\(repo).\(runnerName)"
+        let plistURL   = launchAgentsDir.appendingPathComponent("\(label).plist")
 
         let plist: NSDictionary = [
             "Label": label,
@@ -441,11 +624,11 @@ struct AddRunnerSheet: View {
             plist.write(to: plistURL, atomically: true)
             log("AddRunnerSheet › wrote LaunchAgent plist: \(plistURL.path)")
         } catch {
-            // Non-fatal: runner is registered with GitHub; it just won't appear
-            // in the scanner until the install dir falls inside a default root.
             log("AddRunnerSheet › failed to write LaunchAgent plist: \(error)")
         }
     }
+
+    // MARK: - Process helpers (Add new)
 
     /// Runs `./config.sh --url … --token … --name … --unattended`.
     /// Timeout: 120 s. Blocking — call only from a background thread.
