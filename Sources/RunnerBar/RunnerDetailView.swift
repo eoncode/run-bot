@@ -26,35 +26,37 @@ private enum DangerAction: Identifiable, Equatable {
 
     var id: String {
         switch self {
-        case .rename: return "rename"
-        case .move: return "move"
+        case .rename:          return "rename"
+        case .move:            return "move"
         case .toggleEphemeral: return "toggleEphemeral"
-        case .changeGroup: return "changeGroup"
-        case .remove: return "remove"
+        case .changeGroup:     return "changeGroup"
+        case .remove:          return "remove"
         }
     }
 
     var title: String {
         switch self {
-        case .rename: return "Rename runner"
-        case .move: return "Move to different repo / org"
+        case .rename:          return "Rename runner"
+        case .move:            return "Move to different repo / org"
         case .toggleEphemeral: return "Toggle ephemeral mode"
-        case .changeGroup: return "Change runner group"
-        case .remove: return "Remove runner"
+        case .changeGroup:     return "Change runner group"
+        case .remove:          return "Remove runner"
         }
     }
 
     var confirmLabel: String {
         switch self {
-        case .rename: return "Rename & re-register"
-        case .move: return "Move & re-register"
+        case .rename:          return "Rename & re-register"
+        case .move:            return "Move & re-register"
         case .toggleEphemeral: return "Toggle & re-register"
-        case .changeGroup: return "Change & re-register"
-        case .remove: return "Remove"
+        case .changeGroup:     return "Change & re-register"
+        case .remove:          return "Remove"
         }
     }
 
     var destructive: Bool { self == .remove }
+    /// Actions that require a full de-register + re-register cycle.
+    var requiresReregistration: Bool { self != .remove }
 }
 
 struct RunnerDetailView: View {
@@ -80,9 +82,8 @@ struct RunnerDetailView: View {
     // MARK: - Danger Zone state (#493)
     @State private var dangerZoneExpanded = false
     @State private var pendingDangerAction: DangerAction?
-    // Input fields for actions that need user input
-    @State private var dangerInputA = ""   // new name / new GitHub URL / new group
-    @State private var dangerInputB = ""   // new scope (for move)
+    /// Single text input used by rename / move / changeGroup sheets.
+    @State private var dangerInputA = ""
     @State private var dangerActionState: SaveState = .idle
 
     init(runner: RunnerModel, onBack: @escaping () -> Void) {
@@ -298,7 +299,6 @@ struct RunnerDetailView: View {
 
     private var dangerZoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Collapsible header
             Button(action: { withAnimation(.easeInOut(duration: 0.2)) { dangerZoneExpanded.toggle() } }) {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
@@ -394,7 +394,20 @@ struct RunnerDetailView: View {
                 .font(.headline)
                 .padding(.top, 4)
 
-            // Per-action input fields
+            // fix(5): re-register warning shown for all actions that de-register first
+            if action.requiresReregistration {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.rbWarning)
+                    Text("This will de-register and re-register the runner. The runner will be offline briefly.")
+                        .font(.caption2)
+                        .foregroundColor(Color.rbTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // Per-action input / description
             switch action {
             case .rename:
                 VStack(alignment: .leading, spacing: 4) {
@@ -412,8 +425,8 @@ struct RunnerDetailView: View {
                 }
             case .toggleEphemeral:
                 Text(runner.isEphemeral
-                    ? "This will disable ephemeral mode. The runner will persist across jobs after re-registration."
-                    : "This will enable ephemeral mode. The runner will de-register itself after each job."
+                    ? "Ephemeral mode will be disabled. The runner will persist across jobs after re-registration."
+                    : "Ephemeral mode will be enabled. The runner will de-register itself after each job."
                 )
                 .font(.system(size: 12))
                 .foregroundColor(Color.rbTextSecondary)
@@ -430,7 +443,7 @@ struct RunnerDetailView: View {
                     .foregroundColor(Color.rbTextSecondary)
             }
 
-            // Error / success inline
+            // Inline feedback
             if case .failure(let msg) = dangerActionState {
                 Text(msg).font(.caption2).foregroundColor(Color.rbDanger)
             }
@@ -444,7 +457,6 @@ struct RunnerDetailView: View {
                 Button("Cancel") {
                     pendingDangerAction = nil
                     dangerInputA = ""
-                    dangerInputB = ""
                     dangerActionState = .idle
                 }
                 .buttonStyle(.plain)
@@ -469,7 +481,6 @@ struct RunnerDetailView: View {
 
     private func triggerDangerAction(_ action: DangerAction) {
         dangerInputA = ""
-        dangerInputB = ""
         dangerActionState = .idle
         pendingDangerAction = action
     }
@@ -513,42 +524,44 @@ struct RunnerDetailView: View {
         ephemeral: Bool?,
         runnerGroup: String?
     ) {
+        // fix(4): currentScope always derived from existing runner URL — fail early if nil,
+        // never fall back to targetScope for the removal token.
+        guard let currentScope = scopeFromHtmlUrl(runner.gitHubUrl) else {
+            dangerActionState = .failure("Cannot determine current GitHub scope from runner URL")
+            return
+        }
         guard let installPath = runner.installPath else {
             dangerActionState = .failure("Install path unknown")
             return
         }
         let targetName  = newName    ?? runner.runnerName
-        let targetScope = newScope   ?? scopeFromHtmlUrl(runner.gitHubUrl) ?? ""
+        let targetScope = newScope   ?? currentScope
         let targetEph   = ephemeral  ?? runner.isEphemeral
         let targetGroup = runnerGroup ?? runner.runnerGroup
-        guard !targetScope.isEmpty else {
-            dangerActionState = .failure("Cannot determine GitHub scope from runner URL")
-            return
-        }
+
         DispatchQueue.global(qos: .userInitiated).async {
             // Step 1: stop if running
             if runner.isRunning {
                 _ = RunnerLifecycleService.shared.stop(runner: runner)
             }
-            // Step 2: fetch removal token and de-register via config.sh
-            guard let removalToken = fetchRemovalToken(scope: scopeFromHtmlUrl(runner.gitHubUrl) ?? targetScope) else {
+            // Step 2: fetch removal token from the CURRENT scope (fix #4)
+            guard let removalToken = fetchRemovalToken(scope: currentScope) else {
                 DispatchQueue.main.async { dangerActionState = .failure("Failed to fetch removal token from GitHub") }
                 return
             }
+            // Step 3: de-register via config.sh — fix(1): Shell.run with 60s timeout
             let removeSh = installPath + "/config.sh"
-            let removeResult = shell("\"\(removeSh)\" remove --token \(removalToken)")
-            log("performReregister › remove result: \(removeResult.prefix(200))")
-            // Step 3: fetch registration token for new scope
+            let removeResult = Shell.run("\"\(removeSh)\" remove --token \(removalToken)", timeout: 60)
+            log("performReregister › remove exit=\(removeResult.exitCode) output=\(removeResult.output.prefix(200))")
+            // Step 4: fetch registration token for the NEW scope
             guard let regToken = fetchRegistrationToken(scope: targetScope) else {
                 DispatchQueue.main.async { dangerActionState = .failure("Failed to fetch registration token for \(targetScope)") }
                 return
             }
-            // Step 4: build config.sh arguments
+            // Step 5: re-register — fix(1): Shell.run with 60s timeout
             var configArgs = [
                 "\"\(removeSh)\"",
-                "--url", targetScope.contains("/")
-                    ? "https://github.com/\(targetScope)"
-                    : "https://github.com/\(targetScope)",
+                "--url", "https://github.com/\(targetScope)",
                 "--token", regToken,
                 "--name", "\"\(targetName)\"",
                 "--unattended",
@@ -558,10 +571,10 @@ struct RunnerDetailView: View {
             if let group = targetGroup, !group.isEmpty {
                 configArgs += ["--runnergroup", "\"\(group)\""]
             }
-            let configResult = shell(configArgs.joined(separator: " "))
-            log("performReregister › config result: \(configResult.prefix(200))")
-            let success = configResult.lowercased().contains("settings saved") ||
-                          configResult.lowercased().contains("successfully")
+            let configResult = Shell.run(configArgs.joined(separator: " "), timeout: 60)
+            log("performReregister › config exit=\(configResult.exitCode) output=\(configResult.output.prefix(200))")
+            // fix(3): check exit code, not output string
+            let success = configResult.exitCode == 0
             DispatchQueue.main.async {
                 if success {
                     dangerActionState = .success
@@ -571,19 +584,16 @@ struct RunnerDetailView: View {
                         dangerInputA = ""
                     }
                 } else {
-                    dangerActionState = .failure("config.sh re-registration failed. Check logs.")
+                    dangerActionState = .failure(
+                        "config.sh exited \(configResult.exitCode). Check logs."
+                    )
                 }
             }
         }
     }
 
     private func performRemove() {
-        guard let _ = runner.installPath else {
-            dangerActionState = .failure("Install path unknown")
-            return
-        }
         DispatchQueue.global(qos: .userInitiated).async {
-            // Use the existing removal path from RunnerLifecycleService
             let ok = RunnerLifecycleService.shared.remove(runner: runner)
             DispatchQueue.main.async {
                 if ok {
