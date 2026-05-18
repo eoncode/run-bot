@@ -11,11 +11,12 @@ import SwiftUI
 /// Animation contract:
 ///   - In-progress background ring uses `@State rotationAngle` driven by
 ///     `.linear(duration: 2).repeatForever(autoreverses: false)` — reassures the
-///     user the row hasn't frozen.
+///     user the row hasn’t frozen.
 ///   - Progress arc uses `trim(from: 0, to: fraction)` animated with `.easeInOut`.
 ///   - Color transitions use `.easeInOut(duration: 0.35)`.
 ///
 /// ❌ NEVER remove the repeatForever animation — it is the liveness indicator.
+/// ❌ NEVER start the rotation for non-.inProgress states — it wastes CPU/GPU.
 struct DonutStatusView: View {
     let status: RBStatus
     /// Progress fraction 0.0–1.0 for in-progress state. Ignored for other states.
@@ -48,19 +49,33 @@ struct DonutStatusView: View {
         .frame(width: size, height: size)
         .onAppear {
             displayProgress = max(0, min(1, progress))
-            withAnimation(
-                .linear(duration: 2)
-                .repeatForever(autoreverses: false)
-            ) {
-                rotationAngle = 360
-            }
+            startRotationIfNeeded()
         }
         // Single-argument form for macOS 13 compatibility.
-        // The `progress` property is captured directly from the current value.
         .onChange(of: progress) { _ in
             withAnimation(.easeInOut(duration: 0.4)) {
                 displayProgress = max(0, min(1, progress))
             }
+        }
+        // Start rotation if we transition into .inProgress after appearing
+        // (e.g. queued → inProgress). No-op for any other transition.
+        .onChange(of: status) { _ in
+            startRotationIfNeeded()
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Starts the repeatForever rotation animation only when status is .inProgress.
+    /// Safe to call multiple times — SwiftUI deduplicates identical in-flight
+    /// animations on the same state variable.
+    private func startRotationIfNeeded() {
+        guard status == .inProgress else { return }
+        withAnimation(
+            .linear(duration: 2)
+            .repeatForever(autoreverses: false)
+        ) {
+            rotationAngle = 360
         }
     }
 
