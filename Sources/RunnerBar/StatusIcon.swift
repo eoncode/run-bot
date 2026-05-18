@@ -48,7 +48,8 @@ struct StatusIcon {
         img.lockFocus()
 
         let inset: CGFloat = 1
-        let rect = NSRect(x: inset, y: inset, width: size - 2, height: size - 2)
+        let iconSize = size - 2
+        let rect = NSRect(x: inset, y: inset, width: iconSize, height: iconSize)
         let bgPath = NSBezierPath(ovalIn: rect)
         color.withAlphaComponent(0.15).setFill()
         bgPath.fill()

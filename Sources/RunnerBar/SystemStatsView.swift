@@ -82,14 +82,14 @@ struct SparklineMetricView: View {
 /// Compact pill showing disk FREE percentage, placed inline next to the
 /// DISK sparkline in HeaderStatsBar.
 ///
-/// Color thresholds (inverted vs. used-space — low free = danger):
+/// Color thresholds (inverted vs. used-space -- low free = danger):
 ///   freePct < 15  →  rbDanger  (red)
 ///   freePct < 40  →  rbWarning (orange)
 ///   else          →  rbSuccess (green)
 ///
-/// Always renders at its intrinsic size — never truncates.
+/// Always renders at its intrinsic size -- never truncates.
 struct DiskPillBadge: View {
-    /// Percentage of disk space that is FREE (0–100).
+    /// Percentage of disk space that is FREE (0-100).
     let freePct: Double
 
     var body: some View {
@@ -137,24 +137,23 @@ struct HeaderStatsBar: View {
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
 
+            let memTotal = statsVM.stats.memTotalGB
+            let memUsed = statsVM.stats.memUsedGB
+            let memPct = memTotal > 0 ? memUsed / memTotal * 100 : 0.0
             SparklineMetricView(
                 label: "MEM",
-                value: String(format: "%.1f/%.1fGB",
-                              statsVM.stats.memUsedGB,
-                              statsVM.stats.memTotalGB),
+                value: String(format: "%.1f/%.1fGB", memUsed, memTotal),
                 history: statsVM.memHistory.values,
-                currentPct: statsVM.stats.memTotalGB > 0
-                    ? (statsVM.stats.memUsedGB / statsVM.stats.memTotalGB) * 100
-                    : 0
+                currentPct: memPct
             )
 
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
 
             HStack(spacing: 5) {
-                let diskUsedPct = statsVM.stats.diskTotalGB > 0
-                    ? (statsVM.stats.diskUsedGB / statsVM.stats.diskTotalGB) * 100
-                    : 0.0
+                let diskTotal = statsVM.stats.diskTotalGB
+                let diskUsed = statsVM.stats.diskUsedGB
+                let diskUsedPct = diskTotal > 0 ? diskUsed / diskTotal * 100 : 0.0
 
                 SparklineMetricView(
                     label: "DISK",

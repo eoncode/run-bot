@@ -12,6 +12,7 @@ enum Shell {
 
     /// Runs `command` in `/bin/zsh -c` and returns the trimmed output + exit code.
     @discardableResult
+    // swiftlint:disable:next function_body_length
     static func run(_ command: String) -> Result {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
