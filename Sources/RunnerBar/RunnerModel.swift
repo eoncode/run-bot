@@ -27,6 +27,12 @@ struct RunnerModel: Identifiable, Equatable {
     /// GitHub API busy flag. `var` — set by RunnerStatusEnricher.
     var isBusy: Bool
 
+    /// Set by SettingsView after a failed lifecycle action (start/stop).
+    /// When non-nil, `displayStatus` surfaces this string instead of the
+    /// normal status so the user sees the problem directly in the row.
+    /// Cleared automatically the next time refresh() replaces the runner array.
+    var lifecycleWarning: String?
+
     // MARK: - Init
 
     init(
@@ -39,7 +45,8 @@ struct RunnerModel: Identifiable, Equatable {
         isRunning: Bool,
         labels: [String] = [],
         githubStatus: String? = nil,
-        isBusy: Bool = false
+        isBusy: Bool = false,
+        lifecycleWarning: String? = nil
     ) {
         self.id = id ?? runnerName
         self.runnerName = runnerName
@@ -51,12 +58,15 @@ struct RunnerModel: Identifiable, Equatable {
         self.labels = labels
         self.githubStatus = githubStatus
         self.isBusy = isBusy
+        self.lifecycleWarning = lifecycleWarning
     }
 
     // MARK: - Derived display
 
     /// Human-readable status label shown in the settings runner row.
+    /// When a lifecycle warning is set it takes priority over the normal status.
     var displayStatus: String {
+        if let warning = lifecycleWarning { return warning }
         if isRunning {
             if isBusy || githubStatus == "busy" { return "running" }
             return "running"
@@ -73,6 +83,7 @@ struct RunnerModel: Identifiable, Equatable {
 
     /// Dot color category used by `SettingsView.localRunnerDotColor(for:)`.
     var statusColor: StatusColor {
+        if lifecycleWarning != nil { return .offline }
         if isRunning {
             if isBusy || githubStatus == "busy" { return .busy }
             return .running
