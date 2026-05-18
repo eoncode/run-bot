@@ -38,7 +38,9 @@ final class SystemStatsViewModel: ObservableObject {
     private var prevCPUInfo: processor_info_array_t?
     private var prevNumCPUInfo: mach_msg_type_number_t = 0
 
-    init() {}
+    init() {
+        // No custom initialisation needed; all properties have defaults.
+    }
 
     deinit {
         stop()
