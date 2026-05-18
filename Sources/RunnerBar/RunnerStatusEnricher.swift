@@ -45,7 +45,6 @@ struct RunnerStatusEnricher {
 
     // MARK: - Private helpers
 
-    // swiftlint:disable operator_usage_whitespace
     private func buildAPILookup(
         for runners: [RunnerModel]
     ) -> (byID: [Int: APIRunner], byName: [String: APIRunner]) {
@@ -68,7 +67,8 @@ struct RunnerStatusEnricher {
             var page = 1
             var totalFetched = 0
             while true {
-                let endpoint = "\(baseEndpoint)?per_page=100&page=\(page)"
+                let perPage = 100
+                let endpoint = "\(baseEndpoint)?per_page=\(perPage)&page=\(page)"
                 guard let data = ghAPI(endpoint) else {
                     log("RunnerStatusEnricher › API call failed for scope: \(scope) page: \(page)")
                     break
@@ -84,14 +84,13 @@ struct RunnerStatusEnricher {
                 }
                 totalFetched += pageRunners.count
                 log("RunnerStatusEnricher › scope=\(scope) page=\(page) fetched=\(pageRunners.count)")
-                if pageRunners.count < 100 { break }
+                if pageRunners.count < perPage { break }
                 page += 1
             }
             log("RunnerStatusEnricher › \(totalFetched) total runner(s) from GitHub for \(scope)")
         }
         return (byID, byName)
     }
-    // swiftlint:enable operator_usage_whitespace
 
     /// Applies GitHub API status to a single `RunnerModel`, logging divergence.
     private func applyEnrichment(

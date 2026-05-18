@@ -13,27 +13,31 @@ enum Shell {
     /// Runs `command` in `/bin/zsh -c` and returns the trimmed output + exit code.
     @discardableResult
     static func run(_ command: String) -> Result {
-        // swiftlint:disable function_body_length
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
-
+        let process = makeProcess(command)
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-
         do {
             try process.run()
         } catch {
             return Result(output: error.localizedDescription, exitCode: -1)
         }
-
         process.waitUntilExit()
+        let output = readOutput(from: pipe)
+        return Result(output: output, exitCode: process.terminationStatus)
+    }
+
+    private static func makeProcess(_ command: String) -> Process {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", command]
+        return process
+    }
+
+    private static func readOutput(from pipe: Pipe) -> String {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let raw = String(data: data, encoding: .utf8)
-        let output = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return Result(output: output, exitCode: process.terminationStatus)
-        // swiftlint:enable function_body_length
+        return raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }
 

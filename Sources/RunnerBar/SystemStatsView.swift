@@ -56,7 +56,6 @@ struct SparklineMetricView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize()
 
-            // Sparkline inline, constrained so it does not drive row height
             SparklineView(history: history, currentPct: currentPct)
                 .frame(width: 40, height: 14)
                 .clipShape(RoundedRectangle(cornerRadius: 2))
@@ -67,7 +66,6 @@ struct SparklineMetricView: View {
                 .foregroundStyle(labelColor)
                 .fixedSize()
         }
-        // Prevent the entire chip from being squeezed by a Spacer or sibling views
         .fixedSize()
     }
 
@@ -89,7 +87,7 @@ struct SparklineMetricView: View {
 ///
 /// Always renders at its intrinsic size -- never truncates.
 struct DiskPillBadge: View {
-    /// Percentage of disk space that is FREE (0-100).
+    // Percentage of disk space that is FREE (0-100).
     let freePct: Double
 
     var body: some View {
@@ -104,7 +102,6 @@ struct DiskPillBadge: View {
             .fixedSize()
     }
 
-    /// Low free space = danger (inverted from used-space thresholds).
     private var pillColor: Color {
         if freePct < 15 { return .rbDanger }
         if freePct < 40 { return .rbWarning }
@@ -113,15 +110,15 @@ struct DiskPillBadge: View {
 }
 
 // MARK: - HeaderStatsBar
-/// Compact single-row stats header: CPU | MEM | DISK [pill] as inline chips.
-///
-/// Layout: CPU [spark] 41.1% | MEM [spark] 7.0/16.0GB | DISK [spark] 394/460GB [13% free]  →  ⚙ ✕
-///
-/// The DiskPillBadge sits immediately after the DISK SparklineMetricView,
-/// before the Spacer, so it stays adjacent to the disk graph.
-///
-/// Accepts an existing SystemStatsViewModel so it shares the sampler
-/// already running in PopoverMainView -- no second timer is created.
+// Compact single-row stats header: CPU | MEM | DISK [pill] as inline chips.
+//
+// Layout: CPU [spark] 41.1% | MEM [spark] 7.0/16.0GB | DISK [spark] 394/460GB [13% free]  →  ⚙ ✕
+//
+// The DiskPillBadge sits immediately after the DISK SparklineMetricView,
+// before the Spacer, so it stays adjacent to the disk graph.
+//
+// Accepts an existing SystemStatsViewModel so it shares the sampler
+// already running in PopoverMainView -- no second timer is created.
 struct HeaderStatsBar: View {
     @ObservedObject var statsVM: SystemStatsViewModel
 
@@ -178,8 +175,8 @@ struct HeaderStatsBar: View {
 }
 
 // MARK: - BlockBarView (kept for backward compat)
-/// Renders a coloured block-bar and percentage label for a given metric.
-/// ⚠️ Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
+// Renders a coloured block-bar and percentage label for a given metric.
+// Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
 struct BlockBarView: View {
     let label: String
     let pct: Double
