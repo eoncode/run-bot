@@ -376,43 +376,43 @@ struct AddRunnerSheet: View {
 
     /// Opens an NSOpenPanel restricted to directories, reads and validates the .runner JSON.
     ///
-    /// ## Why beginSheetModal + orderFrontRegardless
+    /// ## Root cause of the z-ordering bug
     ///
-    /// Status bar apps do not have a regular app window, so `runModal()` and
-    /// plain `begin(completionHandler:)` both render the panel *behind* the
-    /// NSPanel/popover — the panel can’t win the focus contest.
+    /// The RunnerBar Settings panel is an NSPanel with `level = .popUpMenu`
+    /// (see AppDelegate). macOS window level ordering, from low to high:
     ///
-    /// The proven fix (stackoverflow.com/a/75632548, ohanaware.com/swift/macOSOpenPanelSheet):
-    /// - `beginSheetModal(for: NSApp.keyWindow!)` attaches the open panel as a
-    ///   sheet to the currently focused window, so AppKit always brings it front.
-    /// - `orderFrontRegardless()` is called immediately after to force the panel
-    ///   above the popover even when the app is not the active application.
+    ///   .normal < .floating < .modalPanel < .mainMenu < .status < .popUpMenu < .screenSaver
+    ///
+    /// NSOpenPanel defaults to `.modalPanel`. That is *below* `.popUpMenu`, so
+    /// the Settings NSPanel always wins the z-fight regardless of which
+    /// presentation API is used (runModal, begin, beginSheetModal, orderFrontRegardless).
+    ///
+    /// ## Fix
+    ///
+    /// Set `openPanel.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)`
+    /// before calling `begin(completionHandler:)`. This places the file picker
+    /// one level above the Settings panel so it always renders on top.
     private func pickExistingFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = "Select the runner install folder (must contain a .runner file)"
-        panel.prompt = "Select"
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = false
+        openPanel.canChooseDirectories = true
+        openPanel.allowsMultipleSelection = false
+        openPanel.message = "Select the runner install folder (must contain a .runner file)"
+        openPanel.prompt = "Select"
 
+        // ⚠️ KEY FIX: raise the panel above the .popUpMenu-level NSPanel.
+        // The RunnerBar status-bar NSPanel sits at .popUpMenu level.
+        // NSOpenPanel defaults to .modalPanel which is below .popUpMenu.
+        // Simply bump it one step higher so it always wins the z-ordering fight.
+        openPanel.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+
+        // Activate the app so the panel can become key window and receive input.
         NSApp.activate(ignoringOtherApps: true)
 
-        if let keyWindow = NSApp.keyWindow {
-            // Preferred path: attach as a sheet to our own window.
-            panel.beginSheetModal(for: keyWindow) { response in
-                guard response == .OK, let url = panel.url else { return }
-                handlePickedFolder(url)
-            }
-        } else {
-            // Fallback: no key window (popover already dismissed), run free-floating.
-            panel.begin { response in
-                guard response == .OK, let url = panel.url else { return }
-                handlePickedFolder(url)
-            }
+        openPanel.begin { response in
+            guard response == .OK, let url = openPanel.url else { return }
+            handlePickedFolder(url)
         }
-        // Force the panel above the popover regardless of app activation state.
-        // Ref: https://stackoverflow.com/a/75632548
-        panel.orderFrontRegardless()
     }
 
     /// Validates the picked folder and populates the detected-runner state.
@@ -454,7 +454,6 @@ struct AddRunnerSheet: View {
     private func importExistingRunner() {
         guard canImport else { return }
 
-        // Derive scope: strip "https://github.com/" prefix
         let scope = effectiveGitHubURL
             .replacingOccurrences(of: "https://github.com/", with: "")
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -476,7 +475,6 @@ struct AddRunnerSheet: View {
 
     // MARK: - State reset helpers
 
-    /// Resets all "Add new" form state. Called when switching modes.
     private func resetAddNewState() {
         runnerName       = ""
         labelsText       = "self-hosted,macOS"
@@ -494,7 +492,6 @@ struct AddRunnerSheet: View {
         }
     }
 
-    /// Resets all "Add pre-existing" form state. Called when switching modes or re-picking folder.
     private func resetExistingState() {
         existingDir       = ""
         detectedName      = ""
@@ -629,7 +626,6 @@ struct AddRunnerSheet: View {
 
     // MARK: - Plist writer (shared by both modes)
 
-    /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/`.
     func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -639,7 +635,6 @@ struct AddRunnerSheet: View {
         let label      = "actions.runner.\(owner).\(repo).\(runnerName)"
         let plistURL   = launchAgentsDir.appendingPathComponent("\(label).plist")
 
-        // swiftlint:disable:next operator_usage_whitespace
         let plist: NSDictionary = ["Label": label, "WorkingDirectory": workingDirectory]
         do {
             try FileManager.default.createDirectory(
