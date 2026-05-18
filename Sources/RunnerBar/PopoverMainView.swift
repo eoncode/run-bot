@@ -122,12 +122,13 @@ struct PopoverMainView: View {
 
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Workflows header is always visible, even when the list is empty.
+            SectionHeaderLabel(title: "Workflows")
             if store.actions.isEmpty {
                 Text("No recent workflows")
                     .font(.caption).foregroundColor(.secondary)
                     .padding(.horizontal, 12).padding(.vertical, 8)
             } else {
-                SectionHeaderLabel(title: "Workflows")
                 let visible = Array(store.actions.prefix(visibleCount))
                 ForEach(visible) { group in
                     ActionRowView(group: group, tick: displayTick, onSelect: { onSelectAction(group) })
