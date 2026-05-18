@@ -79,8 +79,10 @@ final class SystemStatsViewModel: ObservableObject {
         var newMem = memHistory
         var newDisk = diskHistory
         newCPU.append(cpu)
-        newMem.append(mem.total > 0 ? (mem.used / mem.total) * 100 : 0)
-        newDisk.append(disk.total > 0 ? (disk.used / disk.total) * 100 : 0)
+        let memPct = mem.total > 0 ? mem.used / mem.total * 100 : 0.0
+        let diskPct = disk.total > 0 ? disk.used / disk.total * 100 : 0.0
+        newMem.append(memPct)
+        newDisk.append(diskPct)
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -116,22 +118,25 @@ final class SystemStatsViewModel: ObservableObject {
 
         for i in 0 ..< numCPUs {
             let base = Int(CPU_STATE_MAX) * i
-            let user = Double(cpuInfo[base + Int(CPU_STATE_USER)] - prevInfo[base + Int(CPU_STATE_USER)])
-            let sys = Double(cpuInfo[base + Int(CPU_STATE_SYSTEM)] - prevInfo[base + Int(CPU_STATE_SYSTEM)])
-            let idle = Double(cpuInfo[base + Int(CPU_STATE_IDLE)] - prevInfo[base + Int(CPU_STATE_IDLE)])
-            let nice = Double(cpuInfo[base + Int(CPU_STATE_NICE)] - prevInfo[base + Int(CPU_STATE_NICE)])
-            let used = user + sys + nice
+            let userDelta = Double(cpuInfo[base + Int(CPU_STATE_USER)] - prevInfo[base + Int(CPU_STATE_USER)])
+            let sysDelta  = Double(cpuInfo[base + Int(CPU_STATE_SYSTEM)] - prevInfo[base + Int(CPU_STATE_SYSTEM)])
+            let idleDelta = Double(cpuInfo[base + Int(CPU_STATE_IDLE)] - prevInfo[base + Int(CPU_STATE_IDLE)])
+            let niceDelta = Double(cpuInfo[base + Int(CPU_STATE_NICE)] - prevInfo[base + Int(CPU_STATE_NICE)])
+            let used = userDelta + sysDelta + niceDelta
             totalUsed += used
-            totalAll += used + idle
+            totalAll  += used + idleDelta
         }
-        return totalAll > 0 ? (totalUsed / totalAll) * 100 : 0
+        guard totalAll > 0 else { return 0 }
+        return totalUsed / totalAll * 100
     }
 
     private func deallocPrevCPUInfo() {
         guard let prev = prevCPUInfo else { return }
+        let infoSize = vm_size_t(MemoryLayout<integer_t>.size)
+        let totalSize = vm_size_t(prevNumCPUInfo) * infoSize
         vm_deallocate(mach_task_self_,
                       vm_address_t(bitPattern: prev),
-                      vm_size_t(prevNumCPUInfo) * vm_size_t(MemoryLayout<integer_t>.size))
+                      totalSize)
         prevCPUInfo = nil
     }
 
@@ -149,10 +154,12 @@ final class SystemStatsViewModel: ObservableObject {
         }
         let pageSize = Double(vm_kernel_page_size)
         let totalBytes = Double(ProcessInfo.processInfo.physicalMemory)
-        guard kr == KERN_SUCCESS else { return (0, totalBytes / 1e9) }
+        let totalGB = totalBytes / 1_000_000_000
+        guard kr == KERN_SUCCESS else { return (0, totalGB) }
         let usedPages = Double(vmStats.active_count + vmStats.wire_count +
                                 vmStats.compressor_page_count)
-        return (usedPages * pageSize / 1e9, totalBytes / 1e9)
+        let usedGB = usedPages * pageSize / 1_000_000_000
+        return (usedGB, totalGB)
     }
 
     // MARK: Disk (FileManager)
@@ -163,6 +170,8 @@ final class SystemStatsViewModel: ObservableObject {
             let total = attrs[.systemSize] as? Int64,
             let free = attrs[.systemFreeSize] as? Int64
         else { return (0, 0) }
-        return (Double(total - free) / 1e9, Double(total) / 1e9)
+        let totalGB = Double(total) / 1_000_000_000
+        let usedGB  = Double(total - free) / 1_000_000_000
+        return (usedGB, totalGB)
     }
 }
