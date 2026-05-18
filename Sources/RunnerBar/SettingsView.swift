@@ -1,26 +1,27 @@
-// swiftlint:disable file_length type_body_length
 import ServiceManagement
 import SwiftUI
+
 // MARK: - SettingsView
-/// Settings view — complete implementation for all phases 1-6.
-///
-/// HEIGHT CONTRACT:
-/// headerBar is OUTSIDE the ScrollView — back button always visible.
-/// ScrollView uses maxHeight: .infinity to fill all remaining panel space.
-/// AppDelegate.resizeAndRepositionPanel() clamps the panel to 85% visibleFrame.
-/// No extra cap needed here — the panel cap IS the scroll boundary.
-/// ❌ NEVER move headerBar inside the ScrollView.
-/// ❌ NEVER replace .infinity with a fixed number.
-/// ❌ NEVER use GeometryReader for the height.
-/// ❌ NEVER add idealHeight to the root frame.
-///
-/// WIDTH CONTRACT:
-/// .frame(idealWidth: 480) — only idealWidth needed. NSPanel handles bounds.
-/// ❌ NEVER remove idealWidth: 480.
-///
-/// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
-/// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
-/// is major major major.
+// Settings view — complete implementation for all phases 1-6.
+//
+// HEIGHT CONTRACT:
+// headerBar is OUTSIDE the ScrollView — back button always visible.
+// ScrollView uses maxHeight: .infinity to fill all remaining panel space.
+// AppDelegate.resizeAndRepositionPanel() clamps the panel to 85% visibleFrame.
+// No extra cap needed here — the panel cap IS the scroll boundary.
+// ❌ NEVER move headerBar inside the ScrollView.
+// ❌ NEVER replace .infinity with a fixed number.
+// ❌ NEVER use GeometryReader for the height.
+// ❌ NEVER add idealHeight to the root frame.
+//
+// WIDTH CONTRACT:
+// .frame(idealWidth: 480) — only idealWidth needed. NSPanel handles bounds.
+// ❌ NEVER remove idealWidth: 480.
+//
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
+// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
+// is major major major.
+// swiftlint:disable:next type_body_length
 struct SettingsView: View {
     let onBack: () -> Void
     @ObservedObject var store: RunnerStoreObservable
@@ -242,17 +243,13 @@ struct SettingsView: View {
                 case .corruptInstall:
                     log("SettingsView > performResume main — CORRUPT INSTALL: reverting isRunning and setting warning for \(runner.runnerName)")
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
-                    log("SettingsView > performResume main — calling setLifecycleWarning with corrupt install message for \(runner.runnerName)")
                     LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ corrupt install")
-                    log("SettingsView > performResume main — setLifecycleWarning done for \(runner.runnerName), displayStatus should now be: ⚠ corrupt install")
                 case .failed(let msg):
                     log("SettingsView > performResume main — FAILED (\(msg)): reverting isRunning and setting warning for \(runner.runnerName)")
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
                     let shortMsg = msg.components(separatedBy: "\n")
                         .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
-                    log("SettingsView > performResume main — calling setLifecycleWarning with message=\(shortMsg) for \(runner.runnerName)")
                     LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(shortMsg)")
-                    log("SettingsView > performResume main — setLifecycleWarning done for \(runner.runnerName)")
                 }
                 log("SettingsView > performResume main — calling refresh() for \(runner.runnerName)")
                 LocalRunnerStore.shared.refresh()
