@@ -1,4 +1,3 @@
-// swiftlint:disable file_length type_body_length
 import ServiceManagement
 import SwiftUI
 // MARK: - SettingsView
@@ -21,6 +20,7 @@ import SwiftUI
 /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 /// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
 /// is major major major.
+// swiftlint:disable:next type_body_length
 struct SettingsView: View {
     let onBack: () -> Void
     @ObservedObject var store: RunnerStoreObservable
