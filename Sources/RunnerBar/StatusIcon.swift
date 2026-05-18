@@ -52,8 +52,10 @@ struct StatusIcon {
         color.withAlphaComponent(0.15).setFill()
         bgPath.fill()
 
+        // swiftlint:disable:next operator_usage_whitespace
+        let fontSize = size * 0.55
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: size * 0.55, weight: .bold),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
             .foregroundColor: color
         ]
         let attrStr = NSAttributedString(string: icon, attributes: attrs)
