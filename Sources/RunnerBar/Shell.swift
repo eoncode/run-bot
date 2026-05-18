@@ -19,29 +19,32 @@ enum Shell {
     // UNDER ANY CIRCUMSTANCE.
     @discardableResult
     static func run(_ command: String, timeout: TimeInterval = 20) -> Result {
+        log("Shell.run › ENTER command=\(command) timeout=\(timeout)s thread=\(Thread.current)")
         let process = makeProcess(command)
         let (outPipe, errPipe) = attachPipes(to: process)
         do {
             try process.run()
         } catch {
-            log("Shell.run › launch failed for command=\(command) error=\(error.localizedDescription)")
+            log("Shell.run › LAUNCH FAILED command=\(command) error=\(error.localizedDescription)")
             return Result(output: error.localizedDescription, exitCode: -1)
         }
-        log("Shell.run › launched command=\(command) timeout=\(timeout)s pid=\(process.processIdentifier)")
+        log("Shell.run › launched pid=\(process.processIdentifier) command=\(command) — waiting up to \(timeout)s")
         let sema = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .utility).async {
             process.waitUntilExit()
+            log("Shell.run › process exited pid=\(process.processIdentifier) status=\(process.terminationStatus) command=\(command)")
             sema.signal()
         }
-        if sema.wait(timeout: .now() + timeout) == .timedOut {
-            log("Shell.run › TIMEOUT after \(timeout)s — terminating command=\(command)")
+        let waitResult = sema.wait(timeout: .now() + timeout)
+        if waitResult == .timedOut {
+            log("Shell.run › ⏰ TIMEOUT after \(timeout)s — terminating pid=\(process.processIdentifier) command=\(command)")
             process.terminate()
             _ = errPipe
             return Result(output: "", exitCode: -1)
         }
         let output = readOutput(from: outPipe)
         _ = errPipe
-        log("Shell.run › done command=\(command) exit=\(process.terminationStatus) output=\(output.count)b")
+        log("Shell.run › EXIT command=\(command) status=\(process.terminationStatus) outputBytes=\(output.count)")
         return Result(output: output, exitCode: process.terminationStatus)
     }
 
@@ -69,12 +72,14 @@ enum Shell {
 // swiftlint:enable function_body_length
 
 // Backward-compatibility shim.
-// Legacy call-sites use shell("cmd", timeout: N) -> String.
 // timeout is now forwarded to Shell.run which enforces it via DispatchSemaphore.
 // ⚠️ NEVER ignore the timeout parameter here again — that was the bug (ref #477).
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE.
 @discardableResult
 func shell(_ command: String, timeout: TimeInterval = 20) -> String {
-    Shell.run(command, timeout: timeout).output
+    log("shell() shim › command=\(command) timeout=\(timeout)")
+    let result = Shell.run(command, timeout: timeout).output
+    log("shell() shim › returned \(result.count)b for command=\(command)")
+    return result
 }

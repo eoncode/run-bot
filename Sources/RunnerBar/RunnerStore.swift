@@ -4,15 +4,10 @@ import Foundation
 
 // MARK: - AggregateStatus
 
-/// Represents the combined online/offline status across all registered runners.
 enum AggregateStatus {
-    /// All registered runners are online.
     case allOnline
-    /// At least one runner is online and at least one is offline.
     case someOffline
-    /// All registered runners are offline, or no runners are registered.
     case allOffline
-    /// Emoji dot representation used in log output.
     var dot: String {
         switch self {
         case .allOnline: return "🟢"
@@ -20,7 +15,6 @@ enum AggregateStatus {
         case .allOffline: return "⚫"
         }
     }
-    /// SF Symbol name for SwiftUI `Image(systemName:)` calls.
     var symbolName: String {
         switch self {
         case .allOnline: return "circle.fill"
@@ -32,48 +26,23 @@ enum AggregateStatus {
 
 // MARK: - RunnerStore
 
-/// Singleton polling store. Coordinates GitHub runner + job fetching on an adaptive interval.
-///
-/// Idle interval is read from `SettingsStore.shared.pollingInterval` and reacts to live changes
-/// via a Combine subscription (no restart required when the user changes the stepper).
-/// Active-job interval remains fixed at 10 s for responsiveness.
-/// Call `start()` once at launch to begin polling.
-/// Subscribe to `onChange` to be notified after each poll completes.
 final class RunnerStore {
-    /// Shared singleton — single source of truth for runner and job state.
     static let shared = RunnerStore()
 
-    /// Currently known self-hosted runners. Main-thread only.
     private(set) var runners: [Runner] = []
-    /// Jobs to display: live + recently completed (dimmed). Capped at 3. Main-thread only.
     private(set) var jobs: [ActiveJob] = []
-    /// Action groups to display: live + recently completed (dimmed). Capped at 5. Main-thread only.
     private(set) var actions: [ActionGroup] = []
 
-    // ⚠️ REGRESSION GUARD — completed job persistence (ref issue #54)
-    // prevLiveJobs: full snapshot of LIVE jobs from the previous poll.
-    // completedCache: ONLY reliable source of done jobs. NEVER clear between polls.
     private var prevLiveJobs: [Int: ActiveJob] = [:]
     private var completedCache: [Int: ActiveJob] = [:]
-
-    // Action group persistence (mirrors completedCache pattern).
-    // Key is head_sha — stable across polls even as run IDs change.
     private var prevLiveGroups: [String: ActionGroup] = [:]
     private var actionGroupCache: [String: ActionGroup] = [:]
 
-    /// True when the most recent poll detected a GitHub rate-limit response.
     private(set) var isRateLimited = false
-
-    /// One-shot adaptive poll timer. Rescheduled by `scheduleTimer()` after each fetch.
     private var timer: Timer?
-
-    /// Combine cancellable — reacts to user changes to SettingsStore.pollingInterval.
     private var intervalCancellable: AnyCancellable?
-
-    /// Called on the main thread after each poll completes.
     var onChange: (() -> Void)?
 
-    /// Derives the aggregate runner status from the current `runners` array.
     var aggregateStatus: AggregateStatus {
         guard !runners.isEmpty else { return .allOffline }
         let onlineCount = runners.filter { $0.status == "online" }.count
@@ -83,16 +52,16 @@ final class RunnerStore {
     }
 
     private init() {
-        // dropFirst(1) skips the initial emission — start() handles the first schedule.
+        log("RunnerStore › init")
         intervalCancellable = SettingsStore.shared.$pollingInterval
             .dropFirst(1)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+            .sink { [weak self] newInterval in
+                log("RunnerStore › pollingInterval changed to \(newInterval) — rescheduling timer")
                 self?.scheduleTimer()
             }
     }
 
-    /// Starts (or restarts) the polling timer and fires an immediate fetch.
     func start() {
         let scopes = ScopeStore.shared.scopes
         log("RunnerStore › start — scopes=\(scopes)")
@@ -100,11 +69,10 @@ final class RunnerStore {
             log("RunnerStore › ⚠️ start called but ScopeStore.shared.scopes is EMPTY — actions will not load")
         }
         timer?.invalidate()
+        log("RunnerStore › start — calling fetch()")
         fetch()
     }
 
-    /// Schedules the next one-shot poll timer using an adaptive interval.
-    /// Idle base interval comes from `SettingsStore.shared.pollingInterval`.
     private func scheduleTimer() {
         timer?.invalidate()
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
@@ -114,37 +82,50 @@ final class RunnerStore {
         let hasActive = hasActiveJobs || hasActiveActions
         let baseIdle = max(10, SettingsStore.shared.pollingInterval)
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
-        log("RunnerStore › next poll in \(Int(interval))s (active=\(hasActive) rateLimited=\(isRateLimited))")
+        log("RunnerStore › scheduleTimer — next poll in \(Int(interval))s (hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle))")
         timer = Timer.scheduledTimer(
             withTimeInterval: interval,
             repeats: false
         ) { [weak self] _ in
+            log("RunnerStore › timer fired — calling fetch()")
             self?.fetch()
         }
     }
 
-    /// Fetches runners, jobs, and action groups for all scopes on a background thread.
     func fetch() {
         let scopesSnapshot = ScopeStore.shared.scopes
-        log("RunnerStore › fetch — scopesSnapshot=\(scopesSnapshot)")
+        log("RunnerStore › fetch ENTER — scopesSnapshot=\(scopesSnapshot) thread=\(Thread.isMainThread ? "main" : "bg")")
         if scopesSnapshot.isEmpty {
-            log("RunnerStore › ⚠️ fetch called but scopes snapshot is EMPTY — buildGroupState will produce no actions")
+            log("RunnerStore › ⚠️ fetch — scopes snapshot is EMPTY — buildGroupState will produce no actions")
         }
         let snapPrev = prevLiveJobs
         let snapCache = completedCache
         let snapPrevGroups = prevLiveGroups
         let snapGroupCache = actionGroupCache
+        log("RunnerStore › fetch — dispatching background block (qos=.background) snapPrev=\(snapPrev.count) snapCache=\(snapCache.count) snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count)")
         DispatchQueue.global(qos: .background).async { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                log("RunnerStore › fetch background — self is nil, aborting")
+                return
+            }
+            log("RunnerStore › fetch background — START thread=\(Thread.current)")
             ghIsRateLimited = false
+            log("RunnerStore › fetch background — calling fetchAndEnrichRunners()")
             let enrichedRunners = self.fetchAndEnrichRunners()
+            log("RunnerStore › fetch background — fetchAndEnrichRunners() returned \(enrichedRunners.count) runner(s)")
+            log("RunnerStore › fetch background — calling buildJobState()")
             let jobResult = self.buildJobState(snapPrev: snapPrev, snapCache: snapCache)
+            log("RunnerStore › fetch background — buildJobState() returned display=\(jobResult.display.count) newCache=\(jobResult.newCache.count)")
+            log("RunnerStore › fetch background — calling buildGroupState()")
             let groupResult = self.buildGroupState(
                 snapPrevGroups: snapPrevGroups,
                 snapGroupCache: snapGroupCache,
                 jobCache: jobResult.newCache
             )
+            log("RunnerStore › fetch background — buildGroupState() returned display=\(groupResult.display.count)")
+            log("RunnerStore › fetch background — dispatching to main thread")
             DispatchQueue.main.async {
+                log("RunnerStore › fetch main — assigning results: runners=\(enrichedRunners.count) jobs=\(jobResult.display.count) actions=\(groupResult.display.count)")
                 self.runners = enrichedRunners
                 self.jobs = jobResult.display
                 self.completedCache = jobResult.newCache
@@ -153,24 +134,33 @@ final class RunnerStore {
                 self.actionGroupCache = groupResult.newGroupCache
                 self.prevLiveGroups = groupResult.newPrevLiveGroups
                 self.isRateLimited = ghIsRateLimited
-                log("RunnerStore › fetch complete — actions.count=\(groupResult.display.count) jobs.count=\(jobResult.display.count)")
+                log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) isRateLimited=\(ghIsRateLimited)")
+                log("RunnerStore › fetch complete — calling onChange (isNil=\(self.onChange == nil))")
                 self.onChange?()
+                log("RunnerStore › fetch complete — onChange called, scheduling next timer")
                 self.scheduleTimer()
             }
         }
+        log("RunnerStore › fetch EXIT (background block dispatched)")
     }
 
-    // MARK: - Runner enrichment
-
-    /// Fetches all runners across all scopes and assigns ps-based CPU/MEM metrics by slot index.
     func fetchAndEnrichRunners() -> [Runner] {
+        log("RunnerStore › fetchAndEnrichRunners ENTER")
         var allRunners: [Runner] = []
-        for scope in ScopeStore.shared.scopes {
-            allRunners.append(contentsOf: fetchRunners(for: scope))
+        let scopes = ScopeStore.shared.scopes
+        log("RunnerStore › fetchAndEnrichRunners — scopes=\(scopes)")
+        for scope in scopes {
+            log("RunnerStore › fetchAndEnrichRunners — fetching runners for scope=\(scope)")
+            let fetched = fetchRunners(for: scope)
+            log("RunnerStore › fetchAndEnrichRunners — scope=\(scope) returned \(fetched.count) runner(s)")
+            allRunners.append(contentsOf: fetched)
         }
+        log("RunnerStore › fetchAndEnrichRunners — total runners before metrics=\(allRunners.count) — calling allWorkerMetrics()")
         let metrics = allWorkerMetrics()
+        log("RunnerStore › fetchAndEnrichRunners — allWorkerMetrics() returned \(metrics.count) metric(s)")
         var busyRunners = allRunners.filter { $0.busy }
         var idleRunners = allRunners.filter { !$0.busy }
+        log("RunnerStore › fetchAndEnrichRunners — busy=\(busyRunners.count) idle=\(idleRunners.count)")
         for idx in busyRunners.indices {
             busyRunners[idx].metrics = idx < metrics.count ? metrics[idx] : nil
         }
@@ -178,6 +168,8 @@ final class RunnerStore {
             let slotIdx = busyRunners.count + idx
             idleRunners[idx].metrics = slotIdx < metrics.count ? metrics[slotIdx] : nil
         }
-        return busyRunners + idleRunners
+        let result = busyRunners + idleRunners
+        log("RunnerStore › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)")
+        return result
     }
 }
