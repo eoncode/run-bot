@@ -211,7 +211,6 @@ struct AddRunnerSheet: View {
     @ViewBuilder
     private var addExistingFormBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-
             // Folder picker row
             VStack(alignment: .leading, spacing: 4) {
                 Text("Runner install folder").font(.caption).foregroundColor(.secondary)
@@ -239,6 +238,7 @@ struct AddRunnerSheet: View {
                 labeledReadOnly("Runner name (detected)", value: detectedName)
 
                 if detectedGitHubURL.isEmpty {
+                    // Fallback: let user supply the GitHub URL manually
                     VStack(alignment: .leading, spacing: 4) {
                         Text("GitHub URL").font(.caption).foregroundColor(.secondary)
                         TextField("https://github.com/owner/repo", text: $githubURLOverride)
@@ -347,6 +347,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Helpers (Add pre-existing)
 
+    /// The GitHub URL to use for the import: detected from .runner or the manual override.
     private var effectiveGitHubURL: String {
         detectedGitHubURL.isEmpty ? githubURLOverride.trimmingCharacters(in: .whitespaces)
                                   : detectedGitHubURL
@@ -359,6 +360,7 @@ struct AddRunnerSheet: View {
             && !effectiveGitHubURL.isEmpty
     }
 
+    /// Checks whether a LaunchAgent plist already exists for this runner name.
     private func checkDuplicate(runnerName: String) -> Bool {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents").path
@@ -371,11 +373,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Actions (Add pre-existing)
 
-    /// Opens an NSOpenPanel restricted to directories.
-    ///
-    /// The panel is shown at `.modalPanel` window level so it floats above the
-    /// status-bar popover (which sits at `.popUpMenu` level). Without this the
-    /// panel renders *behind* the popover and is unreachable.
+    /// Opens an NSOpenPanel restricted to directories, reads and validates the .runner JSON.
     private func pickExistingFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -383,21 +381,20 @@ struct AddRunnerSheet: View {
         panel.allowsMultipleSelection = false
         panel.message = "Select the runner install folder (must contain a .runner file)"
         panel.prompt = "Select"
-        // Raise the panel above the status-bar popover.
-        panel.level = .modalPanel
-        // Ensure the app is frontmost so the panel receives focus correctly.
-        NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        // Reset previous state
         resetExistingState()
         existingDir = url.path
 
+        // Validate .runner file is present
         let runnerFileURL = url.appendingPathComponent(".runner")
         guard FileManager.default.fileExists(atPath: runnerFileURL.path) else {
             existingError = "No .runner file found in the selected folder. Is this a valid runner install directory?"
             return
         }
 
+        // Decode .runner JSON
         guard let data = try? Data(contentsOf: runnerFileURL) else {
             existingError = "Could not read .runner file."
             return
@@ -415,14 +412,18 @@ struct AddRunnerSheet: View {
 
         detectedName = json.runnerName ?? url.lastPathComponent
         detectedGitHubURL = json.gitHubUrl ?? ""
+
+        // Check for duplicate
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
         log("AddRunnerSheet › pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
     }
 
+    /// Derives scope from the GitHub URL, writes the LaunchAgent plist, and dismisses.
     private func importExistingRunner() {
         guard canImport else { return }
 
+        // Derive scope: strip "https://github.com/" prefix
         let scope = effectiveGitHubURL
             .replacingOccurrences(of: "https://github.com/", with: "")
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -444,6 +445,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - State reset helpers
 
+    /// Resets all "Add new" form state. Called when switching modes.
     private func resetAddNewState() {
         runnerName       = ""
         labelsText       = "self-hosted,macOS"
@@ -461,6 +463,7 @@ struct AddRunnerSheet: View {
         }
     }
 
+    /// Resets all "Add pre-existing" form state. Called when switching modes or re-picking folder.
     private func resetExistingState() {
         existingDir       = ""
         detectedName      = ""
@@ -595,6 +598,12 @@ struct AddRunnerSheet: View {
 
     // MARK: - Plist writer (shared by both modes)
 
+    /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/`.
+    /// The plist contains the `WorkingDirectory` key so `LocalRunnerScanner`
+    /// can locate the runner on every scan without any UserDefaults persistence.
+    ///
+    /// Plist filename format: `actions.runner.<owner>.<repo>.<runnerName>.plist`
+    /// For org-scoped runners `repo` is the org name (same component, single part).
     func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -604,10 +613,8 @@ struct AddRunnerSheet: View {
         let label      = "actions.runner.\(owner).\(repo).\(runnerName)"
         let plistURL   = launchAgentsDir.appendingPathComponent("\(label).plist")
 
-        let plist: NSDictionary = [
-            "Label": label,
-            "WorkingDirectory": workingDirectory,
-        ]
+        // swiftlint:disable:next operator_usage_whitespace
+        let plist: NSDictionary = ["Label": label, "WorkingDirectory": workingDirectory]
         do {
             try FileManager.default.createDirectory(
                 at: launchAgentsDir, withIntermediateDirectories: true)
@@ -620,6 +627,8 @@ struct AddRunnerSheet: View {
 
     // MARK: - Process helpers (Add new)
 
+    /// Runs `./config.sh --url … --token … --name … --unattended`.
+    /// Timeout: 120 s. Blocking — call only from a background thread.
     private func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) -> Int32 {
@@ -656,6 +665,7 @@ struct AddRunnerSheet: View {
         return task.terminationStatus
     }
 
+    /// Runs a simple process synchronously. Blocking — call only from a background thread.
     private func runSimpleProcess(_ executable: String, args: [String]) -> Int32 {
         let task = Process()
         task.executableURL  = URL(fileURLWithPath: executable)
