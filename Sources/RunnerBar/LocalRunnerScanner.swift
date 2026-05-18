@@ -159,11 +159,35 @@ struct LocalRunnerScanner {
             rawPaths.append(extra)
         }
 
-        let searchPaths = rawPaths.map { "'\($0)'" }.joined(separator: " ")
-        let raw = shell(
-            "find \(searchPaths) -maxdepth 6 -name '.runner' 2>/dev/null",
-            timeout: 15
-        )
+        // Use Process argv directly — no shell, no quoting, no injection surface.
+        // Paths are passed as separate elements so special characters are handled safely.
+        let task = Process()
+        let pipe = Pipe()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+        task.arguments = rawPaths + ["-maxdepth", "6", "-name", ".runner"]
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        var outputData = Data()
+        let lock = NSLock()
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            lock.lock(); outputData.append(chunk); lock.unlock()
+        }
+        do { try task.run() } catch {
+            log("LocalRunnerScanner › find launch error: \(error)")
+            pipe.fileHandleForReading.readabilityHandler = nil
+            return []
+        }
+        let timeoutItem = DispatchWorkItem { task.terminate() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeoutItem)
+        task.waitUntilExit()
+        timeoutItem.cancel()
+        pipe.fileHandleForReading.readabilityHandler = nil
+        let tail = pipe.fileHandleForReading.readDataToEndOfFile()
+        if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
+
+        let raw = String(data: outputData, encoding: .utf8) ?? ""
         guard !raw.isEmpty else { return [] }
 
         return raw.components(separatedBy: "\n")
