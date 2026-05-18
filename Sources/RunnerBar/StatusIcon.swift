@@ -43,8 +43,8 @@ struct StatusIcon {
 
     /// Renders the status icon as a square `NSImage` suitable for the menu bar.
     /// - Parameter size: Width and height in points (default 18).
-    // swiftlint:disable operator_usage_whitespace vertical_whitespace_opening_braces
     func image(size: CGFloat = 18) -> NSImage {
+        // swiftlint:disable operator_usage_whitespace vertical_whitespace_opening_braces
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
         let iconSize = size - 2
@@ -66,6 +66,6 @@ struct StatusIcon {
         img.unlockFocus()
         img.isTemplate = false
         return img
+        // swiftlint:enable operator_usage_whitespace vertical_whitespace_opening_braces
     }
-    // swiftlint:enable operator_usage_whitespace vertical_whitespace_opening_braces
 }
