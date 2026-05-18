@@ -12,8 +12,8 @@ enum Shell {
 
     /// Runs `command` in `/bin/zsh -c` and returns the trimmed output + exit code.
     @discardableResult
-    // swiftlint:disable:next function_body_length
     static func run(_ command: String) -> Result {
+        // swiftlint:disable function_body_length
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-c", command]
@@ -33,6 +33,7 @@ enum Shell {
         let raw = String(data: data, encoding: .utf8)
         let output = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return Result(output: output, exitCode: process.terminationStatus)
+        // swiftlint:enable function_body_length
     }
 }
 

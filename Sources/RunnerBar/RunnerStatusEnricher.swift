@@ -45,6 +45,7 @@ struct RunnerStatusEnricher {
 
     // MARK: - Private helpers
 
+    // swiftlint:disable operator_usage_whitespace
     private func buildAPILookup(
         for runners: [RunnerModel]
     ) -> (byID: [Int: APIRunner], byName: [String: APIRunner]) {
@@ -90,6 +91,7 @@ struct RunnerStatusEnricher {
         }
         return (byID, byName)
     }
+    // swiftlint:enable operator_usage_whitespace
 
     /// Applies GitHub API status to a single `RunnerModel`, logging divergence.
     private func applyEnrichment(
