@@ -22,7 +22,7 @@ import SwiftUI
 //
 // HOW THE PANEL WORKS:
 // 1. Panel is a borderless, non-activating NSPanel.
-// 2. Position is computed from status button's window frame (screen coords):
+// 2. Position is computed from status button’s window frame (screen coords):
 //      statusItemRect = button.window!.frame   ← already in screen coords
 //      panelX = statusItemRect.midX - contentW/2   ← re-centred each resize
 //      panelTopY = statusItemRect.minY - gap       ← locked at open time
@@ -48,7 +48,7 @@ import SwiftUI
 // the panel under the status button.
 // ❌ NEVER restore idealWidth in ActionDetailView — use minWidth there.
 // ❌ NEVER hardcode a fixedWidth — NSPanel has no anchor, any width is safe.
-// ❌ NEVER remove minWidth: 560 from ActionDetailView — AppDelegate's floor (minWidth = 280)
+// ❌ NEVER remove minWidth: 560 from ActionDetailView — AppDelegate’s floor (minWidth = 280)
 //    is lower; ActionDetailView needs its own content minWidth of 560.
 //
 // INITIAL WIDTH (openPanel):
@@ -63,7 +63,7 @@ import SwiftUI
 // navigate(to:) swaps rootView synchronously. SwiftUI then schedules a layout pass
 // and fires the preferredContentSize KVO — async on the main queue. Between the
 // navigate() call and the KVO fire there is at least one frame where arrowX still
-// holds the value computed for the *previous* view's panel frame. If the new view
+// holds the value computed for the *previous* view’s panel frame. If the new view
 // has a different width, resizeAndRepositionPanel() moves the panel, invalidating
 // the stored arrowX. Fix: call resizeAndRepositionPanel() synchronously inside
 // navigate(to:) immediately after swapping rootView, so arrowX is always
@@ -100,7 +100,7 @@ import SwiftUI
 
 /// Represents the currently visible navigation screen.
 ///
-/// Persisted in `AppDelegate.savedNavState` so the panel can restore the user's
+/// Persisted in `AppDelegate.savedNavState` so the panel can restore the user’s
 /// position when it is re-opened after being dismissed. Each case maps 1-to-1 to
 /// a view factory method on `AppDelegate`.
 private enum NavState {
@@ -131,6 +131,10 @@ private enum NavState {
     /// The Settings sheet.
     /// Created by `settingsView()`
     case settings
+
+    /// Runner detail drill-down reached from SettingsView runner row tap. (#491)
+    /// Created by `runnerDetailView(runner:)`
+    case runnerDetail(RunnerModel)
 }
 
 // MARK: - AppDelegate
@@ -181,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
     /// Views declare their own, larger minWidth/idealWidth — this is the AppDelegate floor only.
-    /// ❌ NEVER change from 280 without also reviewing each view's own minWidth/idealWidth.
+    /// ❌ NEVER change from 280 without also reviewing each view’s own minWidth/idealWidth.
     private static let minWidth: CGFloat = 280
 
     private var maxWidth: CGFloat {
@@ -366,9 +370,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // We must reset the hosting view to a live mainView() so all navigation
         // callbacks (prefs button, action rows, inline job rows) are wired up for
         // the next open. However, mainView() sets savedNavState = nil, which would
-        // lose the user's position for the restore-on-reopen feature (#385).
+        // lose the user’s position for the restore-on-reopen feature (#385).
         // Fix: capture savedNavState before calling mainView(), then restore it
-        // afterwards. openPanel()'s validatedView(for: savedNavState) path works
+        // afterwards. openPanel()’s validatedView(for: savedNavState) path works
         // as before, and the main-screen path now has live callbacks instead of
         // dead no-op stubs.
         // ❌ NEVER replace this with a no-op stub PopoverMainView — that breaks
@@ -575,7 +579,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.navigate(to: self.mainView())
             },
+            onSelectRunner: { [weak self] runner in
+                guard let self else { return }
+                self.navigate(to: self.runnerDetailView(runner: runner))
+            },
             store: observable
+        ))
+    }
+
+    /// #491: RunnerDetailView drill-down from SettingsView runner row.
+    private func runnerDetailView(runner: RunnerModel) -> AnyView {
+        savedNavState = .runnerDetail(runner)
+        return wrapEnv(RunnerDetailView(
+            runner: runner,
+            onBack: { [weak self] in
+                guard let self else { return }
+                self.navigate(to: self.settingsView())
+            }
         ))
     }
 
@@ -616,6 +636,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return logViewFromAction(job: liveJob, step: step, group: liveGroup)
         case .settings:
             return settingsView()
+        case .runnerDetail(let runner):
+            // Re-resolve from live store so the detail view shows fresh data on restore.
+            let live = LocalRunnerStore.shared.runners.first(where: { $0.id == runner.id }) ?? runner
+            return runnerDetailView(runner: live)
         }
     }
 
@@ -637,7 +661,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let panel else { return }
 
         // Seed observable from store before showing the panel so the view never
-        // opens with stale/empty state even if onChange hasn't fired yet.
+        // opens with stale/empty state even if onChange hasn’t fired yet.
         log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
 
@@ -682,7 +706,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if NSRunningApplication.current != NSWorkspace.shared.frontmostApplication {
                 // ⚠️ closePanel() is @MainActor-isolated. The NotificationCenter callback
-                // runs on .main queue but is nonisolated in Swift's concurrency model.
+                // runs on .main queue but is nonisolated in Swift’s concurrency model.
                 // Task { @MainActor in } gives the compiler a typed hop without
                 // changing the runtime behaviour (already on main thread).
                 Task { @MainActor [weak self] in self?.closePanel() }

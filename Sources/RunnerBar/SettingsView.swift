@@ -32,6 +32,8 @@ private enum SettingsURIs {
 // swiftlint:disable:next type_body_length
 struct SettingsView: View {
     let onBack: () -> Void
+    /// #491: Called when the user taps a runner row; navigates to RunnerDetailView.
+    let onSelectRunner: (RunnerModel) -> Void
     @ObservedObject var store: RunnerStoreObservable
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var notifications = NotificationPrefsStore.shared
@@ -43,7 +45,6 @@ struct SettingsView: View {
     @State private var isAuthenticated = (githubToken() != nil)
     @State private var hasLoadedOnce = false
     @State private var runnerPendingRemoval: RunnerModel?
-    @State private var runnerBeingConfigured: RunnerModel?
     @State private var showAddRunnerSheet = false
     @State private var removeErrorMessage: String?
     @State private var isSigningOut = false
@@ -78,17 +79,11 @@ struct SettingsView: View {
         .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
         .onDisappear { ScopeStore.shared.onMutate = nil }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
-        .sheet(item: $runnerBeingConfigured, content: configSheet)
         .modifier(removalAlertModifier)
     }
 
     private func addRunnerSheet() -> some View {
         AddRunnerSheet(isPresented: $showAddRunnerSheet) { localRunnerStore.refresh() }
-    }
-    private func configSheet(_ runner: RunnerModel) -> some View {
-        RunnerConfigSheet(runner: runner, isPresented: $runnerBeingConfigured) {
-            localRunnerStore.refresh()
-        }
     }
     private var removalAlertModifier: RemovalAlertModifier {
         RemovalAlertModifier(
@@ -185,8 +180,8 @@ struct SettingsView: View {
     }
 
     private func localRunnerRow(_ runner: RunnerModel) -> some View {
-        // #490: Full row is tappable — navigates to RunnerDetailView (stub until #491 lands).
-        Button(action: { runnerBeingConfigured = runner }) {
+        // #490 / #491: Full row navigates to RunnerDetailView via onSelectRunner callback.
+        Button(action: { onSelectRunner(runner) }) {
             localRunnerRowContent(runner)
         }
         .buttonStyle(.plain)
