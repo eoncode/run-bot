@@ -75,7 +75,7 @@ struct AddRunnerSheet: View {
     @State private var detectedName = ""
     /// GitHub URL parsed from the `.runner` JSON inside `existingDir`.
     @State private var detectedGitHubURL = ""
-    /// Shown when the selected folder has no valid `.runner` file or it can't be parsed.
+    /// Shown when the selected folder has no valid `.runner` file or it can’t be parsed.
     @State private var existingError: String?
     /// Editable fallback shown when `.runner` JSON has no `gitHubUrl` (rare, org-scoped runners).
     @State private var githubURLOverride = ""
@@ -211,6 +211,7 @@ struct AddRunnerSheet: View {
     @ViewBuilder
     private var addExistingFormBody: some View {
         VStack(alignment: .leading, spacing: 12) {
+
             // Folder picker row
             VStack(alignment: .leading, spacing: 4) {
                 Text("Runner install folder").font(.caption).foregroundColor(.secondary)
@@ -374,6 +375,11 @@ struct AddRunnerSheet: View {
     // MARK: - Actions (Add pre-existing)
 
     /// Opens an NSOpenPanel restricted to directories, reads and validates the .runner JSON.
+    ///
+    /// Uses `panel.begin(completionHandler:)` (non-blocking) instead of `runModal()`.
+    /// `runModal()` is synchronous and competes with the NSPanel/popover for window
+    /// focus — it always loses and the open panel renders behind the status bar UI.
+    /// `begin(completionHandler:)` lets AppKit handle window ordering natively.
     private func pickExistingFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -381,9 +387,19 @@ struct AddRunnerSheet: View {
         panel.allowsMultipleSelection = false
         panel.message = "Select the runner install folder (must contain a .runner file)"
         panel.prompt = "Select"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        // Reset previous state
+        // Activate the app so the panel can become key window.
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Non-blocking: AppKit handles window ordering correctly for status-bar apps.
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            handlePickedFolder(url)
+        }
+    }
+
+    /// Validates the picked folder and populates the detected-runner state.
+    private func handlePickedFolder(_ url: URL) {
         resetExistingState()
         existingDir = url.path
 
@@ -412,8 +428,6 @@ struct AddRunnerSheet: View {
 
         detectedName = json.runnerName ?? url.lastPathComponent
         detectedGitHubURL = json.gitHubUrl ?? ""
-
-        // Check for duplicate
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
         log("AddRunnerSheet › pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
