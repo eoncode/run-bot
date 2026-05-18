@@ -50,7 +50,8 @@ enum Shell {
 
 // Backward-compatibility shim.
 // Legacy call-sites use shell("cmd", timeout: N) -> String.
+// timeout is intentionally ignored — Shell.run uses Process.waitUntilExit.
 @discardableResult
-func shell(_ command: String, timeout: TimeInterval = 20) -> String {
+func shell(_ command: String, timeout _: TimeInterval = 20) -> String {
     Shell.run(command).output
 }
