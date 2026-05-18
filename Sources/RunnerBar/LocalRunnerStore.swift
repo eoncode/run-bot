@@ -58,6 +58,12 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Optimistic mutations
 
+    func optimisticallyRemove(_ runnerName: String) {
+        log("LocalRunnerStore > optimisticallyRemove — runnerName=\(runnerName) runners.count was \(runners.count)")
+        runners.removeAll { $0.runnerName == runnerName }
+        log("LocalRunnerStore > optimisticallyRemove — done, runners.count=\(runners.count)")
+    }
+
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         let names = runners.map { $0.runnerName }.joined(separator: ", ")
         log("LocalRunnerStore > optimisticallySetRunning runnerName=\(runnerName) isRunning=\(isRunning) — current runners=[\(names)]")

@@ -510,10 +510,16 @@ struct SettingsView: View {
     private func performRemoval() {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil
+        // Optimistically remove from list immediately — the background work (dir delete)
+        // can take several seconds. This makes the UI feel instant.
+        LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
         DispatchQueue.global(qos: .userInitiated).async {
             let ok = RunnerLifecycleService.shared.remove(runner: runner)
             DispatchQueue.main.async {
-                if !ok { removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs." }
+                if !ok {
+                    removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs."
+                    // Put it back by doing a fresh scan
+                }
                 LocalRunnerStore.shared.refresh()
             }
         }
