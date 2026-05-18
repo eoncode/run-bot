@@ -26,7 +26,10 @@ import SwiftUI
 private enum SettingsURIs {
     static let privacyPolicy  = "https://dev.eon.st/runnerbar/privacy"
     static let termsOfService = "https://dev.eon.st/runnerbar/terms"
-    static let gitHubOAuth    = "https://github.com/login/oauth/authorize"
+    /// Opens github.com/login so the user can verify their browser session
+    /// before running `gh auth login` in Terminal. Full OAuth flow is not
+    /// supported here — RunnerBar relies on the gh CLI for authentication.
+    static let gitHubSignIn   = "https://github.com/login"
 }
 
 // swiftlint:disable:next type_body_length
@@ -321,8 +324,10 @@ struct SettingsView: View {
         }
     }
 
-    /// #499: Scope row is now a tappable Button that navigates to ScopeDetailView.
-    /// The inner content is unchanged except for the added chevron on the right.
+    /// #499: Scope row is a tappable Button that navigates to ScopeDetailView.
+    /// Inner toggle and minus use .buttonStyle(.borderless) so they receive their
+    /// own independent hit-testing without leaking the tap to the outer row Button.
+    /// This is VoiceOver-safe — each control gets its own accessibility element.
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopeSettingsStore.displayName(for: entry.scope)
@@ -353,7 +358,8 @@ struct SettingsView: View {
 
                 Spacer()
 
-                // Enable/disable toggle — stopPropagation via simultaneous gesture trick
+                // .buttonStyle(.borderless) gives the toggle its own hit area without
+                // needing simultaneousGesture — correct fix for a11y (VoiceOver safe).
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
                     set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
@@ -362,14 +368,14 @@ struct SettingsView: View {
                 .labelsHidden()
                 .help(entry.isEnabled ? "Pause monitoring" : "Resume monitoring")
                 .scaleEffect(0.8, anchor: .trailing)
-                .simultaneousGesture(TapGesture()) // absorbs tap so row nav isn't triggered
+                .buttonStyle(.borderless)
 
-                // Chevron — navigates to ScopeDetailView
+                // Chevron — visual affordance for drill-down
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundColor(Color.rbTextTertiary)
 
-                // Remove button
+                // Remove button — .buttonStyle(.borderless) ensures independent hit area.
                 Button(action: {
                     ScopeSettingsStore.cleanUp(scope: entry.scope)
                     ScopeStore.shared.remove(id: entry.id)
@@ -379,9 +385,8 @@ struct SettingsView: View {
                         .font(.caption2)
                         .foregroundColor(Color.rbDanger)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .help("Remove scope")
-                .simultaneousGesture(TapGesture()) // absorbs tap so row nav isn't triggered
             }
         }
         .buttonStyle(.plain)
@@ -429,6 +434,15 @@ struct SettingsView: View {
                     .onChange(of: launchAtLogin, perform: applyLaunchAtLogin)
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
+            Divider().padding(.leading, RBSpacing.md)
+            HStack {
+                Text("Show offline runners").font(.system(size: 12)); Spacer()
+                Toggle("", isOn: $settings.showDimmedRunners).toggleStyle(.switch).labelsHidden()
+            }
+            .padding(.horizontal, RBSpacing.md).padding(.top, 6).padding(.bottom, 2)
+            Text("When enabled, runners that are offline or unreachable are shown dimmed in the list.")
+                .font(.caption).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
             Divider().padding(.leading, RBSpacing.md)
             HStack {
                 Text("Polling interval").font(.system(size: 12)); Spacer()
@@ -530,14 +544,19 @@ struct SettingsView: View {
     private func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
 
     private func signInWithGitHub() {
-        guard let url = URL(string: SettingsURIs.gitHubOAuth) else { return }
+        guard let url = URL(string: SettingsURIs.gitHubSignIn) else { return }
         NSWorkspace.shared.open(url)
     }
 
     private func signOutOfGitHub() {
+        guard let ghPath = ghBinaryPath() else {
+            log("SettingsView > signOutOfGitHub: gh not found, skipping logout")
+            isAuthenticated = false
+            return
+        }
         isSigningOut = true
         DispatchQueue.global(qos: .userInitiated).async {
-            _ = shell("/opt/homebrew/bin/gh auth logout --hostname github.com")
+            _ = shell("\(ghPath) auth logout --hostname github.com")
             DispatchQueue.main.async { isAuthenticated = false; isSigningOut = false }
         }
     }
