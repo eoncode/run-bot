@@ -376,10 +376,17 @@ struct AddRunnerSheet: View {
 
     /// Opens an NSOpenPanel restricted to directories, reads and validates the .runner JSON.
     ///
-    /// Uses `panel.begin(completionHandler:)` (non-blocking) instead of `runModal()`.
-    /// `runModal()` is synchronous and competes with the NSPanel/popover for window
-    /// focus — it always loses and the open panel renders behind the status bar UI.
-    /// `begin(completionHandler:)` lets AppKit handle window ordering natively.
+    /// ## Why beginSheetModal + orderFrontRegardless
+    ///
+    /// Status bar apps do not have a regular app window, so `runModal()` and
+    /// plain `begin(completionHandler:)` both render the panel *behind* the
+    /// NSPanel/popover — the panel can’t win the focus contest.
+    ///
+    /// The proven fix (stackoverflow.com/a/75632548, ohanaware.com/swift/macOSOpenPanelSheet):
+    /// - `beginSheetModal(for: NSApp.keyWindow!)` attaches the open panel as a
+    ///   sheet to the currently focused window, so AppKit always brings it front.
+    /// - `orderFrontRegardless()` is called immediately after to force the panel
+    ///   above the popover even when the app is not the active application.
     private func pickExistingFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -388,14 +395,24 @@ struct AddRunnerSheet: View {
         panel.message = "Select the runner install folder (must contain a .runner file)"
         panel.prompt = "Select"
 
-        // Activate the app so the panel can become key window.
         NSApp.activate(ignoringOtherApps: true)
 
-        // Non-blocking: AppKit handles window ordering correctly for status-bar apps.
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            handlePickedFolder(url)
+        if let keyWindow = NSApp.keyWindow {
+            // Preferred path: attach as a sheet to our own window.
+            panel.beginSheetModal(for: keyWindow) { response in
+                guard response == .OK, let url = panel.url else { return }
+                handlePickedFolder(url)
+            }
+        } else {
+            // Fallback: no key window (popover already dismissed), run free-floating.
+            panel.begin { response in
+                guard response == .OK, let url = panel.url else { return }
+                handlePickedFolder(url)
+            }
         }
+        // Force the panel above the popover regardless of app activation state.
+        // Ref: https://stackoverflow.com/a/75632548
+        panel.orderFrontRegardless()
     }
 
     /// Validates the picked folder and populates the detected-runner state.
@@ -613,11 +630,6 @@ struct AddRunnerSheet: View {
     // MARK: - Plist writer (shared by both modes)
 
     /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/`.
-    /// The plist contains the `WorkingDirectory` key so `LocalRunnerScanner`
-    /// can locate the runner on every scan without any UserDefaults persistence.
-    ///
-    /// Plist filename format: `actions.runner.<owner>.<repo>.<runnerName>.plist`
-    /// For org-scoped runners `repo` is the org name (same component, single part).
     func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -641,8 +653,6 @@ struct AddRunnerSheet: View {
 
     // MARK: - Process helpers (Add new)
 
-    /// Runs `./config.sh --url … --token … --name … --unattended`.
-    /// Timeout: 120 s. Blocking — call only from a background thread.
     private func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) -> Int32 {
@@ -679,7 +689,6 @@ struct AddRunnerSheet: View {
         return task.terminationStatus
     }
 
-    /// Runs a simple process synchronously. Blocking — call only from a background thread.
     private func runSimpleProcess(_ executable: String, args: [String]) -> Int32 {
         let task = Process()
         task.executableURL  = URL(fileURLWithPath: executable)
