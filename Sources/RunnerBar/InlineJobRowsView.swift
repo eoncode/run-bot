@@ -55,10 +55,13 @@ private struct JobInlineProgress: View {
 // MARK: - JobRowCard
 /// Single job row: tree-line leader + card background with status, name,
 /// optional inline progress, step count, and elapsed time.
+/// Right-click attaches a job-level context menu via .jobContextMenu.
 private struct JobRowCard: View {
     let job: ActiveJob
     let status: RBStatus
     let isLast: Bool
+    /// The parent group is needed so context menu actions can target the right run/scope.
+    let group: ActionGroup
 
     private var completedSteps: Int {
         job.steps.filter { $0.conclusion != nil || $0.status == "completed" }.count
@@ -71,6 +74,8 @@ private struct JobRowCard: View {
             cardContent
         }
         .padding(.vertical, 1)
+        // ── Job-level context menu (right-click) ────────────────────────────────
+        .jobContextMenu(job: job, group: group)
     }
 
     private var cardContent: some View {
@@ -155,7 +160,8 @@ struct InlineJobRowsView: View {
                         JobRowCard(
                             job: job,
                             status: jobStatus(for: job),
-                            isLast: index == jobs.count - 1
+                            isLast: index == jobs.count - 1,
+                            group: group
                         )
                     }
                 }

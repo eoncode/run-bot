@@ -167,6 +167,8 @@ struct ActionRowView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+        // ── Workflow-level context menu (right-click) ──────────────────────────
+        .workflowContextMenu(group: group)
         .onTapGesture {
             guard !group.jobs.isEmpty else { return }
             withAnimation(.easeInOut(duration: 0.15)) {
