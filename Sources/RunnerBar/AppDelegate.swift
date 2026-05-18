@@ -22,7 +22,7 @@ import SwiftUI
 //
 // HOW THE PANEL WORKS:
 // 1. Panel is a borderless, non-activating NSPanel.
-// 2. Position is computed from status button’s window frame (screen coords):
+// 2. Position is computed from status button's window frame (screen coords):
 //      statusItemRect = button.window!.frame   ← already in screen coords
 //      panelX = statusItemRect.midX - contentW/2   ← re-centred each resize
 //      panelTopY = statusItemRect.minY - gap       ← locked at open time
@@ -48,7 +48,7 @@ import SwiftUI
 // the panel under the status button.
 // ❌ NEVER restore idealWidth in ActionDetailView — use minWidth there.
 // ❌ NEVER hardcode a fixedWidth — NSPanel has no anchor, any width is safe.
-// ❌ NEVER remove minWidth: 560 from ActionDetailView — AppDelegate’s floor (minWidth = 280)
+// ❌ NEVER remove minWidth: 560 from ActionDetailView — AppDelegate's floor (minWidth = 280)
 //    is lower; ActionDetailView needs its own content minWidth of 560.
 //
 // INITIAL WIDTH (openPanel):
@@ -63,7 +63,7 @@ import SwiftUI
 // navigate(to:) swaps rootView synchronously. SwiftUI then schedules a layout pass
 // and fires the preferredContentSize KVO — async on the main queue. Between the
 // navigate() call and the KVO fire there is at least one frame where arrowX still
-// holds the value computed for the *previous* view’s panel frame. If the new view
+// holds the value computed for the *previous* view's panel frame. If the new view
 // has a different width, resizeAndRepositionPanel() moves the panel, invalidating
 // the stored arrowX. Fix: call resizeAndRepositionPanel() synchronously inside
 // navigate(to:) immediately after swapping rootView, so arrowX is always
@@ -100,41 +100,28 @@ import SwiftUI
 
 /// Represents the currently visible navigation screen.
 ///
-/// Persisted in `AppDelegate.savedNavState` so the panel can restore the user’s
+/// Persisted in `AppDelegate.savedNavState` so the panel can restore the user's
 /// position when it is re-opened after being dismissed. Each case maps 1-to-1 to
 /// a view factory method on `AppDelegate`.
 private enum NavState {
     /// The root popover showing runners and the recent-actions list.
-    /// Created by `mainView()`. `savedNavState` is set to `nil` here (no restore needed).
     case main
-
     /// The step list for a single job, reached from the Jobs tab.
-    /// Created by `detailView(job:)`
     case jobDetail(ActiveJob)
-
     /// The raw log for a single step, reached from the Jobs path.
-    /// Created by `logView(job:step:)`
     case stepLog(ActiveJob, JobStep)
-
     /// The flat job list for a commit/PR action group, reached from the Actions tab.
-    /// Created by `actionDetailView(group:)`
     case actionDetail(ActionGroup)
-
     /// The step list for a single job reached via the Actions → job-row path.
-    /// Created by `detailViewFromAction(job:group:)`
     case actionJobDetail(ActiveJob, ActionGroup)
-
     /// The raw log for a single step reached via the Actions → job → step path.
-    /// Created by `logViewFromAction(job:step:group:)`
     case actionStepLog(ActiveJob, JobStep, ActionGroup)
-
     /// The Settings sheet.
-    /// Created by `settingsView()`
     case settings
-
     /// Runner detail drill-down reached from SettingsView runner row tap. (#491)
-    /// Created by `runnerDetailView(runner:)`
     case runnerDetail(RunnerModel)
+    /// Scope detail drill-down reached from SettingsView scope row tap. (#499)
+    case scopeDetail(ScopeEntry)
 }
 
 // MARK: - AppDelegate
@@ -184,8 +171,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let popoverOpenState = PopoverOpenState()
 
     /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
-    /// Views declare their own, larger minWidth/idealWidth — this is the AppDelegate floor only.
-    /// ❌ NEVER change from 280 without also reviewing each view’s own minWidth/idealWidth.
     private static let minWidth: CGFloat = 280
 
     private var maxWidth: CGFloat {
@@ -200,10 +185,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let gap: CGFloat = 2
 
     /// Initial panel width used before SwiftUI has measured content.
-    /// Does NOT need to match any idealWidth (there are none — width is content-driven).
-    /// 320 is a compact default; the panel resizes to actual content on the first KVO fire.
-    /// ❌ NEVER set above maxWidth.
-    /// ❌ NEVER restore to 600 or 720 — those were the old over-wide defaults.
     private static let initPanelWidth: CGFloat = 320
 
     // MARK: - Environment injection
@@ -217,8 +198,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Status icon helpers
 
-    /// Builds the menu bar NSImage from an AggregateStatus using its SF Symbol name.
-    /// ❌ NEVER call makeStatusIcon() — it no longer exists. Use this method instead.
     private func menuBarImage(for status: AggregateStatus) -> NSImage {
         NSImage(systemSymbolName: status.symbolName, accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
@@ -270,9 +249,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self?.resizeAndRepositionPanel() }
         }
 
-        // ⚠️ FIX (#494): Subscribe to LocalRunnerStore.$runners so async scan
-        // completions immediately reload the observable, independent of the
-        // RunnerStore poll cycle.
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -281,11 +257,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // ⚠️ FIX: observable.reload() is called unconditionally on every poll so
-        // SwiftUI sees updates whether the panel is open or closed.
-        // The old !panelIsOpen gate caused actions to appear empty when the panel
-        // opened before the first poll completed. reload() is cheap (array copy)
-        // and does NOT trigger a KVO/size storm — SwiftUI only redraws on diff.
         RunnerStore.shared.onChange = { [weak self] in
             guard let self else { return }
             log("AppDelegate › onChange fired — panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
@@ -297,8 +268,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Status icon
 
-    /// Sets the menu bar icon from `RunnerStore.shared.aggregateStatus`.
-    ///
     /// ❌ NEVER filter by !isDimmed only — dimmed groups can still have in-progress jobs.
     /// ❌ NEVER read RunnerStore.shared.jobs here — it is almost always empty.
     /// ❌ NEVER call makeStatusIcon() — it no longer exists; use menuBarImage(for:).
@@ -310,12 +279,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Panel resize
 
-    /// Resizes and repositions the panel to fit the current preferredContentSize,
-    /// clamped to [minWidth..maxWidth] × [60..maxHeight].
-    ///
-    /// posY is additionally clamped to never fall below visibleFrame.minY so the
-    /// panel cannot slide off the bottom of the screen when the content is tall.
-    ///
     /// ❌ NEVER re-derive panelTopY here.
     /// ❌ NEVER call from a background thread.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
@@ -336,7 +299,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let posX = statusItemRect.midX - contentW / 2
         let rawPosY = topY - totalH
-        // Clamp so the panel never drops below the visible screen area.
         let screenMinY = NSScreen.main?.visibleFrame.minY ?? 0
         let posY = max(rawPosY, screenMinY)
 
@@ -370,9 +332,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // We must reset the hosting view to a live mainView() so all navigation
         // callbacks (prefs button, action rows, inline job rows) are wired up for
         // the next open. However, mainView() sets savedNavState = nil, which would
-        // lose the user’s position for the restore-on-reopen feature (#385).
+        // lose the user's position for the restore-on-reopen feature (#385).
         // Fix: capture savedNavState before calling mainView(), then restore it
-        // afterwards. openPanel()’s validatedView(for: savedNavState) path works
+        // afterwards. openPanel()'s validatedView(for: savedNavState) path works
         // as before, and the main-screen path now has live callbacks instead of
         // dead no-op stubs.
         // ❌ NEVER replace this with a no-op stub PopoverMainView — that breaks
@@ -381,9 +343,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ALLOWED UNDER ANY CIRCUMSTANCE.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let preserved = self.savedNavState   // save before mainView() wipes it
+            let preserved = self.savedNavState
             self.hostingController?.rootView = self.mainView()
-            self.savedNavState = preserved        // restore for openPanel() restore path
+            self.savedNavState = preserved
         }
     }
 
@@ -400,8 +362,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Enrichment helpers
 
-    /// Re-fetches steps for a single job when they are missing or still in-progress.
-    /// Blocking — always call from a background queue.
     nonisolated private func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
         guard job.steps.isEmpty || job.steps.contains(where: { $0.status == "in_progress" }),
               let scope = scopeFromHtmlUrl(job.htmlUrl),
@@ -412,17 +372,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return makeActiveJob(from: fresh, iso: iso, isDimmed: job.isDimmed)
     }
 
-    /// Re-fetches job data for a group when any run has an empty or incomplete job list.
-    ///
-    /// Called on a background queue from onSelectAction before navigating to
-    /// ActionDetailView. Prevents the detail view opening with a blank job list on
-    /// first tap or after a cache miss.
-    ///
-    /// Strategy: if every job in the group already has a conclusion AND none have
-    /// in-progress steps, the group is considered fully enriched and returned as-is.
-    /// Otherwise, we re-fetch jobs for all runs in the group and return an enriched copy.
-    ///
-    /// Blocking — always call from a background queue.
     nonisolated private func enrichGroupIfNeeded(_ group: ActionGroup) -> ActionGroup {
         let fullyEnriched = !group.jobs.isEmpty
             && group.jobs.allSatisfy { $0.conclusion != nil }
@@ -583,6 +532,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.navigate(to: self.runnerDetailView(runner: runner))
             },
+            onSelectScope: { [weak self] entry in
+                guard let self else { return }
+                self.navigate(to: self.scopeDetailView(entry: entry))
+            },
             store: observable
         ))
     }
@@ -592,6 +545,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         savedNavState = .runnerDetail(runner)
         return wrapEnv(RunnerDetailView(
             runner: runner,
+            onBack: { [weak self] in
+                guard let self else { return }
+                self.navigate(to: self.settingsView())
+            }
+        ))
+    }
+
+    /// #499: ScopeDetailView drill-down from SettingsView scope row.
+    private func scopeDetailView(entry: ScopeEntry) -> AnyView {
+        savedNavState = .scopeDetail(entry)
+        // Re-resolve from live store so detail shows the freshest entry on restore.
+        let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) ?? entry
+        return wrapEnv(ScopeDetailView(
+            scopeEntry: live,
             onBack: { [weak self] in
                 guard let self else { return }
                 self.navigate(to: self.settingsView())
@@ -637,9 +604,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .settings:
             return settingsView()
         case .runnerDetail(let runner):
-            // Re-resolve from live store so the detail view shows fresh data on restore.
             let live = LocalRunnerStore.shared.runners.first(where: { $0.id == runner.id }) ?? runner
             return runnerDetailView(runner: live)
+        case .scopeDetail(let entry):
+            // Re-resolve from live store; if scope was removed while panel was closed, fall back to settings.
+            guard let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) else {
+                return settingsView()
+            }
+            return scopeDetailView(entry: live)
         }
     }
 
@@ -660,8 +632,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let statusItemRect = button.window?.frame,
               let panel else { return }
 
-        // Seed observable from store before showing the panel so the view never
-        // opens with stale/empty state even if onChange hasn’t fired yet.
         log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
 
@@ -705,10 +675,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             guard let self else { return }
             if NSRunningApplication.current != NSWorkspace.shared.frontmostApplication {
-                // ⚠️ closePanel() is @MainActor-isolated. The NotificationCenter callback
-                // runs on .main queue but is nonisolated in Swift’s concurrency model.
-                // Task { @MainActor in } gives the compiler a typed hop without
-                // changing the runtime behaviour (already on main thread).
                 Task { @MainActor [weak self] in self?.closePanel() }
             }
         }

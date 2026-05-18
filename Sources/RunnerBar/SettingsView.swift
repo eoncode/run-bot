@@ -32,8 +32,10 @@ private enum SettingsURIs {
 // swiftlint:disable:next type_body_length
 struct SettingsView: View {
     let onBack: () -> Void
-    /// #491: Called when the user taps a runner row; navigates to RunnerDetailView.
+    /// Called when the user taps a runner row; navigates to RunnerDetailView.
     let onSelectRunner: (RunnerModel) -> Void
+    /// #499: Called when the user taps a scope row; navigates to ScopeDetailView.
+    let onSelectScope: (ScopeEntry) -> Void
     @ObservedObject var store: RunnerStoreObservable
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var notifications = NotificationPrefsStore.shared
@@ -79,7 +81,7 @@ struct SettingsView: View {
         .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
         .onDisappear { ScopeStore.shared.onMutate = nil }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
-        .sheet(isPresented: $showAddScopeSheet)  { AddScopeSheet(isPresented: $showAddScopeSheet) }
+        .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .modifier(removalAlertModifier)
     }
 
@@ -235,58 +237,43 @@ struct SettingsView: View {
     // MARK: - Resume / Stop actions
 
     private func performResume(runner: RunnerModel) {
-        log("SettingsView > performResume called runner=\(runner.runnerName) isRunning=\(runner.isRunning) lifecycleWarning=\(runner.lifecycleWarning ?? "none")")
+        log("SettingsView > performResume called runner=\(runner.runnerName)")
         LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
-        log("SettingsView > performResume — optimistic flip done, dispatching to background")
         DispatchQueue.global(qos: .userInitiated).async {
-            log("SettingsView > performResume background — calling RunnerLifecycleService.start for \(runner.runnerName)")
             let result = RunnerLifecycleService.shared.start(runner: runner)
-            log("SettingsView > performResume background — start() returned \(result) for \(runner.runnerName)")
             DispatchQueue.main.async {
-                log("SettingsView > performResume main — handling result=\(result) for \(runner.runnerName)")
                 switch result {
-                case .success:
-                    log("SettingsView > performResume main — SUCCESS, keeping optimistic flip for \(runner.runnerName)")
+                case .success: break
                 case .corruptInstall:
-                    log("SettingsView > performResume main — CORRUPT INSTALL: reverting isRunning and setting warning for \(runner.runnerName)")
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
                     LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ corrupt install")
                 case .failed(let msg):
-                    log("SettingsView > performResume main — FAILED (\(msg)): reverting isRunning and setting warning for \(runner.runnerName)")
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
-                    let shortMsg = msg.components(separatedBy: "\n")
+                    let short = msg.components(separatedBy: "\n")
                         .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
-                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(shortMsg)")
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(short)")
                 }
-                log("SettingsView > performResume main — calling refresh() for \(runner.runnerName)")
                 LocalRunnerStore.shared.refresh()
             }
         }
     }
 
     private func performStop(runner: RunnerModel) {
-        log("SettingsView > performStop called runner=\(runner.runnerName) isRunning=\(runner.isRunning) lifecycleWarning=\(runner.lifecycleWarning ?? "none")")
+        log("SettingsView > performStop called runner=\(runner.runnerName)")
         LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
         DispatchQueue.global(qos: .userInitiated).async {
-            log("SettingsView > performStop background — calling RunnerLifecycleService.stop for \(runner.runnerName)")
             let result = RunnerLifecycleService.shared.stop(runner: runner)
-            log("SettingsView > performStop background — stop() returned \(result) for \(runner.runnerName)")
             DispatchQueue.main.async {
-                log("SettingsView > performStop main — handling result=\(result) for \(runner.runnerName)")
                 switch result {
-                case .success:
-                    log("SettingsView > performStop main — SUCCESS for \(runner.runnerName)")
+                case .success: break
                 case .corruptInstall:
-                    log("SettingsView > performStop main — CORRUPT INSTALL on stop for \(runner.runnerName)")
                     LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ corrupt install")
                 case .failed(let msg):
-                    log("SettingsView > performStop main — FAILED (\(msg)), reverting for \(runner.runnerName)")
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
-                    let shortMsg = msg.components(separatedBy: "\n")
+                    let short = msg.components(separatedBy: "\n")
                         .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
-                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(shortMsg)")
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(short)")
                 }
-                log("SettingsView > performStop main — calling refresh()")
                 LocalRunnerStore.shared.refresh()
             }
         }
@@ -334,47 +321,70 @@ struct SettingsView: View {
         }
     }
 
+    /// #499: Scope row is now a tappable Button that navigates to ScopeDetailView.
+    /// The inner content is unchanged except for the added chevron on the right.
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
-        return HStack(spacing: 8) {
-            // Type badge
-            Text(isRepo ? "Repo" : "Org")
-                .font(.caption2)
-                .foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.rbSurfaceElevated))
-                .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-
-            Text(entry.scope)
-                .font(.system(size: 12))
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Spacer()
-
-            // Enable / disable toggle
-            Toggle("", isOn: Binding(
-                get: { entry.isEnabled },
-                set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
-            ))
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .help(entry.isEnabled ? "Pause monitoring this scope" : "Resume monitoring this scope")
-            .scaleEffect(0.8, anchor: .trailing)
-
-            // Remove button
-            Button(action: {
-                ScopeStore.shared.remove(id: entry.id)
-                RunnerStore.shared.start()
-            }) {
-                Image(systemName: "minus.circle")
+        let displayName = ScopeSettingsStore.displayName(for: entry.scope)
+        return Button(action: { onSelectScope(entry) }) {
+            HStack(spacing: 8) {
+                // Type badge
+                Text(isRepo ? "Repo" : "Org")
                     .font(.caption2)
-                    .foregroundColor(Color.rbDanger)
+                    .foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.rbSurfaceElevated))
+                    .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(displayName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if ScopeSettingsStore.alias(for: entry.scope) != nil {
+                        // Show raw scope string as subtitle when alias is set
+                        Text(entry.scope)
+                            .font(.caption2)
+                            .foregroundColor(Color.rbTextTertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+
+                Spacer()
+
+                // Enable/disable toggle — stopPropagation via simultaneous gesture trick
+                Toggle("", isOn: Binding(
+                    get: { entry.isEnabled },
+                    set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .help(entry.isEnabled ? "Pause monitoring" : "Resume monitoring")
+                .scaleEffect(0.8, anchor: .trailing)
+                .simultaneousGesture(TapGesture()) // absorbs tap so row nav isn't triggered
+
+                // Chevron — navigates to ScopeDetailView
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextTertiary)
+
+                // Remove button
+                Button(action: {
+                    ScopeSettingsStore.cleanUp(scope: entry.scope)
+                    ScopeStore.shared.remove(id: entry.id)
+                    RunnerStore.shared.start()
+                }) {
+                    Image(systemName: "minus.circle")
+                        .font(.caption2)
+                        .foregroundColor(Color.rbDanger)
+                }
+                .buttonStyle(.plain)
+                .help("Remove scope")
+                .simultaneousGesture(TapGesture()) // absorbs tap so row nav isn't triggered
             }
-            .buttonStyle(.plain)
-            .help("Remove scope")
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, 5)
         .background(
