@@ -10,18 +10,38 @@ enum Shell {
     }
 
     // Runs `command` in `/bin/zsh -c` and returns the trimmed output + exit code.
+    // `timeout` is enforced via a DispatchSemaphore — if the process does not exit
+    // within `timeout` seconds it is terminated and an empty result is returned.
+    // ⚠️ NEVER call process.waitUntilExit() directly here — it has no deadline and
+    // will block the calling thread forever if the subprocess hangs (e.g. ps aux on
+    // a zombie process, or zsh startup loading a slow .zshrc).
+    // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
+    // UNDER ANY CIRCUMSTANCE.
     @discardableResult
-    static func run(_ command: String) -> Result {
+    static func run(_ command: String, timeout: TimeInterval = 20) -> Result {
         let process = makeProcess(command)
         let (outPipe, errPipe) = attachPipes(to: process)
         do {
             try process.run()
         } catch {
+            log("Shell.run › launch failed for command=\(command) error=\(error.localizedDescription)")
             return Result(output: error.localizedDescription, exitCode: -1)
         }
-        process.waitUntilExit()
+        log("Shell.run › launched command=\(command) timeout=\(timeout)s pid=\(process.processIdentifier)")
+        let sema = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            sema.signal()
+        }
+        if sema.wait(timeout: .now() + timeout) == .timedOut {
+            log("Shell.run › TIMEOUT after \(timeout)s — terminating command=\(command)")
+            process.terminate()
+            _ = errPipe
+            return Result(output: "", exitCode: -1)
+        }
         let output = readOutput(from: outPipe)
         _ = errPipe
+        log("Shell.run › done command=\(command) exit=\(process.terminationStatus) output=\(output.count)b")
         return Result(output: output, exitCode: process.terminationStatus)
     }
 
@@ -50,8 +70,11 @@ enum Shell {
 
 // Backward-compatibility shim.
 // Legacy call-sites use shell("cmd", timeout: N) -> String.
-// timeout is intentionally ignored — Shell.run uses Process.waitUntilExit.
+// timeout is now forwarded to Shell.run which enforces it via DispatchSemaphore.
+// ⚠️ NEVER ignore the timeout parameter here again — that was the bug (ref #477).
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
+// UNDER ANY CIRCUMSTANCE.
 @discardableResult
-func shell(_ command: String, timeout _: TimeInterval = 20) -> String {
-    Shell.run(command).output
+func shell(_ command: String, timeout: TimeInterval = 20) -> String {
+    Shell.run(command, timeout: timeout).output
 }
