@@ -299,6 +299,7 @@ struct RunnerDetailView: View {
 
     private var dangerZoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // swiftlint:disable:next multiple_closures_with_trailing_closure
             Button(action: { withAnimation(.easeInOut(duration: 0.2)) { dangerZoneExpanded.toggle() } }) {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
@@ -374,6 +375,7 @@ struct RunnerDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
+            // swiftlint:disable:next multiple_closures_with_trailing_closure
             Button(action: { triggerDangerAction(action) }) {
                 Text(action.title)
                     .font(.caption2)
@@ -394,7 +396,6 @@ struct RunnerDetailView: View {
                 .font(.headline)
                 .padding(.top, 4)
 
-            // fix(5): re-register warning shown for all actions that de-register first
             if action.requiresReregistration {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
@@ -407,7 +408,6 @@ struct RunnerDetailView: View {
                 }
             }
 
-            // Per-action input / description
             switch action {
             case .rename:
                 VStack(alignment: .leading, spacing: 4) {
@@ -443,7 +443,6 @@ struct RunnerDetailView: View {
                     .foregroundColor(Color.rbTextSecondary)
             }
 
-            // Inline feedback
             if case .failure(let msg) = dangerActionState {
                 Text(msg).font(.caption2).foregroundColor(Color.rbDanger)
             }
@@ -516,16 +515,12 @@ struct RunnerDetailView: View {
         }
     }
 
-    /// De-registers then re-registers the runner with one or more changed parameters.
-    /// Any parameter passed as nil keeps its current value.
     private func performReregister(
         newName: String?,
         newScope: String?,
         ephemeral: Bool?,
         runnerGroup: String?
     ) {
-        // fix(4): currentScope always derived from existing runner URL — fail early if nil,
-        // never fall back to targetScope for the removal token.
         guard let currentScope = scopeFromHtmlUrl(runner.gitHubUrl) else {
             dangerActionState = .failure("Cannot determine current GitHub scope from runner URL")
             return
@@ -540,25 +535,20 @@ struct RunnerDetailView: View {
         let targetGroup = runnerGroup ?? runner.runnerGroup
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // Step 1: stop if running
             if runner.isRunning {
                 _ = RunnerLifecycleService.shared.stop(runner: runner)
             }
-            // Step 2: fetch removal token from the CURRENT scope (fix #4)
             guard let removalToken = fetchRemovalToken(scope: currentScope) else {
                 DispatchQueue.main.async { dangerActionState = .failure("Failed to fetch removal token from GitHub") }
                 return
             }
-            // Step 3: de-register via config.sh — fix(1): Shell.run with 60s timeout
             let removeSh = installPath + "/config.sh"
             let removeResult = Shell.run("\"\(removeSh)\" remove --token \(removalToken)", timeout: 60)
             log("performReregister › remove exit=\(removeResult.exitCode) output=\(removeResult.output.prefix(200))")
-            // Step 4: fetch registration token for the NEW scope
             guard let regToken = fetchRegistrationToken(scope: targetScope) else {
                 DispatchQueue.main.async { dangerActionState = .failure("Failed to fetch registration token for \(targetScope)") }
                 return
             }
-            // Step 5: re-register — fix(1): Shell.run with 60s timeout
             var configArgs = [
                 "\"\(removeSh)\"",
                 "--url", "https://github.com/\(targetScope)",
@@ -573,7 +563,6 @@ struct RunnerDetailView: View {
             }
             let configResult = Shell.run(configArgs.joined(separator: " "), timeout: 60)
             log("performReregister › config exit=\(configResult.exitCode) output=\(configResult.output.prefix(200))")
-            // fix(3): check exit code, not output string
             let success = configResult.exitCode == 0
             DispatchQueue.main.async {
                 if success {
@@ -670,6 +659,7 @@ struct RunnerDetailView: View {
                 .lineLimit(2).truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if copyable {
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
                 Button(action: {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(value, forType: .string)
