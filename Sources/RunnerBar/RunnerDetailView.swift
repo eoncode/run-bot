@@ -7,6 +7,12 @@ import SwiftUI
 // #491: Scaffold + read-only info block
 // #492: Editable config fields (labels, workFolder, autoUpdate, proxy)
 // #493: Danger Zone (remove only)
+//
+// ⚠️ TEXT INPUT RULE (#525):
+// NEVER use .textFieldStyle(.plain) in this view.
+// RunnerBar runs in a .nonactivatingPanel — .plain fields silently never
+// receive focus because macOS skips first-responder promotion.
+// Always use .textFieldStyle(.roundedBorder).
 
 // MARK: - Save state helper
 private enum SaveState: Equatable {
@@ -195,7 +201,7 @@ struct RunnerDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         TextField("comma-separated", text: $labelsText)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
+                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
                         saveButton(state: labelsSaveState, action: saveLabels)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
@@ -214,7 +220,7 @@ struct RunnerDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         TextField("_work", text: $workFolderText)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
+                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
                         saveButton(state: workFolderSaveState, action: saveWorkFolder)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
@@ -253,7 +259,7 @@ struct RunnerDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         TextField("http://proxy:8080", text: $proxyUrl)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
+                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
                         saveButton(state: proxyUrlSaveState, action: saveProxyUrl)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
@@ -272,7 +278,7 @@ struct RunnerDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         TextField("username", text: $proxyUser)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
+                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
                     Divider().padding(.leading, RBSpacing.md)
@@ -286,7 +292,7 @@ struct RunnerDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         SecureField("password", text: $proxyPassword)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
+                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
                         saveButton(state: proxyCreditsSaveState, action: saveProxyCredentials)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
