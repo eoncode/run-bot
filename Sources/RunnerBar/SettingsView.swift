@@ -1,593 +1,561 @@
-// swiftlint:disable file_length
 import ServiceManagement
 import SwiftUI
 
-// swiftlint:disable type_body_length
 // MARK: - SettingsView
+// Settings view — complete implementation for all phases 1-6.
+//
+// HEIGHT CONTRACT:
+// headerBar is OUTSIDE the ScrollView — back button always visible.
+// ScrollView uses maxHeight: .infinity to fill all remaining panel space.
+// AppDelegate.resizeAndRepositionPanel() clamps the panel at 85% visibleFrame.
+// No extra cap needed here — the panel cap IS the scroll boundary.
+// ❌ NEVER move headerBar inside the ScrollView.
+// ❌ NEVER replace .infinity with a fixed number.
+// ❌ NEVER use GeometryReader for the height.
+// ❌ NEVER add idealHeight to the root frame.
+//
+// WIDTH CONTRACT:
+// .frame(idealWidth: 480) — only idealWidth needed. NSPanel handles bounds.
+// ❌ NEVER remove idealWidth: 480.
+//
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
+// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
+// is major major major.
 
-/// Settings view — complete implementation for all phases 1-6.
-///
-/// Sections: Runner Management, Notifications, General, Account, Legal, About.
-/// All persistent state is backed by dedicated ObservableObject stores.
-///
-/// Phase 1 (issue #252): Local Runners section auto-populates at launch via
-/// `LocalRunnerStore`, which calls `LocalRunnerScanner` on a background thread.
-/// No GitHub token is required for this section.
-///
-/// Phase 2 (issue #253): Each runner row gains Resume/Stop, ⚙ Config, and
-/// ✕ Remove controls backed by `RunnerLifecycleService`.
-///
-/// Phase 3 (issue #254): A `+` button in the Local Runners header opens
-/// `AddRunnerSheet` to onboard new runners via the GitHub API.
-///
-/// Phase 4 (issue #255): `RunnerStatusEnricher` enriches runner rows with
-/// live GitHub API status (online/offline/busy) after each local scan.
-///
-/// ⚠️ ARCHITECTURE: NSPanel + sizingOptions=.preferredContentSize (ref #377).
-/// AppDelegate KVO-observes preferredContentSize and calls NSPanel.setFrame().
-/// NSPanel.setFrame() has no anchor → zero side jump on any size change.
-///
-/// HEIGHT CONTRACT:
-/// NO ScrollView, NO frame(maxHeight:) cap.
-/// preferredContentSize reports the full natural VStack height.
-/// AppDelegate.resizeAndRepositionPanel() clamps to maxHeight = 85% screen.
-/// That is the only height cap — enforced at the AppDelegate level, not here.
-/// ❌ NEVER add a ScrollView or frame(maxHeight:) cap back to SettingsView.
-/// ❌ NEVER add idealHeight to the root frame.
-///
-/// WIDTH CONTRACT:
-/// .frame(idealWidth: 480) — only idealWidth needed. NSPanel handles bounds.
-/// ❌ NEVER remove idealWidth: 480.
-///
-/// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
-/// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
-/// is major major major.
+// MARK: - URI Constants
+private enum SettingsURIs {
+    static let privacyPolicy  = "https://dev.eon.st/runnerbar/privacy"
+    static let termsOfService = "https://dev.eon.st/runnerbar/terms"
+    /// Opens github.com/login so the user can verify their browser session
+    /// before running `gh auth login` in Terminal. Full OAuth flow is not
+    /// supported here — RunnerBar relies on the gh CLI for authentication.
+    static let gitHubSignIn   = "https://github.com/login"
+}
+
+// swiftlint:disable:next type_body_length
 struct SettingsView: View {
-    /// Called when the user taps the back button to return to the main view.
     let onBack: () -> Void
-    /// The observable that bridges RunnerStore state into SwiftUI.
+    /// Called when the user taps a runner row; navigates to RunnerDetailView.
+    let onSelectRunner: (RunnerModel) -> Void
+    /// #499: Called when the user taps a scope row; navigates to ScopeDetailView.
+    let onSelectScope: (ScopeEntry) -> Void
     @ObservedObject var store: RunnerStoreObservable
-
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var notifications = NotificationPrefsStore.shared
     @ObservedObject private var legal = LegalPrefsStore.shared
-    /// Drives the Local Runners section (Phase 1 — no token required).
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
-
-    @State private var newScope = ""
+    @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var isAuthenticated = (githubToken() != nil)
-    /// Becomes `true` after the first scan completes.
     @State private var hasLoadedOnce = false
-    /// Phase 2: runner pending removal confirmation.
     @State private var runnerPendingRemoval: RunnerModel?
-    /// Phase 2: runner whose config sheet is open.
-    @State private var runnerBeingConfigured: RunnerModel?
-    /// Phase 3: controls whether the Add Runner sheet is presented.
     @State private var showAddRunnerSheet = false
-    /// Surfaced when remove() returns false — cleared on next refresh.
+    @State private var showAddScopeSheet = false
     @State private var removeErrorMessage: String?
-    /// `true` while `gh auth logout` is in flight — disables the button to prevent double-tap.
     @State private var isSigningOut = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
     }
-
     private var appBuild: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
     }
-
-    /// Alert title for the runner-removal confirmation dialog.
     private var removalAlertTitle: String {
-        let name = runnerPendingRemoval?.runnerName ?? "this runner"
-        return "Remove runner \"\(name)\""
+        "Remove runner \"\(runnerPendingRemoval?.runnerName ?? "this runner\"")"
     }
 
     var body: some View {
-        // NO ScrollView — NSPanel grows to show all content.
-        // AppDelegate clamps panel height to 85% screen visibleFrame.
-        // ❌ NEVER wrap in ScrollView or add frame(maxHeight:) here.
-        // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
-        // UNDER ANY CIRCUMSTANCE.
         VStack(alignment: .leading, spacing: 0) {
             headerBar
             Divider()
-            VStack(alignment: .leading, spacing: 0) {
-                localRunnersSection
-                Divider()
-                runnerSection
-                Divider()
-                notificationsSection
-                Divider()
-                generalSection
-                Divider()
-                accountSection
-                Divider()
-                legalSection
-                Divider()
-                aboutSection
+            // maxHeight: .infinity — fills all space the panel gives us.
+            // AppDelegate caps the panel at 85% visibleFrame. That IS the limit.
+            // ❌ NEVER move headerBar inside this ScrollView.
+            // ❌ NEVER replace .infinity with a fixed number.
+            // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
+            // UNDER ANY CIRCUMSTANCE.
+            ScrollView(.vertical, showsIndicators: true) {
+                sectionsStack
             }
-            .padding(.bottom, 16)
+            .frame(maxHeight: .infinity)
         }
-        // idealWidth only — no idealHeight. NSPanel handles screen bounds.
-        // ❌ NEVER add idealHeight here.
-        // ❌ NEVER remove idealWidth: 480.
-        // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
-        // UNDER ANY CIRCUMSTANCE.
-        .frame(idealWidth: 480, maxWidth: .infinity, alignment: .top)
-        .onAppear {
-            isAuthenticated = (githubToken() != nil)
-            ScopeStore.shared.onMutate = { [weak store] in
-                store?.reload()
-            }
-            localRunnerStore.refresh()
-        }
-        // Single-parameter form: compatible with macOS 13+.
-        // The two-parameter { _, newValue in } form requires macOS 14+.
-        .onChange(of: localRunnerStore.isScanning) { scanning in
-            if !scanning { hasLoadedOnce = true }
-        }
-        .onDisappear {
-            ScopeStore.shared.onMutate = nil
-        }
-        .sheet(isPresented: $showAddRunnerSheet) {
-            AddRunnerSheet(isPresented: $showAddRunnerSheet) {
-                localRunnerStore.refresh()
-            }
-        }
-        .sheet(item: $runnerBeingConfigured) { runner in
-            RunnerConfigSheet(runner: runner, isPresented: $runnerBeingConfigured) {
-                localRunnerStore.refresh()
-            }
-        }
-        .alert(removalAlertTitle, isPresented: Binding(
-            get: { runnerPendingRemoval != nil },
-            set: { if !$0 { runnerPendingRemoval = nil } }
-        )) {
-            Button("Cancel", role: .cancel) { runnerPendingRemoval = nil }
-            Button("Remove", role: .destructive) {
-                guard let runner = runnerPendingRemoval else { return }
-                guard isAuthenticated else {
-                    runnerPendingRemoval = nil
-                    return
-                }
-                runnerPendingRemoval = nil
-                removeErrorMessage = nil
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let succeeded = RunnerLifecycleService.shared.remove(runner: runner)
-                    DispatchQueue.main.async {
-                        if !succeeded {
-                            removeErrorMessage = "De-registration failed — the runner may " +
-                                "still appear in GitHub. Check your token and try again."
-                        }
-                        localRunnerStore.refresh()
-                    }
-                }
-            }
-        } message: {
-            if isAuthenticated {
-                Text("This will run ./svc.sh uninstall and ./config.sh remove. " +
-                     "A GitHub token is required for de-registration.")
-            } else {
-                Text("A GitHub token is required to de-register the runner from GitHub. " +
-                     "Sign in via `gh auth login` or set GH_TOKEN, then try again.")
-            }
-        }
+        .frame(idealWidth: 480, maxWidth: .infinity)
+        .onAppear(perform: onAppearAction)
+        .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
+        .onDisappear { ScopeStore.shared.onMutate = nil }
+        .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
+        .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
+        .modifier(removalAlertModifier)
     }
 
-    // MARK: - Sections
+    private func addRunnerSheet() -> some View {
+        AddRunnerSheet(isPresented: $showAddRunnerSheet) { localRunnerStore.refresh() }
+    }
+    private var removalAlertModifier: RemovalAlertModifier {
+        RemovalAlertModifier(
+            title: removalAlertTitle,
+            isPresented: Binding(
+                get: { runnerPendingRemoval != nil },
+                set: { if !$0 { runnerPendingRemoval = nil } }
+            ),
+            isAuthenticated: isAuthenticated,
+            onCancel: { runnerPendingRemoval = nil },
+            onConfirm: performRemoval
+        )
+    }
 
+    private var sectionsStack: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            localRunnersSection
+            Divider()
+            remoteScopesSection
+            Divider()
+            notificationsSection
+            Divider()
+            generalSection
+            Divider()
+            accountSection
+            Divider()
+            aboutSection
+        }
+        .padding(.bottom, 16)
+    }
+
+    private func onAppearAction() {
+        isAuthenticated = (githubToken() != nil)
+        ScopeStore.shared.onMutate = { [weak store] in store?.reload() }
+        localRunnerStore.refresh()
+    }
+
+    // MARK: - Header
     private var headerBar: some View {
         HStack {
             Button(action: onBack, label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .medium))
-                    Text("Settings")
-                        .font(.headline)
+                    Text("Settings").font(.headline)
                 }
                 .foregroundColor(.primary)
             })
             .buttonStyle(.plain)
             Spacer()
         }
-        .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
+        .padding(.horizontal, RBSpacing.md).padding(.top, 12).padding(.bottom, 8)
     }
 
-    // MARK: Phase 1 + 2 + 4 — Local Runners
+    // MARK: - Local Runners
+    private var localRunnersSectionHeader: some View {
+        HStack {
+            Text("Active local runners")
+                .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+            Spacer()
+            Button(action: { showAddRunnerSheet = true }, label: {
+                Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
+            })
+            .buttonStyle(.plain).help("Add a new runner").padding(.trailing, 4)
+            if localRunnerStore.isScanning {
+                ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+            } else {
+                Button(action: { removeErrorMessage = nil; localRunnerStore.refresh() }, label: {
+                    Image(systemName: "arrow.clockwise").font(.caption).foregroundColor(Color.rbTextSecondary)
+                })
+                .buttonStyle(.plain).help("Refresh local runner list")
+            }
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
+    }
 
+    // #512: Description below Local Runners header (mirrors Scopes section)
     private var localRunnersSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Local runners")
-                    .font(.caption).foregroundColor(.secondary)
-                Spacer()
-                Button(action: { showAddRunnerSheet = true }, label: {
-                    Image(systemName: "plus")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                })
-                .buttonStyle(.plain)
-                .help("Add a new runner")
-                .padding(.trailing, 4)
-                if localRunnerStore.isScanning {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Button(action: {
-                        removeErrorMessage = nil
-                        localRunnerStore.refresh()
-                    }, label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    })
-                    .buttonStyle(.plain)
-                    .help("Refresh local runner list")
-                }
-            }
-            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
-
+            localRunnersSectionHeader
+            Text("Self-hosted runners installed on this machine, discovered via LaunchAgent plists.")
+                .font(.caption).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
             if let errMsg = removeErrorMessage {
-                Text(errMsg)
-                    .font(.caption).foregroundColor(.red)
-                    .padding(.horizontal, 12).padding(.vertical, 4)
-                    .background(Color.red.opacity(0.07))
+                Text(errMsg).font(.caption).foregroundColor(Color.rbDanger)
+                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
+                    .background(Color.rbDanger.opacity(0.07))
             }
-
             if localRunnerStore.runners.isEmpty && !localRunnerStore.isScanning && hasLoadedOnce {
-                Text("No local runners found")
-                    .font(.caption).foregroundColor(.secondary)
-                    .padding(.horizontal, 12).padding(.vertical, 4)
+                Text("No local runners found").font(.caption).foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
             } else {
-                ForEach(localRunnerStore.runners) { runner in
-                    localRunnerRow(runner)
-                }
+                ForEach(localRunnerStore.runners) { runner in localRunnerRow(runner) }
             }
         }
     }
 
     private func localRunnerRow(_ runner: RunnerModel) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(localRunnerDotColor(for: runner))
-                .frame(width: 8, height: 8)
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
+        Button(action: { onSelectRunner(runner) }) {
+            localRunnerRowContent(runner)
+                // Makes the entire row area (including empty/transparent regions) hittable,
+                // not just the pixels where text or icons are rendered.
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: RBRadius.small)
+                .fill(Color.rbSurfaceElevated)
+                .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
+                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+                .padding(.horizontal, RBSpacing.xs)
+        )
+    }
+
+    // #507: chevron is now always the last item before the remove button (far right).
+    private func localRunnerRowContent(_ runner: RunnerModel) -> some View {
+        let hasWarning = runner.lifecycleWarning != nil
+        let displayStatus = runner.displayStatus
+        let statusColor = runner.statusColor
+        log("SettingsView > localRunnerRowContent rendering runner=\(runner.runnerName) isRunning=\(runner.isRunning) githubStatus=\(runner.githubStatus ?? "none") lifecycleWarning=\(runner.lifecycleWarning ?? "none") displayStatus=\(displayStatus) statusColor=\(statusColor) hasWarning=\(hasWarning)")
+        return HStack(spacing: 6) {
+            Circle().fill(localRunnerDotColor(for: runner)).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
-                Text(runner.runnerName)
-                    .font(.system(size: 13)).lineLimit(1)
+                Text(runner.runnerName).font(.system(size: 13)).lineLimit(1)
                 if let url = runner.gitHubUrl {
-                    Text(url)
-                        .font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                    Text(url).font(.caption2).foregroundColor(Color.rbTextSecondary).lineLimit(1)
                 }
             }
             Spacer()
-            Text(runner.displayStatus)
-                .font(.caption).foregroundColor(.secondary)
-                .lineLimit(1).fixedSize()
+            Text(displayStatus)
+                .font(.caption)
+                .foregroundColor(hasWarning ? Color.rbWarning : Color.rbTextSecondary)
+                .lineLimit(1)
+                .fixedSize()
             if runner.isRunning {
-                Button(
-                    action: {
-                        lifecycleAction { RunnerLifecycleService.shared.stop(runner: runner) }
-                    },
-                    label: { Text("Stop").font(.caption2) }
-                )
-                .buttonStyle(.bordered)
-                .help("Stop runner service")
+                Button(action: { performStop(runner: runner) },
+                       label: { Text("Stop").font(.caption2) })
+                .buttonStyle(.bordered).help("Stop runner service")
             } else {
-                Button(
-                    action: {
-                        lifecycleAction { RunnerLifecycleService.shared.start(runner: runner) }
-                    },
-                    label: { Text("Resume").font(.caption2) }
-                )
-                .buttonStyle(.bordered)
-                .help("Start runner service")
+                Button(action: { performResume(runner: runner) },
+                       label: { Text("Resume").font(.caption2) })
+                .buttonStyle(.bordered).help("Start runner service")
             }
-            Button(action: { runnerBeingConfigured = runner }, label: {
-                Image(systemName: "gearshape").font(.caption2)
-            })
-            .buttonStyle(.plain)
-            .help("Configure runner")
-            Button(action: { runnerPendingRemoval = runner }, label: {
-                Image(systemName: "minus.circle").font(.caption2).foregroundColor(.red)
-            })
-            .buttonStyle(.plain)
-            .help("Remove runner")
+            // #507: chevron always far-right, before the remove button
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundColor(Color.rbTextTertiary)
+            Button(action: { runnerPendingRemoval = runner },
+                   label: { Image(systemName: "minus.circle").font(.caption2).foregroundColor(Color.rbDanger) })
+            .buttonStyle(.plain).help("Remove runner")
         }
-        .padding(.horizontal, 12).padding(.vertical, 5)
     }
 
-    private func lifecycleAction(_ action: @escaping () -> Void) {
+    // MARK: - Resume / Stop actions
+
+    private func performResume(runner: RunnerModel) {
+        log("SettingsView > performResume called runner=\(runner.runnerName)")
+        LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
         DispatchQueue.global(qos: .userInitiated).async {
-            action()
-            DispatchQueue.main.async { localRunnerStore.refresh() }
+            let result = RunnerLifecycleService.shared.start(runner: runner)
+            DispatchQueue.main.async {
+                switch result {
+                case .success: break
+                case .corruptInstall:
+                    LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ corrupt install")
+                case .failed(let msg):
+                    LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
+                    let short = msg.components(separatedBy: "\n")
+                        .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(short)")
+                }
+                LocalRunnerStore.shared.refresh()
+            }
+        }
+    }
+
+    private func performStop(runner: RunnerModel) {
+        log("SettingsView > performStop called runner=\(runner.runnerName)")
+        LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = RunnerLifecycleService.shared.stop(runner: runner)
+            DispatchQueue.main.async {
+                switch result {
+                case .success: break
+                case .corruptInstall:
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ corrupt install")
+                case .failed(let msg):
+                    LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
+                    let short = msg.components(separatedBy: "\n")
+                        .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "⚠ \(short)")
+                }
+                LocalRunnerStore.shared.refresh()
+            }
         }
     }
 
     private func localRunnerDotColor(for runner: RunnerModel) -> Color {
         switch runner.statusColor {
-        case .running: return .green
-        case .busy: return .yellow
-        case .idle: return .gray
-        case .offline: return .red
+        case .running: return Color.rbSuccess
+        case .busy:    return Color.rbWarning
+        case .idle:    return Color.rbTextTertiary
+        case .offline: return Color.rbDanger
         }
     }
 
-    // MARK: - Section 2: API-registered runner scopes
+    // MARK: - Remote runner scopes
 
-    private var runnerSection: some View {
+    private var remoteScopesSectionHeader: some View {
+        HStack {
+            Text("Remote runner scopes")
+                .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+            Spacer()
+            // swiftlint:disable:next multiple_closures_with_trailing_closure
+            Button(action: { showAddScopeSheet = true }) {
+                Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
+            }
+            .buttonStyle(.plain).help("Add a remote scope")
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 2)
+    }
+
+    private var remoteScopesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Runner management")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
-            if !store.runners.isEmpty {
-                ForEach(store.runners, id: \.id) { runner in
-                    HStack(spacing: 8) {
-                        Circle().fill(runnerDotColor(for: runner)).frame(width: 8, height: 8)
-                        Text(runner.name).font(.system(size: 13)).lineLimit(1)
-                        Spacer()
-                        Text(runner.displayStatus)
-                            .font(.caption).foregroundColor(.secondary).lineLimit(1).fixedSize()
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                }
+            remoteScopesSectionHeader
+            Text("GitHub repos or orgs whose runners are fetched via the API.")
+                .font(.caption).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
+            if scopeStore.entries.isEmpty {
+                Text("No remote scopes added")
+                    .font(.caption).foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
             } else {
-                Text("No runners configured")
-                    .font(.caption).foregroundColor(.secondary)
-                    .padding(.horizontal, 12).padding(.vertical, 4)
-            }
-            Text("Scopes").font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
-            ForEach(ScopeStore.shared.scopes, id: \.self) { scopeStr in
-                HStack {
-                    Text(scopeStr).font(.system(size: 12))
-                    Spacer()
-                    Button(action: {
-                        ScopeStore.shared.remove(scopeStr)
-                        RunnerStore.shared.start()
-                    }, label: {
-                        Image(systemName: "minus.circle").foregroundColor(.red)
-                    }).buttonStyle(.plain)
+                ForEach(scopeStore.entries) { entry in
+                    scopeRow(entry)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 2)
             }
-            HStack {
-                TextField("owner/repo or org", text: $newScope)
-                    .textFieldStyle(.roundedBorder).font(.system(size: 12))
-                    .onSubmit { submitScope() }
-                Button(action: submitScope, label: {
-                    Image(systemName: "plus.circle")
-                })
-                .buttonStyle(.plain)
-                .disabled(newScope.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 4)
         }
     }
 
+    /// #499: Scope row is a tappable Button that navigates to ScopeDetailView.
+    /// #507: chevron is now always the last item before the remove button (far right).
+    /// #508: Added Active/Paused text label adjacent to toggle.
+    /// #509: Toggle uses .tint(Color.rbSuccess) for clear on/off colour.
+    private func scopeRow(_ entry: ScopeEntry) -> some View {
+        let isRepo = entry.scope.contains("/")
+        let displayName = ScopeSettingsStore.displayName(for: entry.scope)
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
+        return Button(action: { onSelectScope(entry) }) {
+            HStack(spacing: 8) {
+                // Type badge
+                Text(isRepo ? "Repo" : "Org")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.rbSurfaceElevated))
+                    .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(displayName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if ScopeSettingsStore.alias(for: entry.scope) != nil {
+                        Text(entry.scope)
+                            .font(.caption2)
+                            .foregroundColor(Color.rbTextTertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+
+                Spacer()
+
+                // #508: State label next to toggle
+                Text(entry.isEnabled ? "Active" : "Paused")
+                    .font(.caption2)
+                    .foregroundColor(entry.isEnabled ? Color.rbSuccess : Color.rbTextTertiary)
+
+                // #509: .tint(.rbSuccess) makes the on-state visually distinct (green track)
+                Toggle("", isOn: Binding(
+                    get: { entry.isEnabled },
+                    set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
+                ))
+                .toggleStyle(.switch)
+                .tint(Color.rbSuccess)
+                .labelsHidden()
+                .help(entry.isEnabled ? "Pause monitoring" : "Resume monitoring")
+                .scaleEffect(0.8, anchor: .trailing)
+                .buttonStyle(.borderless)
+
+                // #507: Chevron flush right, before the remove button
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextTertiary)
+
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
+                Button(action: {
+                    ScopeSettingsStore.cleanUp(scope: entry.scope)
+                    ScopeStore.shared.remove(id: entry.id)
+                    RunnerStore.shared.start()
+                }) {
+                    Image(systemName: "minus.circle")
+                        .font(.caption2)
+                        .foregroundColor(Color.rbDanger)
+                }
+                .buttonStyle(.borderless)
+                .help("Remove scope")
+            }
+            // Makes the entire row area (including Spacer and transparent gaps) hittable.
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: RBRadius.small)
+                .fill(entry.isEnabled ? Color.rbSurfaceElevated : Color.rbSurface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+                .padding(.horizontal, RBSpacing.xs)
+        )
+        .opacity(entry.isEnabled ? 1.0 : 0.5)
+    }
+
+    // MARK: - Notifications
+    // #509: .tint(.rbSuccess) on all notification toggles
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Notifications")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
+            Text("Notifications").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
             HStack {
-                Text("Notify on success").font(.system(size: 12))
-                Spacer()
+                Text("Notify on success").font(.system(size: 12)); Spacer()
                 Toggle("", isOn: $notifications.notifyOnSuccess)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+                    .toggleStyle(.switch).tint(Color.rbSuccess).labelsHidden()
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            Divider().padding(.leading, 12)
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
+            Divider().padding(.leading, RBSpacing.md)
             HStack {
-                Text("Notify on failure").font(.system(size: 12))
-                Spacer()
+                Text("Notify on failure").font(.system(size: 12)); Spacer()
                 Toggle("", isOn: $notifications.notifyOnFailure)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+                    .toggleStyle(.switch).tint(Color.rbSuccess).labelsHidden()
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
         }
     }
 
+    // MARK: - General
+    // #510: Removed "Show offline runners" row.
+    // #509: .tint(.rbSuccess) on launch-at-login toggle.
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("General")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
+            Text("General").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
             HStack {
-                Text("Launch at login").font(.system(size: 12))
-                Spacer()
+                Text("Launch at login").font(.system(size: 12)); Spacer()
                 Toggle("", isOn: $launchAtLogin)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+                    .toggleStyle(.switch).tint(Color.rbSuccess).labelsHidden()
                     .onChange(of: launchAtLogin, perform: applyLaunchAtLogin)
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            Divider().padding(.leading, 12)
-            // ── Show offline runners ──────────────────────────────────────
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
+            Divider().padding(.leading, RBSpacing.md)
             HStack {
-                Text("Show offline runners").font(.system(size: 12))
-                Spacer()
-                Toggle("", isOn: $settings.showDimmedRunners)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
-            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 2)
-            Text("When enabled, runners that are offline or unreachable are shown dimmed in the list.")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.bottom, 6)
-            Divider().padding(.leading, 12)
-            // ── Polling interval ─────────────────────────────────────────
-            HStack {
-                Text("Polling interval").font(.system(size: 12))
-                Spacer()
-                Text("\(settings.pollingInterval)s")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
+                Text("Polling interval").font(.system(size: 12)); Spacer()
+                Text("\(settings.pollingInterval)s").font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
                     .frame(minWidth: 36, alignment: .trailing)
-                Stepper("", value: $settings.pollingInterval, in: 10...300)
-                    .labelsHidden()
+                Stepper("", value: $settings.pollingInterval, in: 10...300).labelsHidden()
             }
-            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 2)
+            .padding(.horizontal, RBSpacing.md).padding(.top, 6).padding(.bottom, 2)
             Text("How often RunnerBar checks GitHub for runner and workflow status. Lower values use more API quota.")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.bottom, 6)
+                .font(.caption).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
         }
     }
 
-    // MARK: - Account section
-    //
-    // When authenticated, shows:
-    //   GitHub   ● Authenticated   [Sign out]
-    //
-    // Sign out runs `gh auth logout --hostname github.com` on a background
-    // thread, then re-checks githubToken() to refresh isAuthenticated.
-    // isSigningOut disables the button while the shell call is in flight.
-    //
-    // ❌ NEVER remove the `gh auth login` hint below — it is the only
-    //    recovery path shown to the user after signing out.
+    // MARK: - Account
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Account")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
+            Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
             HStack {
-                Text("GitHub").font(.system(size: 12))
-                Spacer()
+                Text("GitHub").font(.system(size: 12)); Spacer()
                 if isAuthenticated {
                     HStack(spacing: 8) {
                         HStack(spacing: 4) {
-                            Circle().fill(Color.green).frame(width: 8, height: 8)
-                            Text("Authenticated").font(.caption).foregroundColor(.secondary)
+                            Circle().fill(Color.rbSuccess).frame(width: 8, height: 8)
+                            Text("Authenticated").font(.caption).foregroundColor(Color.rbTextSecondary)
                         }
                         Button(action: signOutOfGitHub) {
-                            Text("Sign out")
-                                .font(.caption)
-                                .foregroundColor(.red)
+                            Text("Sign out").font(.caption).foregroundColor(Color.rbDanger)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isSigningOut)
+                        .buttonStyle(.plain).disabled(isSigningOut)
                         .help("Run gh auth logout and disconnect RunnerBar from GitHub")
                     }
                 } else {
-                    Button(action: signInWithGitHub, label: {
-                        Text("Sign in").font(.caption).foregroundColor(.orange)
-                    }).buttonStyle(.plain)
+                    Button(action: signInWithGitHub) {
+                        Text("Sign in").font(.caption).foregroundColor(Color.rbWarning)
+                    }.buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            Divider().padding(.leading, 12)
-            Text("Run `gh auth login` in Terminal, or set GH_TOKEN / GITHUB_TOKEN env var.")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.vertical, 4)
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 8)
+            Divider().padding(.leading, RBSpacing.md)
+            Text("Run `gh auth login` in Terminal to authenticate.")
+                .font(.caption).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
         }
     }
 
-    private var legalSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Legal")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 4)
-            HStack {
-                Text("Share analytics").font(.system(size: 12))
-                Spacer()
-                Toggle("", isOn: $legal.analyticsEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-#if DEBUG
-            Divider().padding(.leading, 12)
-            linkRow(label: "Privacy Policy", url: "https://github.com/eoncode/runner-bar")
-            Divider().padding(.leading, 12)
-            linkRow(label: "EULA", url: "https://github.com/eoncode/runner-bar")
-#endif
-        }
-    }
-
+    // MARK: - About
     private var aboutSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("About")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("About").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
             HStack {
-                Text("Version").font(.system(size: 12))
-                Spacer()
-                Text("\(appVersion) (\(appBuild))")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
+                Text("Version").font(.system(size: 12)); Spacer()
+                Text("\(appVersion) (\(appBuild))").font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
             }
-            .padding(.horizontal, 12).padding(.vertical, 2)
-            HStack {
-                Text("RunnerBar").font(.system(size: 12))
-                Spacer()
-                Text(Bundle.main.bundleIdentifier ?? "dev.eonist.runnerbar")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 2)
-            Text("A macOS menu bar utility for monitoring GitHub Actions self-hosted runners.")
-                .font(.system(size: 11)).foregroundColor(.secondary)
-                .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 8)
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
         }
     }
 
     // MARK: - Helpers
-
-    private func applyLaunchAtLogin(_ enabled: Bool) {
-        LoginItem.setEnabled(enabled)
-    }
-
-    private func submitScope() {
-        let trimmed = newScope.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        ScopeStore.shared.add(trimmed)
-        RunnerStore.shared.start()
-        store.reload()
-        newScope = ""
-    }
-
-    private func runnerDotColor(for runner: Runner) -> Color {
-        runner.status != "online" ? .gray : (runner.busy ? .yellow : .green)
-    }
-
     private func linkRow(label: String, url: String) -> some View {
-        Button(
-            action: { if let dest = URL(string: url) { NSWorkspace.shared.open(dest) } },
-            label: {
-                HStack {
-                    Text(label).font(.system(size: 12)).foregroundColor(.primary)
-                    Spacer()
-                    Image(systemName: "arrow.up.right").font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-            }
-        ).buttonStyle(.plain)
+        HStack {
+            Text(label).font(.system(size: 12)); Spacer()
+            Link(url, destination: URL(string: url)!)
+                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
     }
+
+    private func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
 
     private func signInWithGitHub() {
-        let urlString = "https://docs.github.com/en/authentication/" +
-            "keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = URL(string: SettingsURIs.gitHubSignIn) else { return }
         NSWorkspace.shared.open(url)
     }
 
-    /// Runs `gh auth logout --hostname github.com` on a background thread.
-    /// Updates `isAuthenticated` on the main thread when the call completes.
-    /// Uses `isSigningOut` to prevent double-tap.
-    ///
-    /// ❌ NEVER run shell calls on the main thread — they block the UI.
     private func signOutOfGitHub() {
-        guard !isSigningOut else { return }
+        guard let ghPath = ghBinaryPath() else {
+            log("SettingsView > signOutOfGitHub: gh not found, skipping logout")
+            isAuthenticated = false
+            return
+        }
         isSigningOut = true
         DispatchQueue.global(qos: .userInitiated).async {
-            _ = shell("/opt/homebrew/bin/gh auth logout --hostname github.com")
+            _ = shell("\(ghPath) auth logout --hostname github.com")
+            DispatchQueue.main.async { isAuthenticated = false; isSigningOut = false }
+        }
+    }
+
+    private func performRemoval() {
+        guard let runner = runnerPendingRemoval else { return }
+        runnerPendingRemoval = nil
+        LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = RunnerLifecycleService.shared.remove(runner: runner)
             DispatchQueue.main.async {
-                isAuthenticated = (githubToken() != nil)
-                isSigningOut = false
+                if !ok { removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs." }
+                LocalRunnerStore.shared.refresh()
             }
         }
     }
 }
-// swiftlint:enable type_body_length
-// swiftlint:enable file_length

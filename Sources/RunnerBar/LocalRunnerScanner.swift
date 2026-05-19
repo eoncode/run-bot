@@ -6,56 +6,75 @@ import Foundation
 /// requiring a GitHub API token. Uses three complementary scan sources:
 ///
 /// 1. **LaunchAgents** — `~/Library/LaunchAgents/actions.runner.*.plist`
-///    Parses `owner`, `repo`, and `runnerName` from the plist filename.
+///    Reads the `WorkingDirectory` key from each plist so the runner's exact
+///    install path is known for any custom location. The plist label is also
+///    used to derive a `gitHubUrl` fallback (`https://github.com/<owner>/<repo>`)
+///    for runners whose `.runner` JSON omits the field (e.g. installed via
+///    `svc.sh install`). The JSON is still authoritative when present.
 ///
-/// 2. **`.runner` JSON files** — searches known runner install paths only
-///    (NOT `~` wholesale, which triggers macOS TCC permission dialogs for
-///    Desktop/Documents/Downloads). Searches:
-///    `~/actions-runner`, `~/runner`, `~/github-runner`, `/opt/actions-runner`,
-///    `/opt/runner`, `/usr/local/actions-runner`, `/usr/local/runner`
-///    up to depth 6. This avoids the TCC prompt while still covering all
-///    common self-hosted runner install locations.
+/// 2. **`.runner` JSON files** — searches the known default install paths
+///    PLUS any `WorkingDirectory` paths extracted from LaunchAgent plists.
+///    Provides `gitHubUrl`, `runnerName`, `agentId`, `workFolder`,
+///    `platform`, `platformArchitecture`, `agentVersion`, `ephemeral`. (#491)
+///    Default roots: `~/actions-runner`, `~/runner`, `~/github-runner`,
+///    `/opt/actions-runner`, `/opt/runner`, `/usr/local/actions-runner`,
+///    `/usr/local/runner` up to depth 6.
 ///
 /// 3. **Live service check** — `launchctl list | grep actions.runner`
-///    Flags which runners currently have an active launchd service, indicating
-///    they are registered and running.
+///    Flags which runners currently have an active launchd service.
 struct LocalRunnerScanner {
     // MARK: - .runner JSON schema
 
-    /// Decodable mirror of the relevant fields inside a `.runner` JSON file.
     private struct RunnerJSON: Decodable {
         let gitHubUrl: String?
         let runnerName: String?
         let agentId: Int?
         let workFolder: String?
+        // #491 — additional fields present in the GitHub runner .runner JSON
+        let platform: String?
+        let platformArchitecture: String?
+        let agentVersion: String?
+        let ephemeral: Bool?
     }
 
     // MARK: - Public API
 
     /// Performs the full 3-source scan and returns deduplicated `RunnerModel` results.
-    /// This is a synchronous, blocking call — always invoke from a background thread.
+    /// Synchronous and blocking — always invoke from a background thread.
     func scan() -> [RunnerModel] {
         var models: [String: RunnerModel] = [:]
 
-        // Source 2 first: .runner JSON is most authoritative — richer data.
-        for model in scanRunnerJSONFiles() {
+        // Source 1: extract WorkingDirectory paths and plist-derived gitHubUrl fallbacks.
+        let (launchAgentModels, launchAgentPaths) = scanLaunchAgents()
+
+        // Build a name → fallback-URL map from Source 1 so Source 2 can use it.
+        let plistFallbackURLs: [String: String] = launchAgentModels.reduce(into: [:]) { dict, m in
+            if let url = m.gitHubUrl { dict[m.runnerName] = url }
+        }
+
+        // Source 2: .runner JSON is authoritative — provides correct gitHubUrl when present.
+        // If gitHubUrl is nil/empty in the JSON, patch it from the plist-derived fallback.
+        for var model in scanRunnerJSONFiles(extraRoots: launchAgentPaths) {
+            if (model.gitHubUrl ?? "").isEmpty, let fallback = plistFallbackURLs[model.runnerName] {
+                model.gitHubUrl = fallback
+                log("LocalRunnerScanner › patched gitHubUrl from plist label for \(model.runnerName): \(fallback)")
+            }
             models[model.id] = model
         }
 
-        // Source 1: LaunchAgents — fills in runners whose .runner file wasn't found.
-        for model in scanLaunchAgents() {
-            let compositeKey = "\(model.runnerName)-\(model.gitHubUrl ?? "")"
-            let alreadyCoveredByJSON = models.values.contains { existing in
-                let existingComposite = "\(existing.runnerName)-\(existing.gitHubUrl ?? "")"
-                return existingComposite == compositeKey
-            }
-            guard !alreadyCoveredByJSON else { continue }
-            if models[compositeKey] == nil {
-                models[compositeKey] = model
+        // Collect the set of runnerNames already covered by JSON models.
+        // LaunchAgent stubs are only added when NO JSON model shares the same
+        // runnerName — prevents duplicates when the same runner name appears
+        // in both a plist filename and a .runner JSON file.
+        let jsonRunnerNames = Set(models.values.map { $0.runnerName })
+        for model in launchAgentModels {
+            guard !jsonRunnerNames.contains(model.runnerName) else { continue }
+            if models[model.runnerName] == nil {
+                models[model.runnerName] = model
             }
         }
 
-        // Source 3: mark which runners are live.
+        // Source 3: mark which runners are currently live.
         let liveLabels = scanLiveServices()
         for key in models.keys {
             if let model = models[key] {
@@ -68,60 +87,107 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 1: LaunchAgents
 
-    private func scanLaunchAgents() -> [RunnerModel] {
+    private func scanLaunchAgents() -> (models: [RunnerModel], installPaths: Set<String>) {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil)
-        else { return [] }
+        else { return ([], []) }
 
+        var models: [RunnerModel] = []
+        var installPaths = Set<String>()
         let prefix = "actions.runner."
-        return entries.compactMap { url -> RunnerModel? in
+
+        for url in entries {
             let filename = url.deletingPathExtension().lastPathComponent
-            guard filename.hasPrefix(prefix) else { return nil }
+            guard filename.hasPrefix(prefix) else { continue }
+            // Label format: actions.runner.<owner>.<repo>.<runnerName>
+            // parts[0] = owner, parts[1] = repo, parts[2...] = runner name components
             let remainder = String(filename.dropFirst(prefix.count))
             let parts = remainder.components(separatedBy: ".")
-            guard parts.count >= 2 else { return nil }
-            let owner = parts[0]
-            let repo = parts[1]
-            let runnerName = parts.count > 2 ? parts[2...].joined(separator: ".") : "runner"
-            let gitHubUrl = "https://github.com/\(owner)/\(repo)"
-            return RunnerModel(
+            let runnerName = parts.last ?? "runner"
+
+            // Derive a GitHub URL fallback from the label when possible.
+            // Requires at least owner + repo (i.e. ≥2 dot-separated parts before the name).
+            var plistGitHubUrl: String?
+            if parts.count >= 3 {
+                let owner = parts[0]
+                let repo  = parts[1]
+                if !owner.isEmpty && !repo.isEmpty {
+                    plistGitHubUrl = "https://github.com/\(owner)/\(repo)"
+                }
+            } else if parts.count == 2 {
+                // Org-scoped runner: actions.runner.<org>.<runnerName>
+                let org = parts[0]
+                if !org.isEmpty {
+                    plistGitHubUrl = "https://github.com/\(org)"
+                }
+            }
+
+            if let plist = NSDictionary(contentsOf: url),
+               let workDir = plist["WorkingDirectory"] as? String,
+               !workDir.isEmpty {
+                installPaths.insert(workDir)
+            }
+
+            models.append(RunnerModel(
                 runnerName: runnerName,
-                gitHubUrl: gitHubUrl,
+                gitHubUrl: plistGitHubUrl,
                 agentId: nil,
                 workFolder: nil,
                 installPath: nil,
                 isRunning: false
-            )
+            ))
         }
+        return (models, installPaths)
     }
 
     // MARK: - Source 2: .runner JSON files
 
-    /// Searches known runner install locations only — avoids scanning `~` wholesale
-    /// which would trigger macOS TCC prompts for Desktop/Documents/Downloads (macOS 14+).
-    private func scanRunnerJSONFiles() -> [RunnerModel] {
+    private func scanRunnerJSONFiles(extraRoots: Set<String>) -> [RunnerModel] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        // Known self-hosted runner install directories — explicit paths only.
-        // ⚠️ DO NOT add `~` or `$HOME` here: broad home-dir scans trigger TCC dialogs.
-        // ⚠️ Each path is single-quoted before shell interpolation so that home
-        // directories containing spaces (e.g. /Users/First Last) don't break find.
-        let rawPaths = [
+        var rawPaths = [
             "\(home)/actions-runner",
             "\(home)/runner",
             "\(home)/github-runner",
             "/opt/actions-runner",
             "/opt/runner",
             "/usr/local/actions-runner",
-            "/usr/local/runner",
+            "/usr/local/runner"
         ]
-        let searchPaths = rawPaths.map { "'\($0)'" }.joined(separator: " ")
+        for extra in extraRoots where !rawPaths.contains(extra) {
+            rawPaths.append(extra)
+        }
 
-        let raw = shell(
-            "find \(searchPaths) -maxdepth 6 -name '.runner' 2>/dev/null",
-            timeout: 15
-        )
+        // Use Process argv directly — no shell, no quoting, no injection surface.
+        // Paths are passed as separate elements so special characters are handled safely.
+        let task = Process()
+        let pipe = Pipe()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+        task.arguments = rawPaths + ["-maxdepth", "6", "-name", ".runner"]
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        var outputData = Data()
+        let lock = NSLock()
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            lock.lock(); outputData.append(chunk); lock.unlock()
+        }
+        do { try task.run() } catch {
+            log("LocalRunnerScanner › find launch error: \(error)")
+            pipe.fileHandleForReading.readabilityHandler = nil
+            return []
+        }
+        let timeoutItem = DispatchWorkItem { task.terminate() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeoutItem)
+        task.waitUntilExit()
+        timeoutItem.cancel()
+        pipe.fileHandleForReading.readabilityHandler = nil
+        let tail = pipe.fileHandleForReading.readDataToEndOfFile()
+        if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
+
+        let raw = String(data: outputData, encoding: .utf8) ?? ""
         guard !raw.isEmpty else { return [] }
 
         return raw.components(separatedBy: "\n")
@@ -138,7 +204,11 @@ struct LocalRunnerScanner {
                     agentId: json.agentId,
                     workFolder: json.workFolder,
                     installPath: url.deletingLastPathComponent().path,
-                    isRunning: false
+                    isRunning: false,
+                    platform: json.platform,
+                    platformArchitecture: json.platformArchitecture,
+                    agentVersion: json.agentVersion,
+                    isEphemeral: json.ephemeral ?? false
                 )
             }
     }

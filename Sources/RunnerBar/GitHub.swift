@@ -1,17 +1,11 @@
+// swiftlint:disable colon identifier_name opening_brace cyclomatic_complexity function_body_length multiple_closures_with_trailing_closure type_body_length
 import Foundation
 import os
 
 // MARK: - gh API
 
-/// Thread-safe rate-limit flag.
-/// Replaces the bare `var ghIsRateLimited: Bool` global that was written from
-/// background threads without synchronization (data race, issue #399 item 2).
-/// Access via `_rateLimitLock.withLock { ... }` or the `ghIsRateLimited` computed
-/// property below.
 private let _rateLimitLock = OSAllocatedUnfairLock(initialState: false)
 
-/// Set to `true` when any `ghAPI` call receives a 403/429 rate-limit response.
-/// Reset to `false` at the start of each `RunnerStore.fetch()` poll cycle.
 var ghIsRateLimited: Bool {
     get { _rateLimitLock.withLock { $0 } }
     set { _rateLimitLock.withLock { $0 = newValue } }
@@ -19,18 +13,12 @@ var ghIsRateLimited: Bool {
 
 // MARK: - Process runner (private)
 
-/// Launches `gh` with the given arguments, streams stdout into a `Data` buffer,
-/// and enforces a hard timeout. Shared by ghAPI, ghAPIPaginated, fetchRegistrationToken.
-///
-/// - Parameters:
-///   - arguments: Arguments passed directly to the `gh` binary.
-///   - timeout:   Kill timeout in seconds. Defaults to 20 s for API calls.
-/// - Returns: Raw stdout bytes, or `nil` on launch failure or empty output.
 private func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> Data? {
     guard let ghPath = ghBinaryPath() else {
-        log("runGHProcess › gh not found")
+        log("runGHProcess › gh not found in known paths")
         return nil
     }
+    log("runGHProcess › \(ghPath) \(arguments.joined(separator: " "))")
     let task = Process()
     let pipe = Pipe()
     task.executableURL = URL(fileURLWithPath: ghPath)
@@ -56,12 +44,12 @@ private func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> Da
     pipe.fileHandleForReading.readabilityHandler = nil
     let tail = pipe.fileHandleForReading.readDataToEndOfFile()
     if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
+    log("runGHProcess › exit=\(task.terminationStatus) bytes=\(outputData.count)")
     return outputData.isEmpty ? nil : outputData
 }
 
 // MARK: - Public gh wrappers
 
-/// Calls the GitHub CLI (`gh api`) with the given endpoint and returns raw response data.
 func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     guard let outputData = runGHProcess(arguments: ["api", endpoint], timeout: timeout) else {
         return nil
@@ -77,10 +65,8 @@ func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     return outputData
 }
 
-/// Calls `gh api --paginate` to follow Link rel=next automatically.
 func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     guard let ghPath = ghBinaryPath() else { log("ghAPIPaginated › gh not found"); return nil }
-    // Need exit code for rate-limit detection, so run the process manually to capture it.
     let task = Process()
     let pipe = Pipe()
     task.executableURL = URL(fileURLWithPath: ghPath)
@@ -122,7 +108,6 @@ func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
 
 // MARK: - URL helpers
 
-/// Extracts the "owner/repo" scope from a GitHub Actions job HTML URL.
 func scopeFromHtmlUrl(_ urlString: String?) -> String? {
     guard let urlString,
           let url = URL(string: urlString),
@@ -131,7 +116,6 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
     return "\(components[1])/\(components[2])"
 }
 
-/// Extracts the workflow run ID from a GitHub Actions job HTML URL.
 func runIDFromHtmlUrl(_ url: String?) -> Int? {
     guard let url else { return nil }
     let parts = url.components(separatedBy: "/")
@@ -143,7 +127,6 @@ func runIDFromHtmlUrl(_ url: String?) -> Int? {
 
 // MARK: - Fetch all jobs from active runs
 
-/// Fetches all active (in_progress + queued) jobs across all runs for the given scope.
 func fetchActiveJobs(for scope: String) -> [ActiveJob] {
     let iso = ISO8601DateFormatter()
     var runIDs: [Int] = []
@@ -189,7 +172,6 @@ private struct WorkflowRun: Codable { let id: Int }
 
 // MARK: - Runners
 
-/// Fetches all self-hosted runners for the given scope via the GitHub CLI.
 func fetchRunners(for scope: String) -> [Runner] {
     let endpoint: String
     if scope.contains("/") {
@@ -213,7 +195,6 @@ private struct RunnersResponse: Codable { let runners: [Runner] }
 
 // MARK: - User orgs and repos
 
-/// Returns the login names of all organisations the authenticated user belongs to.
 func fetchUserOrgs() -> [String] {
     guard let data = ghAPIPaginated("/user/orgs?per_page=100") else { return [] }
     struct Org: Decodable { let login: String }
@@ -221,7 +202,6 @@ func fetchUserOrgs() -> [String] {
     return orgs.map(\.login)
 }
 
-/// Returns `owner/repo` strings for the authenticated user's repositories.
 func fetchUserRepos() -> [String] {
     guard let data = ghAPIPaginated("/user/repos?per_page=100&sort=updated") else { return [] }
     struct Repo: Decodable {
@@ -234,7 +214,6 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Registration token
 
-/// Fetches a runner registration token for the given scope.
 func fetchRegistrationToken(scope: String) -> String? {
     let endpoint: String
     if scope.contains("/") {
@@ -242,25 +221,171 @@ func fetchRegistrationToken(scope: String) -> String? {
     } else {
         endpoint = "orgs/\(scope)/actions/runners/registration-token"
     }
+    log("fetchRegistrationToken › POSTing \(endpoint)")
     let args = ["api", "--method", "POST",
                 "-H", "Accept: application/vnd.github+json", endpoint]
     guard let outputData = runGHProcess(arguments: args, timeout: 30) else {
         log("fetchRegistrationToken › no data for \(endpoint)")
         return nil
     }
-    log("fetchRegistrationToken › \(endpoint) \(outputData.count)b")
+    // NOTE: raw response intentionally not logged — it contains a short-lived token.
+    log("fetchRegistrationToken › \(endpoint) \(outputData.count)b raw=[REDACTED]")
     struct TokenResponse: Decodable { let token: String }
     guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
-        log("fetchRegistrationToken › decode failed: "
-            + "\(String(data: outputData, encoding: .utf8)?.prefix(120) ?? "")")
+        log("fetchRegistrationToken › decode failed for \(endpoint) (\(outputData.count)b)")
         return nil
     }
+    log("fetchRegistrationToken › got token (first 4): \(resp.token.prefix(4))...")
     return resp.token
+}
+
+// MARK: - Removal token
+
+/// Fetches a runner removal token for the given scope (owner/repo or org).
+/// The removal token is required by `config.sh remove --token <token>`.
+func fetchRemovalToken(scope: String) -> String? {
+    let endpoint: String
+    if scope.contains("/") {
+        endpoint = "repos/\(scope)/actions/runners/remove-token"
+    } else {
+        endpoint = "orgs/\(scope)/actions/runners/remove-token"
+    }
+    log("fetchRemovalToken › POSTing \(endpoint)")
+    let args = ["api", "--method", "POST",
+                "-H", "Accept: application/vnd.github+json", endpoint]
+    guard let outputData = runGHProcess(arguments: args, timeout: 30) else {
+        log("fetchRemovalToken › no data returned for \(endpoint)")
+        return nil
+    }
+    // NOTE: raw response intentionally not logged — it contains a short-lived token.
+    log("fetchRemovalToken › raw response (\(outputData.count)b): [REDACTED]")
+    struct TokenResponse: Decodable { let token: String }
+    guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
+        log("fetchRemovalToken › decode failed for \(endpoint) (\(outputData.count)b)")
+        return nil
+    }
+    log("fetchRemovalToken › got removal token (first 4): \(resp.token.prefix(4))...")
+    return resp.token
+}
+
+// MARK: - Delete runner by ID (API fallback for corrupt installs)
+
+/// Directly deregisters a runner from GitHub via DELETE API.
+/// Used as fallback when config.sh is missing or corrupt.
+/// Returns true only if the runner was successfully deleted (HTTP 204, gh exit 0).
+/// A 404 response means the runner ID was not found — that is a failure, not a deletion.
+@discardableResult
+func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
+    let endpoint: String
+    if scope.contains("/") {
+        endpoint = "repos/\(scope)/actions/runners/\(runnerID)"
+    } else {
+        endpoint = "orgs/\(scope)/actions/runners/\(runnerID)"
+    }
+    log("deleteRunnerByID › DELETE \(endpoint) runnerID=\(runnerID)")
+    guard let ghPath = ghBinaryPath() else {
+        log("deleteRunnerByID › gh not found")
+        return false
+    }
+    let task = Process()
+    let pipe = Pipe()
+    task.executableURL = URL(fileURLWithPath: ghPath)
+    task.arguments = ["api", "--method", "DELETE",
+                      "-H", "Accept: application/vnd.github+json", endpoint]
+    task.standardOutput = pipe
+    task.standardError = pipe
+    do { try task.run() } catch {
+        log("deleteRunnerByID › launch error: \(error)")
+        return false
+    }
+    let timeoutItem = DispatchWorkItem { task.terminate() }
+    DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutItem)
+    task.waitUntilExit()
+    timeoutItem.cancel()
+    let outData = pipe.fileHandleForReading.readDataToEndOfFile()
+    let raw = String(data: outData, encoding: .utf8) ?? ""
+    let status = task.terminationStatus
+    log("deleteRunnerByID › exit=\(status) response=\(raw.prefix(200))")
+    // GitHub DELETE returns 204 No Content on success — gh exits 0.
+    // Any non-zero exit (including 404 Not Found) is a genuine failure.
+    let ok = status == 0
+    if !ok {
+        log("deleteRunnerByID › DELETE failed (exit=\(status)) for runnerID=\(runnerID) — runner may still exist on GitHub")
+    }
+    log("deleteRunnerByID › result=\(ok) for runnerID=\(runnerID)")
+    return ok
+}
+
+// MARK: - Patch runner labels (#492)
+
+/// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
+/// The built-in labels (self-hosted, OS, arch) are preserved by GitHub automatically.
+/// Returns the updated label names on success, or nil on failure.
+@discardableResult
+func patchRunnerLabels(scope: String, runnerID: Int, labels: [String]) -> [String]? {
+    let endpoint: String
+    if scope.contains("/") {
+        endpoint = "repos/\(scope)/actions/runners/\(runnerID)/labels"
+    } else {
+        endpoint = "orgs/\(scope)/actions/runners/\(runnerID)/labels"
+    }
+    log("patchRunnerLabels › PUT \(endpoint) labels=\(labels)")
+    // Build JSON body: {"labels": ["label1","label2"]}
+    guard let bodyData = try? JSONSerialization.data(withJSONObject: ["labels": labels]),
+          let bodyString = String(data: bodyData, encoding: .utf8),
+          let ghPath = ghBinaryPath()
+    else {
+        log("patchRunnerLabels › failed to build request")
+        return nil
+    }
+    let task = Process()
+    let pipe = Pipe()
+    let errPipe = Pipe()
+    task.executableURL = URL(fileURLWithPath: ghPath)
+    task.arguments = [
+        "api",
+        "--method", "PUT",
+        "-H", "Accept: application/vnd.github+json",
+        "-H", "Content-Type: application/json",
+        "--input", "-",
+        endpoint
+    ]
+    task.standardOutput = pipe
+    task.standardError = errPipe
+    let inputPipe = Pipe()
+    task.standardInput = inputPipe
+    do { try task.run() } catch {
+        log("patchRunnerLabels › launch error: \(error)")
+        return nil
+    }
+    inputPipe.fileHandleForWriting.write(bodyData)
+    inputPipe.fileHandleForWriting.closeFile()
+    let timeoutItem = DispatchWorkItem { task.terminate() }
+    DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutItem)
+    task.waitUntilExit()
+    timeoutItem.cancel()
+    let outData = pipe.fileHandleForReading.readDataToEndOfFile()
+    let raw = String(data: outData, encoding: .utf8) ?? ""
+    log("patchRunnerLabels › exit=\(task.terminationStatus) response=\(raw.prefix(300))")
+    guard task.terminationStatus == 0 else {
+        log("patchRunnerLabels › non-zero exit for endpoint=\(endpoint) body=\(bodyString)")
+        return nil
+    }
+    struct LabelsResponse: Decodable {
+        struct Label: Decodable { let name: String }
+        let labels: [Label]
+    }
+    guard let resp = try? JSONDecoder().decode(LabelsResponse.self, from: outData) else {
+        log("patchRunnerLabels › decode failed raw=\(raw.prefix(200))")
+        return nil
+    }
+    let names = resp.labels.map(\.name)
+    log("patchRunnerLabels › success labels=\(names)")
+    return names
 }
 
 // MARK: - Step log
 
-/// Fetch and slice the raw log for a single step.
 func fetchStepLog(jobID: Int, stepNumber: Int, scope: String) -> String? {
     guard scope.contains("/") else {
         log("fetchStepLog › skipped: org-scoped logs not supported (scope=\(scope))")
@@ -324,16 +449,15 @@ private func stripAnsi(_ input: String) -> String {
 
 // MARK: - Shared gh binary path
 
-/// Returns the first executable `gh` binary found on common install paths.
 func ghBinaryPath() -> String? {
     let candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
-    return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    let found = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    if found == nil { log("ghBinaryPath › gh not found in \(candidates)") }
+    return found
 }
 
 // MARK: - POST helper
 
-/// Fires a POST to the GitHub API via `gh api --method POST`.
-/// Returns `true` if gh exits 0 (HTTP 2xx), `false` otherwise.
 @discardableResult
 func ghPost(_ endpoint: String) -> Bool {
     guard let ghPath = ghBinaryPath() else { log("ghPost › gh not found"); return false }
@@ -347,7 +471,7 @@ func ghPost(_ endpoint: String) -> Bool {
         log("ghPost › launch error: \(error)")
         return false
     }
-    let timeoutItem = DispatchWorkItem(block: { task.terminate() })
+    let timeoutItem = DispatchWorkItem { task.terminate() }
     DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutItem)
     task.waitUntilExit()
     timeoutItem.cancel()
@@ -357,10 +481,10 @@ func ghPost(_ endpoint: String) -> Bool {
 
 // MARK: - Cancel run
 
-/// Cancels a workflow run via POST `.../cancel`.
 @discardableResult
 func cancelRun(runID: Int, scope: String) -> Bool {
     let result = ghPost("repos/\(scope)/actions/runs/\(runID)/cancel")
     log("cancelRun › run=\(runID) scope=\(scope) success=\(result)")
     return result
 }
+// swiftlint:enable colon identifier_name opening_brace cyclomatic_complexity function_body_length multiple_closures_with_trailing_closure type_body_length

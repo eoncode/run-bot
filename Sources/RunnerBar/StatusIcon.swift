@@ -1,7 +1,6 @@
 import AppKit
 
-// swiftlint:disable missing_docs
-
+// swiftlint:disable operator_usage_whitespace vertical_whitespace_opening_braces
 /// Renders the coloured status icon shown in the menu bar and popover rows.
 struct StatusIcon {
     let status: String
@@ -10,17 +9,17 @@ struct StatusIcon {
     /// Icon character for the current status/conclusion.
     var icon: String {
         switch conclusion {
-        case "success":            return "✓"
-        case "failure":            return "✗"
-        case "cancelled":          return "⊘"
-        case "skipped":            return "⊘"
-        case "timed_out":          return "✗"
-        case "action_required":    return "!"
+        case "success": return "✓"
+        case "failure": return "✗"
+        case "cancelled": return "⊘"
+        case "skipped": return "⊘"
+        case "timed_out": return "✗"
+        case "action_required": return "!"
         default:
             switch status {
-            case "in_progress":    return "▶"
-            case "queued":         return "·"
-            default:               return "·"
+            case "in_progress": return "▶"
+            case "queued": return "·"
+            default: return "·"
             }
         }
     }
@@ -28,15 +27,15 @@ struct StatusIcon {
     /// Foreground colour for the icon.
     var color: NSColor {
         switch conclusion {
-        case "success":            return .systemGreen
+        case "success": return .systemGreen
         case "failure", "timed_out": return .systemRed
-        case "action_required":    return .systemOrange
+        case "action_required": return .systemOrange
         case "cancelled", "skipped": return .secondaryLabelColor
         default:
             switch status {
-            case "in_progress":    return .systemYellow
-            case "queued":         return .secondaryLabelColor
-            default:               return .secondaryLabelColor
+            case "in_progress": return .systemYellow
+            case "queued": return .secondaryLabelColor
+            default: return .secondaryLabelColor
             }
         }
     }
@@ -48,27 +47,25 @@ struct StatusIcon {
     func image(size: CGFloat = 18) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
-
-        // Background circle
-        let bgPath = NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: size - 2, height: size - 2))
+        let iconSize = size - 2
+        let inset: CGFloat = 1
+        let rect = NSRect(x: inset, y: inset, width: iconSize, height: iconSize)
+        let bgPath = NSBezierPath(ovalIn: rect)
         color.withAlphaComponent(0.15).setFill()
         bgPath.fill()
-
-        // Icon text centred in the circle
+        let fontSize = size * 0.55
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: size * 0.55, weight: .bold),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
             .foregroundColor: color
         ]
-        let str = NSAttributedString(string: icon, attributes: attrs)
-        let strSize = str.size()
-        str.draw(at: NSPoint(
-            x: (size - strSize.width) / 2,
-            y: (size - strSize.height) / 2
-        ))
-
+        let attrStr = NSAttributedString(string: icon, attributes: attrs)
+        let strSize = attrStr.size()
+        let drawX = (size - strSize.width) / 2
+        let drawY = (size - strSize.height) / 2
+        attrStr.draw(at: NSPoint(x: drawX, y: drawY))
         img.unlockFocus()
         img.isTemplate = false
         return img
     }
 }
-// swiftlint:enable missing_docs
+// swiftlint:enable operator_usage_whitespace vertical_whitespace_opening_braces

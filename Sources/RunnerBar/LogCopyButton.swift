@@ -4,9 +4,9 @@ import SwiftUI
 /// Top-bar copy button shared by ActionDetailView, JobDetailView, and StepLogView.
 /// States: idle (doc.on.doc + "Copy log") → loading (spinner + "Copying…") → done (✓ + "Done", 1.5s) OR failed (✗ + "Failed", 1.5s) → idle
 struct LogCopyButton: View {
-    /// Called on tap. Pass nil or empty string on failure — button still resets to idle.
+    // Called on tap. Pass nil or empty string on failure — button still resets to idle.
     let fetch: (@escaping (String?) -> Void) -> Void
-    /// When true the button is rendered at reduced opacity and cannot be tapped.
+    // When true the button is rendered at reduced opacity and cannot be tapped.
     var isDisabled: Bool = false
 
     @State private var phase: Phase = .idle
@@ -74,16 +74,17 @@ struct LogCopyButton: View {
     private func startCopy() {
         guard phase == .idle else { return }
         phase = .loading
+        let resetDelay: DispatchTimeInterval = .milliseconds(1500)
         fetch { copyText in
             DispatchQueue.main.async {
                 if let text = copyText, !text.isEmpty {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     phase = .done
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { phase = .idle }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + resetDelay) { phase = .idle }
                 } else {
                     phase = .failed
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { phase = .idle }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + resetDelay) { phase = .idle }
                 }
             }
         }

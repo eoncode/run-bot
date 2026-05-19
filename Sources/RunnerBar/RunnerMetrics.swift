@@ -1,38 +1,36 @@
 import Foundation
 
 /// CPU and memory utilisation snapshot for a single `Runner.Worker` process.
-/// Values are percentages sourced from the `%CPU` and `%MEM` columns of `ps aux`.
 struct RunnerMetrics {
-    /// CPU utilisation as a percentage (e.g. `12.5` means 12.5% of one core).
     let cpu: Double
-    /// Memory utilisation as a percentage of total physical RAM (from `ps aux` `%MEM`).
     let mem: Double
 }
 
-/// Collects all Runner.Worker processes from `ps aux` and returns them
-/// sorted by CPU% descending.
-///
-/// Mirrors ci-dash.py `runner_procs()` + `pair_runners()`: the runner name
-/// does NOT appear in ps args, so name-based matching always fails.
-/// Instead the caller assigns metrics by slot index (busy runners first).
 func allWorkerMetrics() -> [RunnerMetrics] {
+    log("allWorkerMetrics › ENTER — calling shell(ps aux, timeout:5)")
     let output = shell("ps aux", timeout: 5)
+    log("allWorkerMetrics › shell() returned — outputBytes=\(output.count) isEmpty=\(output.isEmpty)")
     guard !output.isEmpty else {
-        log("allWorkerMetrics › ps aux returned empty")
+        log("allWorkerMetrics › ps aux returned empty — returning []")
         return []
     }
+    let lines = output.components(separatedBy: "\n")
+    log("allWorkerMetrics › ps aux returned \(lines.count) lines — scanning for Runner.Worker / Runner.Listener")
     var results: [RunnerMetrics] = []
-    for line in output.components(separatedBy: "\n") {
+    for line in lines {
         guard line.contains("Runner.Worker") || line.contains("Runner.Listener") else { continue }
-        // ps aux columns: USER PID %CPU %MEM VSZ RSS TT STAT STARTED TIME COMMAND…
         let parts = line.split(separator: " ", omittingEmptySubsequences: true)
         guard parts.count > 3,
               let cpu = Double(parts[2]),
-              let mem = Double(parts[3]) else { continue }
+              let mem = Double(parts[3]) else {
+            log("allWorkerMetrics › failed to parse line: \(line)")
+            continue
+        }
         let tail = parts.dropFirst(10).prefix(3).joined(separator: " ")
         log("allWorkerMetrics › found process cpu=\(cpu) mem=\(mem): \(tail)")
         results.append(RunnerMetrics(cpu: cpu, mem: mem))
     }
-    // Highest CPU first — matches ci-dash.py Worker ordering
-    return results.sorted { $0.cpu > $1.cpu }
+    let sorted = results.sorted { $0.cpu > $1.cpu }
+    log("allWorkerMetrics › EXIT — returning \(sorted.count) metric(s)")
+    return sorted
 }

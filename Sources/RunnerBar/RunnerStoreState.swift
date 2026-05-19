@@ -2,31 +2,31 @@ import Foundation
 
 // MARK: - Poll result value types
 
-/// Result returned by `RunnerStore.buildJobState(_:)`.
+// Result returned by `RunnerStore.buildJobState(_:)`.
 struct JobPollResult {
-    /// Jobs to display in the popover (in_progress → queued → cached done).
+    // Jobs to display in the popover (in_progress → queued → cached done).
     let display: [ActiveJob]
-    /// Updated completed-job cache, trimmed to 3 entries.
+    // Updated completed-job cache, trimmed to 3 entries.
     let newCache: [Int: ActiveJob]
-    /// Live-job snapshot for the next poll's diff.
+    // Live-job snapshot for the next poll's diff.
     let newPrevLive: [Int: ActiveJob]
 }
 
-/// Result returned by `RunnerStore.buildGroupState(_:)`.
+// Result returned by `RunnerStore.buildGroupState(_:)`.
 struct GroupPollResult {
-    /// Action groups to display in the popover.
+    // Action groups to display in the popover.
     let display: [ActionGroup]
-    /// Updated group cache, trimmed to 30 entries.
+    // Updated group cache, trimmed to 30 entries.
     let newGroupCache: [String: ActionGroup]
-    /// Live-group snapshot for the next poll's diff.
+    // Live-group snapshot for the next poll's diff.
     let newPrevLiveGroups: [String: ActionGroup]
 }
 
 // MARK: - Job state builder
 
-/// RunnerStore extension providing the job-state builder used by the background poll.
+// RunnerStore extension providing the job-state builder used by the background poll.
 extension RunnerStore {
-    /// Builds the job display list and updated caches from a background poll snapshot.
+    // Builds the job display list and updated caches from a background poll snapshot.
     func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
         var allFetched: [ActiveJob] = []
         for scope in ScopeStore.shared.scopes {
@@ -73,7 +73,7 @@ extension RunnerStore {
         return JobPollResult(display: display, newCache: newCache, newPrevLive: newPrevLive)
     }
 
-    /// Inserts completed stubs for jobs that were live last poll but have since vanished.
+    // Inserts completed stubs for jobs that were live last poll but have since vanished.
     private func applyVanishedJobs(
         snapPrev: [Int: ActiveJob],
         liveIDs: Set<Int>,
@@ -139,19 +139,27 @@ extension RunnerStore {
 
 // MARK: - Group state builder
 
-/// RunnerStore extension providing the group-state builder used by the background poll.
+// RunnerStore extension providing the group-state builder used by the background poll.
 extension RunnerStore {
-    /// Builds the action-group display list and updated caches from a background poll.
+    // Builds the action-group display list and updated caches from a background poll.
     func buildGroupState(
         snapPrevGroups: [String: ActionGroup],
         snapGroupCache: [String: ActionGroup],
         jobCache: [Int: ActiveJob]
     ) -> GroupPollResult {
+        let scopes = ScopeStore.shared.scopes
+        log("RunnerStore › buildGroupState — scopes=\(scopes) snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count)")
+        if scopes.isEmpty {
+            log("RunnerStore › ⚠️ buildGroupState — scopes is EMPTY, returning empty GroupPollResult")
+            return GroupPollResult(display: [], newGroupCache: snapGroupCache, newPrevLiveGroups: snapPrevGroups)
+        }
         let shaKeyedCache = makeShaKeyedCache(snapGroupCache)
         var allFetched: [ActionGroup] = []
-        for scope in ScopeStore.shared.scopes {
+        for scope in scopes {
+            log("RunnerStore › buildGroupState — fetching scope=\(scope)")
             allFetched.append(contentsOf: fetchActionGroups(for: scope, cache: shaKeyedCache))
         }
+        log("RunnerStore › buildGroupState — allFetched.count=\(allFetched.count)")
 
         let liveGroups = allFetched.filter { $0.groupStatus != .completed }
         let doneGroups = allFetched.filter { $0.groupStatus == .completed }

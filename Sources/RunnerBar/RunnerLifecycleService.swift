@@ -1,192 +1,231 @@
 import Foundation
 
+// MARK: - LifecycleResult
+
+enum LifecycleResult {
+    case success
+    case corruptInstall
+    case failed(String)
+}
+
 // MARK: - RunnerLifecycleService
 
-/// Encapsulates all shell-level lifecycle operations for a locally-installed
-/// GitHub Actions self-hosted runner. All methods are synchronous and blocking
-/// — always call from a background thread.
-///
-/// Token-gated operations (remove, rename, updateConfig) require a `gh` CLI
-/// session or GH_TOKEN/GITHUB_TOKEN to be present, as they invoke
-/// `config.sh remove` which calls the GitHub de-registration API.
+// swiftlint:disable:next type_body_length
 struct RunnerLifecycleService {
-    // MARK: - Shared singleton
-
-    /// The shared `RunnerLifecycleService` instance used throughout the app.
     static let shared = RunnerLifecycleService()
     private init() {}
 
-    // MARK: - launchctl label helper
-
-    /// Derives the launchd service label for a runner from its name and
-    /// gitHubUrl. The label format used by the runner agent installer is:
-    /// `actions.runner.<owner>.<repo>.<runnerName>` for repo-scoped runners, or
-    /// `actions.runner.<org>.<runnerName>` for org-scoped runners.
-    func serviceLabel(for runner: RunnerModel) -> String? {
-        guard let urlStr = runner.gitHubUrl,
-              let url = URL(string: urlStr)
-        else { return nil }
-        let parts = url.pathComponents.filter { $0 != "/" }
-        let name = runner.runnerName
-        if parts.count >= 2 {
-            return "actions.runner.\(parts[0]).\(parts[1]).\(name)"
-        } else if parts.count == 1 {
-            return "actions.runner.\(parts[0]).\(name)"
-        }
-        return nil
-    }
-
-    /// Looks up the exact launchd label for this runner by running
-    /// `/bin/launchctl list` via Process (no shell, no grep) and filtering
-    /// the output lines in Swift.
-    ///
-    /// Uses `hasSuffix("." + runnerName)` rather than `contains(runnerName)`
-    /// to prevent a runner named "ci-runner" from matching
-    /// "actions.runner.org.repo.ci-runner-backup" or similar.
-    ///
-    /// Falls back to the derived `serviceLabel(for:)` if no match is found.
-    private func resolvedLabel(for runner: RunnerModel) -> String? {
-        // Run /bin/launchctl list directly — no shell string, no pipe, no grep.
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        task.arguments = ["list"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe() // discard stderr
-        do { try task.run() } catch {
-            log("RunnerLifecycle › resolvedLabel: launchctl list failed: \(error)")
-            return serviceLabel(for: runner)
-        }
-        let timeoutItem = DispatchWorkItem { task.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-
-        // Filter in Swift: find a launchd label whose last component is exactly runnerName.
-        let exactSuffix = "." + runner.runnerName
-        for line in output.components(separatedBy: "\n") where !line.isEmpty {
-            let cols = line.components(separatedBy: "\t")
-            guard cols.count >= 3 else { continue }
-            let label = cols[2].trimmingCharacters(in: .whitespaces)
-            if label.hasPrefix("actions.runner") && label.hasSuffix(exactSuffix) {
-                return label
-            }
-        }
-        return serviceLabel(for: runner)
-    }
-
     // MARK: - Start
 
-    /// Starts the runner's launchd service.
-    /// Returns `true` when `launchctl start` exits with status 0, `false` otherwise.
     @discardableResult
-    func start(runner: RunnerModel) -> Bool {
-        guard let label = resolvedLabel(for: runner) else {
-            log("RunnerLifecycle › start: no label for \(runner.runnerName)")
-            return false
+    func start(runner: RunnerModel) -> LifecycleResult {
+        let ip = runner.installPath ?? "nil"
+        let gh = runner.gitHubUrl ?? "nil"
+        log("RunnerLifecycle > START called runner=\(runner.runnerName) installPath=\(ip) gitHubUrl=\(gh)")
+        guard let path = runner.installPath else {
+            log("RunnerLifecycle > START abort — no installPath for \(runner.runnerName)")
+            return .failed("Install path unknown")
         }
-        return runLaunchctl("start", label: label)
+        let dir = URL(fileURLWithPath: path)
+        let svcPath = dir.appendingPathComponent("svc.sh").path
+        let svcExists = FileManager.default.fileExists(atPath: svcPath)
+        let svcExec = FileManager.default.isExecutableFile(atPath: svcPath)
+        log("RunnerLifecycle > START svc.sh=\(svcPath) exists=\(svcExists) executable=\(svcExec)")
+
+        log("RunnerLifecycle > START step1: svc.sh install")
+        let (installOk, installOutput) = runScriptWithOutput(
+            executableName: "svc.sh", arguments: ["install"],
+            workingDirectory: dir, timeout: 15, logTag: "svc.sh install")
+        log("RunnerLifecycle > START step1 done: ok=\(installOk) output=\(installOutput.prefix(300))")
+        log("RunnerLifecycle > START step1 corruptCheck: isCorrupt=\(isCorruptInstall(output: installOutput))")
+
+        if isCorruptInstall(output: installOutput) {
+            log("RunnerLifecycle > START RETURNING .corruptInstall after install step for \(runner.runnerName)")
+            return .corruptInstall
+        }
+
+        log("RunnerLifecycle > START step2: svc.sh start")
+        let (startOk, startOutput) = runScriptWithOutput(
+            executableName: "svc.sh", arguments: ["start"],
+            workingDirectory: dir, timeout: 15, logTag: "svc.sh start")
+        log("RunnerLifecycle > START step2 done: ok=\(startOk) output=\(startOutput.prefix(300))")
+        log("RunnerLifecycle > START step2 corruptCheck: isCorrupt=\(isCorruptInstall(output: startOutput))")
+
+        if isCorruptInstall(output: startOutput) {
+            log("RunnerLifecycle > START RETURNING .corruptInstall after start step for \(runner.runnerName)")
+            return .corruptInstall
+        }
+
+        if startOk {
+            log("RunnerLifecycle > START RETURNING .success for \(runner.runnerName)")
+            return .success
+        }
+        let msg = startOutput.components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? "Failed to start"
+        log("RunnerLifecycle > START RETURNING .failed(\(msg)) for \(runner.runnerName)")
+        return .failed(msg)
     }
 
     // MARK: - Stop
 
-    /// Stops the runner's launchd service.
-    /// Returns `true` when `launchctl stop` exits with status 0, `false` otherwise.
     @discardableResult
-    func stop(runner: RunnerModel) -> Bool {
-        guard let label = resolvedLabel(for: runner) else {
-            log("RunnerLifecycle › stop: no label for \(runner.runnerName)")
-            return false
+    func stop(runner: RunnerModel) -> LifecycleResult {
+        let ip = runner.installPath ?? "nil"
+        log("RunnerLifecycle > STOP called runner=\(runner.runnerName) installPath=\(ip)")
+        guard let path = runner.installPath else {
+            log("RunnerLifecycle > STOP abort — no installPath for \(runner.runnerName)")
+            return .failed("Install path unknown")
         }
-        return runLaunchctl("stop", label: label)
-    }
+        let dir = URL(fileURLWithPath: path)
 
-    // MARK: - launchctl runner
+        log("RunnerLifecycle > STOP step1: svc.sh stop")
+        let (stopOk, stopOutput) = runScriptWithOutput(
+            executableName: "svc.sh", arguments: ["stop"],
+            workingDirectory: dir, timeout: 15, logTag: "svc.sh stop")
+        log("RunnerLifecycle > STOP step1 done: ok=\(stopOk) output=\(stopOutput.prefix(300))")
 
-    /// Invokes `/bin/launchctl <subcommand> <label>` via Process (no shell
-    /// interpolation) and returns `true` iff the exit status is 0.
-    ///
-    /// launchctl exits 0 on success and non-zero with a descriptive error on
-    /// failure, so terminationStatus is the authoritative signal.
-    @discardableResult
-    private func runLaunchctl(_ subcommand: String, label: String) -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        task.arguments = [subcommand, label]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        do { try task.run() } catch {
-            log("RunnerLifecycle › launchctl \(subcommand) \(label) launch error: \(error)")
-            return false
+        if isCorruptInstall(output: stopOutput) {
+            log("RunnerLifecycle > STOP RETURNING .corruptInstall for \(runner.runnerName)")
+            return .corruptInstall
         }
-        let timeoutItem = DispatchWorkItem { task.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        log("RunnerLifecycle › launchctl \(subcommand) \(label) exit=\(task.terminationStatus): \(output.prefix(120))")
-        return task.terminationStatus == 0
+
+        log("RunnerLifecycle > STOP step2: svc.sh uninstall")
+        let (uninstallOk, uninstallOutput) = runScriptWithOutput(
+            executableName: "svc.sh", arguments: ["uninstall"],
+            workingDirectory: dir, timeout: 15, logTag: "svc.sh uninstall")
+        log("RunnerLifecycle > STOP step2 done: ok=\(uninstallOk) output=\(uninstallOutput.prefix(300))")
+
+        if stopOk {
+            log("RunnerLifecycle > STOP RETURNING .success for \(runner.runnerName)")
+            return .success
+        }
+        let msg = stopOutput.components(separatedBy: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? "Failed to stop"
+        log("RunnerLifecycle > STOP RETURNING .failed(\(msg)) for \(runner.runnerName)")
+        return .failed(msg)
     }
 
     // MARK: - Remove
 
-    /// Uninstalls and de-registers the runner.
-    ///
-    /// Runs `./svc.sh uninstall` then `./config.sh remove --unattended` from the
-    /// runner's `installPath` using `Process.arguments` so the path is never
-    /// interpolated into a shell string.
-    ///
-    /// If `svc.sh uninstall` fails, a warning is logged and the method still
-    /// proceeds to `config.sh remove` to avoid leaving a ghost registration on
-    /// the GitHub side. The return value reflects whether both steps succeeded.
-    ///
-    /// ⚠️ Blocking — must only be called from a background thread.
-    /// Requires a GitHub token (gh auth login, GH_TOKEN, or GITHUB_TOKEN).
-    ///
-    /// Returns `true` when both scripts exit with status 0.
     @discardableResult
     func remove(runner: RunnerModel) -> Bool {
+        let ip = runner.installPath ?? "nil"
+        let gh = runner.gitHubUrl ?? "nil"
+        log("RunnerLifecycle > REMOVE called runner=\(runner.runnerName) installPath=\(ip) gitHubUrl=\(gh)")
         guard let path = runner.installPath else {
-            log("RunnerLifecycle › remove: no installPath for \(runner.runnerName)")
+            log("RunnerLifecycle > REMOVE abort — no installPath for \(runner.runnerName)")
             return false
         }
         let dir = URL(fileURLWithPath: path)
-        let svcOk = runScript(executableName: "svc.sh",
-                              arguments: ["uninstall"],
-                              workingDirectory: dir,
-                              timeout: 30,
-                              logTag: "svc.sh uninstall")
-        if !svcOk {
-            // Log a warning but continue: de-registering from GitHub is more
-            // important than the local service uninstall, since a failed
-            // svc.sh often means the service wasn't loaded (already stopped).
-            log("RunnerLifecycle › remove: svc.sh uninstall failed for \(runner.runnerName)")
-            log("RunnerLifecycle › remove: proceeding to config.sh remove")
+
+        log("RunnerLifecycle > REMOVE step1: svc.sh uninstall")
+        let (svcOk, _) = runScriptWithOutput(executableName: "svc.sh", arguments: ["uninstall"],
+                              workingDirectory: dir, timeout: 30, logTag: "svc.sh uninstall")
+        log("RunnerLifecycle > REMOVE step1 result=\(svcOk) (non-fatal)")
+
+        guard let gitHubUrl = runner.gitHubUrl else {
+            log("RunnerLifecycle > REMOVE abort — no gitHubUrl on runner \(runner.runnerName)")
+            return false
         }
-        let cfgOk = runScript(executableName: "config.sh",
-                              arguments: ["remove", "--unattended"],
-                              workingDirectory: dir,
-                              timeout: 30,
-                              logTag: "config.sh remove")
-        return svcOk && cfgOk
+        let scope = scopeFromGitHubUrl(gitHubUrl)
+
+        log("RunnerLifecycle > REMOVE step2: fetching removal token for scope=\(scope)")
+        guard let token = fetchRemovalToken(scope: scope) else {
+            log("RunnerLifecycle > REMOVE abort — fetchRemovalToken returned nil for scope=\(scope)")
+            return false
+        }
+        log("RunnerLifecycle > REMOVE step2: got token len=\(token.count)")
+
+        log("RunnerLifecycle > REMOVE step3: config.sh remove --token <token> in \(path)")
+        let (cfgOk, cfgOutput) = runScriptWithOutput(executableName: "config.sh",
+            arguments: ["remove", "--token", token],
+            workingDirectory: dir, timeout: 30, logTag: "config.sh remove")
+        log("RunnerLifecycle > REMOVE step3 result=\(cfgOk) for \(runner.runnerName)")
+
+        var removeOk = cfgOk
+
+        if !cfgOk {
+            let isCorrupt = cfgOutput.contains("No such file or directory")
+                || cfgOutput.contains("install is corrupt")
+                || cfgOutput.contains("must run from runner root")
+            log("RunnerLifecycle > REMOVE step3b: config.sh failed isCorrupt=\(isCorrupt) — trying API DELETE fallback")
+            if let agentId = runner.agentId {
+                log("RunnerLifecycle > REMOVE step3b: calling deleteRunnerByID scope=\(scope) agentId=\(agentId)")
+                let apiOk = deleteRunnerByID(scope: scope, runnerID: agentId)
+                log("RunnerLifecycle > REMOVE step3b: deleteRunnerByID result=\(apiOk)")
+                removeOk = apiOk
+            } else {
+                log("RunnerLifecycle > REMOVE step3b: no agentId available — cannot use API DELETE fallback")
+            }
+        }
+
+        if removeOk || (!cfgOk && runner.agentId != nil) {
+            log("RunnerLifecycle > REMOVE step4: deleting install dir \(path)")
+            do {
+                try FileManager.default.removeItem(atPath: path)
+                log("RunnerLifecycle > REMOVE step4: deleted \(path)")
+            } catch {
+                log("RunnerLifecycle > REMOVE step4: failed to delete dir \(path): \(error)")
+            }
+            deleteLaunchAgentPlist(for: runner.runnerName)
+        }
+
+        log("RunnerLifecycle > REMOVE done: svcOk=\(svcOk) cfgOk=\(cfgOk) removeOk=\(removeOk) for \(runner.runnerName)")
+        return removeOk
     }
 
-    /// Launches `<workingDirectory>/<executableName>` via `Process.arguments`
-    /// (no shell interpolation). Waits up to `timeout` seconds.
-    ///
-    /// ⚠️ Blocking — must only be called from a background thread.
-    ///
-    /// Returns `true` when the process exits with status 0.
-    private func runScript(
+    // MARK: - Corrupt install detection
+
+    private func isCorruptInstall(output: String) -> Bool {
+        let lower = output.lowercased()
+        let result = lower.contains("must run from runner root") || lower.contains("install is corrupt")
+        log("RunnerLifecycle > isCorruptInstall: result=\(result) for output prefix=\(output.prefix(100))")
+        return result
+    }
+
+    // MARK: - LaunchAgent plist cleanup
+
+    private func deleteLaunchAgentPlist(for runnerName: String) {
+        let laDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents")
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: laDir, includingPropertiesForKeys: nil) else { return }
+        for url in entries {
+            let filename = url.deletingPathExtension().lastPathComponent
+            if filename.hasPrefix("actions.runner") && filename.hasSuffix("." + runnerName) {
+                try? FileManager.default.removeItem(at: url)
+                log("RunnerLifecycle > deleteLaunchAgentPlist: deleted \(url.path)")
+            }
+        }
+    }
+
+    // MARK: - Scope helper
+
+    private func scopeFromGitHubUrl(_ urlString: String) -> String {
+        guard let url = URL(string: urlString) else { return urlString }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        if parts.count >= 2 { return "\(parts[0])/\(parts[1])" }
+        if parts.count == 1 { return parts[0] }
+        return urlString
+    }
+
+    // MARK: - Script runner
+
+    private func runScriptWithOutput(
         executableName: String,
         arguments: [String],
         workingDirectory: URL,
         timeout: TimeInterval,
         logTag: String
-    ) -> Bool {
+    ) -> (Bool, String) {
         let executableURL = workingDirectory.appendingPathComponent(executableName)
+        let execPath = executableURL.path
+        let isExec = FileManager.default.isExecutableFile(atPath: execPath)
+        log("RunnerLifecycle > runScript [\(logTag)]: execPath=\(execPath) executable=\(isExec) args=\(arguments.filter { $0.hasPrefix("--") || $0.count <= 20 }) cwd=\(workingDirectory.path)")
+        guard isExec else {
+            log("RunnerLifecycle > runScript [\(logTag)]: ABORT not executable")
+            return (false, "")
+        }
         let task = Process()
         task.executableURL = executableURL
         task.currentDirectoryURL = workingDirectory
@@ -196,17 +235,25 @@ struct RunnerLifecycleService {
         task.standardError = pipe
         var outputData = Data()
         let lock = NSLock()
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
             lock.lock(); outputData.append(chunk); lock.unlock()
         }
-        do { try task.run() } catch {
+        do {
+            try task.run()
+            log("RunnerLifecycle > runScript [\(logTag)]: launched pid=\(task.processIdentifier)")
+        } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
-            log("RunnerLifecycle › \(logTag) launch error: \(error)")
-            return false
+            log("RunnerLifecycle > runScript [\(logTag)]: launch FAILED: \(error)")
+            return (false, "")
         }
-        let timeoutItem = DispatchWorkItem { task.terminate() }
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
+        let timeoutItem = DispatchWorkItem {
+            log("RunnerLifecycle > runScript [\(logTag)]: TIMEOUT — terminating")
+            task.terminate()
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
         task.waitUntilExit()
         timeoutItem.cancel()
@@ -214,75 +261,20 @@ struct RunnerLifecycleService {
         let tail = pipe.fileHandleForReading.readDataToEndOfFile()
         if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
         let output = String(data: outputData, encoding: .utf8) ?? ""
-        log("RunnerLifecycle › \(logTag) exit=\(task.terminationStatus): \(output.prefix(120))")
-        return task.terminationStatus == 0
+        log("RunnerLifecycle > runScript [\(logTag)]: exit=\(task.terminationStatus) output=\(output.prefix(500))")
+        return (task.terminationStatus == 0, output)
     }
 
-    // MARK: - Rename
+    // MARK: - Update config
 
-    // Phase 2 — wired in follow-up.
-    // rename() currently only patches the local .runner JSON; it does not call
-    // config.sh remove + config.sh --name <newName> to re-register the runner
-    // with GitHub. Full rename requires a registration token and is deferred to
-    // the Phase 2 follow-up issue. Marked private to prevent accidental use
-    // until re-registration is implemented.
-    /// Renames the runner by patching the `runnerName` field in the `.runner`
-    /// JSON file at `installPath`.
-    ///
-    /// ⚠️ Incomplete — does NOT re-register the runner with GitHub.
-    /// Local state and GitHub state will diverge silently if called.
-    /// Deferred to Phase 2 follow-up issue. Do not expose via UI.
-    @discardableResult
-    private func rename(runner: RunnerModel, newName: String) -> Bool {
-        guard let path = runner.installPath else {
-            log("RunnerLifecycle › rename: no installPath for \(runner.runnerName)")
-            return false
-        }
-        let jsonPath = "\(path)/.runner"
-        let url = URL(fileURLWithPath: jsonPath)
-        guard let data = try? Data(contentsOf: url),
-              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            log("RunnerLifecycle › rename: failed to read .runner JSON at \(jsonPath)")
-            return false
-        }
-        json["runnerName"] = newName
-        guard let updated = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
-        else {
-            log("RunnerLifecycle › rename: failed to serialise updated JSON")
-            return false
-        }
-        do {
-            try updated.write(to: url)
-            log("RunnerLifecycle › rename: \(runner.runnerName) → \(newName)")
-            return true
-        } catch {
-            log("RunnerLifecycle › rename write error: \(error)")
-            return false
-        }
-    }
-
-    // MARK: - Update config (labels / workFolder)
-
-    /// Writes updated labels and workFolder to the `.runner` JSON at `installPath`.
-    ///
-    /// Note: the runner agent caches config in memory — changes take effect after
-    /// the next runner restart.
-    ///
-    /// TODO: add `customLabels` to `RunnerJSON` in `LocalRunnerScanner` so labels
-    /// written here are re-read on the next scan and reflected in `RunnerModel.labels`.
     @discardableResult
     func updateConfig(runner: RunnerModel, labels: [String], workFolder: String) -> Bool {
-        guard let path = runner.installPath else {
-            log("RunnerLifecycle › updateConfig: no installPath for \(runner.runnerName)")
-            return false
-        }
-        let jsonPath = "\(path)/.runner"
-        let url = URL(fileURLWithPath: jsonPath)
+        guard let path = runner.installPath else { return false }
+        let url = URL(fileURLWithPath: path).appendingPathComponent(".runner")
         guard let data = try? Data(contentsOf: url),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            log("RunnerLifecycle › updateConfig: failed to read .runner at \(jsonPath)")
+            log("RunnerLifecycle > updateConfig: failed to read .runner at \(path)")
             return false
         }
         json["workFolder"] = workFolder
@@ -291,10 +283,10 @@ struct RunnerLifecycleService {
         else { return false }
         do {
             try updated.write(to: url)
-            log("RunnerLifecycle › updateConfig: labels=\(labels) workFolder=\(workFolder)")
+            log("RunnerLifecycle > updateConfig: labels=\(labels) workFolder=\(workFolder)")
             return true
         } catch {
-            log("RunnerLifecycle › updateConfig write error: \(error)")
+            log("RunnerLifecycle > updateConfig write error: \(error)")
             return false
         }
     }
