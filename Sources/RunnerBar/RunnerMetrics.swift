@@ -1,5 +1,4 @@
 import Foundation
-// swiftlint:disable vertical_whitespace_closing_braces
 
 /// CPU and memory utilisation snapshot for a single `Runner.Worker` process.
 struct RunnerMetrics {
@@ -21,6 +20,7 @@ func allWorkerMetrics() -> [RunnerMetrics] {
     for line in lines {
         guard line.contains("Runner.Worker") || line.contains("Runner.Listener") else { continue }
         let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+        // swiftlint:disable:next vertical_whitespace_closing_braces
         guard parts.count > 3,
               let cpu = Double(parts[2]),
               let mem = Double(parts[3]) else {
