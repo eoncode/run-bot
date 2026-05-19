@@ -77,7 +77,6 @@ struct AddScopeSheet: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 6)
-
                         } else if usePicker && !pickerItems.isEmpty {
                             Picker("", selection: $selectedScope) {
                                 ForEach(pickerItems, id: \.self) { item in
@@ -86,7 +85,6 @@ struct AddScopeSheet: View {
                             }
                             .labelsHidden()
                             .frame(maxWidth: .infinity)
-
                         } else {
                             TextField(
                                 scopeType == .org ? "e.g. myorg" : "e.g. myorg/myrepo",
