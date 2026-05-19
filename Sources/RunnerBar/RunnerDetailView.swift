@@ -507,13 +507,9 @@ struct RunnerDetailView: View {
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 
+    // dotColor is derived from live isRunning state, not the frozen runner snapshot
     private var dotColor: Color {
-        switch runner.statusColor {
-        case .running: return Color.rbSuccess
-        case .busy:    return Color.rbWarning
-        case .idle:    return Color.rbTextTertiary
-        case .offline: return Color.rbDanger
-        }
+        isRunning ? Color.rbSuccess : Color.rbDanger
     }
 
     // MARK: - On Appear
@@ -674,7 +670,9 @@ struct RunnerDetailView: View {
             let proxyFilePath = installPath + "/.proxy"
             do {
                 if urlValue.isEmpty {
-                    try? FileManager.default.removeItem(atPath: proxyFilePath)
+                    if FileManager.default.fileExists(atPath: proxyFilePath) {
+                        try FileManager.default.removeItem(atPath: proxyFilePath)
+                    }
                 } else {
                     try urlValue.write(toFile: proxyFilePath, atomically: true, encoding: .utf8)
                 }
@@ -682,7 +680,9 @@ struct RunnerDetailView: View {
             let credPath = installPath + "/.proxycredentials"
             do {
                 if user.isEmpty && pass.isEmpty {
-                    try? FileManager.default.removeItem(atPath: credPath)
+                    if FileManager.default.fileExists(atPath: credPath) {
+                        try FileManager.default.removeItem(atPath: credPath)
+                    }
                 } else {
                     try "\(user)\n\(pass)".write(toFile: credPath, atomically: true, encoding: .utf8)
                 }
