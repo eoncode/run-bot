@@ -1,1 +1,242 @@
-aW1wb3J0IFN3aWZ0VUkKCi8vIE1BUks6IC0gU2NvcGVEZXRhaWxWaWV3Ci8vIE5hdmlnYXRpb24gbGV2ZWw6IFNldHRpbmdzVmlldyAoc2NvcGUgcm93IHRhcCkg4oaSIFNjb3BlRGV0YWlsVmlldwovLwovLyAjNDk5OiBOYXYgc2hlbGwgKyB3aXJpbmcKLy8gIzUxMzogU2ltcGxpZmllZCDigJQgYWxpYXMsIHBvbGxpbmcsIG5vdGlmaWNhdGlvbnMgc2VjdGlvbnMgcmVtb3ZlZC4KLy8gICAgICAgRW5hYmxlIHRvZ2dsZSBtb3ZlZCBmcm9tIGhlYWRlciBpbnRvIGl0cyBvd24gTW9uaXRvcmluZyBzZWN0aW9uLgovLyAgICAgICBNb25pdG9yaW5nIHJvdyByZW1vdmVkIGZyb20gU2NvcGUgSW5mbyBjYXJkLgovLyAjNTM5OiBMYXlvdXQgaW1wcm92ZW1lbnRzIC0tIHNlY3Rpb24gbGFiZWxzLCBjYXJkIHN0cnVjdHVyZSBhbGlnbmVkIHdpdGggc3BlYy4KCnN0cnVjdCBTY29wZURldGFpbFZpZXc6IFZpZXcgewogICAgbGV0IHNjb3BlRW50cnk6IFNjb3BlRW50cnkKICAgIGxldCBvbkJhY2s6ICgpIC0+IFZvaWQKCiAgICBAT2JzZXJ2ZWRPYmplY3QgcHJpdmF0ZSB2YXIgc2NvcGVTdG9yZSA9IFNjb3BlU3RvcmUuc2hhcmVkCgogICAgaW5pdChzY29wZUVudHJ5OiBTY29wZUVudHJ5LCBvbkJhY2s6IEBlc2NhcGluZyAoKSAtPiBWb2lkKSB7CiAgICAgICAgc2VsZi5zY29wZUVudHJ5ID0gc2NvcGVFbnRyeQogICAgICAgIHNlbGYub25CYWNrID0gb25CYWNrCiAgICB9CgogICAgLy8gTGl2ZSBlbnRyeSBmcm9tIHN0b3JlIHNvIHRvZ2dsZSByZWZsZWN0cyBjdXJyZW50IHN0YXRlLgogICAgcHJpdmF0ZSB2YXIgbGl2ZUVudHJ5OiBTY29wZUVudHJ5PyB7CiAgICAgICAgc2NvcGVTdG9yZS5lbnRyaWVzLmZpcnN0KHdoZXJlOiB7ICQwLmlkID09IHNjb3BlRW50cnkuaWQgfSkKICAgIH0KICAgIHByaXZhdGUgdmFyIGlzRW5hYmxlZDogQm9vbCB7IGxpdmVFbnRyeT8uaXNFbmFibGVkID8/IHNjb3BlRW50cnkuaXNFbmFibGVkIH0KICAgIHByaXZhdGUgdmFyIHNjb3BlOiBTdHJpbmcgeyBzY29wZUVudHJ5LnNjb3BlIH0KICAgIHByaXZhdGUgdmFyIGlzUmVwbzogQm9vbCB7IHNjb3BlLmNvbnRhaW5zKCIvIikgfQoKICAgIC8vLyBHaXRIdWIgVVJMIGZvciB0aGlzIHNjb3BlOiBodHRwczovL2dpdGh1Yi5jb20vPG9yZz4vPHJlcG8+IG9yIGh0dHBzOi8vZ2l0aHViLmNvbS88b3JnPgogICAgcHJpdmF0ZSB2YXIgZ2l0SFVSTFVSTD8gewogICAgICAgIFVSTChzdHJpbmc6ICJodHRwczovL2dpdGh1Yi5jb20vXChzY29wZSkiKQogICAgfQoKICAgIHZhciBib2R5OiBzb21lIFZpZXcgewogICAgICAgIFZTdGFjayhhbGlnbm1lbnQ6IC5sZWFkaW5nLCBzcGFjaW5nOiAwKSB7CiAgICAgICAgICAgIGhlYWRlckJhcgogICAgICAgICAgICBEaXZpZGVyKCkKICAgICAgICAgICAgU2Nyb2xsVmlldygudmVydGljYWwsIHNob3dJbmRpY2F0b3JzOiB0cnVlKSB7CiAgICAgICAgICAgICAgICBWU3RhY2soYWxpZ25tZW50OiAubGVhZGluZywgc3BhY2luZzogMCkgewogICAgICAgICAgICAgICAgICAgIGluZm9TZWN0aW9uCiAgICAgICAgICAgICAgICAgICAgbW9uaXRvcmluZ1NlY3Rpb24KICAgICAgICAgICAgICAgICAgICBkYW5nZXJTZWN0aW9uCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAucGFkZGluZyguYm90dG9tLCAxNikKICAgICAgICAgICAgfQogICAgICAgICAgICAuZnJhbWUobWF4SGVpZ2h0OiAuaW5maW5pdHkpCiAgICAgICAgfQogICAgICAgIC5mcmFtZShpZGVhbFdpZHRoOiA0ODAsIG1heFdpZHRoOiAuaW5maW5pdHkpCiAgICB9CgogICAgLy8gTUFSSzogLSBIZWFkZXIKICAgIC8vICM1MTc6IFRvZ2dsZSByZW1vdmVkIGZyb20gaGVhZGVyIOKAlCBoZWFkZXIgaXMgbm93IGNsZWFuIG5hdiBvbmx5LgogICAgLy8gIzUzOTogSGVhZGVyIG5vdyBzaG93cyBSZXBvL09yZyBiYWRnZSArIGRpc3BsYXkgbmFtZSBvbiByaWdodC4KCiAgICBwcml2YXRlIHZhciBoZWFkZXJCYXI6IHNvbWUgVmlldyB7CiAgICAgICAgSFN0YWNrKHNwYWNpbmc6IDgpIHsKICAgICAgICAgICAgQnV0dG9uKGFjdGlvbjogb25CYWNrKSB7CiAgICAgICAgICAgICAgICBIU3RhY2soc3BhY2luZzogMykgewogICAgICAgICAgICAgICAgICAgIEltYWdlKHN5c3RlbU5hbWU6ICJjaGV2cm9uLmxlZnQiKS5mb250KC5jYXB0aW9uKQogICAgICAgICAgICAgICAgICAgIFRleHQoIlNldHRpbmdzIikuZm9udCguY2FwdGlvbikKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJUZXh0U2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgLmZpeGVkU2l6ZSgpCiAgICAgICAgICAgIH0KICAgICAgICAgICAgLmJ1dHRvblN0eWxlKC5wbGFpbikKCiAgICAgICAgICAgIFNwYWNlcigpCgogICAgICAgICAgICBIU3RhY2soc3BhY2luZzogNikgewogICAgICAgICAgICAgICAgVGV4dChpc1JlcG8gPyAiUmVwbyIgOiAiT3JnIikKICAgICAgICAgICAgICAgICAgICAuZm9udCguY2FwdGlvbjIpCiAgICAgICAgICAgICAgICAgICAgLmZvcmVncm91bmRDb2xvcihDb2xvci5yYlRleHRTZWNvbmRhcnkpCiAgICAgICAgICAgICAgICAgICAgLnBhZGRpbmcoLmhvcml6b250YWwsIDYpLnBhZGRpbmcoLnZlcnRpY2FsLCAyKQogICAgICAgICAgICAgICAgICAgIC5iYWNrZ3JvdW5kKENhcHN1bGUoKS5maWxsKENvbG9yLnJiU3VyZmFjZUVsZXZhdGVkKSkKICAgICAgICAgICAgICAgICAgICAub3ZlcmxheShDYXBzdWxlKCkuc3Ryb2tlQm9yZGVyKENvbG9yLnJiQm9yZGVyU3VidGxlLCBsaW5lV2lkdGg6IDAuNSkpCgogICAgICAgICAgICAgICAgVGV4dChTY29wZVNldHRpbmdzU3RvcmUuZGlzcGxheU5hbWUoZm9yOiBzY29wZSkpCiAgICAgICAgICAgICAgICAgICAgLmZvbnQoLnN5c3RlbShzaXplOiAxMywgd2VpZ2h0OiAuc2VtaWJvbGQpKQogICAgICAgICAgICAgICAgICAgIC5saW5lTGltaXQoMSkudHJ1bmNhdGlvbk1vZGUoLm1pZGRsZSkKICAgICAgICAgICAgfQoKICAgICAgICAgICAgU3BhY2VyKCkKICAgICAgICB9CiAgICAgICAgLnBhZGRpbmcoLmhvcml6b250YWwsIFJCU3BhY2luZy5tZCkKICAgICAgICAucGFkZGluZygudG9wLCAxMikKICAgICAgICAucGFkZGluZyguYm90dG9tLCA4KQogICAgfQoKICAgIC8vIE1BUks6IC0gU2NvcGUgSW5mbwogICAgLy8gIzUxODogTW9uaXRvcmluZyByb3cgcmVtb3ZlZCDigJQgY292ZXJlZCBieSB0aGUgTW9uaXRvcmluZyBzZWN0aW9uIHRvZ2dsZSBiZWxvdy4KICAgIC8vICM1Mzk6IFNjb3BlIHJvdyBpbmNsdWRlcyBjb3B5IGJ1dHRvbjsgVHlwZSByb3cgbGFiZWwgYWxpZ25lZC4KCiAgICBwcml2YXRlIHZhciBpbmZvU2VjdGlvbjogc29tZSBWaWV3IHsKICAgICAgICBWU3RhY2soYWxpZ25tZW50OiAubGVhZGluZywgc3BhY2luZzogMCkgewogICAgICAgICAgICBzZWN0aW9uSGVhZGVyKCJTY29wZSBJbmZvIikKICAgICAgICAgICAgaW5mb0NhcmQgewogICAgICAgICAgICAgICAgaW5mb1Jvdyhsb2JlbDogIlNjb3BlIiwgdmFsdWU6IHNjb3BlLCBjb3B5YWJsZTogdHJ1ZSkKICAgICAgICAgICAgICAgIERpdmlkZXIoKS5wYWRkaW5nKC5sZWFkaW5nLCBSQlNwYWNpbmcubWQpCiAgICAgICAgICAgICAgICBpbmZvUm93KGxhYmVsOiAiVHlwZSIsIHZhbHVlOiBpc1JlcG8gPyAiUmVwb3NpdG9yeSIgOiAiT3JnYW5pc2F0aW9uIikKICAgICAgICAgICAgICAgIGlmIGxldCB1cmwgPSBnaXRIVVJMIHsKICAgICAgICAgICAgICAgICAgICBEaXZpZGVyKCkucGFkZGluZygubGVhZGluZywgUkJTcGFjaW5nLm1kKQogICAgICAgICAgICAgICAgICAgIEhTdGFjayhhbGlnbm1lbnQ6IC50b3AsIHNwYWNpbmc6IDgpIHsKICAgICAgICAgICAgICAgICAgICAgICAgVGV4dCgiR2l0SHViIikKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb250KC5zeXN0ZW0oc2l6ZTogMTIpKS5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJUZXh0U2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZyYW1lKHdpZHRoOiAxMDAsIGFsaWdubWVudDogLmxlYWRpbmcpLmZpeGVkU2l6ZSgpCiAgICAgICAgICAgICAgICAgICAgICAgIC8vIHN3aWZ0bGludDpkaXNhYmxlOm5leHQgbXVsdGlwbGVfY2xvc3VyZXNfd2l0aF90cmFpbGluZ19jbG9zdXJlCiAgICAgICAgICAgICAgICAgICAgICAgIEJ1dHRvbihhY3Rpb246IHsgTlNXb3Jrc3BhY2Uuc2hhcmVkLm9wZW4odXJsKSB9KSB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICBIU3RhY2soc3BhY2luZzogNCkgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFRleHQoIk9wZW4gb24gR2l0SHViIikKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLnN5c3RlbShzaXplOiAxMikpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJBY2NlbnQpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgSW1hZ2Uoc3lzdGVtTmFtZTogImFycm93LnVwLnJpZ2h0IikKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLnN5c3RlbShzaXplOiAxMCkpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJBY2NlbnQpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICAgICAgLmJ1dHRvblN0eWxlKC5wbGFpbikKICAgICAgICAgICAgICAgICAgICAgICAgLmhlbHAodXJsLmFic29sdXRlU3RyaW5nKQogICAgICAgICAgICAgICAgICAgICAgICBTcGFjZXIoKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICAucGFkZGluZyguaG9yaXpvbnRhbCwgUkJTcGFjaW5nLm1kKS5wYWRkaW5nKC52ZXJ0aWNhbCwgNykKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KCiAgICAvLyBNQVJLOiAtIE1vbml0b3JpbmcKICAgIC8vICM1MTc6IEVuYWJsZSB0b2dnbGUgbW92ZWQgaGVyZSBmcm9tIHRoZSBoZWFkZXIgYmFyLCB3aXRoIGNsZWFyIGxhYmVsICsgZGVzY3JpcHRpb24uCiAgICAvLyAjNTM5OiBEZXNjcmlwdGlvbiB0ZXh0IHVwZGF0ZWQgZm9yIGNsYXJpdHkuCgogICAgcHJpdmF0ZSB2YXIgbW9uaXRvcmluZ1NlY3Rpb246IHNvbWUgVmlldyB7CiAgICAgICAgVlN0YWNrKGFsaWdubWVudDogLmxlYWRpbmcsIHNwYWNpbmc6IDApIHsKICAgICAgICAgICAgc2VjdGlvbkhlYWRlcigiTW9uaXRvcmluZyIpCiAgICAgICAgICAgIGluZm9DYXJkIHsKICAgICAgICAgICAgICAgIEhTdGFjayhzcGFjaW5nOiAxMikgewogICAgICAgICAgICAgICAgICAgIFZTdGFjayhhbGlnbm1lbnQ6IC5sZWFkaW5nLCBzcGFjaW5nOiAyKSB7CiAgICAgICAgICAgICAgICAgICAgICAgIFRleHQoIk1vbml0b3IgdGhpcyBzY29wZSIpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAuZm9udCguc3lzdGVtKHNpemU6IDEyLCB3ZWlnaHQ6IC5tZWRpdW0pKQogICAgICAgICAgICAgICAgICAgICAgICBUZXh0KGlzRW5hYmxlZAogICAgICAgICAgICAgICAgICAgICAgICAgICAgID8gIlJ1bm5lckJhciBpcyBhY3RpdmVseSBwb2xsaW5nIHRoaXMgc2NvcGUgZm9yIHJ1bm5lciBzdGF0dXMuIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgIDogIlBvbGxpbmcgaXMgcGF1c2VkLiBObyBydW5uZXIgZGF0YSB3aWxsIGJlIGZldGNoZWQgZm9yIHRoaXMgc2NvcGUuIikKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb250KC5jYXB0aW9uMikKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJUZXh0U2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZpeGVkU2l6ZShob3Jpem9udGFsOiBmYWxzZSwgdmVydGljYWw6IHRydWUpCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgIFNwYWNlcigpCiAgICAgICAgICAgICAgICAgICAgVG9nZ2xlKCIiLCBpc09uOiBCaW5kaW5nKAogICAgICAgICAgICAgICAgICAgICAgICBnZXQ6IHsgaXNFbmFibGVkIH0sCiAgICAgICAgICAgICAgICAgICAgICAgIHNldDogeyBTY29wZVN0b3JlLnNoYXJlZC5zZXRFbmFibGVkKHNjb3BlRW50cnkuaWQsICQwKTsgUnVubmVyU3RvcmUuc2hhcmVkLnN0YXJ0KCkgfQogICAgICAgICAgICAgICAgICAgICkpCiAgICAgICAgICAgICAgICAgICAgLnRvZ2dsZVN0eWxlKC5zd2l0Y2gpCiAgICAgICAgICAgICAgICAgICAgLnRpbnQoQ29sb3IucmJTdWNjZXNzKQogICAgICAgICAgICAgICAgICAgIC5sYWJlbHNIaWRkZW4oKQogICAgICAgICAgICAgICAgICAgIC5oZWxwKGlzRW5hYmxlZCA/ICJQYXVzZSBtb25pdG9yaW5nIHRoaXMgc2NvcGUiIDogIlJlc3VtZSBtb25pdG9yaW5nIikKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIC5wYWRkaW5nKC5ob3Jpem9udGFsLCBSQlNwYWNpbmcubWQpLnBhZGRpbmcoLnZlcnRpY2FsLCAxMCkKICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KCiAgICAvLyBNQVJLOiAtIERhbmdlciBab25lCiAgICAvLyAjNTM5OiBEZXNjcmlwdGlvbiBjb3B5IHVwZGF0ZWQgdG8gbWF0Y2ggaXNzdWUgc3BlYy4KCiAgICBwcml2YXRlIHZhciBkYW5nZXJTZWN0aW9uOiBzb21lIFZpZXcgewogICAgICAgIFZTdGFjayhhbGlnbm1lbnQ6IC5sZWFkaW5nLCBzcGFjaW5nOiAwKSB7CiAgICAgICAgICAgIHNlY3Rpb25IZWFkZXIoIkRhbmdlciBab25lIikKICAgICAgICAgICAgaW5mb0NhcmQgewogICAgICAgICAgICAgICAgSFN0YWNrIHsKICAgICAgICAgICAgICAgICAgICBWU3RhY2soYWxpZ25tZW50OiAubGVhZGluZywgc3BhY2luZzogMikgewogICAgICAgICAgICAgICAgICAgICAgICBUZXh0KCJSZW1vdmUgc2NvcGUiKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLnN5c3RlbShzaXplOiAxMiwgd2VpZ2h0OiAubWVkaXVtKSkKICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJEYW5nZXIpCiAgICAgICAgICAgICAgICAgICAgICAgIFRleHQoIlN0b3BzIG1vbml0b3JpbmcgdGhpcyBzY29wZS4gUnVubmVycyBhbHJlYWR5IGRpc2NvdmVyZWQgYXJlIG5vdCBhZmZlY3RlZC4iKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZvbnQoLmNhcHRpb24yKS5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJUZXh0U2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgICAgICAgICAgICAgLmZpeGVkU2l6ZShob3Jpem9udGFsOiBmYWxzZSwgdmVydGljYWw6IHRydWUpCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgIFNwYWNlcigpCiAgICAgICAgICAgICAgICAgICAgLy8gc3dpZnRsaW50OmRpc2FibGU6bmV4dCBtdWx0aXBsZV9jbG9zdXJlc193aXRoX3RyYWlsaW5nX2Nsb3N1cmUKICAgICAgICAgICAgICAgICAgICBCdXR0b24oYWN0aW9uOiByZW1vdmVTY29wZSkgewogICAgICAgICAgICAgICAgICAgICAgICBUZXh0KCJSZW1vdmUiKS5mb250KC5jYXB0aW9uMikuZm9yZWdyb3VuZENvbG9yKENvbG9yLnJiRGFuZ2VyKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICAuYnV0dG9uU3R5bGUoLmJvcmRlcmVkKQogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgLnBhZGRpbmcoLmhvcml6b250YWwsIFJCU3BhY2luZy5tZCkucGFkZGluZyoudmVydGljYWwsIDEwKQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQoKICAgIC8vIE1BUks6IC0gQWN0aW9ucwoKICAgIHByaXZhdGUgZnVuYyByZW1vdmVTY29wZSgpIHsKICAgICAgICBTY29wZVNldHRpbmdzU3RvcmUuY2xlYW5VcChzY29wZTogc2NvcGUpCiAgICAgICAgU2NvcGVTdG9yZS5zaGFyZWQucmVtb3ZlKGlkOiBzY29wZUVudHJ5LmlkKQogICAgICAgIFJ1bm5lclN0b3JlLnNoYXJlZC5zdGFydCgpCiAgICAgICAgb25CYWNrKCkKICAgIH0KCiAgICAvLyBNQVJLOiAtIFN1Yi12aWV3IGhlbHBlcnMKCiAgICBwcml2YXRlIGZ1bmMgc2VjdGlvbkhlYWRlcihfIHRpdGxlOiBTdHJpbmcpIC0+IHNvbWUgVmlldyB7CiAgICAgICAgVGV4dCh0aXRsZSkKICAgICAgICAgICAgLmZvbnQoUkJGb250LnNlY3Rpb25IZWFkZXIpLmZvcmVncm91bmRDb2xvcihDb2xvci5yYlRleHRTZWNvbmRhcnkpCiAgICAgICAgICAgIC5wYWRkaW5nKC5ob3Jpem9udGFsLCBSQlNwYWNpbmcubWQpLnBhZGRpbmcoLnRvcCwgMTIpLnBhZGRpbmcoLmJvdHRvbSwgNCkKICAgIH0KCiAgICBwcml2YXRlIGZ1bmMgaW5mb0NhcmQ8Q29udGVudDogVmlldz4oQFZpZXdCdWlsZGVyIGNvbnRlbnQ6ICgpIC0+IENvbnRlbnQpIC0+IHNvbWUgVmlldyB7CiAgICAgICAgVlN0YWNrKGFsaWdubWVudDogLmxlYWRpbmcsIHNwYWNpbmc6IDApIHsgY29udGVudCgpIH0KICAgICAgICAgICAgLmJhY2tncm91bmQoCiAgICAgICAgICAgICAgICBSb3VuZGVkUmVjdGFuZ2xlKGNvcm5lclJhZGl1czogUkJSYWRpdXMuc21hbGwpCiAgICAgICAgICAgICAgICAgICAgLmZpbGwoQ29sb3IucmJTdXJmYWNlRWxldmF0ZWQpCiAgICAgICAgICAgICAgICAgICAgLm92ZXJsYXkoUm91bmRlZFJlY3RhbmdsZShjb3JuZXJSYWRpdXM6IFJCUmFkaXVzLnNtYWxsKQogICAgICAgICAgICAgICAgICAgICAgICAuc3Ryb2tlQm9yZGVyKENvbG9yLnJiQm9yZGVyU3VidGxlLCBsaW5lV2lkdGg6IDAuNSkpCiAgICAgICAgICAgICkKICAgICAgICAgICAgLnBhZGRpbmcoLmhvcml6b250YWwsIFJCU3BhY2luZy5tZCkKICAgICAgICAgICAgLnBhZGRpbmcoLmJvdHRvbSwgOCkKICAgIH0KCiAgICBwcml2YXRlIGZ1bmMgaW5mb1JvdyhsYWJlbDogU3RyaW5nLCB2YWx1ZTogU3RyaW5nLCBjb3B5YWJsZTogQm9vbCA9IGZhbHNlKSAtPiBzb21lIFZpZXcgewogICAgICAgIEhTdGFjayhhbGlnbm1lbnQ6IC50b3AsIHNwYWNpbmc6IDgpIHsKICAgICAgICAgICAgVGV4dChsYWJlbCkKICAgICAgICAgICAgICAgIC5mb250KC5zeXN0ZW0oc2l6ZTogMTIpKS5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJUZXh0U2Vjb25kYXJ5KQogICAgICAgICAgICAgICAgLmZyYW1lKHdpZHRoOiAxMDAsIGFsaWdubWVudDogLmxlYWRpbmcpLmZpeGVkU2l6ZSgpCiAgICAgICAgICAgIFRleHQodmFsdWUpCiAgICAgICAgICAgICAgICAuZm9udCguc3lzdGVtKHNpemU6IDEyLCBkZXNpZ246IC5tb25vc3BhY2VkKSkuZm9yZWdyb3VuZENvbG9yKENvbG9yLnJiVGV4dFByaW1hcnkpCiAgICAgICAgICAgICAgICAubGluZUxpbWl0KDIpLnRydW5jYXRpb25Nb2RlKC5taWRkbGUpCiAgICAgICAgICAgICAgICAuZnJhbWUobWF4V2lkdGg6IC5pbmZpbml0eSwgYWxpZ25tZW50OiAubGVhZGluZykKICAgICAgICAgICAgaWYgY29weWFibGUgewogICAgICAgICAgICAgICAgLy8gc3dpZnRsaW50OmRpc2FibGU6bmV4dCBtdWx0aXBsZV9jbG9zdXJlc193aXRoX3RyYWlsaW5nX2Nsb3N1cmUKICAgICAgICAgICAgICAgIEJ1dHRvbihhY3Rpb246IHsKICAgICAgICAgICAgICAgICAgICBOU1Bhc3RlYm9hcmQuZ2VuZXJhbC5jbGVhckNvbnRlbnRzKCkKICAgICAgICAgICAgICAgICAgICBOU1Bhc3RlYm9hcmQuZ2VuZXJhbC5zZXRTdHJpbmcodmFsdWUsIGZvclR5cGU6IC5zdHJpbmcpCiAgICAgICAgICAgICAgICB9KSB7CiAgICAgICAgICAgICAgICAgICAgSW1hZ2Uoc3lzdGVtTmFtZTogImRvYy5vbi5kb2MiKS5mb250KC5zeXN0ZW0oc2l6ZTogMTApKS5mb3JlZ3JvdW5kQ29sb3IoQ29sb3IucmJUZXh0VGVydGlhcnkpCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAuYnV0dG9uU3R5bGUoLnBsYWluKS5oZWxwKCJDb3B5IHRvIGNsaXBib2FyZCIpCiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICAgICAgLnBhZGRpbmcoLmhvcml6b250YWwsIFJCU3BhY2luZy5tZCkucGFkZGluZyoudmVydGljYWwsIDcpCiAgICB9Cn0K
+import SwiftUI
+
+// MARK: - ScopeDetailView
+// Navigation level: SettingsView (scope row tap) → ScopeDetailView
+//
+// #499: Nav shell + wiring
+// #513: Simplified — alias, polling, notifications sections removed.
+//       Enable toggle moved from header into its own Monitoring section.
+//       Monitoring row removed from Scope Info card.
+// #539: Layout improvements -- section labels, card structure aligned with spec.
+
+struct ScopeDetailView: View {
+    let scopeEntry: ScopeEntry
+    let onBack: () -> Void
+
+    @ObservedObject private var scopeStore = ScopeStore.shared
+
+    init(scopeEntry: ScopeEntry, onBack: @escaping () -> Void) {
+        self.scopeEntry = scopeEntry
+        self.onBack = onBack
+    }
+
+    // Live entry from store so toggle reflects current state.
+    private var liveEntry: ScopeEntry? {
+        scopeStore.entries.first(where: { $0.id == scopeEntry.id })
+    }
+    private var isEnabled: Bool { liveEntry?.isEnabled ?? scopeEntry.isEnabled }
+    private var scope: String { scopeEntry.scope }
+    private var isRepo: Bool { scope.contains("/") }
+
+    /// GitHub URL for this scope: https://github.com/<org>/<repo> or https://github.com/<org>
+    private var gitHURL: URL? {
+        URL(string: "https://github.com/\(scope)")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerBar
+            Divider()
+            ScrollView(.vertical, showIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    infoSection
+                    monitoringSection
+                    dangerSection
+                }
+                .padding(.bottom, 16)
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(idealWidth: 480, maxWidth: .infinity)
+    }
+
+    // MARK: - Header
+    // #517: Toggle removed from header — header is now clean nav only.
+    // #539: Header now shows Repo/Org badge + display name on right.
+
+    private var headerBar: some View {
+        HStack(spacing: 8) {
+            Button(action: onBack) {
+                HStack(spacing: 3) {
+                    Image(systemName: "chevron.left").font(.caption)
+                    Text("Settings").font(.caption)
+                }
+                .foregroundColor(Color.rbTextSecondary)
+                .fixedSize()
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                Text(isRepo ? "Repo" : "Org")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.rbSurfaceElevated))
+                    .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+
+                Text(ScopeSettingsStore.displayName(for: scope))
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1).truncationMode(.middle)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Scope Info
+    // #518: Monitoring row removed — covered by the Monitoring section toggle below.
+    // #539: Scope row includes copy button; Type row label aligned.
+
+    private var infoSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Scope Info")
+            infoCard {
+                infoRow(label: "Scope", value: scope, copyable: true)
+                Divider().padding(.leading, RBSpacing.md)
+                infoRow(label: "Type", value: isRepo ? "Repository" : "Organisation")
+                if let url = gitHURL {
+                    Divider().padding(.leading, RBSpacing.md)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("GitHub")
+                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+                            .frame(width: 100, alignment: .leading).fixedSize()
+                        // swiftlint:disable:next multiple_closures_with_trailing_closure
+                        Button(action: { NSWorkspace.shared.open(url) }) {
+                            HStack(spacing: 4) {
+                                Text("Open on GitHub")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color.rbAccent)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color.rbAccent)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help(url.absoluteString)
+                        Spacer()
+                    }
+                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+                }
+            }
+        }
+    }
+
+    // MARK: - Monitoring
+    // #517: Enable toggle moved here from the header bar, with clear label + description.
+    // #539: Description text updated for clarity.
+
+    private var monitoringSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Monitoring")
+            infoCard {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Monitor this scope")
+                            .font(.system(size: 12, weight: .medium))
+                        Text(isEnabled
+                             ? "RunnerBar is actively polling this scope for runner status."
+                             : "Polling is paused. No runner data will be fetched for this scope.")
+                            .font(.caption2)
+                            .foregroundColor(Color.rbTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { isEnabled },
+                        set: { ScopeStore.shared.setEnabled(scopeEntry.id, $0); RunnerStore.shared.start() }
+                    ))
+                    .toggleStyle(.switch)
+                    .tint(Color.rbSuccess)
+                    .labelsHidden()
+                    .help(isEnabled ? "Pause monitoring this scope" : "Resume monitoring")
+                }
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
+            }
+        }
+    }
+
+    // MARK: - Danger Zone
+    // #539: Description copy updated to match issue spec.
+
+    private var dangerSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Danger Zone")
+            infoCard {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Remove scope")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color.rbDanger)
+                        Text("Stops monitoring this scope. Runners already discovered are not affected.")
+                            .font(.caption2).foregroundColor(Color.rbTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    // swiftlint:disable:next multiple_closures_with_trailing_closure
+                    Button(action: removeScope) {
+                        Text("Remove").font(.caption2).foregroundColor(Color.rbDanger)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func removeScope() {
+        ScopeSettingsStore.cleanUp(scope: scope)
+        ScopeStore.shared.remove(id: scopeEntry.id)
+        RunnerStore.shared.start()
+        onBack()
+    }
+
+    // MARK: - Sub-view helpers
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+            .padding(.horizontal, RBSpacing.md).padding(.top, 12).padding(.bottom, 4)
+    }
+
+    private func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) { content() }
+            .background(
+                RoundedRectangle(cornerRadius: RBRadius.small)
+                    .fill(Color.rbSurfaceElevated)
+                    .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+            )
+            .padding(.horizontal, RBSpacing.md)
+            .padding(.bottom, 8)
+    }
+
+    private func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+                .frame(width: 100, alignment: .leading).fixedSize()
+            Text(value)
+                .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
+                .lineLimit(2).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if copyable {
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                }) {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
+                }
+                .buttonStyle(.plain).help("Copy to clipboard")
+            }
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+    }
+}
