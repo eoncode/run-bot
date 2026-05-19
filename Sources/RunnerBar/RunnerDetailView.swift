@@ -8,6 +8,7 @@ import SwiftUI
 // #492: Editable config fields (labels, workFolder, autoUpdate, proxy)
 // #493: Danger Zone (remove only)
 // #532: Redesign — two-row header, slim info section, unified proxy card
+// #533: OS/Arch + Version rows in Runner Info; Danger Zone always expanded
 
 // MARK: - Save state helper
 private enum SaveState: Equatable {
@@ -52,8 +53,11 @@ struct RunnerDetailView: View {
     @State private var proxyPassword: String
     @State private var proxySaveState: SaveState = .idle
 
+    // MARK: - Info fields loaded from .runner JSON (#533)
+    @State private var displayOsArch: String = ""
+    @State private var displayVersion: String = ""
+
     // MARK: - Danger Zone state (#493)
-    @State private var dangerZoneExpanded = true
     @State private var pendingDangerAction: DangerAction?
     @State private var dangerActionState: SaveState = .idle
 
@@ -76,6 +80,11 @@ struct RunnerDetailView: View {
         self._proxyUrl = State(initialValue: "")
         self._proxyUser = State(initialValue: "")
         self._proxyPassword = State(initialValue: "")
+        // Seed OS/Arch + Version from model — onAppear will override from JSON if needed
+        let osArch = [runner.platform, runner.platformArchitecture]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " / ")
+        self._displayOsArch = State(initialValue: osArch)
+        self._displayVersion = State(initialValue: runner.agentVersion ?? "")
     }
 
     var body: some View {
@@ -139,7 +148,7 @@ struct RunnerDetailView: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - Info Section (#532: slim — GitHub URL, Work folder, Ephemeral, Status only)
+    // MARK: - Info Section (#532 / #533)
 
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -152,6 +161,14 @@ struct RunnerDetailView: View {
                 infoRow(label: "Work folder", value: runner.workFolder ?? "_work", description: nil)
                 Divider().padding(.leading, RBSpacing.md)
                 infoRow(label: "Ephemeral", value: runner.isEphemeral ? "Yes" : "No", description: nil)
+                if !displayOsArch.isEmpty {
+                    Divider().padding(.leading, RBSpacing.md)
+                    infoRow(label: "OS / Arch", value: displayOsArch, description: nil)
+                }
+                if !displayVersion.isEmpty {
+                    Divider().padding(.leading, RBSpacing.md)
+                    infoRow(label: "Version", value: displayVersion, description: nil)
+                }
                 Divider().padding(.leading, RBSpacing.md)
                 statusRow
             }
@@ -312,49 +329,39 @@ struct RunnerDetailView: View {
         }
     }
 
-    // MARK: - Danger Zone (#493)
+    // MARK: - Danger Zone (#493 / #533: always expanded, no chevron toggle)
 
     private var dangerZoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { dangerZoneExpanded.toggle() } }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 11))
-                        .foregroundColor(Color.rbDanger)
-                    Text("Danger Zone")
-                        .font(RBFont.sectionHeader)
-                        .foregroundColor(Color.rbDanger)
-                    Spacer()
-                    Image(systemName: dangerZoneExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundColor(Color.rbTextTertiary)
-                }
-                .padding(.horizontal, RBSpacing.md)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color.rbDanger)
+                Text("Danger Zone")
+                    .font(RBFont.sectionHeader)
+                    .foregroundColor(Color.rbDanger)
+                Spacer()
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, RBSpacing.md)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
 
-            if dangerZoneExpanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    dangerActionRow(
-                        action: .remove,
-                        description: "Permanently de-registers and removes this runner."
-                    )
-                }
-                .background(
-                    RoundedRectangle(cornerRadius: RBRadius.small)
-                        .fill(Color.rbDanger.opacity(0.05))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: RBRadius.small)
-                                .strokeBorder(Color.rbDanger.opacity(0.25), lineWidth: 0.5)
-                        )
+            VStack(alignment: .leading, spacing: 0) {
+                dangerActionRow(
+                    action: .remove,
+                    description: "Permanently de-registers and removes this runner."
                 )
-                .padding(.horizontal, RBSpacing.md)
-                .padding(.bottom, 8)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            .background(
+                RoundedRectangle(cornerRadius: RBRadius.small)
+                    .fill(Color.rbDanger.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: RBRadius.small)
+                            .strokeBorder(Color.rbDanger.opacity(0.25), lineWidth: 0.5)
+                    )
+            )
+            .padding(.horizontal, RBSpacing.md)
+            .padding(.bottom, 8)
         }
     }
 
@@ -556,6 +563,21 @@ struct RunnerDetailView: View {
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             let disableUpdate = json["disableUpdate"] as? Bool ?? false
             autoUpdate = !disableUpdate
+
+            // OS / Arch — fall back to reading from JSON when model fields are nil
+            if displayOsArch.isEmpty {
+                let platform = json["platform"] as? String ?? ""
+                let arch = json["platformArchitecture"] as? String ?? ""
+                let combined = [platform, arch].filter { !$0.isEmpty }.joined(separator: " / ")
+                if !combined.isEmpty { displayOsArch = combined }
+            }
+
+            // Version — same fallback
+            if displayVersion.isEmpty {
+                if let version = json["agentVersion"] as? String, !version.isEmpty {
+                    displayVersion = version
+                }
+            }
         }
         let proxyFilePath = installPath + "/.proxy"
         proxyUrl = (try? String(contentsOfFile: proxyFilePath, encoding: .utf8))
@@ -622,8 +644,6 @@ struct RunnerDetailView: View {
             autoUpdateSaveState = .failure("Install path unknown"); return
         }
         autoUpdateSaveState = .saving
-        // autoUpdate = true  → disableUpdate: false
-        // autoUpdate = false → disableUpdate: true
         let disableUpdate = !autoUpdate
         DispatchQueue.global(qos: .userInitiated).async {
             let ok = patchRunnerJSON(installPath: installPath, key: "disableUpdate", boolValue: disableUpdate)
