@@ -188,6 +188,7 @@ struct SettingsView: View {
     }
 
     private func localRunnerRow(_ runner: RunnerModel) -> some View {
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         Button(action: { onSelectRunner(runner) }) {
             localRunnerRowContent(runner)
         }
@@ -302,6 +303,7 @@ struct SettingsView: View {
             Text("Remote runner scopes")
                 .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
             Spacer()
+            // swiftlint:disable:next multiple_closures_with_trailing_closure
             Button(action: { showAddScopeSheet = true }) {
                 Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
             }
@@ -335,6 +337,7 @@ struct SettingsView: View {
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopeSettingsStore.displayName(for: entry.scope)
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         return Button(action: { onSelectScope(entry) }) {
             HStack(spacing: 8) {
                 // Type badge
@@ -383,6 +386,7 @@ struct SettingsView: View {
                     .font(.caption2)
                     .foregroundColor(Color.rbTextTertiary)
 
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
                 Button(action: {
                     ScopeSettingsStore.cleanUp(scope: entry.scope)
                     ScopeStore.shared.remove(id: entry.id)
