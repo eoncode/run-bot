@@ -71,7 +71,7 @@ struct StepLogView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Top bar ──────────────────────────────────────────────────────────
+            // ── Top bar ──────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Button(action: onBack) {
                     HStack(spacing: 3) {
@@ -84,6 +84,7 @@ struct StepLogView: View {
                 .buttonStyle(.plain)
                 Spacer()
                 if let urlString = job.htmlUrl, let url = URL(string: urlString) {
+                    // swiftlint:disable:next multiple_closures_with_trailing_closure
                     Button(
                         action: { NSWorkspace.shared.open(url) },
                         label: { HStack(spacing: 3) {
@@ -110,7 +111,7 @@ struct StepLogView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            // ── Step name (large) ────────────────────────────────────────────────
+            // ── Step name (large) ───────────────────────────────────────────────────────────────
             Text(step.name)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2)
@@ -118,7 +119,7 @@ struct StepLogView: View {
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.bottom, 5)
 
-            // ── Meta rows ────────────────────────────────────────────────────────
+            // ── Meta rows ────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Image(systemName: "briefcase").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(job.name).font(.caption).foregroundColor(Color.rbTextSecondary)
@@ -165,7 +166,7 @@ struct StepLogView: View {
 
             Divider()
 
-            // ── Log — INSIDE ScrollView ──────────────────────────────────────────
+            // ── Log — INSIDE ScrollView ───────────────────────────────────────────────────────
             // ⚠️ .frame(maxHeight:) cap is REQUIRED on this ScrollView (ref #370).
             // ❌ NEVER remove .frame(maxHeight:) from this ScrollView.
             ScrollView(.vertical, showsIndicators: true) {
