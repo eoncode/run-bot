@@ -75,7 +75,6 @@ struct RunnerDetailView: View {
             .joined(separator: ", ")
         )
         self._workFolderText = State(initialValue: runner.workFolder ?? "_work")
-        // Default to enabled; actual value loaded in onAppear
         self._autoUpdate = State(initialValue: true)
         self._proxyUrl = State(initialValue: "")
         self._proxyUser = State(initialValue: "")
@@ -112,12 +111,9 @@ struct RunnerDetailView: View {
     }
 
     // MARK: - Header (#532: two-row layout)
-    // Row 1: ← Settings  (back nav, left-aligned)
-    // Row 2: dot · RunnerName (centered) · Stop/Start (right)
 
     private var headerBar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Row 1 — back nav
             Button(action: onBack) {
                 HStack(spacing: 3) {
                     Image(systemName: "chevron.left").font(.caption)
@@ -127,7 +123,6 @@ struct RunnerDetailView: View {
             }
             .buttonStyle(.plain)
 
-            // Row 2 — identity + stop/start
             HStack(spacing: 6) {
                 Circle().fill(dotColor).frame(width: 8, height: 8)
                 Text(runner.runnerName)
@@ -155,19 +150,19 @@ struct RunnerDetailView: View {
             sectionHeader("Runner Info")
             infoCard {
                 if let url = runner.gitHubUrl {
-                    infoRow(label: "GitHub URL", value: url, description: "The GitHub repository or organisation this runner is registered to.", copyable: true)
+                    infoRow(label: "GitHub URL", value: url, copyable: true)
                     Divider().padding(.leading, RBSpacing.md)
                 }
-                infoRow(label: "Work folder", value: runner.workFolder ?? "_work", description: nil)
+                infoRow(label: "Work folder", value: runner.workFolder ?? "_work")
                 Divider().padding(.leading, RBSpacing.md)
-                infoRow(label: "Ephemeral", value: runner.isEphemeral ? "Yes" : "No", description: nil)
+                infoRow(label: "Ephemeral", value: runner.isEphemeral ? "Yes" : "No")
                 if !displayOsArch.isEmpty {
                     Divider().padding(.leading, RBSpacing.md)
-                    infoRow(label: "OS / Arch", value: displayOsArch, description: nil)
+                    infoRow(label: "OS / Arch", value: displayOsArch)
                 }
                 if !displayVersion.isEmpty {
                     Divider().padding(.leading, RBSpacing.md)
-                    infoRow(label: "Version", value: displayVersion, description: nil)
+                    infoRow(label: "Version", value: displayVersion)
                 }
                 Divider().padding(.leading, RBSpacing.md)
                 statusRow
@@ -175,7 +170,6 @@ struct RunnerDetailView: View {
         }
     }
 
-    /// Status row with coloured dot indicator (● running / idle / offline …)
     private var statusRow: some View {
         HStack(alignment: .top, spacing: 8) {
             Text("Status")
@@ -193,143 +187,121 @@ struct RunnerDetailView: View {
         .padding(.vertical, 7)
     }
 
-    // MARK: - Config Section (#492 / #532)
+    // MARK: - Config Section (#532 / #533: single card with dividers)
 
     private var configSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Configuration")
-            // Labels card
             infoCard {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Row: label name + text field + save button
-                    HStack(spacing: 8) {
-                        Text("Labels")
-                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                            .frame(width: 100, alignment: .leading).fixedSize()
-                        TextField("comma-separated", text: $labelsText)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
-                        saveButton(state: labelsSaveState, action: saveLabels)
-                    }
-                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                    // Description below the full row
-                    Text("Custom comma-separated labels to route specific workflow jobs to this runner.")
-                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
-                    saveStateRow(labelsSaveState, restartNote: false)
+                configRow(
+                    label: "Labels",
+                    placeholder: "comma-separated",
+                    text: $labelsText,
+                    saveState: labelsSaveState,
+                    onSave: saveLabels
+                )
+                Divider().padding(.leading, RBSpacing.md)
+                configRow(
+                    label: "Work folder",
+                    placeholder: "_work",
+                    text: $workFolderText,
+                    saveState: workFolderSaveState,
+                    onSave: saveWorkFolder
+                )
+                Divider().padding(.leading, RBSpacing.md)
+                HStack(spacing: 8) {
+                    Text("Autoupdate")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.rbTextSecondary)
+                        .frame(width: 100, alignment: .leading)
+                        .fixedSize()
+                    Spacer()
+                    Toggle("", isOn: $autoUpdate)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .onChange(of: autoUpdate) { _ in saveAutoUpdate() }
                 }
-            }
-            // Work folder card
-            infoCard {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Row: label name + text field + save button
-                    HStack(spacing: 8) {
-                        Text("Work folder")
-                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                            .frame(width: 100, alignment: .leading).fixedSize()
-                        TextField("_work", text: $workFolderText)
-                            .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
-                        saveButton(state: workFolderSaveState, action: saveWorkFolder)
-                    }
-                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                    // Description below the full row
-                    Text("Directory used as the working directory during job execution. Requires runner restart.")
-                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
-                    saveStateRow(workFolderSaveState, restartNote: true)
-                }
-            }
-            // Autoupdate card
-            infoCard {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 8) {
-                        Text("Autoupdate")
-                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Toggle("", isOn: $autoUpdate)
-                            .toggleStyle(.switch).labelsHidden()
-                            .onChange(of: autoUpdate) { _ in saveAutoUpdate() }
-                    }
-                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                    // Description below the full row
-                    Text("Automatically update the runner when a new version is released.")
-                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
-                    saveStateRow(autoUpdateSaveState, restartNote: true)
-                }
-            }
-            // #532: unified proxy card — URL + Username + Password + single Save button
-            proxyCard
-        }
-    }
-
-    // MARK: - Proxy Card (#532: single grouped card with one save button)
-
-    private var proxyCard: some View {
-        infoCard {
-            VStack(alignment: .leading, spacing: 0) {
-                // Section label
+                .padding(.horizontal, RBSpacing.md)
+                .padding(.vertical, 8)
+                Divider().padding(.leading, RBSpacing.md)
+                // #532: unified proxy — URL + user + pass + single Save
                 Text("Proxy")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(Color.rbTextTertiary)
                     .padding(.horizontal, RBSpacing.md)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
-
                 Divider().padding(.leading, RBSpacing.md)
-
-                // URL row
                 HStack {
                     Text("URL")
                         .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 80, alignment: .leading).fixedSize()
+                        .frame(width: 100, alignment: .leading).fixedSize()
                     TextField("http://proxy:8080", text: $proxyUrl)
                         .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-
                 Divider().padding(.leading, RBSpacing.md)
-
-                // Username row
                 HStack {
                     Text("Username")
                         .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 80, alignment: .leading).fixedSize()
+                        .frame(width: 100, alignment: .leading).fixedSize()
                     TextField("username", text: $proxyUser)
                         .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-
                 Divider().padding(.leading, RBSpacing.md)
-
-                // Password row
                 HStack {
                     Text("Password")
                         .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 80, alignment: .leading).fixedSize()
+                        .frame(width: 100, alignment: .leading).fixedSize()
                     SecureField("password", text: $proxyPassword)
                         .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-
                 Divider().padding(.leading, RBSpacing.md)
-
-                // Save button row
                 HStack {
                     Spacer()
                     saveButton(state: proxySaveState, action: saveProxy)
                 }
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.vertical, 6)
-
                 saveStateRow(proxySaveState, restartNote: true)
             }
         }
     }
 
-    // MARK: - Danger Zone (#493 / #533: always expanded, no chevron toggle)
+    private func configRow(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        saveState: SaveState,
+        onSave: @escaping () -> Void,
+        secure: Bool = false
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundColor(Color.rbTextSecondary)
+                .frame(width: 100, alignment: .leading)
+                .fixedSize()
+            if secure {
+                SecureField(placeholder, text: text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textFieldStyle(.plain)
+                    .frame(maxWidth: .infinity)
+            } else {
+                TextField(placeholder, text: text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textFieldStyle(.plain)
+                    .frame(maxWidth: .infinity)
+            }
+            saveButton(state: saveState, action: onSave)
+        }
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Danger Zone (#493 / #533: always expanded)
 
     private var dangerZoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -434,8 +406,6 @@ struct RunnerDetailView: View {
         .frame(minWidth: 380)
     }
 
-    // MARK: - Danger Zone Trigger & Execute
-
     private func triggerDangerAction(_ action: DangerAction) {
         dangerActionState = .idle
         pendingDangerAction = action
@@ -514,35 +484,27 @@ struct RunnerDetailView: View {
             .padding(.bottom, 8)
     }
 
-    private func infoRow(label: String, value: String, description: String? = nil, copyable: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                Text(label)
-                    .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                    .frame(width: 100, alignment: .leading).fixedSize()
-                Text(value)
-                    .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
-                    .lineLimit(2).truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if copyable {
-                    // swiftlint:disable:next multiple_closures_with_trailing_closure
-                    Button(action: {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(value, forType: .string)
-                    }) {
-                        Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
-                    }
-                    .buttonStyle(.plain).help("Copy to clipboard")
+    private func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+                .frame(width: 100, alignment: .leading).fixedSize()
+            Text(value)
+                .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
+                .lineLimit(2).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if copyable {
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                }) {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
                 }
-            }
-            .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-            if let description = description {
-                Text(description)
-                    .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
+                .buttonStyle(.plain).help("Copy to clipboard")
             }
         }
+        .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 
     private var dotColor: Color {
@@ -564,7 +526,6 @@ struct RunnerDetailView: View {
             let disableUpdate = json["disableUpdate"] as? Bool ?? false
             autoUpdate = !disableUpdate
 
-            // OS / Arch — fall back to reading from JSON when model fields are nil
             if displayOsArch.isEmpty {
                 let platform = json["platform"] as? String ?? ""
                 let arch = json["platformArchitecture"] as? String ?? ""
@@ -572,7 +533,6 @@ struct RunnerDetailView: View {
                 if !combined.isEmpty { displayOsArch = combined }
             }
 
-            // Version — same fallback
             if displayVersion.isEmpty {
                 if let version = json["agentVersion"] as? String, !version.isEmpty {
                     displayVersion = version
@@ -590,7 +550,7 @@ struct RunnerDetailView: View {
         }
     }
 
-    // MARK: - Save Actions (#492)
+    // MARK: - Save Actions
 
     private func saveLabels() {
         guard let agentId = runner.agentId,
@@ -658,8 +618,7 @@ struct RunnerDetailView: View {
         }
     }
 
-    // MARK: - Save Proxy (#532: unified — writes .proxy + .proxycredentials in one action)
-
+    // #532: unified proxy save — writes .proxy + .proxycredentials in one action
     private func saveProxy() {
         guard let installPath = runner.installPath else {
             proxySaveState = .failure("Install path unknown"); return
@@ -670,7 +629,6 @@ struct RunnerDetailView: View {
         let pass = proxyPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         DispatchQueue.global(qos: .userInitiated).async {
             var ok = true
-            // Write / remove .proxy
             let proxyFilePath = installPath + "/.proxy"
             do {
                 if urlValue.isEmpty {
@@ -678,10 +636,7 @@ struct RunnerDetailView: View {
                 } else {
                     try urlValue.write(toFile: proxyFilePath, atomically: true, encoding: .utf8)
                 }
-            } catch {
-                ok = false
-            }
-            // Write / remove .proxycredentials
+            } catch { ok = false }
             let credPath = installPath + "/.proxycredentials"
             do {
                 if user.isEmpty && pass.isEmpty {
@@ -689,9 +644,7 @@ struct RunnerDetailView: View {
                 } else {
                     try "\(user)\n\(pass)".write(toFile: credPath, atomically: true, encoding: .utf8)
                 }
-            } catch {
-                ok = false
-            }
+            } catch { ok = false }
             DispatchQueue.main.async {
                 proxySaveState = ok ? .success : .failure("Failed to save proxy settings")
                 if ok {
