@@ -1,4 +1,5 @@
 import Foundation
+// swiftlint:disable vertical_whitespace_closing_braces
 
 // MARK: - LifecycleResult
 
@@ -118,7 +119,6 @@ struct RunnerLifecycleService {
         }
         let dir = URL(fileURLWithPath: path)
 
-        // Step 1: svc.sh uninstall (non-fatal)
         log("RunnerLifecycle > REMOVE step1: svc.sh uninstall")
         let (svcOk, _) = runScriptWithOutput(executableName: "svc.sh", arguments: ["uninstall"],
                               workingDirectory: dir, timeout: 30, logTag: "svc.sh uninstall")
@@ -130,7 +130,6 @@ struct RunnerLifecycleService {
         }
         let scope = scopeFromGitHubUrl(gitHubUrl)
 
-        // Step 2: fetch removal token
         log("RunnerLifecycle > REMOVE step2: fetching removal token for scope=\(scope)")
         guard let token = fetchRemovalToken(scope: scope) else {
             log("RunnerLifecycle > REMOVE abort — fetchRemovalToken returned nil for scope=\(scope)")
@@ -138,7 +137,6 @@ struct RunnerLifecycleService {
         }
         log("RunnerLifecycle > REMOVE step2: got token len=\(token.count)")
 
-        // Step 3: config.sh remove --token
         log("RunnerLifecycle > REMOVE step3: config.sh remove --token <token> in \(path)")
         let (cfgOk, cfgOutput) = runScriptWithOutput(executableName: "config.sh",
             arguments: ["remove", "--token", token],
@@ -147,8 +145,6 @@ struct RunnerLifecycleService {
 
         var removeOk = cfgOk
 
-        // Step 3b: fallback — if config.sh failed (e.g. corrupt install, missing .bin/Runner.Listener),
-        // deregister directly via GitHub DELETE API using the runner's agentId.
         if !cfgOk {
             let isCorrupt = cfgOutput.contains("No such file or directory")
                 || cfgOutput.contains("install is corrupt")
@@ -164,7 +160,6 @@ struct RunnerLifecycleService {
             }
         }
 
-        // Step 4: unconditionally clean up local disk if deregistration succeeded (or corrupt)
         if removeOk || (!cfgOk && runner.agentId != nil) {
             log("RunnerLifecycle > REMOVE step4: deleting install dir \(path)")
             do {
