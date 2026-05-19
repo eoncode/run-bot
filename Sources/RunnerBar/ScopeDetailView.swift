@@ -1,56 +1,25 @@
 import SwiftUI
 
 // MARK: - ScopeDetailView
-// Navigation level: SettingsView (scope row tap) → ScopeDetailView ← this view
+// Navigation level: SettingsView (scope row tap) → ScopeDetailView
 //
 // #499: Nav shell + wiring
-// #500: Alias text field
-// #502: Per-scope polling interval override
-// #504: Per-scope notification overrides
+// #513: Simplified — alias, polling, notifications sections removed.
+//       Enable toggle moved from header into its own Monitoring section.
+//       Monitoring row removed from Scope Info card.
 
 struct ScopeDetailView: View {
     let scopeEntry: ScopeEntry
     let onBack: () -> Void
 
-    // #499: Enable toggle (mirrors SettingsView row toggle)
     @ObservedObject private var scopeStore = ScopeStore.shared
-
-    // #500: Alias
-    @State private var aliasText: String
-    // Cached initial alias so .disabled() on Save never reads UserDefaults on every body pass.
-    @State private var savedAlias: String
-    @State private var aliasSaved = false
-
-    // #502: Polling interval override
-    // nil sentinel = "Use global"; picker values: nil, 10, 15, 30, 60, 120, 300
-    @State private var pollingOverride: Int?   // nil = use global
-    private let pollingOptions: [(label: String, value: Int?)] = [
-        ("Use global", nil),
-        ("10 s", 10),
-        ("15 s", 15),
-        ("30 s", 30),
-        ("60 s", 60),
-        ("120 s", 120),
-        ("300 s", 300),
-    ]
-
-    // #504: Notification overrides (nil = use global)
-    @State private var notifySuccessOverride: Bool?  // nil = use global
-    @State private var notifyFailureOverride: Bool?  // nil = use global
 
     init(scopeEntry: ScopeEntry, onBack: @escaping () -> Void) {
         self.scopeEntry = scopeEntry
         self.onBack = onBack
-        let scope = scopeEntry.scope
-        let initialAlias = ScopeSettingsStore.alias(for: scope) ?? ""
-        _aliasText = State(initialValue: initialAlias)
-        _savedAlias = State(initialValue: initialAlias)
-        _pollingOverride = State(initialValue: ScopeSettingsStore.pollingInterval(for: scope))
-        _notifySuccessOverride = State(initialValue: ScopeSettingsStore.notifyOnSuccess(for: scope))
-        _notifyFailureOverride = State(initialValue: ScopeSettingsStore.notifyOnFailure(for: scope))
     }
 
-    // Live entry from store so enable/disable toggle reflects current state.
+    // Live entry from store so toggle reflects current state.
     private var liveEntry: ScopeEntry? {
         scopeStore.entries.first(where: { $0.id == scopeEntry.id })
     }
@@ -65,9 +34,7 @@ struct ScopeDetailView: View {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     infoSection
-                    aliasSection
-                    pollingSection
-                    notificationsSection
+                    monitoringSection
                     dangerSection
                 }
                 .padding(.bottom, 16)
@@ -78,6 +45,7 @@ struct ScopeDetailView: View {
     }
 
     // MARK: - Header
+    // #517: Toggle removed from header — header is now clean nav only.
 
     private var headerBar: some View {
         HStack(spacing: 8) {
@@ -93,7 +61,6 @@ struct ScopeDetailView: View {
 
             Spacer()
 
-            // Type badge
             Text(isRepo ? "Repo" : "Org")
                 .font(.caption2)
                 .foregroundColor(Color.rbTextSecondary)
@@ -106,22 +73,14 @@ struct ScopeDetailView: View {
                 .lineLimit(1).truncationMode(.middle)
 
             Spacer()
-
-            // Enable/disable toggle in header
-            Toggle("", isOn: Binding(
-                get: { isEnabled },
-                set: { ScopeStore.shared.setEnabled(scopeEntry.id, $0); RunnerStore.shared.start() }
-            ))
-            .toggleStyle(.switch).labelsHidden()
-            .help(isEnabled ? "Pause monitoring this scope" : "Resume monitoring")
-            .scaleEffect(0.8, anchor: .trailing)
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.top, 12)
         .padding(.bottom, 8)
     }
 
-    // MARK: - Info Section
+    // MARK: - Scope Info
+    // #518: Monitoring row removed — covered by the Monitoring section toggle below.
 
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -130,107 +89,44 @@ struct ScopeDetailView: View {
                 infoRow(label: "Scope", value: scope, copyable: true)
                 Divider().padding(.leading, RBSpacing.md)
                 infoRow(label: "Type", value: isRepo ? "Repository" : "Organisation")
-                Divider().padding(.leading, RBSpacing.md)
-                infoRow(label: "Monitoring", value: isEnabled ? "Active" : "Paused")
             }
         }
     }
 
-    // MARK: - Alias Section (#500)
+    // MARK: - Monitoring
+    // #517: Enable toggle moved here from the header bar, with clear label + description.
 
-    private var aliasSection: some View {
+    private var monitoringSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Friendly Alias")
+            sectionHeader("Monitoring")
             infoCard {
-                HStack(spacing: 8) {
-                    TextField("e.g. My Org", text: $aliasText)
-                        .font(.system(size: 12))
-                        .textFieldStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .onChange(of: aliasText) { _ in aliasSaved = false }
-                    if aliasSaved {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12)).foregroundColor(Color.rbSuccess)
-                    } else {
-                        Button(action: saveAlias) {
-                            Text("Save").font(.caption2)
-                        }
-                        .buttonStyle(.bordered)
-                        // Compare against cached savedAlias — avoids a UserDefaults read on every body pass.
-                        .disabled(aliasText.trimmingCharacters(in: .whitespacesAndNewlines) == savedAlias)
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Monitor this scope")
+                            .font(.system(size: 12, weight: .medium))
+                        Text(isEnabled
+                             ? "RunnerBar is actively polling this scope for runner status."
+                             : "Polling is paused. No runner data will be fetched for this scope.")
+                            .font(.caption2)
+                            .foregroundColor(Color.rbTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-            }
-            Text("Shown instead of the raw scope string in lists and tooltips. Leave blank to use the scope slug.")
-                .font(.caption2).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
-        }
-    }
-
-    // MARK: - Polling Section (#502)
-
-    private var pollingSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Polling Interval")
-            infoCard {
-                HStack {
-                    Text("Check every")
-                        .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
                     Spacer()
-                    Picker("", selection: $pollingOverride) {
-                        ForEach(pollingOptions, id: \.label) { option in
-                            Text(option.label).tag(option.value)
-                        }
-                    }
+                    Toggle("", isOn: Binding(
+                        get: { isEnabled },
+                        set: { ScopeStore.shared.setEnabled(scopeEntry.id, $0); RunnerStore.shared.start() }
+                    ))
+                    .toggleStyle(.switch)
+                    .tint(Color.rbSuccess)
                     .labelsHidden()
-                    .frame(width: 110)
-                    // Two-arg onChange requires macOS 14. Single-arg fallback for macOS 13.
-                    .modifier(PollingOnChangeModifier(pollingOverride: $pollingOverride, scope: scope))
+                    .help(isEnabled ? "Pause monitoring this scope" : "Resume monitoring")
                 }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
             }
-            Text("\"Use global\" follows the global polling interval set in General settings.")
-                .font(.caption2).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
         }
     }
 
-    // MARK: - Notifications Section (#504)
-
-    private var notificationsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Notifications")
-            infoCard {
-                HStack {
-                    Text("Notify on success")
-                        .font(.system(size: 12))
-                    Spacer()
-                    threeStateToggle(
-                        value: $notifySuccessOverride,
-                        onChange: { ScopeSettingsStore.setNotifyOnSuccess($0, for: scope) }
-                    )
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                Divider().padding(.leading, RBSpacing.md)
-                HStack {
-                    Text("Notify on failure")
-                        .font(.system(size: 12))
-                    Spacer()
-                    threeStateToggle(
-                        value: $notifyFailureOverride,
-                        onChange: { ScopeSettingsStore.setNotifyOnFailure($0, for: scope) }
-                    )
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-            }
-            Text("\"Global\" follows the Notifications setting. Override per scope with On or Off.")
-                .font(.caption2).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
-        }
-    }
-
-    // MARK: - Danger Section
+    // MARK: - Danger Zone
 
     private var dangerSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -257,76 +153,7 @@ struct ScopeDetailView: View {
         }
     }
 
-    // MARK: - Three-state toggle (#504)
-    // nil = Global (inherits), true = On, false = Off
-    // Cycles: nil → true → false → nil
-
-    @ViewBuilder
-    private func threeStateToggle(value: Binding<Bool?>, onChange: @escaping (Bool?) -> Void) -> some View {
-        HStack(spacing: 4) {
-            // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: {
-                let next: Bool? = {
-                    switch value.wrappedValue {
-                    case nil:   return true
-                    case true:  return false
-                    case false: return nil
-                    default:    return nil
-                    }
-                }()
-                value.wrappedValue = next
-                onChange(next)
-            }) {
-                Text(label(for: value.wrappedValue))
-                    .font(.caption2)
-                    .foregroundColor(foreground(for: value.wrappedValue))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(
-                        Capsule().fill(background(for: value.wrappedValue))
-                    )
-            }
-            .buttonStyle(.plain)
-            .help("Tap to cycle: Global → On → Off")
-        }
-    }
-
-    private func label(for value: Bool?) -> String {
-        switch value {
-        case nil:   return "Global"
-        case true:  return "On"
-        case false: return "Off"
-        default:    return "Global"
-        }
-    }
-
-    private func foreground(for value: Bool?) -> Color {
-        switch value {
-        case nil:   return Color.rbTextSecondary
-        case true:  return Color.rbSuccess
-        case false: return Color.rbDanger
-        default:    return Color.rbTextSecondary
-        }
-    }
-
-    private func background(for value: Bool?) -> Color {
-        switch value {
-        case nil:   return Color.rbSurfaceElevated
-        case true:  return Color.rbSuccess.opacity(0.12)
-        case false: return Color.rbDanger.opacity(0.12)
-        default:    return Color.rbSurfaceElevated
-        }
-    }
-
     // MARK: - Actions
-
-    private func saveAlias() {
-        let trimmed = aliasText.trimmingCharacters(in: .whitespacesAndNewlines)
-        ScopeSettingsStore.setAlias(trimmed.isEmpty ? nil : trimmed, for: scope)
-        // Update cached value so Save button disables immediately after saving.
-        savedAlias = trimmed
-        aliasSaved = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { aliasSaved = false }
-    }
 
     private func removeScope() {
         ScopeSettingsStore.cleanUp(scope: scope)
@@ -376,27 +203,5 @@ struct ScopeDetailView: View {
             }
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-    }
-}
-
-// MARK: - PollingOnChangeModifier
-/// ViewModifier that applies onChange(of: pollingOverride) in a way that compiles
-/// for both macOS 13 (single-arg) and macOS 14+ (two-arg).
-private struct PollingOnChangeModifier: ViewModifier {
-    @Binding var pollingOverride: Int?
-    let scope: String
-
-    func body(content: Content) -> some View {
-        if #available(macOS 14, *) {
-            content.onChange(of: pollingOverride) { _, newValue in
-                ScopeSettingsStore.setPollingInterval(newValue, for: scope)
-                RunnerStore.shared.start()
-            }
-        } else {
-            content.onChange(of: pollingOverride) { newValue in
-                ScopeSettingsStore.setPollingInterval(newValue, for: scope)
-                RunnerStore.shared.start()
-            }
-        }
     }
 }
