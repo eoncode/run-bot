@@ -19,6 +19,7 @@ struct RemovalAlertModifier: ViewModifier {
 
     /// Wraps `content` with a runner-removal confirmation alert.
     func body(content: Content) -> some View {
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         content.alert(title, isPresented: $isPresented) {
             Button("Cancel", role: .cancel) { onCancel() }
             Button("Remove", role: .destructive) { onConfirm() }
