@@ -84,7 +84,7 @@ struct StepLogView: View {
                 .buttonStyle(.plain)
                 Spacer()
                 if let urlString = job.htmlUrl, let url = URL(string: urlString) {
-                    // swiftlint:disable:next multiple_closures_with_trailing_closure
+                    // swiftlint:disable multiple_closures_with_trailing_closure
                     Button(
                         action: { NSWorkspace.shared.open(url) },
                         label: { HStack(spacing: 3) {
@@ -94,6 +94,7 @@ struct StepLogView: View {
                         .foregroundColor(Color.rbTextSecondary)
                         .fixedSize() }
                     )
+                    // swiftlint:enable multiple_closures_with_trailing_closure
                     .buttonStyle(.plain)
                     .help("Open job on GitHub")
                 }
