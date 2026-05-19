@@ -51,7 +51,7 @@ struct RunnerDetailView: View {
     @State private var proxyCreditsSaveState: SaveState = .idle
 
     // MARK: - Danger Zone state (#493)
-    @State private var dangerZoneExpanded = false
+    @State private var dangerZoneExpanded = true
     @State private var pendingDangerAction: DangerAction?
     @State private var dangerActionState: SaveState = .idle
 
