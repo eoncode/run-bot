@@ -37,6 +37,7 @@ struct RunnerDetailView: View {
     let onBack: () -> Void
 
     @State private var isRunning: Bool
+    @State private var displayStatus: String
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
 
     // MARK: - Editable field state (#492)
@@ -65,6 +66,7 @@ struct RunnerDetailView: View {
         self.runner = runner
         self.onBack = onBack
         self._isRunning = State(initialValue: runner.isRunning)
+        self._displayStatus = State(initialValue: runner.displayStatus)
         self._labelsText = State(initialValue: runner.labels
             .filter { !["self-hosted"].contains($0)
                 && !$0.lowercased().contains("x64")
@@ -105,6 +107,7 @@ struct RunnerDetailView: View {
         .onChange(of: localRunnerStore.runners) { updated in
             if let fresh = updated.first(where: { $0.id == runner.id }) {
                 isRunning = fresh.isRunning
+                displayStatus = fresh.displayStatus
             }
         }
         .sheet(item: $pendingDangerAction, content: dangerActionSheet)
@@ -177,7 +180,7 @@ struct RunnerDetailView: View {
                 .frame(width: 100, alignment: .leading).fixedSize()
             HStack(spacing: 4) {
                 Circle().fill(dotColor).frame(width: 7, height: 7)
-                Text(runner.displayStatus)
+                Text(displayStatus)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(Color.rbTextPrimary)
             }
