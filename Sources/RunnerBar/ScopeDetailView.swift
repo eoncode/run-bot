@@ -37,7 +37,7 @@ struct ScopeDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
             Divider()
-            ScrollView(.vertical, showIndicators: true) {
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     infoSection
                     monitoringSection
