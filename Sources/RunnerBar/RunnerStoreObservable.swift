@@ -35,15 +35,19 @@ final class RunnerStoreObservable: ObservableObject {
     /// ❌ NEVER call this from popoverDidClose() — clobbers savedNavState.
     /// If your an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed is major major major.
     @MainActor
-    func reload(localRunnerStore: LocalRunnerStore = LocalRunnerStore.shared) {
+    func reload(localRunnerStore: LocalRunnerStore? = nil) {
+        // Resolving .shared inside the body (not in the parameter default) avoids the
+        // Swift 6 warning: "main actor-isolated static property 'shared' can not be
+        // referenced from a nonisolated context" that arises with default parameter exprs.
+        let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
-        log("RunnerStoreObservable › reload — actions=\(store.actions.count) jobs=\(store.jobs.count) runners=\(store.runners.count) localRunners=\(localRunnerStore.runners.count)")
+        log("RunnerStoreObservable › reload — actions=\(store.actions.count) jobs=\(store.jobs.count) runners=\(store.runners.count) localRunners=\(localStore.runners.count)")
         withAnimation(nil) {
             runners = store.runners
             jobs = store.jobs
             actions = store.actions
             isRateLimited = store.isRateLimited
-            localRunners = localRunnerStore.runners
+            localRunners = localStore.runners
         }
     }
 }
