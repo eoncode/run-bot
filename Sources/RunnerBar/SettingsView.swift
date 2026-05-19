@@ -191,6 +191,9 @@ struct SettingsView: View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         Button(action: { onSelectRunner(runner) }) {
             localRunnerRowContent(runner)
+                // Makes the entire row area (including empty/transparent regions) hittable,
+                // not just the pixels where text or icons are rendered.
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
@@ -399,6 +402,8 @@ struct SettingsView: View {
                 .buttonStyle(.borderless)
                 .help("Remove scope")
             }
+            // Makes the entire row area (including Spacer and transparent gaps) hittable.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md)
