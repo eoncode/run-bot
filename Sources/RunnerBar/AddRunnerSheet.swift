@@ -199,6 +199,7 @@ struct AddRunnerSheet: View {
         HStack {
             Spacer()
             Button("Cancel") { isPresented = false }.keyboardShortcut(.cancelAction)
+            // swiftlint:disable:next multiple_closures_with_trailing_closure
             Button(action: register) {
                 if isRegistering {
                     HStack(spacing: 6) {
@@ -390,6 +391,7 @@ struct AddRunnerSheet: View {
         openPanel.message = "Select the runner install folder (must contain a .runner file)"
         openPanel.prompt = "Select"
         guard let window = NSApp.keyWindow else { return }
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         openPanel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = openPanel.url else { return }
             handlePickedFolder(url)
@@ -646,6 +648,7 @@ struct AddRunnerSheet: View {
         task.standardError  = pipe
         var outputData = Data()
         let lock = NSLock()
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
@@ -656,6 +659,7 @@ struct AddRunnerSheet: View {
             log("runRegistrationCommand › launch error: \(error)")
             return 1
         }
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         let timeoutItem = DispatchWorkItem { task.terminate() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
         task.waitUntilExit()
@@ -677,6 +681,7 @@ struct AddRunnerSheet: View {
             log("runSimpleProcess › \(executable) launch error: \(error)")
             return 1
         }
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         let timeoutItem = DispatchWorkItem { task.terminate() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
         task.waitUntilExit()
