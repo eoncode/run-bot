@@ -26,6 +26,7 @@ enum AggregateStatus {
 
 // MARK: - RunnerStore
 
+// swiftlint:disable:next type_body_length
 final class RunnerStore {
     static let shared = RunnerStore()
 
