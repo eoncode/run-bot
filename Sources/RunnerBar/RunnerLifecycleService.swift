@@ -1,5 +1,4 @@
 import Foundation
-// swiftlint:disable vertical_whitespace_closing_braces
 
 // MARK: - LifecycleResult
 
@@ -236,6 +235,7 @@ struct RunnerLifecycleService {
         task.standardError = pipe
         var outputData = Data()
         let lock = NSLock()
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
@@ -249,6 +249,7 @@ struct RunnerLifecycleService {
             log("RunnerLifecycle > runScript [\(logTag)]: launch FAILED: \(error)")
             return (false, "")
         }
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         let timeoutItem = DispatchWorkItem {
             log("RunnerLifecycle > runScript [\(logTag)]: TIMEOUT — terminating")
             task.terminate()
