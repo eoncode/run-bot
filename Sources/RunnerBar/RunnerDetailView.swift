@@ -181,65 +181,69 @@ struct RunnerDetailView: View {
     private var configSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Configuration")
+            // Labels card
             infoCard {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Labels")
-                                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                                .frame(width: 100, alignment: .leading).fixedSize()
-                            Text("Custom comma-separated labels to route specific workflow jobs to this runner.")
-                                .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                VStack(alignment: .leading, spacing: 0) {
+                    // Row: label name + text field + save button
+                    HStack(spacing: 8) {
+                        Text("Labels")
+                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+                            .frame(width: 100, alignment: .leading).fixedSize()
                         TextField("comma-separated", text: $labelsText)
                             .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
                         saveButton(state: labelsSaveState, action: saveLabels)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+                    // Description below the full row
+                    Text("Custom comma-separated labels to route specific workflow jobs to this runner.")
+                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
                     saveStateRow(labelsSaveState, restartNote: false)
                 }
             }
+            // Work folder card
             infoCard {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Work folder")
-                                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                                .frame(width: 100, alignment: .leading).fixedSize()
-                            Text("Directory used as the working directory during job execution. Requires runner restart.")
-                                .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                VStack(alignment: .leading, spacing: 0) {
+                    // Row: label name + text field + save button
+                    HStack(spacing: 8) {
+                        Text("Work folder")
+                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+                            .frame(width: 100, alignment: .leading).fixedSize()
                         TextField("_work", text: $workFolderText)
                             .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
                         saveButton(state: workFolderSaveState, action: saveWorkFolder)
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+                    // Description below the full row
+                    Text("Directory used as the working directory during job execution. Requires runner restart.")
+                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
                     saveStateRow(workFolderSaveState, restartNote: true)
                 }
             }
+            // Autoupdate card
             infoCard {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Autoupdate")
-                                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                                .frame(width: 130, alignment: .leading).fixedSize()
-                            Text("Automatically update the runner when a new version is released.")
-                                .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text("Autoupdate")
+                            .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         Toggle("", isOn: $autoUpdate)
                             .toggleStyle(.switch).labelsHidden()
                             .onChange(of: autoUpdate) { _ in saveAutoUpdate() }
                     }
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+                    // Description below the full row
+                    Text("Automatically update the runner when a new version is released.")
+                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
                     saveStateRow(autoUpdateSaveState, restartNote: true)
                 }
             }
-            // #532: unified proxy card — URL + Username + Password + single Save Proxy button
+            // #532: unified proxy card — URL + Username + Password + single Save button
             proxyCard
         }
     }
@@ -295,7 +299,7 @@ struct RunnerDetailView: View {
 
                 Divider().padding(.leading, RBSpacing.md)
 
-                // Save Proxy button row
+                // Save button row
                 HStack {
                     Spacer()
                     saveButton(state: proxySaveState, action: saveProxy)
@@ -504,33 +508,34 @@ struct RunnerDetailView: View {
     }
 
     private func infoRow(label: String, value: String, description: String? = nil, copyable: Bool = false) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
                 Text(label)
                     .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
                     .frame(width: 100, alignment: .leading).fixedSize()
-                if let description = description {
-                    Text(description)
-                        .font(.caption2).foregroundColor(Color.rbTextTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                Text(value)
+                    .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
+                    .lineLimit(2).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if copyable {
+                    // swiftlint:disable:next multiple_closures_with_trailing_closure
+                    Button(action: {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(value, forType: .string)
+                    }) {
+                        Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
+                    }
+                    .buttonStyle(.plain).help("Copy to clipboard")
                 }
             }
-            Text(value)
-                .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
-                .lineLimit(2).truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if copyable {
-                // swiftlint:disable:next multiple_closures_with_trailing_closure
-                Button(action: {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(value, forType: .string)
-                }) {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
-                }
-                .buttonStyle(.plain).help("Copy to clipboard")
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
+            if let description = description {
+                Text(description)
+                    .font(.caption2).foregroundColor(Color.rbTextTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, RBSpacing.md).padding(.bottom, 8)
             }
         }
-        .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 
     private var dotColor: Color {
