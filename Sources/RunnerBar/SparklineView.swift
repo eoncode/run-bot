@@ -1,5 +1,4 @@
 import SwiftUI
-// swiftlint:disable multiple_closures_with_trailing_closure
 
 // MARK: - SparklineView
 /// A mini sparkline graph using Path: polyline stroke + gradient fill.
@@ -13,6 +12,7 @@ struct SparklineView: View {
     let currentPct: Double
 
     var body: some View {
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
         GeometryReader { geo in
             ZStack {
                 // Gradient fill — slight transparency blends with dark/light mode backgrounds (Phase 2 spec)
