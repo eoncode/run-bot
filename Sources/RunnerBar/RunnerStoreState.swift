@@ -167,9 +167,16 @@ extension RunnerStore {
         let now        = Date()
 
         var newCache = evictFreshShas(from: snapGroupCache, freshGroups: allFetched)
-        freezeVanishedGroups(snapPrev: snapPrevGroups, liveIDs: liveIDs, now: now, into: &newCache)
+        freezeVanishedGroups(snapPrev: snapPrevGroups, liveIDs: liveIDs, now: now,
+                             into: &newCache, prevLiveGroups: snapPrevGroups)
 
+        // Cache done groups; fire failure hook for newly-completed ones.
         for group in doneGroups {
+            let isNew = snapPrevGroups[group.id] != nil && snapGroupCache[group.id] == nil
+            if isNew {
+                let scope = scopeFromActionGroup(group)
+                FailureHookRunner.fireIfNeeded(group: group, scope: scope)
+            }
             var dimmed = group
             dimmed.isDimmed = true
             newCache[group.id] = dimmed
@@ -194,6 +201,21 @@ extension RunnerStore {
             newGroupCache: enrichedCache,
             newPrevLiveGroups: newPrevLive
         )
+    }
+
+    /// Derives the scope string from an ActionGroup's repo field or runs.
+    private func scopeFromActionGroup(_ group: ActionGroup) -> String {
+        if let repo = group.repo, !repo.isEmpty { return repo }
+        // Fallback: derive from first run's repository_url or html_url
+        if let firstRun = group.runs.first {
+            let url = firstRun.htmlUrl ?? ""
+            // https://github.com/org/repo/actions/runs/... -> org/repo
+            let parts = url
+                .replacingOccurrences(of: "https://github.com/", with: "")
+                .components(separatedBy: "/")
+            if parts.count >= 2 { return "\(parts[0])/\(parts[1])" }
+        }
+        return ""
     }
 
     private func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
@@ -224,11 +246,17 @@ extension RunnerStore {
         snapPrev: [String: ActionGroup],
         liveIDs: Set<String>,
         now: Date,
-        into cache: inout [String: ActionGroup]
+        into cache: inout [String: ActionGroup],
+        prevLiveGroups: [String: ActionGroup]
     ) {
         for (sha, group) in snapPrev where !liveIDs.contains(sha) {
             if let existing = cache[sha], existing.isDimmed, existing.jobs.count >= group.jobs.count {
                 continue
+            }
+            // Fire failure hook for vanished groups not already cached (first time we see them gone).
+            if cache[sha] == nil {
+                let scope = scopeFromActionGroup(group)
+                FailureHookRunner.fireIfNeeded(group: group, scope: scope)
             }
             var frozen = group
             frozen.isDimmed = true
