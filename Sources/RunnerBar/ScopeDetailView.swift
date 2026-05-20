@@ -10,6 +10,7 @@ import SwiftUI
 // #539: Layout improvements -- section labels, card structure aligned with spec.
 // #544: Failure Hook section added between Monitoring and Danger Zone.
 // #546: Local Path row — inline editing, NSOpenPanel folder picker, tilde pre-fill.
+//       NSOpenPanel raised to .floating level so it appears above the popover.
 
 struct ScopeDetailView: View {
     let scopeEntry: ScopeEntry
@@ -220,7 +221,6 @@ struct ScopeDetailView: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(Color.rbAccent)
                     } else {
-                        // Tap text to enter edit mode — pre-fills "~/" if empty
                         // swiftlint:disable:next multiple_closures_with_trailing_closure
                         Button(action: { startEditingPath() }) {
                             Text(localRepoPath.isEmpty ? "Tap to set path…" : localRepoPath)
@@ -232,7 +232,6 @@ struct ScopeDetailView: View {
                         }
                         .buttonStyle(.plain)
 
-                        // Folder picker icon
                         Button(action: { openFolderPicker() }) {
                             Image(systemName: "folder")
                                 .font(.system(size: 11))
@@ -241,7 +240,6 @@ struct ScopeDetailView: View {
                         .buttonStyle(.plain)
                         .help("Browse for folder…")
 
-                        // Clear button — only when a path is set
                         if !localRepoPath.isEmpty {
                             Button(action: {
                                 localRepoPath = ""
@@ -322,7 +320,6 @@ struct ScopeDetailView: View {
 
     // MARK: - Actions
 
-    /// Opens edit mode. Pre-fills "~/" if path is currently empty so user has a starting point.
     private func startEditingPath() {
         if localRepoPath.isEmpty { localRepoPath = "~/" }
         isEditingPath = true
@@ -331,13 +328,14 @@ struct ScopeDetailView: View {
     private func commitLocalPath() {
         isEditingPath = false
         let trimmed = localRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Discard if user left it as just the pre-fill stub
         let cleaned = (trimmed == "~/") ? "" : trimmed
         localRepoPath = cleaned
         ScopeSettingsStore.setLocalRepoPath(cleaned.isEmpty ? nil : cleaned, for: scope)
     }
 
-    /// Opens NSOpenPanel constrained to directories and converts the result to a tilde-abbreviated path.
+    /// Opens NSOpenPanel above the popover.
+    /// Status bar apps have no regular window, so NSOpenPanel defaults to appearing behind
+    /// the popover. Fix: activate the app, set panel level to .floating, then run modal.
     private func openFolderPicker() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -345,17 +343,21 @@ struct ScopeDetailView: View {
         panel.allowsMultipleSelection = false
         panel.prompt = "Select"
         panel.message = "Choose the local folder for \(scope)"
-        // Start in current path if set and resolvable, else home directory
+        panel.level = .floating  // float above the popover
+
         if !localRepoPath.isEmpty {
             let expanded = NSString(string: localRepoPath).expandingTildeInPath
             panel.directoryURL = URL(fileURLWithPath: expanded)
         } else {
             panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
+
+        // Activate app so the panel can receive focus
+        NSApp.activate(ignoringOtherApps: true)
+
         if panel.runModal() == .OK, let url = panel.url {
-            // Abbreviate absolute path back to ~/... form when inside home dir
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let abs  = url.path
+            let home  = FileManager.default.homeDirectoryForCurrentUser.path
+            let abs   = url.path
             let tilde = abs.hasPrefix(home)
                 ? "~/" + abs.dropFirst(home.count + 1)
                 : abs
