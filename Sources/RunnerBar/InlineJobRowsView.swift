@@ -3,48 +3,60 @@ import SwiftUI
 
 // MARK: - TreeLineLeader
 /// L-shaped tree-line drawn with Canvas.
-/// fix(#455): barX is centred under the DonutStatusView dot, not at x=0.
-/// The dot sits inside the job card which has .padding(.horizontal, RBSpacing.sm).
-/// DonutStatusView size = 10 pt, so dot centre from card left edge
-/// = RBSpacing.sm + 5. The card itself is offset from the HStack origin by
-/// (treeLeader.width + HStack.spacing=4). We don't need to account for that
-/// offset here because TreeLineLeader is sized to fill from the HStack origin;
-/// barX just needs to sit at the same x as the dot centre within the leader frame.
-/// The leader frame width = elbowWidth + 2.
-/// Empirically, barX = 0 (left edge of leader) is where the outer workflow
-/// green bar lives. For job-level leaders the bar stays at x=0 (flush with
-/// the workflow bar). For step-level leaders we indent slightly.
+///
+/// fix(#455-align): barX is centred under the workflow-level DonutStatusView dot.
+///
+/// Layout math:
+///   ActionRowView.rowContent has `Color.clear.frame(width: RBSpacing.md)` on the left,
+///   then `DonutStatusView(size: 14)`. Dot centre from card left edge = RBSpacing.md + 7.
+///
+///   InlineJobRowsView VStack has .padding(.leading, RBSpacing.md).
+///   Inside that, JobRowCard HStack has TreeLineLeader as first child.
+///   TreeLineLeader origin from card left = RBSpacing.md (InlineJobRowsView leading pad).
+///
+///   To align barX under the workflow dot centre:
+///     barX (from leader origin) = (RBSpacing.md + 7) - RBSpacing.md = 7pt
+///   So barX = dotRadius = 7 (half of workflow dot size 14).
+///
+/// fix(#455-gap): The vertical bar must draw from y=0 to y=size.height (or midY for
+///   last row) with NO gap. JobRowCard sets .frame(maxHeight: .infinity) + alignment: .top
+///   on the HStack, and .padding(.top, 0) on the leader (no top offset — the bar starts
+///   at the very top of the leader frame and the card's .padding(.vertical, 1) provides
+///   the inter-card gap at the VStack level, NOT inside the card).
 private struct TreeLineLeader: View {
     let isLast: Bool
-    /// Extra left indent — 0 for job rows, non-zero for step rows inside the card.
-    var indent: CGFloat = 0
+    /// barX from the leader's left edge. Set to dotRadius (7) so bar aligns under workflow dot.
+    var barX: CGFloat = 7
 
-    private let lineColor = Color.secondary.opacity(0.3)
+    private let lineColor = Color.secondary.opacity(0.35)
     private let barWidth: CGFloat = 1
-    private let elbowWidth: CGFloat = 10
+    private let elbowWidth: CGFloat = 8
     private let arrowSize: CGFloat = 4
 
     var body: some View {
         Canvas { ctx, size in
             let midY = size.height / 2
-            let barX = indent
+            // Vertical bar: y=0 → midY (last row) or full height (not last)
             var vertPath = Path()
             vertPath.move(to: CGPoint(x: barX, y: 0))
             vertPath.addLine(to: CGPoint(x: barX, y: isLast ? midY : size.height))
             ctx.stroke(vertPath, with: .color(lineColor), lineWidth: barWidth)
-            let arrowTip = CGPoint(x: barX + elbowWidth, y: midY)
+            // Horizontal elbow from barX → arrow tip
+            let elbowEndX = barX + elbowWidth
+            let arrowTipX = elbowEndX
             var elbowPath = Path()
             elbowPath.move(to: CGPoint(x: barX, y: midY))
-            elbowPath.addLine(to: CGPoint(x: arrowTip.x - arrowSize, y: midY))
+            elbowPath.addLine(to: CGPoint(x: arrowTipX - arrowSize, y: midY))
             ctx.stroke(elbowPath, with: .color(lineColor), lineWidth: barWidth)
+            // Arrowhead
             var arrow = Path()
-            arrow.move(to: arrowTip)
-            arrow.addLine(to: CGPoint(x: arrowTip.x - arrowSize, y: midY - arrowSize / 2))
-            arrow.addLine(to: CGPoint(x: arrowTip.x - arrowSize, y: midY + arrowSize / 2))
+            arrow.move(to: CGPoint(x: arrowTipX, y: midY))
+            arrow.addLine(to: CGPoint(x: arrowTipX - arrowSize, y: midY - arrowSize / 2))
+            arrow.addLine(to: CGPoint(x: arrowTipX - arrowSize, y: midY + arrowSize / 2))
             arrow.closeSubpath()
             ctx.fill(arrow, with: .color(lineColor))
         }
-        .frame(width: elbowWidth + 2)
+        .frame(width: barX + elbowWidth + arrowSize + 2)
     }
 }
 
@@ -68,18 +80,21 @@ private struct JobInlineProgress: View {
 // MARK: - StepRowView
 /// A single step row rendered inside the expanded job container.
 /// Tapping navigates to StepLogView. Right-click shows step context menu.
-/// fix(#455): No individual background — steps live inside the job card's shared background.
-/// fix(#455): No Divider above/below — dividers removed; steps are visually separated by spacing only.
 private struct StepRowView: View {
     let step: JobStep
     let job: ActiveJob
     let isLast: Bool
     let onTap: () -> Void
 
+    // Step tree bar aligns under the job card's DonutStatusView(size:10) centre.
+    // Job card has .padding(.horizontal, RBSpacing.sm) so dot centre from step-leader
+    // origin = RBSpacing.sm + 5. The step leader starts right after the job-leader frame.
+    // Keep simple: same barX=5 so step elbow feels consistent.
+    private let stepBarX: CGFloat = 5
+
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            // fix(#455): step tree-line indented to align under the job card's left padding.
-            TreeLineLeader(isLast: isLast, indent: 0)
+            TreeLineLeader(isLast: isLast, barX: stepBarX)
                 .frame(maxHeight: .infinity)
             stepContent
         }
@@ -104,7 +119,6 @@ private struct StepRowView: View {
                     .foregroundColor(Color.rbTextTertiary)
                     .fixedSize()
             }
-            // Steps have a chevron: they navigate to StepLogView.
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(Color.rbTextTertiary)
@@ -129,13 +143,11 @@ private struct StepRowView: View {
 
 // MARK: - JobRowCard
 /// Single job row with optional inline step expansion.
-/// fix(#455): the job header + step rows share ONE background container, per spec.
+/// fix(#455): job header + step rows share ONE background container.
 /// fix(#578): isExpanded owned by parent (expandedJobIDs) so ticks don't reset it.
-/// fix(#455-lines): TreeLineLeader uses .frame(maxHeight: .infinity) so the vertical
-///   bar extends through the full expanded card height, not just 28 pt.
-/// fix(#455-align): HStack uses alignment: .top so the tree leader's vertical bar
-///   starts flush with the top of the card. The bar then draws down to midY (isLast)
-///   or full height (not last) covering the whole card naturally.
+/// fix(#455-tree): TreeLineLeader .frame(maxHeight: .infinity) so bar spans full expanded height.
+/// fix(#455-align): HStack alignment: .top + NO .padding(.top) on leader so bar starts at y=0
+///   of the card frame and connects seamlessly to the bar from the card above.
 private struct JobRowCard: View {
     let job: ActiveJob
     let status: RBStatus
@@ -152,12 +164,11 @@ private struct JobRowCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
-            // fix(#455-tree): maxHeight: .infinity so the vertical bar spans the full
-            // expanded card, not just the header row height.
+            // fix(#455-tree): maxHeight .infinity — bar spans the whole expanded card.
+            // fix(#455-align): no .padding(.top) — bar starts at y=0 of the HStack frame
+            //   so it connects with zero gap to the card above.
             TreeLineLeader(isLast: isLast && !isExpanded)
                 .frame(maxHeight: .infinity)
-                .padding(.top, 9) // visually centre bar against the job dot (28pt header / 2 - barWidth/2)
-            // fix(#455): ONE background wraps both job header and steps together.
             VStack(alignment: .leading, spacing: 0) {
                 jobHeader
                 if isExpanded {
@@ -174,7 +185,8 @@ private struct JobRowCard: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous))
         }
-        .padding(.vertical, 1)
+        // fix(#455-gap): vertical spacing between job cards managed by VStack spacing=2
+        // in InlineJobRowsView, NOT by per-card padding, so the tree line is continuous.
         .jobContextMenu(job: job, group: group)
     }
 
@@ -214,12 +226,8 @@ private struct JobRowCard: View {
         }
     }
 
-    // fix(#455-lines): no Dividers between steps — they create the visual noise seen
-    // in the screenshots. Steps are separated by their own vertical padding only.
-    // Also removed the Divider between jobHeader and stepsContainer.
     private var stepsContainer: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Thin separator between job header and first step — only a colour band, not a SwiftUI Divider.
             Color.rbBorderSubtle.frame(height: 0.5)
                 .padding(.horizontal, RBSpacing.sm)
             ForEach(Array(job.steps.enumerated()), id: \.element.id) { index, step in
@@ -268,7 +276,11 @@ struct InlineJobRowsView: View {
                 let jobs = fullExpand
                     ? group.jobs
                     : group.jobs.filter { $0.status == "in_progress" }
-                VStack(alignment: .leading, spacing: 2) {
+                // fix(#455-gap): spacing=0 between job cards so the TreeLineLeader
+                // vertical bars from consecutive cards are perfectly adjacent with no gap.
+                // The visual separation between cards is provided by the card background
+                // (rounded rect border) only, not by spacing.
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(jobs.enumerated()), id: \.element.id) { index, job in
                         JobRowCard(
                             job: job,
@@ -298,10 +310,10 @@ struct InlineJobRowsView: View {
     private func jobStatus(for job: ActiveJob) -> RBStatus {
         if let conclusion = job.conclusion {
             switch conclusion {
-            case "success":             return .success
-            case "failure":             return .failed
+            case "success":              return .success
+            case "failure":              return .failed
             case "cancelled", "skipped": return .unknown
-            default:                    return .unknown
+            default:                     return .unknown
             }
         }
         switch job.status {

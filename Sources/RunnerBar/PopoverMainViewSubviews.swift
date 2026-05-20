@@ -133,34 +133,51 @@ struct ActionRowView: View {
     @State private var previousStatus: RBStatus?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                Color.clear.frame(width: RBSpacing.md)
-                // #455 Phase 4: rowContent is no longer wrapped in Button.
-                rowContent
+        // fix(#455-gap): The status bar must NOT be inside clipShape — that caused rounded
+        // corners to cut the bar and the outer .padding(.vertical) to create gaps between
+        // consecutive workflow cards' bars. Solution: draw the card background + clip first,
+        // then overlay the status bar in a ZStack that covers the full padded height including
+        // the vertical padding slots between cards.
+        //
+        // We achieve seamless connection by:
+        //   1. Removing .padding(.vertical) from the card itself.
+        //   2. Adding top/bottom padding INSIDE the card content instead.
+        //   3. Drawing the status bar as a leading overlay on the outer ZStack that includes
+        //      the horizontal padding, so it fills the full rendered height with no gaps.
+        ZStack(alignment: .leading) {
+            // Card background (clipped, no status bar inside)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 0) {
+                    // Left spacer to clear the status bar width (4pt) + its leading offset (RBSpacing.md)
+                    // so rowContent starts at the same x as before.
+                    Color.clear.frame(width: RBSpacing.md)
+                    rowContent
+                }
+                if let fullExpand = expandState {
+                    InlineJobRowsView(group: group, tick: tick, fullExpand: fullExpand, onStepTap: onStepTap)
+                }
             }
-            if let fullExpand = expandState {
-                InlineJobRowsView(group: group, tick: tick, fullExpand: fullExpand, onStepTap: onStepTap)
-            }
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    .fill(Color.rbSurfaceElevated)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+
+            // fix(#455-gap): Status bar drawn OUTSIDE clipShape, spanning the full height
+            // including vertical padding. This ensures consecutive cards' bars connect
+            // with zero gap regardless of card spacing.
+            Rectangle()
+                .fill(rowStatus.color)
+                .frame(width: 4)
+                .frame(maxHeight: .infinity)
+                .padding(.leading, RBSpacing.md)
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-                .overlay(
-                    Rectangle()
-                        .fill(rowStatus.color)
-                        .frame(width: 4)
-                        .frame(maxHeight: .infinity),
-                    alignment: .leading
-                )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .workflowContextMenu(group: group)
         .onTapGesture {
             guard !group.jobs.isEmpty else { return }
