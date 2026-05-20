@@ -175,12 +175,11 @@ extension RunnerStore {
                              into: &newCache, prevLiveGroups: snapPrevGroups)
 
         // Cache done groups; fire failure hook the first time a group is seen as completed.
-        // Uses snapGroupCache[group.id] == nil as the "newly completed" signal —
-        // snapPrevGroups is unreliable here because newPrevLiveGroups is derived from
-        // liveGroups and is always empty by the time a run first appears as completed.
+        // Uses snapGroupCache[group.id] == nil as the "newly completed" signal.
         for group in doneGroups {
             let isNew = snapGroupCache[group.id] == nil
-            log("RunnerStore › doneGroups — groupID=\(group.id) title=\(group.title) headSha=\(group.headSha) isNew=\(isNew) inSnapGroupCache=\(snapGroupCache[group.id] != nil) runs=\(group.runs.map { "\($0.id):\($0.conclusion ?? \"nil\")" })")
+            let runSummary = group.runs.map { "\($0.id):\($0.conclusion ?? "nil")" }.joined(separator: ", ")
+            log("RunnerStore › doneGroups — groupID=\(group.id) title=\(group.title) headSha=\(group.headSha) isNew=\(isNew) inSnapGroupCache=\(snapGroupCache[group.id] != nil) runs=[\(runSummary)]")
             if isNew {
                 let scope = scopeFromActionGroup(group)
                 log("RunnerStore › doneGroups — groupID=\(group.id) isNew=true → calling FailureHookRunner.fireIfNeeded scope=\(scope)")
