@@ -15,9 +15,15 @@ import Foundation
 // command by the time it reaches the shell — special characters in log content,
 // branch names, etc. would break shell parsing.
 //
-// $FAILURE_LOG inlines only the failed job/step names — succeeded steps are omitted.
+// $FAILURE_LOG contains the raw log tail of the failed job (last 150 lines).
+// If no log is available it falls back to failed job/step names only.
 // Wrap it in single quotes in your command:
 //   gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo
+//
+// Other tokens ($LOCAL_PATH, $SCOPE, $BRANCH, $COMMIT_SHA, $RUN_ID,
+// $WORKFLOW_NAME, $RUN_LINK, $COMMIT_LINK, $BRANCH_LINK, $REPO_LINK) are
+// available for use in the command but are NOT injected automatically —
+// the user must include them as placeholders in their command string.
 
 enum FailureHookRunner {
 
@@ -54,7 +60,7 @@ enum FailureHookRunner {
         DispatchQueue.global(qos: .utility).async {
             log("FailureHookRunner › background thread START — fetching failed jobs for groupID=\(group.id)")
             let jobs = fetchFailedJobs(group: group, scope: scope)
-            log("FailureHookRunner › background thread — fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.name })")
+            log("FailureHookRunner › background thread — fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
             let resolved = resolveTokens(command, group: group, scope: scope, jobs: jobs)
             log("FailureHookRunner › background thread — resolved command (first 300): \(resolved.prefix(300))")
             log("FailureHookRunner › background thread — calling TerminalLauncher.open for groupID=\(group.id)")
@@ -76,10 +82,15 @@ enum FailureHookRunner {
         }
     }
 
-    /// Fetches jobs (with steps) for all failed runs in the group.
+    private struct FailedJobResult {
+        let job: JobPayload
+        let logTail: String?
+    }
+
+    /// Fetches jobs (with steps) and raw log tail for all failed runs in the group.
     /// Blocking — must be called from a background thread.
-    private static func fetchFailedJobs(group: ActionGroup, scope: String) -> [JobPayload] {
-        var result: [JobPayload] = []
+    private static func fetchFailedJobs(group: ActionGroup, scope: String) -> [FailedJobResult] {
+        var result: [FailedJobResult] = []
         var seenIDs = Set<Int>()
         for run in group.runs {
             guard let c = run.conclusion,
@@ -99,7 +110,22 @@ enum FailureHookRunner {
             }
             log("FailureHookRunner › fetchFailedJobs — run=\(run.id) decoded \(resp.jobs.count) jobs")
             for job in resp.jobs where seenIDs.insert(job.id).inserted {
-                result.append(job)
+                let tail: String?
+                if failureConclusions.contains((job.conclusion ?? "").lowercased()) {
+                    log("FailureHookRunner › fetchFailedJobs — fetching log for failed jobID=\(job.id) name=\(job.name)")
+                    if let fullLog = fetchJobLog(jobID: job.id, scope: scope) {
+                        let lines = fullLog.components(separatedBy: "\n")
+                        let kept = lines.suffix(150).joined(separator: "\n")
+                        tail = kept
+                        log("FailureHookRunner › fetchFailedJobs — jobID=\(job.id) log lines=\(lines.count) kept last 150")
+                    } else {
+                        tail = nil
+                        log("FailureHookRunner › fetchFailedJobs — jobID=\(job.id) fetchJobLog returned nil")
+                    }
+                } else {
+                    tail = nil
+                }
+                result.append(FailedJobResult(job: job, logTail: tail))
             }
         }
         log("FailureHookRunner › fetchFailedJobs — total \(result.count) unique jobs returned")
@@ -111,25 +137,17 @@ enum FailureHookRunner {
         s.replacingOccurrences(of: "'", with: "'\\''")
     }
 
-    /// Builds the failure log string. Only includes jobs and steps that failed —
-    /// succeeded/skipped steps are omitted to keep the prompt tight.
-    /// Falls back to run-level summary if job fetch returned nothing.
+    /// Builds the $FAILURE_LOG content.
+    /// Each failed job gets its raw log tail (last 150 lines).
+    /// Falls back to job/step names if no log was fetched.
     private static func buildLogContent(
         group: ActionGroup,
         scope: String,
-        jobs: [JobPayload]
+        jobs: [FailedJobResult]
     ) -> String {
-        var lines: [String] = [
-            "RunnerBar Failure Hook",
-            "Scope:    \(scope)",
-            "Branch:   \(group.headBranch ?? "unknown")",
-            "SHA:      \(group.headSha)",
-            "Workflow: \(group.title)",
-            "---"
-        ]
-
         guard !jobs.isEmpty else {
             log("FailureHookRunner › buildLogContent — no jobs, falling back to run-level summary")
+            var lines: [String] = []
             for run in group.runs {
                 if let c = run.conclusion, failureConclusions.contains(c.lowercased()) {
                     lines.append("FAILED run \(run.id): conclusion=\(c) workflow=\(run.name)")
@@ -138,28 +156,35 @@ enum FailureHookRunner {
             return lines.joined(separator: "\n")
         }
 
-        for job in jobs {
-            let jobConclusion = job.conclusion ?? "unknown"
-            lines.append("\nJOB: \(job.name) [\(jobConclusion)]")
-            let failedSteps = (job.steps ?? []).filter {
-                failureConclusions.contains(($0.conclusion ?? "").lowercased())
-            }
-            if failedSteps.isEmpty {
-                lines.append("  (no failed steps reported)")
+        var parts: [String] = []
+        for entry in jobs {
+            let job = entry.job
+            if let tail = entry.logTail, !tail.isEmpty {
+                parts.append(tail)
             } else {
-                for step in failedSteps {
-                    lines.append("  ✗ Step \(step.number): \(step.name) — \(step.conclusion ?? step.status)")
+                // No log available — fall back to step names so the agent has something
+                let failedSteps = (job.steps ?? []).filter {
+                    failureConclusions.contains(($0.conclusion ?? "").lowercased())
                 }
+                var lines: [String] = ["Job: \(job.name) [failed]"]
+                if failedSteps.isEmpty {
+                    lines.append("  (no failed steps reported)")
+                } else {
+                    for step in failedSteps {
+                        lines.append("  ✗ Step \(step.number): \(step.name) — \(step.conclusion ?? step.status)")
+                    }
+                }
+                parts.append(lines.joined(separator: "\n"))
             }
         }
-        return lines.joined(separator: "\n")
+        return parts.joined(separator: "\n\n")
     }
 
     private static func resolveTokens(
         _ command: String,
         group: ActionGroup,
         scope: String,
-        jobs: [JobPayload]
+        jobs: [FailedJobResult]
     ) -> String {
         let localPath = ScopeSettingsStore.localRepoPath(for: scope) ?? ""
         let branch = group.headBranch ?? ""
