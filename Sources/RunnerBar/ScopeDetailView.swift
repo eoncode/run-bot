@@ -285,6 +285,7 @@ extension ScopeDetailView {
                     .foregroundColor(Color.rbTextTertiary)
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -369,6 +370,7 @@ extension ScopeDetailView {
                     .foregroundColor(Color.rbTextTertiary)
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
