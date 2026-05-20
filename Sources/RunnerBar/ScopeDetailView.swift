@@ -72,13 +72,15 @@ struct ScopeDetailView: View {
             FailureHookCommandSheet(scope: scope) { showHookSheet = false }
         }
         .sheet(isPresented: $showBranchSheet) {
-            BranchSelectorSheet(scope: scope, selectedBranch: hookBranch) { chosen in
-                hookBranch = chosen
-                ScopeSettingsStore.setFailureHookBranch(chosen, for: scope)
-                showBranchSheet = false
-            } onDismiss: {
-                showBranchSheet = false
-            }
+            BranchSelectorSheet(
+                scope: scope,
+                onDismiss: { showBranchSheet = false },
+                onSelect: { chosen in
+                    hookBranch = chosen
+                    ScopeSettingsStore.setFailureHookBranch(chosen, for: scope)
+                    showBranchSheet = false
+                }
+            )
         }
     }
 }

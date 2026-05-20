@@ -63,7 +63,7 @@ struct PopoverMainView: View {
     }
 
     /// True when at least one local runner is present (running or idle).
-    /// Gates the Local Runners section — uses store.localRunners ([LocalRunner])
+    /// Gates the Local Runners section — uses store.localRunners ([RunnerModel])
     /// which is populated by LocalRunnerStore regardless of GitHub API status.
     private var hasLocalRunners: Bool {
         !store.localRunners.isEmpty
@@ -83,7 +83,7 @@ struct PopoverMainView: View {
             // Local Runners section — shown whenever local runners are discovered.
             if hasLocalRunners {
                 SectionHeaderLabel(title: "Local Runners")
-                PopoverLocalRunnerRow(runners: store.localRunners)
+                PopoverLocalRunnerRow(runners: store.localRunners as! [Runner])
             }
             // Always trigger a refresh of local runner state on appear,
             // regardless of whether the section is currently visible.
