@@ -9,6 +9,11 @@ import SwiftUI
 //
 // onSelect(nil)    → clears the branch filter (hook fires for all branches)
 // onSelect(branch) → restricts the hook to that branch only
+//
+// Pagination: fetches all pages (per_page=100) until GitHub returns fewer
+// than 100 results, so repos with >100 branches are fully listed.
+// An empty result after a successful fetch is treated as a load error so
+// the user is not misled by a silent blank list.
 
 struct BranchSelectorSheet: View {
     let scope: String
@@ -194,25 +199,17 @@ extension BranchSelectorSheet {
 // MARK: - Data loading
 
 extension BranchSelectorSheet {
-    private struct BranchListResponse: Decodable {
-        struct BranchItem: Decodable {
-            let name: String
-        }
-        // GitHub returns a JSON array directly, not a wrapper object.
-        // We decode via a custom init in the caller instead.
-    }
-
     func loadBranches() {
         log("BranchSelectorSheet › loadBranches START scope='\(scope)'")
         DispatchQueue.global(qos: .userInitiated).async {
             let names = fetchBranchNames(scope: scope)
             DispatchQueue.main.async {
-                if let names {
+                if let names, !names.isEmpty {
                     log("BranchSelectorSheet › loadBranches — loaded \(names.count) branches")
                     branches = names
                     loadError = false
                 } else {
-                    log("BranchSelectorSheet › loadBranches — fetch failed")
+                    log("BranchSelectorSheet › loadBranches — fetch failed or returned empty")
                     loadError = true
                 }
                 isLoading = false
@@ -221,17 +218,26 @@ extension BranchSelectorSheet {
     }
 
     /// Blocking — must be called from a background thread.
-    /// Fetches up to 100 branches from the GitHub API for the given scope (owner/repo).
+    /// Paginates through all pages (per_page=100) until GitHub returns fewer
+    /// than 100 items, collecting all branch names across pages.
     private func fetchBranchNames(scope: String) -> [String]? {
-        guard let data = ghAPI("repos/\(scope)/branches?per_page=100") else {
-            log("BranchSelectorSheet › fetchBranchNames — ghAPI returned nil for scope='\(scope)'")
-            return nil
-        }
         struct BranchItem: Decodable { let name: String }
-        guard let items = try? JSONDecoder().decode([BranchItem].self, from: data) else {
-            log("BranchSelectorSheet › fetchBranchNames — JSON decode failed dataBytes=\(data.count)")
-            return nil
+        var allNames: [String] = []
+        var page = 1
+        while true {
+            guard let data = ghAPI("repos/\(scope)/branches?per_page=100&page=\(page)") else {
+                log("BranchSelectorSheet › fetchBranchNames — ghAPI returned nil scope='\(scope)' page=\(page)")
+                return allNames.isEmpty ? nil : allNames.sorted()
+            }
+            guard let items = try? JSONDecoder().decode([BranchItem].self, from: data) else {
+                log("BranchSelectorSheet › fetchBranchNames — JSON decode failed scope='\(scope)' page=\(page) dataBytes=\(data.count)")
+                return allNames.isEmpty ? nil : allNames.sorted()
+            }
+            allNames.append(contentsOf: items.map(\.name))
+            log("BranchSelectorSheet › fetchBranchNames — page=\(page) fetched=\(items.count) total=\(allNames.count)")
+            if items.count < 100 { break }
+            page += 1
         }
-        return items.map(\.name).sorted()
+        return allNames.isEmpty ? nil : allNames.sorted()
     }
 }
