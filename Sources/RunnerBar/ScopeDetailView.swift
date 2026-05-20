@@ -8,16 +8,20 @@ import SwiftUI
 //       Enable toggle moved from header into its own Monitoring section.
 //       Monitoring row removed from Scope Info card.
 // #539: Layout improvements -- section labels, card structure aligned with spec.
+// #544: Failure Hook section added between Monitoring and Danger Zone.
 
 struct ScopeDetailView: View {
     let scopeEntry: ScopeEntry
     let onBack: () -> Void
 
     @ObservedObject private var scopeStore = ScopeStore.shared
+    @State private var showHookSheet = false
+    @State private var hookEnabled: Bool
 
     init(scopeEntry: ScopeEntry, onBack: @escaping () -> Void) {
         self.scopeEntry = scopeEntry
         self.onBack = onBack
+        _hookEnabled = State(initialValue: ScopeSettingsStore.failureHookEnabled(for: scopeEntry.scope))
     }
 
     // Live entry from store so toggle reflects current state.
@@ -27,6 +31,10 @@ struct ScopeDetailView: View {
     private var isEnabled: Bool { liveEntry?.isEnabled ?? scopeEntry.isEnabled }
     private var scope: String { scopeEntry.scope }
     private var isRepo: Bool { scope.contains("/") }
+
+    private var hookCommand: String? {
+        ScopeSettingsStore.failureHookCommand(for: scope)
+    }
 
     /// GitHub URL for this scope: https://github.com/<org>/<repo> or https://github.com/<org>
     private var gitHURL: URL? {
@@ -41,6 +49,7 @@ struct ScopeDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     infoSection
                     monitoringSection
+                    failureHookSection
                     dangerSection
                 }
                 .padding(.bottom, 16)
@@ -48,6 +57,9 @@ struct ScopeDetailView: View {
             .frame(maxHeight: .infinity)
         }
         .frame(idealWidth: 480, maxWidth: .infinity)
+        .sheet(isPresented: $showHookSheet) {
+            FailureHookCommandSheet(scope: scope) { showHookSheet = false }
+        }
     }
 
     // MARK: - Header
@@ -139,7 +151,7 @@ struct ScopeDetailView: View {
                         Text("Monitor this scope")
                             .font(.system(size: 12, weight: .medium))
                         Text(isEnabled
-                             ? "RunnerBar is actively polling this scope for runner status."
+                             ? "RunnerBar actively polls this scope for runner status."
                              : "Polling is paused. No runner data will be fetched for this scope.")
                             .font(.caption2)
                             .foregroundColor(Color.rbTextSecondary)
@@ -156,6 +168,71 @@ struct ScopeDetailView: View {
                     .help(isEnabled ? "Pause monitoring this scope" : "Resume monitoring")
                 }
                 .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
+            }
+        }
+    }
+
+    // MARK: - Failure Hook (#544)
+
+    private var failureHookSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Failure Hook")
+            infoCard {
+                // Toggle row
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Call this terminal call on failure detection")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("This will call terminal with a call of your choosing. Can be used for AI auto-recovery.")
+                            .font(.caption2)
+                            .foregroundColor(Color.rbTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { hookEnabled },
+                        set: { newVal in
+                            hookEnabled = newVal
+                            ScopeSettingsStore.setFailureHookEnabled(newVal, for: scope)
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .tint(Color.rbSuccess)
+                    .labelsHidden()
+                }
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
+
+                Divider().padding(.leading, RBSpacing.md)
+
+                // Command row — tappable, shows current command or placeholder
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
+                Button(action: { showHookSheet = true }) {
+                    HStack(spacing: 8) {
+                        Text("Command")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color.rbTextSecondary)
+                            .frame(width: 100, alignment: .leading)
+                            .fixedSize()
+                        if let cmd = hookCommand, !cmd.isEmpty {
+                            Text(cmd)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(Color.rbTextPrimary)
+                                .lineLimit(2)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            Text("Tap to set a command…")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(Color.rbTextTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10))
+                            .foregroundColor(Color.rbTextTertiary)
+                    }
+                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
