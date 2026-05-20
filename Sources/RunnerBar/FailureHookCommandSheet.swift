@@ -14,12 +14,11 @@ struct FailureHookCommandSheet: View {
 
     @State private var commandText: String = ""
 
-    // $FAILURE_LOG_CONTENT is pre-resolved by FailureHookRunner in Swift before
-    // the command reaches the shell — log content is single-quote-escaped so
-    // special characters never break shell parsing.
+    // $FAILURE_LOG is pre-resolved by FailureHookRunner in Swift before the command
+    // reaches the shell — log content is single-quote-escaped so special characters
+    // never break shell parsing. Wrap it in single quotes in your command.
     private static let exampleCommand =
-        "cd $LOCAL_PATH && gemini -p '$FAILURE_LOG_CONTENT' " +
-        "--model=gemini-2.5-flash --approval-mode=yolo"
+        "cd $LOCAL_PATH && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
 
     init(scope: String, onDismiss: @escaping () -> Void) {
         self.scope = scope
@@ -30,7 +29,7 @@ struct FailureHookCommandSheet: View {
 
     private let variables: [String] = [
         "$SCOPE", "$LOCAL_PATH", "$BRANCH", "$RUN_ID", "$COMMIT_SHA",
-        "$WORKFLOW_NAME", "$FAILURE_LOG", "$FAILURE_LOG_CONTENT",
+        "$WORKFLOW_NAME", "$FAILURE_LOG",
         "$RUN_LINK", "$COMMIT_LINK", "$BRANCH_LINK", "$REPO_LINK"
     ]
 
@@ -40,7 +39,7 @@ struct FailureHookCommandSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Failure Hook Command")
                     .font(.system(size: 13, weight: .semibold))
-                Text("Called in your default shell when a run in this scope fails. Use '$FAILURE_LOG_CONTENT' to pass the log text directly — all tokens are resolved before the shell runs the command.")
+                Text("Called in your default shell when a run in this scope fails. Use '$FAILURE_LOG' to inline the log text — all tokens are resolved before the shell runs the command.")
                     .font(.caption)
                     .foregroundColor(Color.rbTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
