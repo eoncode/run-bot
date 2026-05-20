@@ -119,18 +119,16 @@ private struct JobContextMenuModifier: ViewModifier {
         let isConcluded = job.conclusion != nil
         let isLive      = job.status == "in_progress"
 
-        // Re-run
+        // Re-run failed jobs in the run (GitHub Actions API has no single-job rerun endpoint).
         Button {
             let scope = group.repo
-            let jobID = job.id
-            guard let run = group.runs.first(where: { _ in true }) else { return }
+            guard let run = group.runs.first else { return }
             let runID = run.id
             DispatchQueue.global(qos: .userInitiated).async {
                 ghPost("repos/\(scope)/actions/runs/\(runID)/rerun-failed-jobs")
-                _ = jobID
             }
         } label: {
-            Label("Re-run Job", systemImage: "arrow.clockwise")
+            Label("Re-run Failed Jobs", systemImage: "arrow.clockwise")
         }
         .disabled(!isConcluded)
 

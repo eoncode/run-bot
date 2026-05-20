@@ -73,33 +73,35 @@ private struct StepRowView: View {
     }
 
     private var stepContent: some View {
-        HStack(spacing: 6) {
-            Text(step.conclusionIcon)
-                .font(.system(size: 10))
-                .foregroundColor(iconColor)
-                .fixedSize()
-            Text(step.name)
-                .font(DesignTokens.Fonts.mono)
-                .foregroundColor(Color.rbTextSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
-            Spacer(minLength: 4)
-            if step.status == "in_progress" || step.conclusion != nil {
-                Text(step.elapsed)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(Color.rbTextTertiary)
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Text(step.conclusionIcon)
+                    .font(.system(size: 10))
+                    .foregroundColor(iconColor)
                     .fixedSize()
+                Text(step.name)
+                    .font(DesignTokens.Fonts.mono)
+                    .foregroundColor(Color.rbTextSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                if step.status == "in_progress" || step.conclusion != nil {
+                    Text(step.elapsed)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(Color.rbTextTertiary)
+                        .fixedSize()
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(Color.rbTextTertiary)
             }
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(Color.rbTextTertiary)
+            .padding(.horizontal, RBSpacing.sm)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, RBSpacing.sm)
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture { onTap() }
+        .buttonStyle(.plain)
         .stepContextMenu(step: step, job: job, onTap: onTap)
     }
 
@@ -159,39 +161,41 @@ private struct JobRowCard: View {
     }
 
     private var jobHeader: some View {
-        HStack(spacing: 6) {
-            DonutStatusView(status: status, progress: job.progressFraction ?? 0, size: 10)
-            Text(job.name)
-                .font(DesignTokens.Fonts.mono)
-                .foregroundColor(job.isDimmed ? Color.rbTextTertiary : Color.rbTextSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
-            Spacer(minLength: 4)
-            if job.status == "in_progress" {
-                JobInlineProgress(progress: job.progressFraction ?? 0)
-                    .frame(width: 120)
-            }
-            if totalSteps > 0 {
-                Text("\(completedSteps)/\(totalSteps)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(Color.rbTextTertiary)
-                    .fixedSize()
-            }
-            if job.startedAt != nil {
-                Text(job.elapsed)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(Color.rbTextTertiary)
-                    .fixedSize()
-            }
-        }
-        .padding(.horizontal, RBSpacing.sm)
-        .padding(.vertical, 5)
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             guard totalSteps > 0 else { return }
             withAnimation(.easeInOut(duration: 0.15)) { onToggle() }
+        } label: {
+            HStack(spacing: 6) {
+                DonutStatusView(status: status, progress: job.progressFraction ?? 0, size: 10)
+                Text(job.name)
+                    .font(DesignTokens.Fonts.mono)
+                    .foregroundColor(job.isDimmed ? Color.rbTextTertiary : Color.rbTextSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                if job.status == "in_progress" {
+                    JobInlineProgress(progress: job.progressFraction ?? 0)
+                        .frame(width: 120)
+                }
+                if totalSteps > 0 {
+                    Text("\(completedSteps)/\(totalSteps)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(Color.rbTextTertiary)
+                        .fixedSize()
+                }
+                if job.startedAt != nil {
+                    Text(job.elapsed)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(Color.rbTextTertiary)
+                        .fixedSize()
+                }
+            }
+            .padding(.horizontal, RBSpacing.sm)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private var stepsContainer: some View {
