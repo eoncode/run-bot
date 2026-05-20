@@ -62,11 +62,11 @@ struct PopoverMainView: View {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
 
-    /// True when at least one remote (GitHub API) runner is busy.
-    /// Gates the entire Local Runners section — uses store.runners ([Runner])
-    /// which is what PopoverLocalRunnerRow expects.
-    private var hasBusyRunners: Bool {
-        store.runners.contains(where: { $0.busy })
+    /// True when at least one local runner is present (running or idle).
+    /// Gates the Local Runners section — uses store.localRunners ([LocalRunner])
+    /// which is populated by LocalRunnerStore regardless of GitHub API status.
+    private var hasLocalRunners: Bool {
+        !store.localRunners.isEmpty
     }
 
     var body: some View {
@@ -80,10 +80,10 @@ struct PopoverMainView: View {
             .onAppear { systemStats.start() }
             Divider()
             if store.isRateLimited { rateLimitBanner; Divider() }
-            // Local Runners section — hidden entirely when no runners are busy.
-            if hasBusyRunners {
+            // Local Runners section — shown whenever local runners are discovered.
+            if hasLocalRunners {
                 SectionHeaderLabel(title: "Local Runners")
-                PopoverLocalRunnerRow(runners: store.runners)
+                PopoverLocalRunnerRow(runners: store.localRunners)
             }
             // Always trigger a refresh of local runner state on appear,
             // regardless of whether the section is currently visible.
