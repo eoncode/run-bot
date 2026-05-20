@@ -87,6 +87,7 @@ private struct StepRowView: View {
                     .foregroundColor(Color.rbTextTertiary)
                     .fixedSize()
             }
+            // Steps have a chevron: they navigate to StepLogView.
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(Color.rbTextTertiary)
@@ -120,15 +121,18 @@ private struct StepRowView: View {
 /// Single job row: tree-line + card with status, name, progress, step count, elapsed.
 /// Tapping expands/collapses inline step rows (Phase 1 of #455).
 /// Right-click attaches job-level context menu via .jobContextMenu.
+///
+/// fix(#578): isExpanded is owned by the parent InlineJobRowsView (keyed by job.id)
+/// so that tick-driven .id refreshes on the parent do NOT destroy expand state.
 private struct JobRowCard: View {
     let job: ActiveJob
     let status: RBStatus
     let isLast: Bool
     let group: ActionGroup
+    let isExpanded: Bool
+    let onToggle: () -> Void
     /// Bubble step tap up to AppDelegate navigation.
     let onStepTap: (JobStep) -> Void
-
-    @State private var isExpanded = false
 
     private var totalSteps: Int { job.steps.count }
     private var completedSteps: Int {
@@ -148,7 +152,7 @@ private struct JobRowCard: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard totalSteps > 0 else { return }
-                withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
+                withAnimation(.easeInOut(duration: 0.15)) { onToggle() }
             }
 
             // ── Step rows (expanded) ────────────────────────────────────────
@@ -195,14 +199,8 @@ private struct JobRowCard: View {
                     .foregroundColor(Color.rbTextTertiary)
                     .fixedSize()
             }
-            // Chevron: only when steps exist; rotates when expanded.
-            if totalSteps > 0 {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(Color.rbTextTertiary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.15), value: isExpanded)
-            }
+            // fix(#578): NO chevron on job rows. Jobs expand inline;
+            // only step rows show a chevron (they navigate to a log view).
         }
         .padding(.horizontal, RBSpacing.sm)
         .padding(.vertical, 5)
@@ -229,6 +227,9 @@ private struct JobRowCard: View {
 /// #455 Phase 1: Each job row expands inline to show step rows.
 ///   Tapping a step calls onStepTap, routed to StepLogView via AppDelegate.
 ///
+/// fix(#578): expandedJobIDs is owned here so tick-driven .id resets
+/// on JobRowCard do not collapse already-expanded jobs.
+///
 /// ⚠️ REGRESSION GUARD #377 — DO NOT REMOVE @EnvironmentObject popoverState:
 /// This view must not render while the popover is hidden.
 struct InlineJobRowsView: View {
@@ -240,6 +241,9 @@ struct InlineJobRowsView: View {
     var onStepTap: (ActiveJob, JobStep) -> Void = { _, _ in }
 
     @EnvironmentObject private var popoverState: PopoverOpenState
+
+    /// fix(#578): expand state lives here, keyed by job.id, so ticks don't reset it.
+    @State private var expandedJobIDs: Set<Int> = []
 
     // ⚠️ TICK CONTRACT — tick drives live elapsed refresh. DO NOT REMOVE.
     private var tickSnapshot: Int { tick }
@@ -258,14 +262,24 @@ struct InlineJobRowsView: View {
                             status: jobStatus(for: job),
                             isLast: index == jobs.count - 1,
                             group: group,
+                            isExpanded: expandedJobIDs.contains(job.id),
+                            onToggle: {
+                                if expandedJobIDs.contains(job.id) {
+                                    expandedJobIDs.remove(job.id)
+                                } else {
+                                    expandedJobIDs.insert(job.id)
+                                }
+                            },
                             onStepTap: { step in onStepTap(job, step) }
                         )
+                        // fix(#578): .id on the card (not the whole VStack) so
+                        // only non-identity data refreshes; expand state survives.
+                        .id("\(job.id)-\(tickSnapshot)")
                     }
                 }
                 .padding(.leading, RBSpacing.md)
                 .padding(.trailing, RBSpacing.xs)
                 .padding(.bottom, RBSpacing.xs)
-                .id(tickSnapshot)
             }
         }
     }
