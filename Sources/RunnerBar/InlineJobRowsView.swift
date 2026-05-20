@@ -31,7 +31,7 @@ private struct TreeLineLeader: View {
             arrow.closeSubpath()
             ctx.fill(arrow, with: .color(lineColor))
         }
-        .frame(width: elbowWidth + 2)
+        .frame(width: indent + elbowWidth + 2)
     }
 }
 
@@ -117,16 +117,23 @@ private struct JobRowCard: View {
     let onToggle: () -> Void
     let onStepTap: (JobStep) -> Void
 
+    // The DonutStatusView dot (size 10) sits at RBSpacing.sm from the card
+    // content leading edge. Its horizontal center = RBSpacing.sm + 5.
+    // We use this as `indent` so the TreeLineLeader's vertical bar is drawn
+    // exactly beneath the dot center.
+    private let dotCenterX: CGFloat = RBSpacing.sm + 5
+
     private var totalSteps: Int { job.steps.count }
     private var completedSteps: Int {
         job.steps.filter { $0.conclusion != nil || $0.status == "completed" }.count
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            TreeLineLeader(isLast: isLast && !isExpanded)
+        // spacing: 0 so the leader frame directly abuts the card VStack,
+        // keeping indent math exact (no gap to account for).
+        HStack(alignment: .top, spacing: 0) {
+            TreeLineLeader(isLast: isLast && !isExpanded, indent: dotCenterX)
                 .frame(maxHeight: .infinity)
-                .padding(.top, 9)
             VStack(alignment: .leading, spacing: 0) {
                 jobHeader
                 if isExpanded {
