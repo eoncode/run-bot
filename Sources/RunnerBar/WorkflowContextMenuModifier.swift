@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Pasteboard helper
+
+/// Copies `text` to the general pasteboard on the main thread.
+/// Extracted to avoid duplicated clipboard-write blocks across context menu modifiers.
+private func copyToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
 // MARK: - WorkflowContextMenuModifier
 // Adds a right-click context menu to an ActionRowView (workflow level).
 // Actions mirror those in ActionDetailView's header bar:
@@ -64,12 +73,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         Button {
             let g = group
             DispatchQueue.global(qos: .userInitiated).async {
-                let text = fetchActionLogs(group: g)
-                DispatchQueue.main.async {
-                    guard let text, !text.isEmpty else { return }
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
+                guard let text = fetchActionLogs(group: g), !text.isEmpty else { return }
+                DispatchQueue.main.async { copyToPasteboard(text) }
             }
         } label: {
             Label("Copy Log", systemImage: "doc.on.doc")
@@ -148,12 +153,8 @@ private struct JobContextMenuModifier: ViewModifier {
             let jobID = job.id
             let scope = group.repo
             DispatchQueue.global(qos: .userInitiated).async {
-                let text = fetchJobLog(jobID: jobID, scope: scope)
-                DispatchQueue.main.async {
-                    guard let text, !text.isEmpty else { return }
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
+                guard let text = fetchJobLog(jobID: jobID, scope: scope), !text.isEmpty else { return }
+                DispatchQueue.main.async { copyToPasteboard(text) }
             }
         } label: {
             Label("Copy Log", systemImage: "doc.on.doc")
@@ -212,12 +213,9 @@ private struct StepContextMenuModifier: ViewModifier {
                 return ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
             }()
             DispatchQueue.global(qos: .userInitiated).async {
-                let text = fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
-                DispatchQueue.main.async {
-                    guard let text, !text.isEmpty else { return }
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
+                guard let text = fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope),
+                      !text.isEmpty else { return }
+                DispatchQueue.main.async { copyToPasteboard(text) }
             }
         } label: {
             Label("Copy Log", systemImage: "doc.on.doc")
