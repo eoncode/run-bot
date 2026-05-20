@@ -3,7 +3,7 @@ import AppKit
 
 // MARK: - FailureHookCommandSheet
 // #544: Sheet for editing the per-scope failure hook command.
-// #546: Added Test button to run the current command in Terminal.app.
+// #546: Added Test button + $LOCAL_PATH token.
 //
 // Presented from ScopeDetailView when user taps the Command row.
 // Uses TextEditor (tall, monospaced) with variable pill buttons that insert at cursor.
@@ -15,7 +15,7 @@ struct FailureHookCommandSheet: View {
     @State private var commandText: String = ""
 
     private static let exampleCommand =
-        "cd ~/repos/$SCOPE && gemini -p \"$(cat $FAILURE_LOG)\" \\\n" +
+        "cd $LOCAL_PATH && gemini -p \"$(cat $FAILURE_LOG)\" \\\n" +
         "  --context \"repo=$SCOPE branch=$BRANCH run=$RUN_LINK commit=$COMMIT_LINK\" \\\n" +
         "  --model=gemini-2.5-flash --approval-mode=yolo"
 
@@ -27,7 +27,7 @@ struct FailureHookCommandSheet: View {
     }
 
     private let variables: [String] = [
-        "$SCOPE", "$BRANCH", "$RUN_ID", "$COMMIT_SHA",
+        "$SCOPE", "$LOCAL_PATH", "$BRANCH", "$RUN_ID", "$COMMIT_SHA",
         "$WORKFLOW_NAME", "$FAILURE_LOG", "$RUN_LINK",
         "$COMMIT_LINK", "$BRANCH_LINK", "$REPO_LINK"
     ]
@@ -143,8 +143,10 @@ struct FailureHookCommandSheet: View {
     }
 
     private func testCommand() {
+        let localPath = ScopeSettingsStore.localRepoPath(for: scope) ?? ""
         let resolved = commandText
-            .replacingOccurrences(of: "$SCOPE", with: scope)
+            .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
+            .replacingOccurrences(of: "$SCOPE",      with: scope)
         TerminalLauncher.open(command: resolved)
     }
 

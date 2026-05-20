@@ -2,6 +2,7 @@ import Foundation
 
 // MARK: - FailureHookRunner
 // #544: Fires the per-scope failure hook command when an ActionGroup transitions to failure.
+// #546: Resolves $LOCAL_PATH from ScopeSettingsStore.
 //
 // Called from RunnerStoreState.buildGroupState when a group is newly completed
 // with a failure conclusion. Resolves all $TOKEN variables, writes the log tail
@@ -41,7 +42,7 @@ enum FailureHookRunner {
     }
 
     private static func resolveTokens(_ command: String, group: ActionGroup, scope: String) -> String {
-        let runID      = group.id
+        let localPath  = ScopeSettingsStore.localRepoPath(for: scope) ?? ""
         let branch     = group.headBranch ?? ""
         let sha        = group.headSha
         let workflow   = group.title
@@ -50,14 +51,14 @@ enum FailureHookRunner {
         let repoURL    = baseURL
         let branchURL  = "\(baseURL)/tree/\(branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch)"
         let commitURL  = "\(baseURL)/commit/\(sha)"
-        // Use first failed run ID for the run link
         let failedRunID = group.runs.first(where: {
             guard let c = $0.conclusion else { return false }
             return ["failure", "timed_out", "cancelled", "startup_failure"].contains(c.lowercased())
-        }).map { String($0.id) } ?? runID
+        }).map { String($0.id) } ?? group.id
         let runURL     = "\(baseURL)/actions/runs/\(failedRunID)"
 
         return command
+            .replacingOccurrences(of: "$LOCAL_PATH",    with: localPath)
             .replacingOccurrences(of: "$SCOPE",         with: scope)
             .replacingOccurrences(of: "$BRANCH",        with: branch)
             .replacingOccurrences(of: "$RUN_ID",        with: "\(failedRunID)")

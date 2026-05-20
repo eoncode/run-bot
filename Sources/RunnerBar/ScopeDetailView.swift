@@ -9,6 +9,7 @@ import SwiftUI
 //       Monitoring row removed from Scope Info card.
 // #539: Layout improvements -- section labels, card structure aligned with spec.
 // #544: Failure Hook section added between Monitoring and Danger Zone.
+// #546: Local Path row added to Failure Hook section for $LOCAL_PATH resolution.
 
 struct ScopeDetailView: View {
     let scopeEntry: ScopeEntry
@@ -17,11 +18,14 @@ struct ScopeDetailView: View {
     @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var showHookSheet = false
     @State private var hookEnabled: Bool
+    @State private var localRepoPath: String
+    @State private var isEditingPath = false
 
     init(scopeEntry: ScopeEntry, onBack: @escaping () -> Void) {
         self.scopeEntry = scopeEntry
         self.onBack = onBack
         _hookEnabled = State(initialValue: ScopeSettingsStore.failureHookEnabled(for: scopeEntry.scope))
+        _localRepoPath = State(initialValue: ScopeSettingsStore.localRepoPath(for: scopeEntry.scope) ?? "")
     }
 
     // Live entry from store so toggle reflects current state.
@@ -172,7 +176,7 @@ struct ScopeDetailView: View {
         }
     }
 
-    // MARK: - Failure Hook (#544)
+    // MARK: - Failure Hook (#544 #546)
 
     private var failureHookSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -201,6 +205,50 @@ struct ScopeDetailView: View {
                     .labelsHidden()
                 }
                 .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
+
+                Divider().padding(.leading, RBSpacing.md)
+
+                // Local Path row
+                HStack(spacing: 8) {
+                    Text("Local Path")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color.rbTextSecondary)
+                        .frame(width: 100, alignment: .leading)
+                        .fixedSize()
+                    if isEditingPath {
+                        TextField("~/code/org/repo", text: $localRepoPath)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textFieldStyle(.plain)
+                            .foregroundColor(Color.rbTextPrimary)
+                            .frame(maxWidth: .infinity)
+                            .onSubmit { commitLocalPath() }
+                        Button("Done") { commitLocalPath() }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color.rbAccent)
+                    } else {
+                        // swiftlint:disable:next multiple_closures_with_trailing_closure
+                        Button(action: { isEditingPath = true }) {
+                            Text(localRepoPath.isEmpty ? "Tap to set path…" : localRepoPath)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(localRepoPath.isEmpty ? Color.rbTextTertiary : Color.rbTextPrimary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        if !localRepoPath.isEmpty {
+                            Button(action: { localRepoPath = ""; ScopeSettingsStore.setLocalRepoPath(nil, for: scope) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color.rbTextTertiary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Clear local path")
+                        }
+                    }
+                }
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
 
                 Divider().padding(.leading, RBSpacing.md)
 
@@ -266,6 +314,11 @@ struct ScopeDetailView: View {
     }
 
     // MARK: - Actions
+
+    private func commitLocalPath() {
+        isEditingPath = false
+        ScopeSettingsStore.setLocalRepoPath(localRepoPath.isEmpty ? nil : localRepoPath, for: scope)
+    }
 
     private func removeScope() {
         ScopeSettingsStore.cleanUp(scope: scope)
