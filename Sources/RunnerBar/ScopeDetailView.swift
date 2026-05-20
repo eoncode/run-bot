@@ -65,10 +65,12 @@ struct ScopeDetailView: View {
             FailureHookCommandSheet(scope: scope) { showHookSheet = false }
         }
     }
+}
 
-    // MARK: - Header
+// MARK: - Sections
 
-    private var headerBar: some View {
+extension ScopeDetailView {
+    var headerBar: some View {
         HStack(spacing: 8) {
             Button(action: onBack) {
                 HStack(spacing: 3) {
@@ -79,9 +81,7 @@ struct ScopeDetailView: View {
                 .fixedSize()
             }
             .buttonStyle(.plain)
-
             Spacer()
-
             HStack(spacing: 6) {
                 Text(isRepo ? "Repo" : "Org")
                     .font(.caption2)
@@ -89,12 +89,10 @@ struct ScopeDetailView: View {
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(Color.rbSurfaceElevated))
                     .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-
                 Text(ScopeSettingsStore.displayName(for: scope))
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
             }
-
             Spacer()
         }
         .padding(.horizontal, RBSpacing.md)
@@ -102,9 +100,7 @@ struct ScopeDetailView: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - Scope Info
-
-    private var infoSection: some View {
+    var infoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Scope Info")
             infoCard {
@@ -138,9 +134,7 @@ struct ScopeDetailView: View {
         }
     }
 
-    // MARK: - Monitoring
-
-    private var monitoringSection: some View {
+    var monitoringSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Monitoring")
             infoCard {
@@ -170,131 +164,20 @@ struct ScopeDetailView: View {
         }
     }
 
-    // MARK: - Failure Hook (#544 #546)
-
-    private var failureHookSection: some View {
+    var failureHookSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Failure Hook")
             infoCard {
-                // Toggle row
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Call this terminal call on failure detection")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("This will call terminal with a call of your choosing. Can be used for AI auto-recovery.")
-                            .font(.caption2)
-                            .foregroundColor(Color.rbTextSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { hookEnabled },
-                        set: { newVal in
-                            hookEnabled = newVal
-                            ScopeSettingsStore.setFailureHookEnabled(newVal, for: scope)
-                        }
-                    ))
-                    .toggleStyle(.switch)
-                    .tint(Color.rbSuccess)
-                    .labelsHidden()
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
-
+                hookToggleRow
                 Divider().padding(.leading, RBSpacing.md)
-
-                // Local Path row
-                HStack(spacing: 8) {
-                    Text("Local Path")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 100, alignment: .leading)
-                        .fixedSize()
-
-                    if isEditingPath {
-                        TextField("~/code/org/repo", text: $localRepoPath)
-                            .font(.system(size: 11, design: .monospaced))
-                            .textFieldStyle(.plain)
-                            .foregroundColor(Color.rbTextPrimary)
-                            .frame(maxWidth: .infinity)
-                            .onSubmit { commitLocalPath() }
-                        Button("Done") { commitLocalPath() }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color.rbAccent)
-                    } else {
-                        // swiftlint:disable:next multiple_closures_with_trailing_closure
-                        Button(action: { startEditingPath() }) {
-                            Text(localRepoPath.isEmpty ? "Tap to set path…" : localRepoPath)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(localRepoPath.isEmpty ? Color.rbTextTertiary : Color.rbTextPrimary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: { openFolderPicker() }) {
-                            Image(systemName: "folder")
-                                .font(.system(size: 11))
-                                .foregroundColor(Color.rbTextSecondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Browse for folder…")
-
-                        if !localRepoPath.isEmpty {
-                            Button(action: {
-                                localRepoPath = ""
-                                ScopeSettingsStore.setLocalRepoPath(nil, for: scope)
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(Color.rbTextTertiary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Clear local path")
-                        }
-                    }
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
-
+                localPathRow
                 Divider().padding(.leading, RBSpacing.md)
-
-                // Command row
-                // swiftlint:disable:next multiple_closures_with_trailing_closure
-                Button(action: { showHookSheet = true }) {
-                    HStack(spacing: 8) {
-                        Text("Command")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color.rbTextSecondary)
-                            .frame(width: 100, alignment: .leading)
-                            .fixedSize()
-                        if let cmd = hookCommand, !cmd.isEmpty {
-                            Text(cmd)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(Color.rbTextPrimary)
-                                .lineLimit(2)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            Text("Tap to set a command…")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(Color.rbTextTertiary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color.rbTextTertiary)
-                    }
-                    .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
-                }
-                .buttonStyle(.plain)
+                commandRow
             }
         }
     }
 
-    // MARK: - Danger Zone
-
-    private var dangerSection: some View {
+    var dangerSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Danger Zone")
             infoCard {
@@ -318,15 +201,130 @@ struct ScopeDetailView: View {
             }
         }
     }
+}
 
-    // MARK: - Actions
+// MARK: - Failure Hook Rows
 
-    private func startEditingPath() {
+extension ScopeDetailView {
+    var hookToggleRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Call this terminal call on failure detection")
+                    .font(.system(size: 12, weight: .medium))
+                Text("This will call terminal with a call of your choosing. Can be used for AI auto-recovery.")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { hookEnabled },
+                set: { newVal in
+                    hookEnabled = newVal
+                    ScopeSettingsStore.setFailureHookEnabled(newVal, for: scope)
+                }
+            ))
+            .toggleStyle(.switch)
+            .tint(Color.rbSuccess)
+            .labelsHidden()
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
+    }
+
+    var localPathRow: some View {
+        HStack(spacing: 8) {
+            Text("Local Path")
+                .font(.system(size: 12))
+                .foregroundColor(Color.rbTextSecondary)
+                .frame(width: 100, alignment: .leading)
+                .fixedSize()
+            if isEditingPath {
+                TextField("~/code/org/repo", text: $localRepoPath)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textFieldStyle(.plain)
+                    .foregroundColor(Color.rbTextPrimary)
+                    .frame(maxWidth: .infinity)
+                    .onSubmit { commitLocalPath() }
+                Button("Done") { commitLocalPath() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color.rbAccent)
+            } else {
+                // swiftlint:disable:next multiple_closures_with_trailing_closure
+                Button(action: { startEditingPath() }) {
+                    Text(localRepoPath.isEmpty ? "Tap to set path…" : localRepoPath)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(localRepoPath.isEmpty ? Color.rbTextTertiary : Color.rbTextPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                Button(action: { openFolderPicker() }) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.rbTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Browse for folder…")
+                if !localRepoPath.isEmpty {
+                    Button(action: {
+                        localRepoPath = ""
+                        ScopeSettingsStore.setLocalRepoPath(nil, for: scope)
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color.rbTextTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear local path")
+                }
+            }
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
+    }
+
+    var commandRow: some View {
+        // swiftlint:disable:next multiple_closures_with_trailing_closure
+        Button(action: { showHookSheet = true }) {
+            HStack(spacing: 8) {
+                Text("Command")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color.rbTextSecondary)
+                    .frame(width: 100, alignment: .leading)
+                    .fixedSize()
+                if let cmd = hookCommand, !cmd.isEmpty {
+                    Text(cmd)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(Color.rbTextPrimary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("Tap to set a command…")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(Color.rbTextTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10))
+                    .foregroundColor(Color.rbTextTertiary)
+            }
+            .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Actions
+
+extension ScopeDetailView {
+    func startEditingPath() {
         if localRepoPath.isEmpty { localRepoPath = "~/" }
         isEditingPath = true
     }
 
-    private func commitLocalPath() {
+    func commitLocalPath() {
         isEditingPath = false
         let trimmed = localRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleaned = (trimmed == "~/") ? "" : trimmed
@@ -334,63 +332,54 @@ struct ScopeDetailView: View {
         ScopeSettingsStore.setLocalRepoPath(cleaned.isEmpty ? nil : cleaned, for: scope)
     }
 
-    /// Opens NSOpenPanel without the popover competing for z-order.
-    /// Strategy: close the popover first, run the panel, then reopen the popover
-    /// regardless of whether the user picked a folder or cancelled.
-    private func openFolderPicker() {
+    func openFolderPicker() {
         let appDelegate = NSApp.delegate as? AppDelegate
-
-        // Close the popover so nothing sits behind/over the panel
         appDelegate?.closePanel()
-
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Select"
         panel.message = "Choose the local folder for \(scope)"
-
         if !localRepoPath.isEmpty {
             let expanded = NSString(string: localRepoPath).expandingTildeInPath
             panel.directoryURL = URL(fileURLWithPath: expanded)
         } else {
             panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
-
         NSApp.activate(ignoringOtherApps: true)
-
-        // Non-blocking — completion runs on main thread
         panel.begin { response in
             if response == .OK, let url = panel.url {
-                let home  = FileManager.default.homeDirectoryForCurrentUser.path
-                let abs   = url.path
+                let home = FileManager.default.homeDirectoryForCurrentUser.path
+                let abs = url.path
                 let tilde = abs.hasPrefix(home)
                     ? "~/" + abs.dropFirst(home.count + 1)
                     : abs
                 localRepoPath = tilde
                 ScopeSettingsStore.setLocalRepoPath(tilde, for: scope)
             }
-            // Reopen the popover whether user picked or cancelled
             appDelegate?.openPanel()
         }
     }
 
-    private func removeScope() {
+    func removeScope() {
         ScopeSettingsStore.cleanUp(scope: scope)
         ScopeStore.shared.remove(id: scopeEntry.id)
         RunnerStore.shared.start()
         onBack()
     }
+}
 
-    // MARK: - Sub-view helpers
+// MARK: - Sub-view helpers
 
-    private func sectionHeader(_ title: String) -> some View {
+extension ScopeDetailView {
+    func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
             .padding(.horizontal, RBSpacing.md).padding(.top, 12).padding(.bottom, 4)
     }
 
-    private func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) { content() }
             .background(
                 RoundedRectangle(cornerRadius: RBRadius.small)
@@ -402,7 +391,7 @@ struct ScopeDetailView: View {
             .padding(.bottom, 8)
     }
 
-    private func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
+    func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(label)
                 .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
