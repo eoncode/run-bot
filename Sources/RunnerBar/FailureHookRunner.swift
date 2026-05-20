@@ -6,7 +6,8 @@ import Foundation
 // #552: Fetches failed job/step details on background thread before building $FAILURE_LOG.
 //
 // Called from RunnerStoreState.buildGroupState when a group is newly completed
-// with a failure conclusion. Resolves all $TOKEN variables then shells out fire-and-forget.
+// with a failure conclusion. Resolves all $TOKEN variables then opens Terminal.app
+// via TerminalLauncher (AppleScript do script) so the command runs visibly.
 //
 // TOKEN RESOLUTION CONTRACT:
 // ALL tokens are resolved in Swift before the command string is passed to
@@ -56,9 +57,11 @@ enum FailureHookRunner {
             log("FailureHookRunner › background thread — fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.name })")
             let resolved = resolveTokens(command, group: group, scope: scope, jobs: jobs)
             log("FailureHookRunner › background thread — resolved command (first 300): \(resolved.prefix(300))")
-            log("FailureHookRunner › background thread — calling Shell.run with timeout=300")
-            Shell.run(resolved, timeout: 300)
-            log("FailureHookRunner › background thread — Shell.run returned for groupID=\(group.id)")
+            log("FailureHookRunner › background thread — calling TerminalLauncher.open for groupID=\(group.id)")
+            DispatchQueue.main.async {
+                TerminalLauncher.open(command: resolved)
+                log("FailureHookRunner › main thread — TerminalLauncher.open returned for groupID=\(group.id)")
+            }
         }
     }
 
