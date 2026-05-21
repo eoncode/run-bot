@@ -463,28 +463,28 @@ struct SettingsView: View {
 
     // MARK: - Account
     //
-    // Three visible states:
+    // Four visible states:
     //
     //  1. Signing in (in-flight):  spinner + "Waiting for browser…"
     //
-    //  2. OAuth (Keychain token):  ● green  "OAuth token"
-    //                              caption: "stored in Keychain"
+    //  2. OAuth (Keychain token):  ● green  "Authenticated"
+    //                              caption: "via OAuth"
     //                              [Sign out] bordered danger button
     //
-    //  3. gh CLI only:             ● grey   "gh CLI token"
-    //                              caption: "via gh CLI · sign in for full access"
-    //                              [Sign in with GitHub] bordered button
+    //  3. gh env token (CLI):      ● green  "Authenticated"
+    //                              caption: "via gh env token"
+    //                              [Sign in with GitHub] bordered button (optional upgrade)
     //
-    //  4. No token at all:         [Sign in with GitHub] bordered button
+    //  4. No token at all:         [Sign in with GitHub] bordered button only
+    //
+    // Both state 2 and 3 are fully authenticated with equal API access.
+    // The caption communicates the method, not the capability.
     //
     // Button styling:
     //   "Sign in with GitHub" — .buttonStyle(.bordered), .font(.caption2)
-    //     Matches Stop/Resume buttons in the runner rows exactly.
-    //   "Sign out" — .buttonStyle(.bordered), .tint(.rbDanger), .font(.caption2)
-    //     Uses system bordered style with a danger tint for destructive semantics.
+    //   "Sign out"            — .buttonStyle(.bordered), .tint(.rbDanger), .font(.caption2)
     //
-    // ❌ NEVER revert buttons to .buttonStyle(.plain) without a visual affordance —
-    //   bare text is indistinguishable from a label.
+    // ❌ NEVER revert buttons to .buttonStyle(.plain) without a visual affordance.
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -498,15 +498,15 @@ struct SettingsView: View {
                         Text("Waiting for browser…").font(.caption).foregroundColor(Color.rbTextSecondary)
                     }
                 } else if isOAuthAuthenticated {
-                    // State 2: OAuth token present in Keychain.
+                    // State 2: OAuth token in Keychain.
                     HStack(spacing: 10) {
                         HStack(spacing: 4) {
                             Circle().fill(Color.rbSuccess).frame(width: 7, height: 7)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text("OAuth token")
+                                Text("Authenticated")
                                     .font(.caption)
                                     .foregroundColor(Color.rbTextSecondary)
-                                Text("stored in Keychain")
+                                Text("via OAuth")
                                     .font(.caption2)
                                     .foregroundColor(Color.rbTextTertiary)
                             }
@@ -516,22 +516,20 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.bordered)
                         .tint(Color.rbDanger)
-                        .help("Remove OAuth token from Keychain. gh CLI token used as fallback if available.")
+                        .help("Remove OAuth token from Keychain. gh env token used as fallback if available.")
                     }
-                } else {
-                    // State 3 / 4: gh CLI only or unauthenticated.
+                } else if isCLIAuthenticated {
+                    // State 3: gh env token present, no Keychain OAuth token.
                     HStack(spacing: 10) {
-                        if isCLIAuthenticated {
-                            HStack(spacing: 4) {
-                                Circle().fill(Color.rbTextTertiary).frame(width: 7, height: 7)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("gh CLI token")
-                                        .font(.caption)
-                                        .foregroundColor(Color.rbTextSecondary)
-                                    Text("via gh CLI · sign in for full access")
-                                        .font(.caption2)
-                                        .foregroundColor(Color.rbTextTertiary)
-                                }
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.rbSuccess).frame(width: 7, height: 7)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Authenticated")
+                                    .font(.caption)
+                                    .foregroundColor(Color.rbTextSecondary)
+                                Text("via gh env token")
+                                    .font(.caption2)
+                                    .foregroundColor(Color.rbTextTertiary)
                             }
                         }
                         Button(action: signInWithGitHub) {
@@ -540,6 +538,13 @@ struct SettingsView: View {
                         .buttonStyle(.bordered)
                         .help("Authorize RunnerBar via GitHub OAuth and store token in Keychain")
                     }
+                } else {
+                    // State 4: No token at all.
+                    Button(action: signInWithGitHub) {
+                        Text("Sign in with GitHub").font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Authorize RunnerBar via GitHub OAuth and store token in Keychain")
                 }
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 8)
