@@ -22,7 +22,7 @@ import SwiftUI
 //
 // HOW THE PANEL WORKS:
 // 1. Panel is a borderless, non-activating NSPanel.
-// 2. Position is computed from status button's window frame (screen coords):
+// 2. Position is computed from status button’s window frame (screen coords):
 //      statusItemRect = button.window!.frame   ← already in screen coords
 //      panelX = statusItemRect.midX - contentW/2   ← re-centred each resize
 //      panelTopY = statusItemRect.minY - gap       ← locked at open time
@@ -64,16 +64,11 @@ import SwiftUI
 ///
 /// #455: Removed .jobDetail, .actionDetail, .actionJobDetail, .actionStepLog.
 /// Navigation from the main view now goes directly: inline step tap → .stepLog.
-private enum NavState {
-    /// The root popover showing runners and the recent-actions list.
+enum NavState {
     case main
-    /// The raw log for a single step, reached from the main inline step row.
     case stepLog(ActiveJob, JobStep)
-    /// The Settings sheet.
     case settings
-    /// Runner detail drill-down reached from SettingsView runner row tap. (#491)
     case runnerDetail(RunnerModel)
-    /// Scope detail drill-down reached from SettingsView scope row tap. (#499)
     case scopeDetail(ScopeEntry)
 }
 
@@ -105,90 +100,74 @@ private enum NavState {
 //    from the frontmost app whenever it is shown, defeating .nonactivatingPanel.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE.
-private final class KeyablePanel: NSPanel {
-    /// Set to true immediately before navigating to a view that contains TextFields.
-    /// Reset to false in closePanel().
+final class KeyablePanel: NSPanel {
     var wantsKey = false
-
     override var canBecomeKey: Bool { wantsKey }
 }
 
 // MARK: - AppDelegate
 
 // ⚠️ @MainActor ISOLATION CONTRACT — DO NOT REMOVE THIS ANNOTATION.
-// AppDelegate runs entirely on the main thread. @MainActor gives the Swift 6
-// compiler static proof of this so every method and stored property is verified
-// as main-thread-only without any runtime assertion.
-//
-// The nonisolated blocking helper (enrichStepsIfNeeded) is intentionally exempt
-// — it performs blocking network I/O and is always dispatched onto
-// DispatchQueue.global() by its caller. nonisolated opts it out of the
-// class-level @MainActor domain.
-//
 // ❌ NEVER remove @MainActor from this class declaration.
 // ❌ NEVER remove `nonisolated` from enrichStepsIfNeeded.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem?
-    private var panel: KeyablePanel?
-    private var chrome: PanelChromeView?
-    private var hostingController: NSHostingController<AnyView>?
-    private let observable = RunnerStoreObservable()
-    private var savedNavState: NavState?
-    private var panelIsOpen = false
+    var statusItem: NSStatusItem?
+    var panel: KeyablePanel?
+    var chrome: PanelChromeView?
+    var hostingController: NSHostingController<AnyView>?
+    let observable = RunnerStoreObservable()
+    var savedNavState: NavState?
+    var panelIsOpen = false
 
-    private var eventMonitor: Any?
-    private var sizeObservation: NSKeyValueObservation?
-    private var workspaceObserver: Any?
-    private var cancellables = Set<AnyCancellable>()
+    var eventMonitor: Any?
+    var sizeObservation: NSKeyValueObservation?
+    var workspaceObserver: Any?
+    var cancellables = Set<AnyCancellable>()
 
     /// Top anchor (screen coords) captured once in openPanel().
     /// ❌ NEVER re-derive inside resizeAndRepositionPanel().
-    private var panelTopY: CGFloat?
+    var panelTopY: CGFloat?
 
     // ⚠️ REGRESSION GUARD (ref #377):
     // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
     // ❌ NEVER pass as a plain Bool prop to PopoverMainView.
     // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
     // ALLOWED UNDER ANY CIRCUMSTANCE.
-    private let popoverOpenState = PopoverOpenState()
+    let popoverOpenState = PopoverOpenState()
 
-    /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
-    private static let minWidth: CGFloat = 280
+    static let minWidth: CGFloat = 280
 
-    /// The screen the status item lives on.
-    private var statusItemScreen: NSScreen {
+    var statusItemScreen: NSScreen {
         statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
-    private var maxWidth: CGFloat {
+    var maxWidth: CGFloat {
         let screenMax = statusItemScreen.visibleFrame.width * 0.9
         return min(900, screenMax)
     }
 
-    private var maxHeight: CGFloat {
+    var maxHeight: CGFloat {
         statusItemScreen.visibleFrame.height * 0.85
     }
 
-    private static let gap: CGFloat = 2
-
-    /// Initial panel width used before SwiftUI has measured content.
-    private static let initPanelWidth: CGFloat = 320
+    static let gap: CGFloat = 2
+    static let initPanelWidth: CGFloat = 320
 
     // MARK: - Environment injection
 
     /// ❌ NEVER bypass. ❌ NEVER remove .environmentObject(popoverOpenState).
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
     /// ALLOWED UNDER ANY CIRCUMSTANCE.
-    private func wrapEnv<V: View>(_ view: V) -> AnyView {
+    func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(popoverOpenState))
     }
 
     // MARK: - Status icon helpers
 
-    private func menuBarImage(for status: AggregateStatus) -> NSImage {
+    func menuBarImage(for status: AggregateStatus) -> NSImage {
         NSImage(systemSymbolName: status.symbolName, accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
             ?? NSImage()
@@ -249,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         RunnerStore.shared.onChange = { [weak self] in
             guard let self else { return }
-            log("AppDelegate › onChange fired — panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
+            log("AppDelegate › onChange fired — panelIsOpen=\(self.panelIsOpen)")
             self.updateStatusIcon()
             self.observable.reload(localRunnerStore: LocalRunnerStore.shared)
         }
@@ -257,17 +236,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - OAuth URL callback (#326)
-    //
-    // Handles the runnerbar://oauth/callback?code=... redirect from GitHub after
-    // the user authorizes the app in the browser. Forwards to OAuthService which
-    // exchanges the code for a token and saves it to Keychain.
-    //
-    // OAuthService.onCompletion is wired in SettingsView so the Account section
-    // updates automatically once the token arrives.
-    //
-    // Search the full urls array for the OAuth callback rather than assuming
-    // urls.first — macOS may deliver multiple URLs and the callback may not be
-    // first, which would leave the sign-in spinner stuck. (#597)
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: { $0.scheme == "runnerbar" && $0.host == "oauth" })
@@ -282,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER call makeStatusIcon() — it no longer exists; use menuBarImage(for:).
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE.
-    private func updateStatusIcon() {
+    func updateStatusIcon() {
         statusItem?.button?.image = menuBarImage(for: RunnerStore.shared.aggregateStatus)
     }
 
@@ -292,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER call from a background thread.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE. The regression is major major major.
-    private func resizeAndRepositionPanel() {
+    func resizeAndRepositionPanel() {
         guard panelIsOpen,
               let panel,
               let chrome,
@@ -301,11 +269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let topY = panelTopY else { return }
 
         let preferred = hostingController?.preferredContentSize ?? CGSize(width: Self.initPanelWidth, height: 300)
-
         let contentW = min(max(preferred.width, Self.minWidth), maxWidth)
         let contentH = min(max(preferred.height, 60), maxHeight)
         let totalH = contentH + arrowHeight
-
         let posX = statusItemRect.midX - contentW / 2
         let rawPosY = topY - totalH
         let screenMinY = statusItemScreen.visibleFrame.minY
@@ -313,7 +279,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panel.setFrame(NSRect(x: posX, y: posY, width: contentW, height: totalH),
                        display: true, animate: false)
-
         chrome.arrowX = statusItemRect.midX - panel.frame.minX
     }
 
@@ -322,16 +287,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER remove the resizeAndRepositionPanel() call from this method.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE.
-    private func navigate(to view: AnyView) {
+    func navigate(to view: AnyView) {
         hostingController?.rootView = view
         resizeAndRepositionPanel()
     }
 
-    // MARK: - Make key for text input
-
-    // See KeyablePanel comment block above for the full explanation.
-    // ❌ NEVER call this for views that have no text input (main, step log).
-    private func makeKeyForTextInput() {
+    func makeKeyForTextInput() {
         panel?.wantsKey = true
         panel?.makeKeyAndOrderFront(nil)
     }
@@ -348,8 +309,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         removeEventMonitor()
         removeWorkspaceObserver()
         // ⚠️ NAV STATE PERSISTENCE (#385) — DO NOT REMOVE THIS COMMENT.
-        // Capture savedNavState before calling mainView() (which resets it),
-        // then restore it so openPanel()'s validatedView path works.
         // ❌ NEVER replace this with a no-op stub PopoverMainView.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
         // ALLOWED UNDER ANY CIRCUMSTANCE.
@@ -361,11 +320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func removeEventMonitor() {
+    func removeEventMonitor() {
         if let monitor = eventMonitor { NSEvent.removeMonitor(monitor); eventMonitor = nil }
     }
 
-    private func removeWorkspaceObserver() {
+    func removeWorkspaceObserver() {
         if let opt = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(opt)
             workspaceObserver = nil
@@ -374,7 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Enrichment helper
 
-    nonisolated private func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
+    nonisolated func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
         guard job.steps.isEmpty || job.steps.contains(where: { $0.status == "in_progress" }),
               let scope = scopeFromHtmlUrl(job.htmlUrl),
               let data = ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
@@ -384,127 +343,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return makeActiveJob(from: fresh, iso: iso, isDimmed: job.isDimmed)
     }
 
-    // MARK: - View factories
-
-    private func mainView() -> AnyView {
-        savedNavState = nil
-        return wrapEnv(PopoverMainView(
-            store: observable,
-            onSelectJob: { _ in
-                // Retained for ABI compatibility; navigation removed in #455.
-            },
-            onSelectAction: { _ in
-                // Retained for ABI compatibility; navigation removed in #455.
-            },
-            onStepTap: { [weak self] job, step in
-                guard let self else { return }
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let enriched = self.enrichStepsIfNeeded(job)
-                    DispatchQueue.main.async {
-                        guard self.panelIsOpen else { return }
-                        self.navigate(to: self.stepLogFromMain(job: enriched, step: step))
-                    }
-                }
-            },
-            onSelectSettings: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    /// #455: Step tapped from inline job row on the main screen.
-    /// Back button returns to mainView().
-    private func stepLogFromMain(job: ActiveJob, step: JobStep) -> AnyView {
-        savedNavState = .stepLog(job, step)
-        return wrapEnv(StepLogView(
-            job: job,
-            step: step,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.mainView())
-            },
-            onLogLoaded: nil
-        ))
-    }
-
-    private func settingsView() -> AnyView {
-        savedNavState = .settings
-        makeKeyForTextInput()
-        return wrapEnv(SettingsView(
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.mainView())
-            },
-            onSelectRunner: { [weak self] runner in
-                guard let self else { return }
-                self.navigate(to: self.runnerDetailView(runner: runner))
-            },
-            onSelectScope: { [weak self] entry in
-                guard let self else { return }
-                self.navigate(to: self.scopeDetailView(entry: entry))
-            },
-            store: observable
-        ))
-    }
-
-    /// #491: RunnerDetailView drill-down from SettingsView runner row.
-    private func runnerDetailView(runner: RunnerModel) -> AnyView {
-        savedNavState = .runnerDetail(runner)
-        makeKeyForTextInput()
-        return wrapEnv(RunnerDetailView(
-            runner: runner,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    /// #499: ScopeDetailView drill-down from SettingsView scope row tap.
-    private func scopeDetailView(entry: ScopeEntry) -> AnyView {
-        savedNavState = .scopeDetail(entry)
-        makeKeyForTextInput()
-        let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) ?? entry
-        return wrapEnv(ScopeDetailView(
-            scopeEntry: live,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    private func validatedView(for state: NavState) -> AnyView? {
-        savedNavState = nil
-        let store = RunnerStore.shared
-        switch state {
-        case .main:
-            return nil
-        case .stepLog(let job, let step):
-            let live = store.jobs.first(where: { $0.id == job.id }) ?? job
-            return stepLogFromMain(job: live, step: step)
-        case .settings:
-            return settingsView()
-        case .runnerDetail(let runner):
-            let live = LocalRunnerStore.shared.runners.first(where: { $0.id == runner.id }) ?? runner
-            return runnerDetailView(runner: live)
-        case .scopeDetail(let entry):
-            guard let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) else {
-                return settingsView()
-            }
-            return scopeDetailView(entry: live)
-        }
-    }
-
     // MARK: - Toggle
 
-    @objc private func togglePanel() {
-        if panelIsOpen {
-            closePanel()
-        } else {
-            openPanel()
-        }
+    @objc func togglePanel() {
+        if panelIsOpen { closePanel() } else { openPanel() }
     }
 
     // MARK: - Open
@@ -514,7 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let statusItemRect = button.window?.frame,
               let panel else { return }
 
-        log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
+        log("AppDelegate › openPanel — actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
 
         panelIsOpen = true
@@ -530,7 +372,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSRect(x: posX, y: posY, width: initW, height: initH),
             display: false, animate: false
         )
-
         chrome?.arrowX = statusItemRect.midX - posX
         panel.orderFront(nil)
         resizeAndRepositionPanel()
