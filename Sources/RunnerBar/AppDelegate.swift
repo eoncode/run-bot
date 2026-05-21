@@ -86,7 +86,9 @@ import SwiftUI
 //    from the frontmost app whenever it is shown, defeating .nonactivatingPanel.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE.
-private final class KeyablePanel: NSPanel {
+// fileprivate (not private) so that AppDelegate's internal `panel` property
+// can reference this type across the file without a visibility mismatch.
+fileprivate final class KeyablePanel: NSPanel {
     /// Set to true immediately before navigating to a view that contains TextFields.
     /// Reset to false in closePanel().
     var wantsKey = false
