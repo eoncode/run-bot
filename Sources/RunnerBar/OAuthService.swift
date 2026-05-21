@@ -13,7 +13,8 @@ import Foundation
 //   4. AppDelegate.application(_:open:) catches the URL and calls handleCallback(_:).
 //   5. handleCallback verifies the state param matches pendingState (CSRF guard),
 //      then exchanges the code for an access token via POST to GitHub.
-//   6. Token is saved to Keychain. onCompletion is called on the main thread.
+//   6. Token is saved to Keychain (which also invalidates the token cache).
+//      onCompletion is called on the main thread.
 //
 // Client credentials are in Secrets.swift — see that file for why they are
 // intentionally committed (open-source native app industry standard).
@@ -55,7 +56,7 @@ final class OAuthService {
 
     func signOut() {
         pendingState = nil
-        Keychain.delete()
+        Keychain.delete()          // also calls invalidateTokenCache()
         DispatchQueue.main.async { self.onCompletion?(false) }
     }
 
@@ -107,7 +108,7 @@ final class OAuthService {
             return
         }
 
-        Keychain.save(token)
+        Keychain.save(token)        // also calls invalidateTokenCache()
         DispatchQueue.main.async { self.onCompletion?(true) }
     }
 }
