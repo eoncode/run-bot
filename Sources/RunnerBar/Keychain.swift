@@ -48,6 +48,11 @@ enum Keychain {
         if updateStatus == errSecItemNotFound {
             var addQuery = baseQuery()
             addQuery[kSecValueData as String] = data
+            // kSecAttrAccessibleAfterFirstUnlock: token is readable after the first
+            // unlock post-reboot, which covers app launch in the background before
+            // the user has unlocked the screen. Without this, the default
+            // kSecAttrAccessibleWhenUnlocked would block token reads at launch.
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             if addStatus != errSecSuccess {
                 log("Keychain.save › SecItemAdd failed: \(addStatus)")
