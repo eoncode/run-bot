@@ -13,8 +13,8 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 /// Modal sheet for adding a new remote runner scope (org or repo).
 ///
 /// Mirrors `AddRunnerSheet` in structure: segmented type toggle at the top,
-/// a `Picker` when authenticated (populated from the GitHub API) with a plain
-/// `TextField` fallback, and Cancel / Add buttons at the bottom.
+/// a searchable `RepoSelectorSheet` when authenticated (populated from the
+/// GitHub API) with a plain `TextField` fallback, and Cancel / Add buttons.
 ///
 /// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
 struct AddScopeSheet: View {
@@ -28,6 +28,7 @@ struct AddScopeSheet: View {
     @State private var isFetching = false
     @State private var errorMessage: String?
     @State private var usePicker = false
+    @State private var showScopeSelector = false
 
     private var pickerItems: [String] {
         scopeType == .org ? orgs : repos
@@ -60,7 +61,10 @@ struct AddScopeSheet: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: scopeType) { _ in selectedScope = pickerItems.first ?? "" }
+                    .onChange(of: scopeType) { _ in
+                        selectedScope = pickerItems.first ?? ""
+                        showScopeSelector = false
+                    }
 
                     // ── Scope picker / text field ────────────────────────────
                     VStack(alignment: .leading, spacing: 4) {
@@ -71,20 +75,50 @@ struct AddScopeSheet: View {
                         if isFetching {
                             HStack(spacing: 8) {
                                 ProgressView().scaleEffect(0.7)
-                                Text("Fetching from GitHub…")
+                                Text("Fetching from GitHub\u{2026}")
                                     .font(.caption)
                                     .foregroundColor(Color.rbTextSecondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 6)
                         } else if usePicker && !pickerItems.isEmpty {
-                            Picker("", selection: $selectedScope) {
-                                ForEach(pickerItems, id: \.self) { item in
-                                    Text(item).tag(item)
+                            // ── Searchable sheet trigger ─────────────────────
+                            Button(action: { showScopeSelector = true }) {
+                                HStack {
+                                    Text(selectedScope.isEmpty ? "\u{2014} select \u{2014}" : selectedScope)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(
+                                            selectedScope.isEmpty
+                                                ? Color.rbTextTertiary
+                                                : Color.rbTextPrimary
+                                        )
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(Color.rbTextTertiary)
                                 }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Color.rbSurface)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                                )
                             }
-                            .labelsHidden()
-                            .frame(maxWidth: .infinity)
+                            .buttonStyle(.plain)
+                            .sheet(isPresented: $showScopeSelector) {
+                                RepoSelectorSheet(
+                                    items: pickerItems,
+                                    label: scopeType == .org ? "Organisation" : "Repository",
+                                    onDismiss: { showScopeSelector = false },
+                                    onSelect: { item in
+                                        selectedScope = item
+                                        showScopeSelector = false
+                                    }
+                                )
+                            }
                         } else {
                             TextField(
                                 scopeType == .org ? "e.g. myorg" : "e.g. myorg/myrepo",
@@ -149,7 +183,7 @@ struct AddScopeSheet: View {
 
     private func fetchScopeOptions() {
         guard githubToken() != nil else {
-            log("AddScopeSheet › no token — falling back to text field")
+            log("AddScopeSheet \u{203a} no token \u{2014} falling back to text field")
             usePicker = false
             return
         }
@@ -161,7 +195,7 @@ struct AddScopeSheet: View {
             DispatchQueue.main.async {
                 isFetching = false
                 if fetchedOrgs.isEmpty && fetchedRepos.isEmpty {
-                    log("AddScopeSheet › fetch returned no orgs or repos — using text field")
+                    log("AddScopeSheet \u{203a} fetch returned no orgs or repos \u{2014} using text field")
                     usePicker = false
                     errorMessage = "Could not load orgs/repos. Enter manually."
                 } else {
@@ -169,7 +203,7 @@ struct AddScopeSheet: View {
                     repos = fetchedRepos
                     usePicker = true
                     selectedScope = pickerItems.first ?? ""
-                    log("AddScopeSheet › loaded orgs=\(orgs.count) repos=\(repos.count)")
+                    log("AddScopeSheet \u{203a} loaded orgs=\(orgs.count) repos=\(repos.count)")
                 }
             }
         }
@@ -180,7 +214,7 @@ struct AddScopeSheet: View {
         guard !scope.isEmpty else { return }
         ScopeStore.shared.add(scope)
         RunnerStore.shared.start()
-        log("AddScopeSheet › added scope: \(scope)")
+        log("AddScopeSheet \u{203a} added scope: \(scope)")
         isPresented = false
     }
 }

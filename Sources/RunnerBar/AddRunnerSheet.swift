@@ -58,6 +58,8 @@ struct AddRunnerSheet: View {
     @State private var repos: [String] = []
     @State private var orgs:  [String] = []
     @State private var isLoadingScopes = false
+    @State private var showRepoSelector = false
+    @State private var showOrgSelector  = false
 
     // MARK: Runner config state (Add new only)
 
@@ -136,22 +138,42 @@ struct AddRunnerSheet: View {
         if isLoadingScopes {
             HStack {
                 ProgressView().scaleEffect(0.7)
-                Text("Loading…").font(.caption).foregroundColor(.secondary)
+                Text("Loading\u{2026}").font(.caption).foregroundColor(.secondary)
             }
         } else if scopeType == .repo {
-            scopePicker(
+            selectorButton(
                 label: "Repository",
-                selection: $selectedRepo,
-                items: repos,
-                empty: "No repositories found. Run `gh auth login` or set GH_TOKEN."
+                selection: selectedRepo,
+                action: { showRepoSelector = true }
             )
+            .sheet(isPresented: $showRepoSelector) {
+                RepoSelectorSheet(
+                    items: repos,
+                    label: "Repository",
+                    onDismiss: { showRepoSelector = false },
+                    onSelect: { item in
+                        selectedRepo = item
+                        showRepoSelector = false
+                    }
+                )
+            }
         } else {
-            scopePicker(
+            selectorButton(
                 label: "Organisation",
-                selection: $selectedOrg,
-                items: orgs,
-                empty: "No organisations found. Run `gh auth login` or set GH_TOKEN."
+                selection: selectedOrg,
+                action: { showOrgSelector = true }
             )
+            .sheet(isPresented: $showOrgSelector) {
+                RepoSelectorSheet(
+                    items: orgs,
+                    label: "Organisation",
+                    onDismiss: { showOrgSelector = false },
+                    onSelect: { item in
+                        selectedOrg = item
+                        showOrgSelector = false
+                    }
+                )
+            }
         }
 
         labeledField("Runner name", placeholder: "e.g. my-mac-runner", text: $runnerName)
@@ -204,7 +226,7 @@ struct AddRunnerSheet: View {
                 if isRegistering {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
-                        Text("Registering…")
+                        Text("Registering\u{2026}")
                     }
                 } else {
                     Text("Add new runner")
@@ -231,7 +253,7 @@ struct AddRunnerSheet: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Choose…") { pickExistingFolder() }
+                    Button("Choose\u{2026}") { pickExistingFolder() }
                         .controlSize(.small)
                 }
                 .padding(8)
@@ -295,16 +317,38 @@ struct AddRunnerSheet: View {
 
     // MARK: - Sub-views
 
+    /// Selector button that opens the searchable RepoSelectorSheet.
     @ViewBuilder
-    private func scopePicker(label: String, selection: Binding<String>,
-                             items: [String], empty: String) -> some View {
+    private func selectorButton(label: String, selection: String,
+                                action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.caption).foregroundColor(.secondary)
-            Picker("", selection: selection) {
-                Text("— select —").tag("")
-                ForEach(items, id: \.self) { Text($0).tag($0) }
-            }.labelsHidden()
-            if items.isEmpty { Text(empty).font(.caption2).foregroundColor(.secondary) }
+            Button(action: action) {
+                HStack {
+                    Text(selection.isEmpty ? "\u{2014} select \u{2014}" : selection)
+                        .font(.system(size: 12))
+                        .foregroundColor(selection.isEmpty ? .secondary : .primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            if selection.isEmpty {
+                Text("No \(label.lowercased())s found. Run `gh auth login` or set GH_TOKEN.")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
         }
     }
 
@@ -428,7 +472,7 @@ struct AddRunnerSheet: View {
         detectedGitHubURL = json.gitHubUrl ?? ""
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
-        log("AddRunnerSheet › pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
+        log("AddRunnerSheet \u{203a} pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
     }
 
     /// Derives scope from the GitHub URL, writes the LaunchAgent plist, and dismisses.
@@ -523,7 +567,7 @@ struct AddRunnerSheet: View {
             guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
                 DispatchQueue.main.async {
                     isRegistering = false
-                    errorMessage  = "Install directory must be inside your home folder (~/…)."
+                    errorMessage  = "Install directory must be inside your home folder (~/\u{2026})."
                 }
                 return
             }
@@ -548,7 +592,7 @@ struct AddRunnerSheet: View {
             let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
             if !FileManager.default.fileExists(atPath: configPath) {
-                setStep("Downloading runner package…")
+                setStep("Downloading runner package\u{2026}")
                 guard let downloadURL = fetchRunnerDownloadURL() else {
                     DispatchQueue.main.async {
                         isRegistering = false
@@ -563,7 +607,7 @@ struct AddRunnerSheet: View {
                     DispatchQueue.main.async { isRegistering = false; errorMessage = "Download failed." }
                     return
                 }
-                setStep("Unpacking runner package…")
+                setStep("Unpacking runner package\u{2026}")
                 let tarExit = runSimpleProcess("/usr/bin/tar", args: ["xzf", tarPath, "-C", dir])
                 try? FileManager.default.removeItem(atPath: tarPath)
                 guard tarExit == 0 else {
@@ -572,7 +616,7 @@ struct AddRunnerSheet: View {
                 }
             }
 
-            setStep("Fetching registration token…")
+            setStep("Fetching registration token\u{2026}")
             guard let token = fetchRegistrationToken(scope: scope) else {
                 DispatchQueue.main.async {
                     isRegistering = false
@@ -581,7 +625,7 @@ struct AddRunnerSheet: View {
                 return
             }
 
-            setStep("Configuring runner…")
+            setStep("Configuring runner\u{2026}")
             let ghURL      = "\(GitHubURIs.base)\(scope)"
             let configExit = runRegistrationCommand(dir: dir, ghURL: ghURL,
                                                     token: token, name: name, labels: labels)
@@ -593,7 +637,7 @@ struct AddRunnerSheet: View {
                 return
             }
 
-            setStep("Registering service…")
+            setStep("Registering service\u{2026}")
             writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
 
             DispatchQueue.main.async {
@@ -625,9 +669,9 @@ struct AddRunnerSheet: View {
                 options: 0
             )
             try plistData.write(to: plistURL, options: .atomic)
-            log("AddRunnerSheet › wrote LaunchAgent plist: \(plistURL.path)")
+            log("AddRunnerSheet \u{203a} wrote LaunchAgent plist: \(plistURL.path)")
         } catch {
-            log("AddRunnerSheet › failed to write LaunchAgent plist: \(error)")
+            log("AddRunnerSheet \u{203a} failed to write LaunchAgent plist: \(error)")
         }
     }
 
@@ -656,7 +700,7 @@ struct AddRunnerSheet: View {
         }
         do { try task.run() } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
-            log("runRegistrationCommand › launch error: \(error)")
+            log("runRegistrationCommand \u{203a} launch error: \(error)")
             return 1
         }
         // swiftlint:disable:next multiple_closures_with_trailing_closure
@@ -667,7 +711,7 @@ struct AddRunnerSheet: View {
         pipe.fileHandleForReading.readabilityHandler = nil
         let tail = pipe.fileHandleForReading.readDataToEndOfFile()
         if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-        log("runRegistrationCommand › exit=\(task.terminationStatus): \((String(data: outputData, encoding: .utf8) ?? "").prefix(500))")
+        log("runRegistrationCommand \u{203a} exit=\(task.terminationStatus): \((String(data: outputData, encoding: .utf8) ?? "").prefix(500))")
         return task.terminationStatus
     }
 
@@ -678,7 +722,7 @@ struct AddRunnerSheet: View {
         task.standardOutput = Pipe()
         task.standardError  = Pipe()
         do { try task.run() } catch {
-            log("runSimpleProcess › \(executable) launch error: \(error)")
+            log("runSimpleProcess \u{203a} \(executable) launch error: \(error)")
             return 1
         }
         // swiftlint:disable:next multiple_closures_with_trailing_closure
@@ -686,7 +730,7 @@ struct AddRunnerSheet: View {
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
         task.waitUntilExit()
         timeoutItem.cancel()
-        log("runSimpleProcess › \(executable) exit \(task.terminationStatus)")
+        log("runSimpleProcess \u{203a} \(executable) exit \(task.terminationStatus)")
         return task.terminationStatus
     }
 }
@@ -707,11 +751,11 @@ private func fetchRunnerDownloadURL() -> String? {
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let assetArch = (arch == "arm64") ? "arm64" : "x64"
     let assetName = "actions-runner-osx-\(assetArch)"
-    log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
+    log("fetchRunnerDownloadURL \u{203a} arch=\(arch) assetName=\(assetName)")
 
     guard let url  = URL(string: GitHubURIs.apiRunnerLatest),
           let data = try? Data(contentsOf: url) else {
-        log("fetchRunnerDownloadURL › failed to fetch release JSON")
+        log("fetchRunnerDownloadURL \u{203a} failed to fetch release JSON")
         return nil
     }
     struct Asset: Decodable {
@@ -723,13 +767,13 @@ private func fetchRunnerDownloadURL() -> String? {
     }
     struct Release: Decodable { let assets: [Asset] }
     guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
-        log("fetchRunnerDownloadURL › decode failed")
+        log("fetchRunnerDownloadURL \u{203a} decode failed")
         return nil
     }
     let match = release.assets.first {
         $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
     }
-    log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
+    log("fetchRunnerDownloadURL \u{203a} match=\(match?.name ?? "nil")")
     return match?.browserDownloadUrl
 }
 // swiftlint:enable type_body_length
