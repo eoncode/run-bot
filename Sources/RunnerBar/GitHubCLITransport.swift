@@ -16,10 +16,13 @@ func ghBinaryPath() -> String? {
 
 // MARK: - Core subprocess primitive
 
-func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> Data? {
+/// Runs `gh` with the given arguments. Returns (output, exitCode).
+/// output is nil when the process produces no stdout (e.g. HTTP 204 No Content).
+/// exitCode is Int32.max on launch failure.
+private func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> (data: Data?, exitCode: Int32) {
     guard let ghPath = ghBinaryPath() else {
         log("runGHProcess › gh not found in known paths")
-        return nil
+        return (nil, Int32.max)
     }
     log("runGHProcess › \(ghPath) \(arguments.joined(separator: " "))")
     let task = Process()
@@ -38,7 +41,7 @@ func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> Data? {
     do { try task.run() } catch {
         log("runGHProcess › launch error: \(error)")
         pipe.fileHandleForReading.readabilityHandler = nil
-        return nil
+        return (nil, Int32.max)
     }
     let timeoutItem = DispatchWorkItem { task.terminate() }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
@@ -47,16 +50,16 @@ func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> Data? {
     pipe.fileHandleForReading.readabilityHandler = nil
     let tail = pipe.fileHandleForReading.readDataToEndOfFile()
     if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-    log("runGHProcess › exit=\(task.terminationStatus) bytes=\(outputData.count)")
-    return outputData.isEmpty ? nil : outputData
+    let exitCode = task.terminationStatus
+    log("runGHProcess › exit=\(exitCode) bytes=\(outputData.count)")
+    return (outputData.isEmpty ? nil : outputData, exitCode)
 }
 
 // MARK: - CLI API wrappers
 
 func ghAPICLI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
-    guard let outputData = runGHProcess(arguments: ["api", endpoint], timeout: timeout) else {
-        return nil
-    }
+    let (outputData, _) = runGHProcess(arguments: ["api", endpoint], timeout: timeout)
+    guard let outputData else { return nil }
     log("ghAPICLI › \(endpoint) → \(outputData.count)b")
     if let json = try? JSONSerialization.jsonObject(with: outputData) as? [String: Any],
        let status = json["status"] as? String,
@@ -69,50 +72,28 @@ func ghAPICLI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
 }
 
 func ghAPIPaginatedCLI(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
-    guard let ghPath = ghBinaryPath() else { log("ghAPIPaginatedCLI › gh not found"); return nil }
-    let task = Process()
-    let pipe = Pipe()
-    task.executableURL = URL(fileURLWithPath: ghPath)
-    task.arguments = ["api", "--paginate", endpoint]
-    task.standardOutput = pipe
-    task.standardError = Pipe()
-    var outputData = Data()
-    let lock = NSLock()
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-        let chunk = handle.availableData
-        guard !chunk.isEmpty else { return }
-        lock.lock(); outputData.append(chunk); lock.unlock()
-    }
-    do { try task.run() } catch {
-        log("ghAPIPaginatedCLI › launch error: \(error)")
-        pipe.fileHandleForReading.readabilityHandler = nil
-        return nil
-    }
-    let timeoutItem = DispatchWorkItem { task.terminate() }
-    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
-    task.waitUntilExit()
-    timeoutItem.cancel()
-    pipe.fileHandleForReading.readabilityHandler = nil
-    let tail = pipe.fileHandleForReading.readDataToEndOfFile()
-    if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-    log("ghAPIPaginatedCLI › \(endpoint) → \(outputData.count)b exit \(task.terminationStatus)")
-    if task.terminationStatus != 0 {
-        let raw = String(data: outputData, encoding: .utf8) ?? ""
+    let (outputData, exitCode) = runGHProcess(
+        arguments: ["api", "--paginate", endpoint], timeout: timeout
+    )
+    if exitCode != 0 {
+        let raw = outputData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
         if raw.contains("\"403\"") || raw.contains("\"429\"") || raw.contains("rate limit") {
             ghIsRateLimited = true
             log("ghAPIPaginatedCLI › rate limit detected: \(endpoint)")
         } else {
-            log("ghAPIPaginatedCLI › non-zero exit (\(task.terminationStatus)): \(endpoint)")
+            log("ghAPIPaginatedCLI › non-zero exit (\(exitCode)): \(endpoint)")
         }
         return nil
     }
-    return outputData.isEmpty ? nil : outputData
+    log("ghAPIPaginatedCLI › \(endpoint) → \(outputData?.count ?? 0)b")
+    return outputData
 }
 
 // MARK: - Runner mutation helpers
 
 /// Directly deregisters a runner from GitHub via DELETE API.
-/// Returns true only if the runner was successfully deleted (gh exit 0).
+/// Returns true if gh exited 0 (success) or produced no output (HTTP 204 No Content).
+/// Returns false if gh failed to launch, timed out, or exited non-zero with output.
 @discardableResult
 func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     let endpoint = scope.contains("/")
@@ -121,13 +102,18 @@ func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     log("deleteRunnerByID › DELETE \(endpoint) runnerID=\(runnerID)")
     let args: [String] = ["api", "--method", "DELETE",
                           "-H", "Accept: application/vnd.github+json", endpoint]
-    if let data = runGHProcess(arguments: args, timeout: 30) {
+    let (data, exitCode) = runGHProcess(arguments: args, timeout: 30)
+    if let data {
         let raw = String(data: data, encoding: .utf8) ?? ""
         log("deleteRunnerByID › response=\(raw.prefix(200))")
     } else {
-        log("deleteRunnerByID › no output (possible 204 No Content — treating as success)")
+        log("deleteRunnerByID › no output (HTTP 204 No Content)")
     }
-    return true
+    // gh exits 0 on both 204 (no body) and 200 (body present).
+    // exitCode == Int32.max means launch failure — treat as error.
+    let success = exitCode == 0
+    if !success { log("deleteRunnerByID › failed exit=\(exitCode)") }
+    return success
 }
 
 /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
@@ -195,7 +181,8 @@ func fetchRegistrationToken(scope: String) -> String? {
     log("fetchRegistrationToken › POSTing \(endpoint)")
     let args = ["api", "--method", "POST",
                 "-H", "Accept: application/vnd.github+json", endpoint]
-    guard let outputData = runGHProcess(arguments: args, timeout: 30) else {
+    let (outputData, _) = runGHProcess(arguments: args, timeout: 30)
+    guard let outputData else {
         log("fetchRegistrationToken › no data for \(endpoint)")
         return nil
     }
@@ -216,7 +203,8 @@ func fetchRemovalToken(scope: String) -> String? {
     log("fetchRemovalToken › POSTing \(endpoint)")
     let args = ["api", "--method", "POST",
                 "-H", "Accept: application/vnd.github+json", endpoint]
-    guard let outputData = runGHProcess(arguments: args, timeout: 30) else {
+    let (outputData, _) = runGHProcess(arguments: args, timeout: 30)
+    guard let outputData else {
         log("fetchRemovalToken › no data returned for \(endpoint)")
         return nil
     }
@@ -231,14 +219,19 @@ func fetchRemovalToken(scope: String) -> String? {
 
 // MARK: - POST / Cancel helpers
 
-/// Sends a fire-and-forget POST to the given GitHub API endpoint via gh CLI.
+/// Sends a POST to the given GitHub API endpoint via gh CLI.
+/// Returns true if gh exited 0 (or 204 No Content with no body).
+/// Fire-and-forget callers may use @discardableResult.
 @discardableResult
 func ghPost(_ endpoint: String) -> Bool {
     let args = ["api", "--method", "POST",
                 "-H", "Accept: application/vnd.github+json", endpoint]
-    let hasData = runGHProcess(arguments: args, timeout: 30) != nil
-    log("ghPost › \(endpoint) hasData=\(hasData) (204 No Content is also success)")
-    return true
+    let (_, exitCode) = runGHProcess(arguments: args, timeout: 30)
+    // gh exits 0 on HTTP 204 (no body) — this is the normal success for cancel endpoints.
+    // exitCode == Int32.max means launch failure.
+    let success = exitCode == 0
+    log("ghPost › \(endpoint) success=\(success) exit=\(exitCode)")
+    return success
 }
 
 /// Cancels a workflow run.
