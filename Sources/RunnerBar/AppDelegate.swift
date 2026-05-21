@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-// swiftlint:disable type_body_length file_length
+// swiftlint:disable type_body_length
 
 // MARK: - NSPanel architecture note
 //
@@ -103,10 +103,9 @@ private final class KeyablePanel: NSPanel {
 // compiler static proof of this so every method and stored property is verified
 // as main-thread-only without any runtime assertion.
 //
-// The nonisolated blocking helper (enrichStepsIfNeeded) is intentionally exempt
-// — it performs blocking network I/O and is always dispatched onto
-// DispatchQueue.global() by its caller. nonisolated opts it out of the
-// class-level @MainActor domain.
+// The nonisolated blocking helper (enrichStepsIfNeeded) lives in
+// AppDelegate+Navigation.swift and is intentionally exempt — it performs
+// blocking network I/O and is always dispatched onto DispatchQueue.global().
 //
 // ❌ NEVER remove @MainActor from this class declaration.
 // ❌ NEVER remove `nonisolated` from enrichStepsIfNeeded.
@@ -114,58 +113,58 @@ private final class KeyablePanel: NSPanel {
 // UNDER ANY CIRCUMSTANCE.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem?
-    private var panel: KeyablePanel?
-    private var chrome: PanelChromeView?
-    private var hostingController: NSHostingController<AnyView>?
-    private let observable = RunnerStoreObservable()
-    private var savedNavState: NavState?
-    private var panelIsOpen = false
+    var statusItem: NSStatusItem?
+    var panel: KeyablePanel?
+    var chrome: PanelChromeView?
+    var hostingController: NSHostingController<AnyView>?
+    let observable = RunnerStoreObservable()
+    var savedNavState: NavState?
+    var panelIsOpen = false
 
-    private var eventMonitor: Any?
-    private var sizeObservation: NSKeyValueObservation?
-    private var workspaceObserver: Any?
-    private var cancellables = Set<AnyCancellable>()
+    var eventMonitor: Any?
+    var sizeObservation: NSKeyValueObservation?
+    var workspaceObserver: Any?
+    var cancellables = Set<AnyCancellable>()
 
     /// Top anchor (screen coords) captured once in openPanel().
     /// ❌ NEVER re-derive inside resizeAndRepositionPanel().
-    private var panelTopY: CGFloat?
+    var panelTopY: CGFloat?
 
     // ⚠️ REGRESSION GUARD (ref #377):
     // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
     // ❌ NEVER pass as a plain Bool prop to PopoverMainView.
     // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
     // ALLOWED UNDER ANY CIRCUMSTANCE.
-    private let popoverOpenState = PopoverOpenState()
+    let popoverOpenState = PopoverOpenState()
 
     /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
-    private static let minWidth: CGFloat = 280
+    static let minWidth: CGFloat = 280
 
     /// The screen the status item lives on.
-    private var statusItemScreen: NSScreen {
+    var statusItemScreen: NSScreen {
         statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
-    private var maxWidth: CGFloat {
+    var maxWidth: CGFloat {
         let screenMax = statusItemScreen.visibleFrame.width * 0.9
         return min(900, screenMax)
     }
 
-    private var maxHeight: CGFloat {
+    var maxHeight: CGFloat {
         statusItemScreen.visibleFrame.height * 0.85
     }
 
-    private static let gap: CGFloat = 2
+    static let gap: CGFloat = 2
 
     /// Initial panel width used before SwiftUI has measured content.
-    private static let initPanelWidth: CGFloat = 320
+    static let initPanelWidth: CGFloat = 320
 
     // MARK: - Environment injection
 
     /// ❌ NEVER bypass. ❌ NEVER remove .environmentObject(popoverOpenState).
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
     /// ALLOWED UNDER ANY CIRCUMSTANCE.
-    private func wrapEnv<V: View>(_ view: V) -> AnyView {
+    func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(popoverOpenState))
     }
 
@@ -275,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER call from a background thread.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE. The regression is major major major.
-    private func resizeAndRepositionPanel() {
+    func resizeAndRepositionPanel() {
         guard panelIsOpen,
               let panel,
               let chrome,
@@ -305,7 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER remove the resizeAndRepositionPanel() call from this method.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE.
-    private func navigate(to view: AnyView) {
+    func navigate(to view: AnyView) {
         hostingController?.rootView = view
         resizeAndRepositionPanel()
     }
@@ -314,7 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // See KeyablePanel comment block above for the full explanation.
     // ❌ NEVER call this for views that have no text input (main, step log).
-    private func makeKeyForTextInput() {
+    func makeKeyForTextInput() {
         panel?.wantsKey = true
         panel?.makeKeyAndOrderFront(nil)
     }
@@ -344,139 +343,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func removeEventMonitor() {
+    func removeEventMonitor() {
         if let monitor = eventMonitor { NSEvent.removeMonitor(monitor); eventMonitor = nil }
     }
 
-    private func removeWorkspaceObserver() {
+    func removeWorkspaceObserver() {
         if let opt = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(opt)
             workspaceObserver = nil
-        }
-    }
-
-    // MARK: - Enrichment helper
-
-    nonisolated private func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
-        guard job.steps.isEmpty || job.steps.contains(where: { $0.status == "in_progress" }),
-              let scope = scopeFromHtmlUrl(job.htmlUrl),
-              let data = ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
-              let fresh = try? JSONDecoder().decode(JobPayload.self, from: data)
-        else { return job }
-        let iso = ISO8601DateFormatter()
-        return makeActiveJob(from: fresh, iso: iso, isDimmed: job.isDimmed)
-    }
-
-    // MARK: - View factories
-
-    private func mainView() -> AnyView {
-        savedNavState = nil
-        return wrapEnv(PopoverMainView(
-            store: observable,
-            onSelectJob: { _ in
-                // Retained for ABI compatibility; navigation removed in #455.
-            },
-            onSelectAction: { _ in
-                // Retained for ABI compatibility; navigation removed in #455.
-            },
-            onStepTap: { [weak self] job, step in
-                guard let self else { return }
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let enriched = self.enrichStepsIfNeeded(job)
-                    DispatchQueue.main.async {
-                        guard self.panelIsOpen else { return }
-                        self.navigate(to: self.stepLogFromMain(job: enriched, step: step))
-                    }
-                }
-            },
-            onSelectSettings: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    /// #455: Step tapped from inline job row on the main screen.
-    /// Back button returns to mainView().
-    private func stepLogFromMain(job: ActiveJob, step: JobStep) -> AnyView {
-        savedNavState = .stepLog(job, step)
-        return wrapEnv(StepLogView(
-            job: job,
-            step: step,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.mainView())
-            },
-            onLogLoaded: nil
-        ))
-    }
-
-    private func settingsView() -> AnyView {
-        savedNavState = .settings
-        makeKeyForTextInput()
-        return wrapEnv(SettingsView(
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.mainView())
-            },
-            onSelectRunner: { [weak self] runner in
-                guard let self else { return }
-                self.navigate(to: self.runnerDetailView(runner: runner))
-            },
-            onSelectScope: { [weak self] entry in
-                guard let self else { return }
-                self.navigate(to: self.scopeDetailView(entry: entry))
-            },
-            store: observable
-        ))
-    }
-
-    /// #491: RunnerDetailView drill-down from SettingsView runner row.
-    private func runnerDetailView(runner: RunnerModel) -> AnyView {
-        savedNavState = .runnerDetail(runner)
-        makeKeyForTextInput()
-        return wrapEnv(RunnerDetailView(
-            runner: runner,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    /// #499: ScopeDetailView drill-down from SettingsView scope row tap.
-    private func scopeDetailView(entry: ScopeEntry) -> AnyView {
-        savedNavState = .scopeDetail(entry)
-        makeKeyForTextInput()
-        let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) ?? entry
-        return wrapEnv(ScopeDetailView(
-            scopeEntry: live,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    private func validatedView(for state: NavState) -> AnyView? {
-        savedNavState = nil
-        let store = RunnerStore.shared
-        switch state {
-        case .main:
-            return nil
-        case .stepLog(let job, let step):
-            let live = store.jobs.first(where: { $0.id == job.id }) ?? job
-            return stepLogFromMain(job: live, step: step)
-        case .settings:
-            return settingsView()
-        case .runnerDetail(let runner):
-            let live = LocalRunnerStore.shared.runners.first(where: { $0.id == runner.id }) ?? runner
-            return runnerDetailView(runner: live)
-        case .scopeDetail(let entry):
-            guard let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) else {
-                return settingsView()
-            }
-            return scopeDetailView(entry: live)
         }
     }
 
