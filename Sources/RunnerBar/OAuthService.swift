@@ -6,11 +6,13 @@ import Foundation
 // Implements the GitHub OAuth Authorization Code flow.
 //
 // Flow:
-//   1. signIn() opens the GitHub authorization URL in the default browser.
+//   1. signIn() generates a random state nonce, stores it, opens the GitHub
+//      authorization URL (with state= param) in the default browser.
 //   2. The user clicks "Authorize" on GitHub's consent screen.
 //   3. GitHub redirects to runnerbar://oauth/callback?code=...&state=...
 //   4. AppDelegate.application(_:open:) catches the URL and calls handleCallback(_:).
-//   5. handleCallback exchanges the code for an access token via POST to GitHub.
+//   5. handleCallback verifies the state param matches pendingState (CSRF guard),
+//      then exchanges the code for an access token via POST to GitHub.
 //   6. Token is saved to Keychain. onCompletion is called on the main thread.
 //
 // Client credentials are in Secrets.swift — see that file for why they are
@@ -23,7 +25,12 @@ final class OAuthService {
     private let redirectURI = "runnerbar://oauth/callback"
     private let scopes = "repo read:org"
 
+    /// CSRF nonce generated in signIn(), verified in handleCallback().
+    /// Cleared after use or on sign-out.
+    private var pendingState: String?
+
     /// Called on main thread after sign-in completes. `true` = success.
+    /// Register once in SettingsView.onAppearAction — do NOT re-assign in signIn().
     var onCompletion: ((Bool) -> Void)?
 
     var isSignedIn: Bool { Keychain.token != nil }
@@ -31,11 +38,14 @@ final class OAuthService {
     // MARK: Sign In
 
     func signIn() {
+        let state = UUID().uuidString
+        pendingState = state
         var comps = URLComponents(string: "https://github.com/login/oauth/authorize")!
         comps.queryItems = [
             URLQueryItem(name: "client_id", value: Secrets.clientID),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "scope", value: scopes)
+            URLQueryItem(name: "scope", value: scopes),
+            URLQueryItem(name: "state", value: state)
         ]
         guard let url = comps.url else { return }
         NSWorkspace.shared.open(url)
@@ -44,6 +54,7 @@ final class OAuthService {
     // MARK: Sign Out
 
     func signOut() {
+        pendingState = nil
         Keychain.delete()
         DispatchQueue.main.async { self.onCompletion?(false) }
     }
@@ -58,6 +69,17 @@ final class OAuthService {
             DispatchQueue.main.async { self.onCompletion?(false) }
             return
         }
+
+        // CSRF: verify the returned state matches what we sent.
+        let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value
+        guard returnedState != nil, returnedState == pendingState else {
+            log("OAuthService › handleCallback: state mismatch — possible CSRF attempt, rejecting")
+            pendingState = nil
+            DispatchQueue.main.async { self.onCompletion?(false) }
+            return
+        }
+        pendingState = nil
+
         Task { await exchangeCode(code) }
     }
 

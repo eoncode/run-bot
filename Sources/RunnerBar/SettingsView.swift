@@ -119,6 +119,8 @@ struct SettingsView: View {
 
     private func onAppearAction() {
         isAuthenticated = (githubToken() != nil)
+        // Register onCompletion ONCE here — do NOT re-assign in signInWithGitHub().
+        // Re-assigning mid-flow would race with an in-flight callback.
         OAuthService.shared.onCompletion = { success in
             isAuthenticated = success
             isSigningIn = false
@@ -191,8 +193,6 @@ struct SettingsView: View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         Button(action: { onSelectRunner(runner) }) {
             localRunnerRowContent(runner)
-                // Makes the entire row area (including empty/transparent regions) hittable,
-                // not just the pixels where text or icons are rendered.
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -235,7 +235,6 @@ struct SettingsView: View {
                        label: { Text("Resume").font(.caption2) })
                 .buttonStyle(.bordered).help("Start runner service")
             }
-            // #507: chevron always far-right, before the remove button
             Image(systemName: "chevron.right")
                 .font(.caption2)
                 .foregroundColor(Color.rbTextTertiary)
@@ -333,17 +332,12 @@ struct SettingsView: View {
         }
     }
 
-    /// #499: Scope row is a tappable Button that navigates to ScopeDetailView.
-    /// #507: chevron is now always the last item before the remove button (far right).
-    /// #508: Added Active/Paused text label adjacent to toggle.
-    /// #509: Toggle uses .tint(Color.rbSuccess) for clear on/off colour.
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopeSettingsStore.displayName(for: entry.scope)
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         return Button(action: { onSelectScope(entry) }) {
             HStack(spacing: 8) {
-                // Type badge
                 Text(isRepo ? "Repo" : "Org")
                     .font(.caption2)
                     .foregroundColor(Color.rbTextSecondary)
@@ -367,12 +361,10 @@ struct SettingsView: View {
 
                 Spacer()
 
-                // #508: State label next to toggle
                 Text(entry.isEnabled ? "Active" : "Paused")
                     .font(.caption2)
                     .foregroundColor(entry.isEnabled ? Color.rbSuccess : Color.rbTextTertiary)
 
-                // #509: .tint(.rbSuccess) makes the on-state visually distinct (green track)
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
                     set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
@@ -384,7 +376,6 @@ struct SettingsView: View {
                 .scaleEffect(0.8, anchor: .trailing)
                 .buttonStyle(.borderless)
 
-                // #507: Chevron flush right, before the remove button
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundColor(Color.rbTextTertiary)
@@ -402,7 +393,6 @@ struct SettingsView: View {
                 .buttonStyle(.borderless)
                 .help("Remove scope")
             }
-            // Makes the entire row area (including Spacer and transparent gaps) hittable.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -421,7 +411,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Notifications
-    // #509: .tint(.rbSuccess) on all notification toggles
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -443,8 +432,6 @@ struct SettingsView: View {
     }
 
     // MARK: - General
-    // #510: Removed "Show offline runners" row.
-    // #509: .tint(.rbSuccess) on launch-at-login toggle.
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("General").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -473,7 +460,7 @@ struct SettingsView: View {
     // MARK: - Account
     //
     // Uses OAuthService for native GitHub OAuth Authorization Code flow.
-    // No gh CLI dependency for authentication — token stored in Keychain.
+    // onCompletion is registered once in onAppearAction() — not here.
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -525,10 +512,7 @@ struct SettingsView: View {
 
     private func signInWithGitHub() {
         isSigningIn = true
-        OAuthService.shared.onCompletion = { success in
-            isAuthenticated = success
-            isSigningIn = false
-        }
+        // onCompletion is already registered in onAppearAction() — do not re-assign here.
         OAuthService.shared.signIn()
     }
 

@@ -16,15 +16,16 @@ var ghIsRateLimited: Bool {
 // urlSessionAPI / urlSessionAPIPaginated use the Keychain token (set by OAuthService)
 // with a plain URLSession + Authorization: Bearer header.
 //
-// This is the preferred path for users who sign in via the native OAuth flow.
-// The gh CLI subprocess helpers below are retained as a fallback for users who
-// authenticated via `gh auth login` before the native flow was available.
+// Both functions block the calling thread via DispatchSemaphore. They must
+// always be called from a background thread — a precondition assertion guards
+// this at runtime. All existing call sites dispatch via DispatchQueue.global().
 
 private let apiBase = "https://api.github.com"
 
 /// Fetches a single GitHub API page synchronously (blocking the calling thread).
-/// Returns nil on network error, auth failure, or rate limit.
+/// ⚠️ Must be called from a background thread, never from the main thread.
 func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
+    dispatchPrecondition(condition: .notOnQueue(.main))
     guard let token = githubToken() else {
         log("urlSessionAPI › no token available")
         return nil
@@ -63,7 +64,9 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
 
 /// Fetches all pages of a GitHub API endpoint, concatenating JSON arrays.
 /// Follows the `Link: <url>; rel="next"` header automatically.
+/// ⚠️ Must be called from a background thread, never from the main thread.
 func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
+    dispatchPrecondition(condition: .notOnQueue(.main))
     guard let token = githubToken() else {
         log("urlSessionAPIPaginated › no token available")
         return nil
@@ -111,16 +114,21 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
 }
 
 /// Parses the `Link` header and returns the URL for `rel="next"`, if present.
+/// Accepts entries with extra attributes (e.g. rel="next"; title="next page").
 private func extractNextURL(from header: String?) -> String? {
     guard let header else { return nil }
     for part in header.components(separatedBy: ",") {
         let segments = part.components(separatedBy: ";")
-        guard segments.count == 2 else { continue }
-        let rel = segments[1].trimmingCharacters(in: .whitespaces)
-        guard rel == "rel=\"next\"" else { continue }
-        let link = segments[0].trimmingCharacters(in: .whitespaces)
-        guard link.hasPrefix("<"), link.hasSuffix(">") else { continue }
-        return String(link.dropFirst().dropLast())
+        // Need at least a link segment and one attribute segment.
+        guard segments.count >= 2 else { continue }
+        let linkSegment = segments[0].trimmingCharacters(in: .whitespaces)
+        guard linkSegment.hasPrefix("<"), linkSegment.hasSuffix(">") else { continue }
+        let link = String(linkSegment.dropFirst().dropLast())
+        // Check all attribute segments for rel="next".
+        let isNext = segments.dropFirst().contains(where: {
+            $0.trimmingCharacters(in: .whitespaces) == "rel=\"next\""
+        })
+        if isNext { return link }
     }
     return nil
 }
@@ -130,11 +138,9 @@ private func extractNextURL(from header: String?) -> String? {
 // Prefer URLSession (native OAuth token) when available; fall back to gh CLI subprocess.
 
 func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
-    // Prefer native URLSession when a token is available
     if githubToken() != nil {
         let data = urlSessionAPI(endpoint, timeout: timeout)
         if data != nil { return data }
-        // Fall through to gh CLI if URLSession returns nil (e.g. token revoked)
     }
     return ghAPICLI(endpoint, timeout: timeout)
 }
@@ -348,6 +354,9 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Registration token
 
+/// Fetches a short-lived runner registration token for the given scope.
+/// Required by `config.sh --token` during runner setup.
+/// NOTE: raw response is intentionally not logged — it contains a short-lived secret.
 func fetchRegistrationToken(scope: String) -> String? {
     let endpoint: String
     if scope.contains("/") {
@@ -374,6 +383,9 @@ func fetchRegistrationToken(scope: String) -> String? {
 
 // MARK: - Removal token
 
+/// Fetches a runner removal token for the given scope (owner/repo or org).
+/// Required by `config.sh remove --token <token>`.
+/// NOTE: raw response is intentionally not logged — it contains a short-lived secret.
 func fetchRemovalToken(scope: String) -> String? {
     let endpoint: String
     if scope.contains("/") {
@@ -398,8 +410,13 @@ func fetchRemovalToken(scope: String) -> String? {
     return resp.token
 }
 
-// MARK: - Delete runner by ID
+// MARK: - Delete runner by ID (API fallback for corrupt installs)
 
+/// Directly deregisters a runner from GitHub via DELETE API.
+/// Used as fallback when config.sh is missing or corrupt.
+/// Returns true only if the runner was successfully deleted (HTTP 204, gh exit 0).
+/// A 404 response means the runner ID was not found on GitHub — that is a failure,
+/// not a deletion. Non-zero exit = runner may still exist on GitHub.
 @discardableResult
 func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     let endpoint: String
@@ -434,7 +451,7 @@ func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     log("deleteRunnerByID › exit=\(status) response=\(raw.prefix(200))")
     let ok = status == 0
     if !ok {
-        log("deleteRunnerByID › DELETE failed (exit=\(status)) for runnerID=\(runnerID)")
+        log("deleteRunnerByID › DELETE failed (exit=\(status)) for runnerID=\(runnerID) — runner may still exist on GitHub")
     }
     log("deleteRunnerByID › result=\(ok) for runnerID=\(runnerID)")
     return ok
@@ -442,6 +459,9 @@ func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
 
 // MARK: - Patch runner labels (#492)
 
+/// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
+/// Built-in labels (self-hosted, OS, arch) are preserved by GitHub automatically.
+/// Returns the updated label names on success, or nil on failure.
 @discardableResult
 func patchRunnerLabels(scope: String, runnerID: Int, labels: [String]) -> [String]? {
     let endpoint: String
