@@ -121,12 +121,12 @@ func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     log("deleteRunnerByID › DELETE \(endpoint) runnerID=\(runnerID)")
     let args: [String] = ["api", "--method", "DELETE",
                           "-H", "Accept: application/vnd.github+json", endpoint]
-    guard let data = runGHProcess(arguments: args, timeout: 30) else {
+    if let data = runGHProcess(arguments: args, timeout: 30) {
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        log("deleteRunnerByID › response=\(raw.prefix(200))")
+    } else {
         log("deleteRunnerByID › no output (possible 204 No Content — treating as success)")
-        return true
     }
-    let raw = String(data: data, encoding: .utf8) ?? ""
-    log("deleteRunnerByID › response=\(raw.prefix(200))")
     return true
 }
 
@@ -236,11 +236,8 @@ func fetchRemovalToken(scope: String) -> String? {
 func ghPost(_ endpoint: String) -> Bool {
     let args = ["api", "--method", "POST",
                 "-H", "Accept: application/vnd.github+json", endpoint]
-    guard let _ = runGHProcess(arguments: args, timeout: 30) else {
-        log("ghPost › \(endpoint) returned no data (possible 204 — treating as success)")
-        return true
-    }
-    log("ghPost › \(endpoint) done")
+    let hasData = runGHProcess(arguments: args, timeout: 30) != nil
+    log("ghPost › \(endpoint) hasData=\(hasData) (204 No Content is also success)")
     return true
 }
 
