@@ -26,10 +26,6 @@ import SwiftUI
 private enum SettingsURIs {
     static let privacyPolicy  = "https://dev.eon.st/runnerbar/privacy"
     static let termsOfService = "https://dev.eon.st/runnerbar/terms"
-    /// Opens github.com/login so the user can verify their browser session
-    /// before running `gh auth login` in Terminal. Full OAuth flow is not
-    /// supported here — RunnerBar relies on the gh CLI for authentication.
-    static let gitHubSignIn   = "https://github.com/login"
 }
 
 // swiftlint:disable:next type_body_length
@@ -46,13 +42,17 @@ struct SettingsView: View {
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
     @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var launchAtLogin = LoginItem.isEnabled
-    @State private var isAuthenticated = (githubToken() != nil)
+    // isOAuthAuthenticated: true only when a token is stored in Keychain via native OAuth.
+    // isCLIAuthenticated: true when gh CLI provides a token but no Keychain OAuth token exists.
+    // These two are mutually exclusive. Sign in button is shown whenever isOAuthAuthenticated == false.
+    @State private var isOAuthAuthenticated = (Keychain.token != nil)
+    @State private var isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
+    @State private var isSigningIn = false
     @State private var hasLoadedOnce = false
     @State private var runnerPendingRemoval: RunnerModel?
     @State private var showAddRunnerSheet = false
     @State private var showAddScopeSheet = false
     @State private var removeErrorMessage: String?
-    @State private var isSigningOut = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -98,7 +98,7 @@ struct SettingsView: View {
                 get: { runnerPendingRemoval != nil },
                 set: { if !$0 { runnerPendingRemoval = nil } }
             ),
-            isAuthenticated: isAuthenticated,
+            isAuthenticated: isOAuthAuthenticated || isCLIAuthenticated,
             onCancel: { runnerPendingRemoval = nil },
             onConfirm: performRemoval
         )
@@ -122,7 +122,15 @@ struct SettingsView: View {
     }
 
     private func onAppearAction() {
-        isAuthenticated = (githubToken() != nil)
+        isOAuthAuthenticated = (Keychain.token != nil)
+        isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
+        // Register onCompletion ONCE here — do NOT re-assign in signInWithGitHub().
+        // Re-assigning mid-flow would race with an in-flight callback.
+        OAuthService.shared.onCompletion = { success in
+            isOAuthAuthenticated = success
+            isCLIAuthenticated = !success && githubToken() != nil
+            isSigningIn = false
+        }
         ScopeStore.shared.onMutate = { [weak store] in store?.reload() }
         localRunnerStore.refresh()
     }
@@ -191,8 +199,6 @@ struct SettingsView: View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         Button(action: { onSelectRunner(runner) }) {
             localRunnerRowContent(runner)
-                // Makes the entire row area (including empty/transparent regions) hittable,
-                // not just the pixels where text or icons are rendered.
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -210,8 +216,6 @@ struct SettingsView: View {
     private func localRunnerRowContent(_ runner: RunnerModel) -> some View {
         let hasWarning = runner.lifecycleWarning != nil
         let displayStatus = runner.displayStatus
-        let statusColor = runner.statusColor
-        log("SettingsView > localRunnerRowContent rendering runner=\(runner.runnerName) isRunning=\(runner.isRunning) githubStatus=\(runner.githubStatus ?? "none") lifecycleWarning=\(runner.lifecycleWarning ?? "none") displayStatus=\(displayStatus) statusColor=\(statusColor) hasWarning=\(hasWarning)")
         return HStack(spacing: 6) {
             Circle().fill(localRunnerDotColor(for: runner)).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
@@ -235,7 +239,6 @@ struct SettingsView: View {
                        label: { Text("Resume").font(.caption2) })
                 .buttonStyle(.bordered).help("Start runner service")
             }
-            // #507: chevron always far-right, before the remove button
             Image(systemName: "chevron.right")
                 .font(.caption2)
                 .foregroundColor(Color.rbTextTertiary)
@@ -333,17 +336,12 @@ struct SettingsView: View {
         }
     }
 
-    /// #499: Scope row is a tappable Button that navigates to ScopeDetailView.
-    /// #507: chevron is now always the last item before the remove button (far right).
-    /// #508: Added Active/Paused text label adjacent to toggle.
-    /// #509: Toggle uses .tint(Color.rbSuccess) for clear on/off colour.
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopeSettingsStore.displayName(for: entry.scope)
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         return Button(action: { onSelectScope(entry) }) {
             HStack(spacing: 8) {
-                // Type badge
                 Text(isRepo ? "Repo" : "Org")
                     .font(.caption2)
                     .foregroundColor(Color.rbTextSecondary)
@@ -367,12 +365,10 @@ struct SettingsView: View {
 
                 Spacer()
 
-                // #508: State label next to toggle
                 Text(entry.isEnabled ? "Active" : "Paused")
                     .font(.caption2)
                     .foregroundColor(entry.isEnabled ? Color.rbSuccess : Color.rbTextTertiary)
 
-                // #509: .tint(.rbSuccess) makes the on-state visually distinct (green track)
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
                     set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
@@ -384,7 +380,6 @@ struct SettingsView: View {
                 .scaleEffect(0.8, anchor: .trailing)
                 .buttonStyle(.borderless)
 
-                // #507: Chevron flush right, before the remove button
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundColor(Color.rbTextTertiary)
@@ -402,7 +397,6 @@ struct SettingsView: View {
                 .buttonStyle(.borderless)
                 .help("Remove scope")
             }
-            // Makes the entire row area (including Spacer and transparent gaps) hittable.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -421,7 +415,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Notifications
-    // #509: .tint(.rbSuccess) on all notification toggles
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -443,8 +436,6 @@ struct SettingsView: View {
     }
 
     // MARK: - General
-    // #510: Removed "Show offline runners" row.
-    // #509: .tint(.rbSuccess) on launch-at-login toggle.
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("General").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -471,35 +462,92 @@ struct SettingsView: View {
     }
 
     // MARK: - Account
+    //
+    // Four visible states:
+    //
+    //  1. Signing in (in-flight):  spinner + "Waiting for browser…"
+    //
+    //  2. OAuth (Keychain token):  ● green  "Authenticated"
+    //                              caption: "via OAuth"
+    //                              [Sign out] bordered danger button
+    //
+    //  3. gh env token (CLI):      ● green  "Authenticated"
+    //                              caption: "via gh env token"
+    //                              [Sign in with GitHub] bordered button (optional upgrade)
+    //
+    //  4. No token at all:         [Sign in with GitHub] bordered button only
+    //
+    // Both state 2 and 3 are fully authenticated with equal API access.
+    // The caption communicates the method, not the capability.
+    //
+    // Button styling:
+    //   "Sign in with GitHub" — .buttonStyle(.bordered), .font(.caption2)
+    //   "Sign out"            — .buttonStyle(.bordered), .tint(.rbDanger), .font(.caption2)
+    //
+    // ❌ NEVER revert buttons to .buttonStyle(.plain) without a visual affordance.
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
                 .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
-            HStack {
-                Text("GitHub").font(.system(size: 12)); Spacer()
-                if isAuthenticated {
-                    HStack(spacing: 8) {
+            HStack(alignment: .center) {
+                Text("GitHub").font(.system(size: 12))
+                Spacer()
+                if isSigningIn {
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Waiting for browser…").font(.caption).foregroundColor(Color.rbTextSecondary)
+                    }
+                } else if isOAuthAuthenticated {
+                    // State 2: OAuth token in Keychain.
+                    HStack(spacing: 10) {
                         HStack(spacing: 4) {
-                            Circle().fill(Color.rbSuccess).frame(width: 8, height: 8)
-                            Text("Authenticated").font(.caption).foregroundColor(Color.rbTextSecondary)
+                            Circle().fill(Color.rbSuccess).frame(width: 7, height: 7)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Authenticated")
+                                    .font(.caption)
+                                    .foregroundColor(Color.rbTextSecondary)
+                                Text("via OAuth")
+                                    .font(.caption2)
+                                    .foregroundColor(Color.rbTextTertiary)
+                            }
                         }
                         Button(action: signOutOfGitHub) {
-                            Text("Sign out").font(.caption).foregroundColor(Color.rbDanger)
+                            Text("Sign out").font(.caption2)
                         }
-                        .buttonStyle(.plain).disabled(isSigningOut)
-                        .help("Run gh auth logout and disconnect RunnerBar from GitHub")
+                        .buttonStyle(.bordered)
+                        .tint(Color.rbDanger)
+                        .help("Remove OAuth token from Keychain. gh env token used as fallback if available.")
+                    }
+                } else if isCLIAuthenticated {
+                    // State 3: gh env token present, no Keychain OAuth token.
+                    HStack(spacing: 10) {
+                        HStack(spacing: 4) {
+                            Circle().fill(Color.rbSuccess).frame(width: 7, height: 7)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Authenticated")
+                                    .font(.caption)
+                                    .foregroundColor(Color.rbTextSecondary)
+                                Text("via gh env token")
+                                    .font(.caption2)
+                                    .foregroundColor(Color.rbTextTertiary)
+                            }
+                        }
+                        Button(action: signInWithGitHub) {
+                            Text("Sign in with GitHub").font(.caption2)
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Authorize RunnerBar via GitHub OAuth and store token in Keychain")
                     }
                 } else {
+                    // State 4: No token at all.
                     Button(action: signInWithGitHub) {
-                        Text("Sign in").font(.caption).foregroundColor(Color.rbWarning)
-                    }.buttonStyle(.plain)
+                        Text("Sign in with GitHub").font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Authorize RunnerBar via GitHub OAuth and store token in Keychain")
                 }
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 8)
-            Divider().padding(.leading, RBSpacing.md)
-            Text("Run `gh auth login` in Terminal to authenticate.")
-                .font(.caption).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
         }
     }
 
@@ -517,33 +565,19 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
-    private func linkRow(label: String, url: String) -> some View {
-        HStack {
-            Text(label).font(.system(size: 12)); Spacer()
-            Link(url, destination: URL(string: url)!)
-                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-        }
-        .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
-    }
-
     private func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
 
     private func signInWithGitHub() {
-        guard let url = URL(string: SettingsURIs.gitHubSignIn) else { return }
-        NSWorkspace.shared.open(url)
+        isSigningIn = true
+        // onCompletion is already registered in onAppearAction() — do not re-assign here.
+        OAuthService.shared.signIn()
     }
 
     private func signOutOfGitHub() {
-        guard let ghPath = ghBinaryPath() else {
-            log("SettingsView > signOutOfGitHub: gh not found, skipping logout")
-            isAuthenticated = false
-            return
-        }
-        isSigningOut = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = shell("\(ghPath) auth logout --hostname github.com")
-            DispatchQueue.main.async { isAuthenticated = false; isSigningOut = false }
-        }
+        // OAuthService.signOut() wipes Keychain token and calls onCompletion?(false).
+        // onCompletion re-evaluates both isOAuthAuthenticated and isCLIAuthenticated,
+        // so the UI will flip to CLI state automatically if gh CLI token is still present.
+        OAuthService.shared.signOut()
     }
 
     private func performRemoval() {
