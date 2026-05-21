@@ -191,7 +191,7 @@ func fetchRegistrationToken(scope: String) -> String? {
         log("fetchRegistrationToken › decode failed for \(endpoint) (\(outputData.count)b)")
         return nil
     }
-    log("fetchRegistrationToken › got token (first 4): \(resp.token.prefix(4))...")
+    log("fetchRegistrationToken › got registration token")
     return resp.token
 }
 
@@ -213,7 +213,7 @@ func fetchRemovalToken(scope: String) -> String? {
         log("fetchRemovalToken › decode failed for \(endpoint) (\(outputData.count)b)")
         return nil
     }
-    log("fetchRemovalToken › got removal token (first 4): \(resp.token.prefix(4))...")
+    log("fetchRemovalToken › got removal token")
     return resp.token
 }
 
