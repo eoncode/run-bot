@@ -113,44 +113,48 @@ private final class KeyablePanel: NSPanel {
 // UNDER ANY CIRCUMSTANCE.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem?
-    var panel: KeyablePanel?
-    var chrome: PanelChromeView?
-    var hostingController: NSHostingController<AnyView>?
-    let observable = RunnerStoreObservable()
-    var savedNavState: NavState?
-    var panelIsOpen = false
+    // NOTE: The properties and methods below are `internal` (not `private`) because
+    // Swift `private` does not cross file boundaries. AppDelegate+Navigation.swift
+    // requires read/write access to all of them. Do not widen beyond `internal`.
 
-    var eventMonitor: Any?
+    var statusItem: NSStatusItem?           // internal: required for AppDelegate+Navigation
+    var panel: KeyablePanel?               // internal: required for AppDelegate+Navigation
+    var chrome: PanelChromeView?           // internal: required for AppDelegate+Navigation
+    var hostingController: NSHostingController<AnyView>? // internal: required for AppDelegate+Navigation
+    let observable = RunnerStoreObservable() // internal: required for AppDelegate+Navigation
+    var savedNavState: NavState?           // internal: required for AppDelegate+Navigation
+    var panelIsOpen = false                // internal: required for AppDelegate+Navigation
+
+    var eventMonitor: Any?                 // internal: required for AppDelegate+Navigation
     var sizeObservation: NSKeyValueObservation?
     var workspaceObserver: Any?
     var cancellables = Set<AnyCancellable>()
 
     /// Top anchor (screen coords) captured once in openPanel().
     /// ❌ NEVER re-derive inside resizeAndRepositionPanel().
-    var panelTopY: CGFloat?
+    var panelTopY: CGFloat?                // internal: required for AppDelegate+Navigation
 
     // ⚠️ REGRESSION GUARD (ref #377):
     // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
     // ❌ NEVER pass as a plain Bool prop to PopoverMainView.
     // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
     // ALLOWED UNDER ANY CIRCUMSTANCE.
-    let popoverOpenState = PopoverOpenState()
+    let popoverOpenState = PopoverOpenState() // internal: required for AppDelegate+Navigation
 
     /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
     static let minWidth: CGFloat = 280
 
     /// The screen the status item lives on.
-    var statusItemScreen: NSScreen {
+    var statusItemScreen: NSScreen {       // internal: required for AppDelegate+Navigation
         statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
-    var maxWidth: CGFloat {
+    var maxWidth: CGFloat {                // internal: required for AppDelegate+Navigation
         let screenMax = statusItemScreen.visibleFrame.width * 0.9
         return min(900, screenMax)
     }
 
-    var maxHeight: CGFloat {
+    var maxHeight: CGFloat {               // internal: required for AppDelegate+Navigation
         statusItemScreen.visibleFrame.height * 0.85
     }
 
@@ -164,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER bypass. ❌ NEVER remove .environmentObject(popoverOpenState).
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT
     /// ALLOWED UNDER ANY CIRCUMSTANCE.
-    func wrapEnv<V: View>(_ view: V) -> AnyView {
+    func wrapEnv<V: View>(_ view: V) -> AnyView { // internal: required for AppDelegate+Navigation
         AnyView(view.environmentObject(popoverOpenState))
     }
 
@@ -274,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER call from a background thread.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE. The regression is major major major.
-    func resizeAndRepositionPanel() {
+    func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
         guard panelIsOpen,
               let panel,
               let chrome,
@@ -304,7 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER remove the resizeAndRepositionPanel() call from this method.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE.
-    func navigate(to view: AnyView) {
+    func navigate(to view: AnyView) { // internal: required for AppDelegate+Navigation
         hostingController?.rootView = view
         resizeAndRepositionPanel()
     }
@@ -313,7 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // See KeyablePanel comment block above for the full explanation.
     // ❌ NEVER call this for views that have no text input (main, step log).
-    func makeKeyForTextInput() {
+    func makeKeyForTextInput() { // internal: required for AppDelegate+Navigation
         panel?.wantsKey = true
         panel?.makeKeyAndOrderFront(nil)
     }

@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 // MARK: - Navigation & view factories
@@ -11,6 +10,10 @@ extension AppDelegate {
 
     // MARK: - Enrichment helper
 
+    // ⚠️ BLOCKING I/O — this function performs synchronous network I/O via ghAPI().
+    // ❌ NEVER call from the main thread.
+    // ❌ NEVER call directly — always dispatch via DispatchQueue.global().
+    // Marked nonisolated to opt out of @MainActor isolation.
     nonisolated func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
         guard job.steps.isEmpty || job.steps.contains(where: { $0.status == "in_progress" }),
               let scope = scopeFromHtmlUrl(job.htmlUrl),
