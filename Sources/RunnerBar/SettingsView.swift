@@ -26,10 +26,6 @@ import SwiftUI
 private enum SettingsURIs {
     static let privacyPolicy  = "https://dev.eon.st/runnerbar/privacy"
     static let termsOfService = "https://dev.eon.st/runnerbar/terms"
-    /// Opens github.com/login so the user can verify their browser session
-    /// before running `gh auth login` in Terminal. Full OAuth flow is not
-    /// supported here — RunnerBar relies on the gh CLI for authentication.
-    static let gitHubSignIn   = "https://github.com/login"
 }
 
 // swiftlint:disable:next type_body_length
@@ -47,12 +43,12 @@ struct SettingsView: View {
     @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var isAuthenticated = (githubToken() != nil)
+    @State private var isSigningIn = false
     @State private var hasLoadedOnce = false
     @State private var runnerPendingRemoval: RunnerModel?
     @State private var showAddRunnerSheet = false
     @State private var showAddScopeSheet = false
     @State private var removeErrorMessage: String?
-    @State private var isSigningOut = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -123,6 +119,10 @@ struct SettingsView: View {
 
     private func onAppearAction() {
         isAuthenticated = (githubToken() != nil)
+        OAuthService.shared.onCompletion = { success in
+            isAuthenticated = success
+            isSigningIn = false
+        }
         ScopeStore.shared.onMutate = { [weak store] in store?.reload() }
         localRunnerStore.refresh()
     }
@@ -471,6 +471,9 @@ struct SettingsView: View {
     }
 
     // MARK: - Account
+    //
+    // Uses OAuthService for native GitHub OAuth Authorization Code flow.
+    // No gh CLI dependency for authentication — token stored in Keychain.
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -486,20 +489,21 @@ struct SettingsView: View {
                         Button(action: signOutOfGitHub) {
                             Text("Sign out").font(.caption).foregroundColor(Color.rbDanger)
                         }
-                        .buttonStyle(.plain).disabled(isSigningOut)
-                        .help("Run gh auth logout and disconnect RunnerBar from GitHub")
+                        .buttonStyle(.plain)
+                        .help("Remove token from Keychain and disconnect RunnerBar from GitHub")
+                    }
+                } else if isSigningIn {
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Waiting for browser…").font(.caption).foregroundColor(Color.rbTextSecondary)
                     }
                 } else {
                     Button(action: signInWithGitHub) {
-                        Text("Sign in").font(.caption).foregroundColor(Color.rbWarning)
+                        Text("Sign in with GitHub").font(.caption).foregroundColor(Color.rbWarning)
                     }.buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 8)
-            Divider().padding(.leading, RBSpacing.md)
-            Text("Run `gh auth login` in Terminal to authenticate.")
-                .font(.caption).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
         }
     }
 
@@ -517,33 +521,20 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
-    private func linkRow(label: String, url: String) -> some View {
-        HStack {
-            Text(label).font(.system(size: 12)); Spacer()
-            Link(url, destination: URL(string: url)!)
-                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-        }
-        .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
-    }
-
     private func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
 
     private func signInWithGitHub() {
-        guard let url = URL(string: SettingsURIs.gitHubSignIn) else { return }
-        NSWorkspace.shared.open(url)
+        isSigningIn = true
+        OAuthService.shared.onCompletion = { success in
+            isAuthenticated = success
+            isSigningIn = false
+        }
+        OAuthService.shared.signIn()
     }
 
     private func signOutOfGitHub() {
-        guard let ghPath = ghBinaryPath() else {
-            log("SettingsView > signOutOfGitHub: gh not found, skipping logout")
-            isAuthenticated = false
-            return
-        }
-        isSigningOut = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = shell("\(ghPath) auth logout --hostname github.com")
-            DispatchQueue.main.async { isAuthenticated = false; isSigningOut = false }
-        }
+        OAuthService.shared.signOut()
+        isAuthenticated = false
     }
 
     private func performRemoval() {
