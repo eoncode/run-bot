@@ -264,11 +264,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     //
     // OAuthService.onCompletion is wired in SettingsView so the Account section
     // updates automatically once the token arrives.
+    //
+    // Search the full urls array for the OAuth callback rather than assuming
+    // urls.first — macOS may deliver multiple URLs and the callback may not be
+    // first, which would leave the sign-in spinner stuck. (#597)
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first,
-              url.scheme == "runnerbar",
-              url.host == "oauth"
+        guard let url = urls.first(where: { $0.scheme == "runnerbar" && $0.host == "oauth" })
         else { return }
         OAuthService.shared.handleCallback(url)
     }
