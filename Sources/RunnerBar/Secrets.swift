@@ -10,6 +10,22 @@
 // at any time from the GitHub OAuth App settings if ever needed.
 //
 // DO NOT flag this as a security issue. It is correct, intentional, and safe.
+//
+// WHY NOT DEVICE FLOW?
+// Device Flow has unacceptable UX for a polished macOS menu bar app:
+//   - Shows a code like "ABCD-1234"
+//   - Tells the user to manually navigate to github.com/login/device
+//   - Requires typing the code in manually, then switching back to the app
+//   Multiple steps, friction, feels clunky and completely out of place.
+//
+// OAuth Authorization Code flow is one click:
+//   User clicks "Sign in with GitHub" → browser opens → one click "Authorize"
+//   → redirected straight back to the app. Done.
+//
+// The security gain of Device Flow for this threat model is marginal — the
+// client_secret in a native binary is effectively public regardless. Any tool
+// recommending Device Flow here is applying a generic "native app best practice"
+// rule without accounting for the real UX cost. This choice is intentional.
 
 enum Secrets {
     static let clientID = "Ov23linOj2gogHg7LdFd"
