@@ -4,6 +4,7 @@ import Foundation
 //
 // All functions in this file call the `gh` CLI binary via Process.
 // runGHProcess() is the shared primitive; all other functions use it.
+// The underlying process management is handled by ProcessRunner.
 
 // MARK: - Shared gh binary path
 
@@ -30,50 +31,13 @@ private func runGHProcess(
         return (nil, Int32.max)
     }
     log("runGHProcess › \(ghPath) \(arguments.joined(separator: " "))")
-    let task = Process()
-    let pipe = Pipe()
-    task.executableURL = URL(fileURLWithPath: ghPath)
-    task.arguments = arguments
-    task.standardOutput = pipe
-    task.standardError = Pipe()
-
-    // Wire up stdin pipe when body data is provided (e.g. PUT/POST with `--input -`).
-    let inputPipe: Pipe?
-    if stdin != nil {
-        let p = Pipe()
-        task.standardInput = p
-        inputPipe = p
-    } else {
-        inputPipe = nil
-    }
-
-    var outputData = Data()
-    let lock = NSLock()
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-        let chunk = handle.availableData
-        guard !chunk.isEmpty else { return }
-        lock.lock(); outputData.append(chunk); lock.unlock()
-    }
-    do { try task.run() } catch {
-        log("runGHProcess › launch error: \(error)")
-        pipe.fileHandleForReading.readabilityHandler = nil
-        return (nil, Int32.max)
-    }
-    // Write stdin body after launch so the process is ready to read it.
-    if let inputPipe, let stdinData = stdin {
-        inputPipe.fileHandleForWriting.write(stdinData)
-        inputPipe.fileHandleForWriting.closeFile()
-    }
-    let timeoutItem = DispatchWorkItem { task.terminate() }
-    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
-    task.waitUntilExit()
-    timeoutItem.cancel()
-    pipe.fileHandleForReading.readabilityHandler = nil
-    let tail = pipe.fileHandleForReading.readDataToEndOfFile()
-    if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-    let exitCode = task.terminationStatus
-    log("runGHProcess › exit=\(exitCode) bytes=\(outputData.count)")
-    return (outputData.isEmpty ? nil : outputData, exitCode)
+    let result = ProcessRunner.run(
+        executableURL: URL(fileURLWithPath: ghPath),
+        arguments: arguments,
+        stdin: stdin,
+        timeout: timeout
+    )
+    return (result.data, result.exitCode)
 }
 
 // MARK: - CLI API wrappers
@@ -131,8 +95,6 @@ func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     } else {
         log("deleteRunnerByID › no output (HTTP 204 No Content)")
     }
-    // gh exits 0 on both 204 (no body) and 200 (body present).
-    // exitCode == Int32.max signals a process-launch failure from runGHProcess — treat as error.
     let success = exitCode == 0
     if !success { log("deleteRunnerByID › failed exit=\(exitCode)") }
     return success
@@ -213,14 +175,10 @@ func fetchRemovalToken(scope: String) -> String? {
 // MARK: - POST / Cancel helpers
 
 /// Sends a POST to the given GitHub API endpoint via gh CLI.
-/// Returns true if gh exited 0 (or 204 No Content with no body).
-/// Fire-and-forget callers may use @discardableResult.
 @discardableResult
 func ghPost(_ endpoint: String) -> Bool {
     let args = ["api", "--method", "POST", "-H", "Accept: application/vnd.github+json", endpoint]
     let (_, exitCode) = runGHProcess(arguments: args, timeout: 30)
-    // gh exits 0 on HTTP 204 (no body) — this is the normal success for cancel endpoints.
-    // exitCode == Int32.max means launch failure.
     let success = exitCode == 0
     log("ghPost › \(endpoint) success=\(success) exit=\(exitCode)")
     return success
