@@ -131,6 +131,12 @@ struct SettingsView: View {
             isCLIAuthenticated = !success && githubToken() != nil
             isSigningIn = false
         }
+        // Register onSignOut ONCE here — handles the dedicated sign-out lifecycle event.
+        // Do NOT reuse onCompletion for sign-out; they represent different operations.
+        OAuthService.shared.onSignOut = {
+            isOAuthAuthenticated = false
+            isCLIAuthenticated = githubToken() != nil
+        }
         ScopeStore.shared.onMutate = { [weak store] in store?.reload() }
         localRunnerStore.refresh()
     }
@@ -574,8 +580,8 @@ struct SettingsView: View {
     }
 
     private func signOutOfGitHub() {
-        // OAuthService.signOut() wipes Keychain token and calls onCompletion?(false).
-        // onCompletion re-evaluates both isOAuthAuthenticated and isCLIAuthenticated,
+        // OAuthService.signOut() wipes the Keychain token and calls onSignOut().
+        // onSignOut re-evaluates both isOAuthAuthenticated and isCLIAuthenticated,
         // so the UI will flip to CLI state automatically if gh CLI token is still present.
         OAuthService.shared.signOut()
     }
