@@ -23,8 +23,6 @@ final class RunnerStore {
     private var scopeCancellable: AnyCancellable?
 
     /// Emits whenever a fetch cycle completes and the store's state has been updated.
-    /// Callers subscribe with `.sink { ... }` and store the returned `AnyCancellable`
-    /// to control the subscription lifetime — no manual weak-capture required.
     let didUpdate = PassthroughSubject<Void, Never>()
 
     var aggregateStatus: AggregateStatus {
@@ -37,7 +35,6 @@ final class RunnerStore {
 
     private init() {
         log("RunnerStore › init")
-        // Restart polling when the global polling interval changes.
         intervalCancellable = SettingsStore.shared.$pollingInterval
             .dropFirst(1)
             .receive(on: DispatchQueue.main)
@@ -45,8 +42,6 @@ final class RunnerStore {
                 log("RunnerStore › pollingInterval changed to \(newInterval) — rescheduling timer")
                 self?.scheduleTimer()
             }
-        // Restart polling when any scope's isEnabled flag changes (Phase 4 — #503).
-        // dropFirst(1) skips the initial emission on subscription.
         scopeCancellable = ScopeStore.shared.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
@@ -66,14 +61,9 @@ final class RunnerStore {
         fetch()
     }
 
-    /// Schedule the next poll. Pass `liveActions` to evaluate hasActive against
-    /// only the freshly-fetched live groups — NOT the display cache which may
-    /// still contain frozen/completed groups and would keep hasActive=true forever.
     private func scheduleTimer(liveActions: [ActionGroup]? = nil) {
         timer?.invalidate()
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
-        // Use the caller-supplied live snapshot when available; fall back to self.actions
-        // only for manual reschedules (e.g. pollingInterval changes) where no fresh data exists.
         let actionsToCheck = liveActions ?? self.actions
         let hasActiveActions = actionsToCheck.contains {
             $0.groupStatus == .inProgress || $0.groupStatus == .queued
@@ -91,10 +81,13 @@ final class RunnerStore {
         }
     }
 
+    /// Always called on the main thread (timer callbacks, start(), Combine sinks all
+    /// deliver on DispatchQueue.main). Marked @MainActor so we can read
+    /// LocalRunnerStore.shared.runners without a hop.
+    @MainActor
     func fetch() {
-        // Phase 4 (#503): use activeScopes — disabled scopes are skipped.
         let scopesSnapshot = ScopeStore.shared.activeScopes
-        log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot) thread=\(Thread.isMainThread ? "main" : "bg")")
+        log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
         if scopesSnapshot.isEmpty {
             log("RunnerStore › ⚠️ fetch — activeScopes snapshot is EMPTY — buildGroupState will produce no actions")
         }
@@ -103,20 +96,13 @@ final class RunnerStore {
         let snapPrevGroups = prevLiveGroups
         let snapGroupCache = actionGroupCache
 
-        // #697: Snapshot LocalRunnerStore.runners on the calling thread (always main
-        // at runtime) before entering the background queue. Passed into
-        // buildInstallPathMap which is nonisolated and safe to call from any thread.
-        let localRunners: [RunnerModel]
-        if Thread.isMainThread {
-            localRunners = LocalRunnerStore.shared.runners
-        } else {
-            var tmp: [RunnerModel] = []
-            DispatchQueue.main.sync { tmp = LocalRunnerStore.shared.runners }
-            localRunners = tmp
-        }
-        let installPathByName = buildInstallPathMap(scopes: scopesSnapshot, localRunners: localRunners)
+        // Snapshot LocalRunnerStore.runners here on main before the background dispatch.
+        let installPathByName = buildInstallPathMap(
+            scopes: scopesSnapshot,
+            localRunners: LocalRunnerStore.shared.runners
+        )
 
-        DispatchQueue.global(qos: .background).async { [weak self] in
+        Task.detached(priority: .background) { [weak self] in
             guard let self else {
                 log("RunnerStore › fetch background — self is nil, aborting")
                 return
@@ -132,7 +118,7 @@ final class RunnerStore {
                 snapGroupCache: snapGroupCache,
                 jobCache: jobResult.newCache
             )
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.applyFetchResult(
                     enrichedRunners: enrichedRunners,
                     jobResult: jobResult,
@@ -142,13 +128,8 @@ final class RunnerStore {
         }
     }
 
-    /// Builds a scope-qualified name → installPath map from a pre-snapshotted runner list.
-    ///
-    /// Nonisolated — safe to call from any thread. The caller is responsible for
-    /// snapshotting `LocalRunnerStore.shared.runners` on the main thread before calling.
-    ///
-    /// Keys are `"scope/runnerName"` to handle same-named runners across
-    /// scopes. (#697, #702)
+    /// Nonisolated — safe to call from any thread. Caller must pass a pre-snapshotted
+    /// `localRunners` array captured on the main thread.
     private func buildInstallPathMap(scopes: [String], localRunners: [RunnerModel]) -> [String: String] {
         var map: [String: String] = [:]
         for localRunner in localRunners {
@@ -161,7 +142,6 @@ final class RunnerStore {
         return map
     }
 
-    /// Applies a completed fetch result on the main thread.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -177,28 +157,12 @@ final class RunnerStore {
         isRateLimited = ghIsRateLimited
         log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) isRateLimited=\(ghIsRateLimited)")
         didUpdate.send()
-        // Pass the freshly-fetched live groups so scheduleTimer evaluates
-        // hasActive against real GitHub state, not the display cache which
-        // may still contain frozen/completed groups.
         scheduleTimer(liveActions: groupResult.newPrevLiveGroups.map { $0.value })
     }
 
-    /// Fetches runners for every active scope and enriches each with local metrics.
-    ///
-    /// - Parameters:
-    ///   - scopes: Active scope list, already snapshotted on the main thread in `fetch()`.
-    ///   - installPathByName: Scope-qualified (`"scope/name"`) → installPath map,
-    ///     also snapshotted on the main thread. No main-thread hop needed here.
     func fetchAndEnrichRunners(scopes: [String], installPathByName: [String: String]) -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER")
         log("RunnerStore › fetchAndEnrichRunners — activeScopes=\(scopes)")
-
-        // Collect runners per scope so we can build scope-qualified lookup keys.
-        // Runner names are only unique within a scope — two scopes can both have
-        // a runner named e.g. "mac-mini". Keying by bare name would cause the
-        // second scope's entry to overwrite the first, giving wrong metrics.
-        // Mirrors the pattern in RunnerStatusEnricher.buildAPILookup which
-        // already uses "scope/name" keys for the same reason. (#702)
         var runnersWithScope: [(scope: String, runner: Runner)] = []
         for scope in scopes {
             let fetched = fetchRunners(for: scope)
@@ -207,11 +171,7 @@ final class RunnerStore {
                 runnersWithScope.append((scope: scope, runner: runner))
             }
         }
-
         log("RunnerStore › fetchAndEnrichRunners — installPathByName keys=\(installPathByName.keys.sorted())")
-
-        // Assign metrics per-runner using the scope-qualified key so same-named
-        // runners across different scopes resolve to their correct local install path.
         var result: [Runner] = []
         for (scope, var runner) in runnersWithScope {
             guard runner.busy else {
@@ -231,7 +191,6 @@ final class RunnerStore {
             log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) metrics=\(String(describing: runner.metrics))")
             result.append(runner)
         }
-
         log("RunnerStore › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)")
         return result
     }
