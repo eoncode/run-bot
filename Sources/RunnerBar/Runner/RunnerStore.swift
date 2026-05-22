@@ -149,47 +149,60 @@ final class RunnerStore {
 
     func fetchAndEnrichRunners() -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER")
-        var allRunners: [Runner] = []
         // Phase 4 (#503): activeScopes only.
         let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › fetchAndEnrichRunners — activeScopes=\(scopes)")
+
+        // Collect runners per scope so we can build scope-qualified lookup keys.
+        // Runner names are only unique within a scope — two scopes can both have
+        // a runner named e.g. "mac-mini". Keying by bare name would cause the
+        // second scope's entry to overwrite the first, giving wrong metrics.
+        // Mirrors the pattern in RunnerStatusEnricher.buildAPILookup which
+        // already uses "scope/name" keys for the same reason. (#702)
+        var runnersWithScope: [(scope: String, runner: Runner)] = []
         for scope in scopes {
             let fetched = fetchRunners(for: scope)
             log("RunnerStore › fetchAndEnrichRunners — scope=\(scope) returned \(fetched.count) runner(s)")
-            allRunners.append(contentsOf: fetched)
+            for runner in fetched {
+                runnersWithScope.append((scope: scope, runner: runner))
+            }
         }
 
-        // Build a name→installPath lookup from LocalRunnerStore so metrics are matched
-        // by installPath rather than slot index. The Runner API type has no installPath,
-        // but the runner name matches the directory name used by the local install.
-        // Accessing LocalRunnerStore.shared.runners must be done on the main thread;
-        // we snapshot it here while still on the background queue via a sync hop.
+        // Build a scope-qualified name → installPath lookup from LocalRunnerStore.
+        // Must be read on the main thread; snapshot via sync hop.
         var installPathByName: [String: String] = [:]
         DispatchQueue.main.sync {
             for localRunner in LocalRunnerStore.shared.runners {
-                if let path = localRunner.installPath {
-                    installPathByName[localRunner.runnerName] = path
+                guard let path = localRunner.installPath else { continue }
+                // Register the path under every active scope's qualified key.
+                // The correct scope's entry matches at read time; extras are harmless.
+                for scope in scopes {
+                    installPathByName["\(scope)/\(localRunner.runnerName)"] = path
                 }
             }
         }
         log("RunnerStore › fetchAndEnrichRunners — installPathByName keys=\(installPathByName.keys.sorted())")
 
-        // Assign metrics per-runner by installPath. Only busy runners have an active
-        // Worker/Listener process, so idle runners always receive nil.
-        var result = allRunners
-        for idx in result.indices {
-            guard result[idx].busy else {
-                result[idx].metrics = nil
-                log("RunnerStore › fetchAndEnrichRunners — \(result[idx].name) is idle, metrics=nil")
+        // Assign metrics per-runner using the scope-qualified key so same-named
+        // runners across different scopes resolve to their correct local install path.
+        var result: [Runner] = []
+        for (scope, var runner) in runnersWithScope {
+            guard runner.busy else {
+                runner.metrics = nil
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) is idle, metrics=nil")
+                result.append(runner)
                 continue
             }
-            guard let installPath = installPathByName[result[idx].name] else {
-                log("RunnerStore › fetchAndEnrichRunners — \(result[idx].name) is busy but no local installPath found, metrics=nil")
-                result[idx].metrics = nil
+            let key = "\(scope)/\(runner.name)"
+            guard let installPath = installPathByName[key] else {
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) busy but no local installPath for key=\(key), metrics=nil")
+                runner.metrics = nil
+                result.append(runner)
                 continue
             }
-            result[idx].metrics = metricsForRunner(installPath: installPath)
-            log("RunnerStore › fetchAndEnrichRunners — \(result[idx].name) metrics=\(String(describing: result[idx].metrics))")
+            runner.metrics = metricsForRunner(installPath: installPath)
+            log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) metrics=\(String(describing: runner.metrics))")
+            result.append(runner)
         }
 
         log("RunnerStore › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)")
