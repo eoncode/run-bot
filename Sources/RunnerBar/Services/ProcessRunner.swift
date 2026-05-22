@@ -77,6 +77,12 @@ enum ProcessRunner {
         }
 
         let timeoutItem = DispatchWorkItem {
+            // Guard against the race where the process exits just before the
+            // timeout fires — only terminate if the process is still running.
+            guard task.isRunning else {
+                log("ProcessRunner › timeout fired but process already exited — \(executableURL.lastPathComponent)")
+                return
+            }
             log("ProcessRunner › timeout (\(timeout)s) — terminating \(executableURL.lastPathComponent)")
             task.terminate()
         }
