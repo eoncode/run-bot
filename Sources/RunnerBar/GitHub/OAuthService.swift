@@ -28,7 +28,9 @@ import Foundation
 @MainActor
 final class OAuthService {
     static let shared = OAuthService()
-    private init() {}
+    private init() {
+        // Singleton — intentionally empty; default property values are sufficient.
+    }
 
     private let redirectURI = "runnerbar://oauth/callback"
     private let scopes = "repo read:org"
