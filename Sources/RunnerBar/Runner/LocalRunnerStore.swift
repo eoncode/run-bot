@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 final class LocalRunnerStore: ObservableObject {
     static let shared = LocalRunnerStore()
+    // Singleton — no custom initialisation needed; default property values are sufficient.
     private init() {}
 
     @Published var runners: [RunnerModel] = []
