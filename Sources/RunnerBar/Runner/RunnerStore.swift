@@ -77,7 +77,7 @@ final class RunnerStore {
             withTimeInterval: interval,
             repeats: false
         ) { [weak self] _ in
-            log("RunnerStore › timer fired — calling fetch()")
+            log("RunnerStore › timer fired")
             DispatchQueue.main.async {
                 self?.fetch()
             }
@@ -88,24 +88,19 @@ final class RunnerStore {
         let scopesSnapshot = ScopeStore.shared.activeScopes
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
         if scopesSnapshot.isEmpty {
-            log("RunnerStore › ⚠️ fetch — activeScopes snapshot is EMPTY — buildGroupState will produce no actions")
+            log("RunnerStore › ⚠️ fetch — activeScopes snapshot is EMPTY")
         }
         let snapPrev = prevLiveJobs
         let snapCache = completedCache
         let snapPrevGroups = prevLiveGroups
         let snapGroupCache = actionGroupCache
-
-        // Safe: RunnerStore is @MainActor, so this runs on main — same actor as LocalRunnerStore.
         let installPathByName = buildInstallPathMap(
             scopes: scopesSnapshot,
             localRunners: LocalRunnerStore.shared.runners
         )
 
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else {
-                log("RunnerStore › fetch background — self is nil, aborting")
-                return
-            }
+        Task(priority: .background) { [weak self] in
+            guard let self else { return }
             ghIsRateLimited = false
             let enrichedRunners = self.fetchAndEnrichRunners(
                 scopes: scopesSnapshot,
@@ -117,13 +112,11 @@ final class RunnerStore {
                 snapGroupCache: snapGroupCache,
                 jobCache: jobResult.newCache
             )
-            await MainActor.run {
-                self.applyFetchResult(
-                    enrichedRunners: enrichedRunners,
-                    jobResult: jobResult,
-                    groupResult: groupResult
-                )
-            }
+            self.applyFetchResult(
+                enrichedRunners: enrichedRunners,
+                jobResult: jobResult,
+                groupResult: groupResult
+            )
         }
     }
 
@@ -157,7 +150,7 @@ final class RunnerStore {
         scheduleTimer(liveActions: groupResult.newPrevLiveGroups.map { $0.value })
     }
 
-    func fetchAndEnrichRunners(scopes: [String], installPathByName: [String: String]) -> [Runner] {
+    nonisolated func fetchAndEnrichRunners(scopes: [String], installPathByName: [String: String]) -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER")
         log("RunnerStore › fetchAndEnrichRunners — activeScopes=\(scopes)")
         var runnersWithScope: [(scope: String, runner: Runner)] = []
@@ -179,7 +172,7 @@ final class RunnerStore {
             }
             let key = "\(scope)/\(runner.name)"
             guard let installPath = installPathByName[key] else {
-                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) busy but no local installPath for key=\(key), metrics=nil")
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) busy but no installPath for key=\(key), metrics=nil")
                 runner.metrics = nil
                 result.append(runner)
                 continue
