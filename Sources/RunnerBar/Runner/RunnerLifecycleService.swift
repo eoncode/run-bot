@@ -134,7 +134,7 @@ struct RunnerLifecycleService {
             return false
         }
         log("RunnerLifecycle > REMOVE step2: got token len=\(token.count)")
-        log("RunnerLifecycle > REMOVE step3: config.sh remove --token in \(path)")
+        log("RunnerLifecycle > REMOVE step3: config.sh remove --token <token> in \(path)")
         let (cfgOk, cfgOutput) = runScriptWithOutput(executableName: "config.sh", arguments: ["remove", "--token", token], workingDirectory: dir, timeout: 30, logTag: "config.sh remove")
         log("RunnerLifecycle > REMOVE step3 result=\(cfgOk) for \(runner.runnerName)")
         var removeOk = cfgOk
