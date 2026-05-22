@@ -117,6 +117,12 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Step log
 
+/// Compiled once at load time. The pattern is a string literal and never fails.
+// swiftlint:disable:next force_try
+private let _ansiRegex = try! NSRegularExpression(
+    pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
+)
+
 func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)")
@@ -173,10 +179,7 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> Str
 }
 
 private func stripAnsi(_ input: String) -> String {
-    guard let regex = try? NSRegularExpression(
-        pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
-    ) else { return input }
-    return regex.stringByReplacingMatches(
+    _ansiRegex.stringByReplacingMatches(
         in: input,
         range: NSRange(input.startIndex..., in: input),
         withTemplate: ""
