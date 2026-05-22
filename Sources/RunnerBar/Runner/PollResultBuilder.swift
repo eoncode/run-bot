@@ -87,6 +87,11 @@ struct PollResultBuilder {
         log("PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count)")
         let shaKeyedCache = makeShaKeyedCache(snapGroupCache)
         let allFetched = fetchGroups(shaKeyedCache)
+        // Early-exit diagnostic: if fetchGroups returned nothing, active scopes are
+        // likely empty or misconfigured. Log clearly so it’s easy to diagnose.
+        if allFetched.isEmpty {
+            log("PollResultBuilder › buildGroupState — ⚠️ fetchGroups returned 0 groups; activeScopes may be empty or all scopes are unreachable")
+        }
         log("PollResultBuilder › buildGroupState — allFetched=\(allFetched.count)")
         let liveGroups = allFetched.filter { $0.groupStatus != .completed }
         let doneGroups = allFetched.filter { $0.groupStatus == .completed }
