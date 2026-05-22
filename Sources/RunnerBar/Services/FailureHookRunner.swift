@@ -53,7 +53,7 @@ enum FailureHookRunner {
             log("FailureHookRunner › branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
         }
         let storedCommand = ScopeSettingsStore.failureHookCommand(for: scope)
-        log("FailureHookRunner › storedCommand for scope=\(scope) → \(storedCommand ?? "")")
+        log("FailureHookRunner › storedCommand for scope=\(scope) → \(storedCommand ?? "<nil — will use defaultCommand>")")
         let command = storedCommand ?? Self.defaultCommand
         log("FailureHookRunner › resolved command (first 200): \(command.prefix(200))")
         let failure = isFailure(group: group)
@@ -165,6 +165,7 @@ enum FailureHookRunner {
             if let tail = entry.logTail, !tail.isEmpty {
                 parts.append(tail)
             } else {
+                // No log available — fall back to step names so the agent has something
                 let failedSteps = (job.steps ?? []).filter { failureConclusions.contains(($0.conclusion ?? "").lowercased()) }
                 var lines: [String] = ["Job: \(job.name) [failed]"]
                 if failedSteps.isEmpty {
