@@ -11,8 +11,9 @@ let package = Package(
         ),
         .testTarget(
             name: "RunnerBarTests",
-            dependencies: [],
-            path: "Tests/RunnerBarTests"
+            dependencies: ["RunnerBar"],
+            path: "Tests/RunnerBarTests",
+            swiftSettings: [.unsafeFlags(["-enable-testing"])]
         )
     ]
 )
