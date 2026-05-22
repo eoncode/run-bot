@@ -50,9 +50,15 @@ enum Keychain {
         if updateStatus == errSecItemNotFound {
             var addQuery = baseQuery()
             addQuery[kSecValueData as String] = data
+            // kSecAttrAccessibleAfterFirstUnlock: token is readable after the first
+            // unlock post-reboot, which covers app launch in the background before
+            // the user has unlocked the screen. Without this, the default
+            // kSecAttrAccessibleWhenUnlocked would block token reads at launch.
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             if addStatus == errSecDuplicateItem {
+                // A concurrent writer inserted the item between our update and add.
+                // Retry the update now that the item exists.
                 let retryStatus = SecItemUpdate(
                     baseQuery() as CFDictionary,
                     [kSecValueData as String: data] as CFDictionary
@@ -71,7 +77,8 @@ enum Keychain {
     }
 
     /// Deletes the stored token.
-    /// Returns true on success.
+    /// Invalidates the in-memory token cache only when deletion actually succeeds
+    /// (or the item was already absent). Returns true on success.
     @discardableResult
     static func delete() -> Bool {
         let status = SecItemDelete(baseQuery() as CFDictionary)

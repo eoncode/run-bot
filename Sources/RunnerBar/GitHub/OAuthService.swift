@@ -63,6 +63,8 @@ final class OAuthService {
 
     func signOut() {
         pendingState = nil
+        // Keychain.delete() returns false if SecItemDelete failed (token may still exist).
+        // Only report sign-out success when the token was actually removed.
         let deleted = Keychain.delete()
         if !deleted { log("OAuthService › signOut: Keychain.delete failed") }
         onCompletion?(false)
@@ -74,6 +76,7 @@ final class OAuthService {
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
         else { onCompletion?(false); return }
+        // CSRF guard: verify the state param matches what we sent in signIn().
         let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value
         guard let returnedState, returnedState == pendingState else {
             log("OAuthService › handleCallback: state mismatch — possible CSRF attempt, rejecting")
@@ -103,6 +106,9 @@ final class OAuthService {
               let token = json["access_token"] as? String,
               !token.isEmpty
         else { onCompletion?(false); return }
+        // Gate success on whether the token was actually persisted to Keychain.
+        // If Keychain.save fails, report failure so the UI does not show signed-in
+        // while Keychain.token remains nil and subsequent API calls lack auth.
         let saved = Keychain.save(token)
         if !saved { log("OAuthService › exchangeCode: Keychain.save failed") }
         onCompletion?(saved)

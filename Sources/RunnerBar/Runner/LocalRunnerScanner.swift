@@ -8,7 +8,7 @@ import Foundation
 /// 1. **LaunchAgents** — `~/Library/LaunchAgents/actions.runner.*.plist`
 ///    Reads the `WorkingDirectory` key from each plist so the runner's exact
 ///    install path is known for any custom location. The plist label is also
-///    used to derive a `gitHubUrl` fallback (`https://github.com//`)
+///    used to derive a `gitHubUrl` fallback (`https://github.com/<owner>/<repo>`)
 ///    for runners whose `.runner` JSON omits the field (e.g. installed via
 ///    `svc.sh install`). The JSON is still authoritative when present.
 ///
@@ -31,6 +31,7 @@ struct LocalRunnerScanner {
         let runnerName: String?
         let agentId: Int?
         let workFolder: String?
+        // #491 — additional fields present in the GitHub runner .runner JSON
         let platform: String?
         let platformArchitecture: String?
         let agentVersion: String?
@@ -81,9 +82,13 @@ struct LocalRunnerScanner {
         for url in entries {
             let filename = url.deletingPathExtension().lastPathComponent
             guard filename.hasPrefix(prefix) else { continue }
+            // Label format: actions.runner.<owner>.<repo>.<runnerName>
+            // parts[0] = owner, parts[1] = repo, parts[2...] = runner name components
             let remainder = String(filename.dropFirst(prefix.count))
             let parts = remainder.components(separatedBy: ".")
             let runnerName = parts.last ?? "runner"
+            // Derive a GitHub URL fallback from the label when possible.
+            // Requires at least owner + repo (i.e. ≥2 dot-separated parts before the name).
             var plistGitHubUrl: String?
             if parts.count >= 3 {
                 let owner = parts[0]
@@ -92,6 +97,7 @@ struct LocalRunnerScanner {
                     plistGitHubUrl = "https://github.com/\(owner)/\(repo)"
                 }
             } else if parts.count == 2 {
+                // Org-scoped runner: actions.runner.<org>.<runnerName>
                 let org = parts[0]
                 if !org.isEmpty { plistGitHubUrl = "https://github.com/\(org)" }
             }
@@ -126,6 +132,8 @@ struct LocalRunnerScanner {
             "/usr/local/runner"
         ]
         for extra in extraRoots where !rawPaths.contains(extra) { rawPaths.append(extra) }
+        // Use Process argv directly — no shell, no quoting, no injection surface.
+        // Paths are passed as separate elements so special characters are handled safely.
         let task = Process()
         let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/find")

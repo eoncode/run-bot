@@ -110,6 +110,8 @@ func deleteRunnerByID(scope: String, runnerID: Int) -> Bool {
     } else {
         log("deleteRunnerByID › no output (HTTP 204 No Content)")
     }
+    // gh exits 0 on both 204 (no body) and 200 (body present).
+    // exitCode == Int32.max signals a process-launch failure from runGHProcess — treat as error.
     let success = exitCode == 0
     if !success { log("deleteRunnerByID › failed exit=\(exitCode)") }
     return success
@@ -209,10 +211,13 @@ func fetchRemovalToken(scope: String) -> String? {
 
 /// Sends a POST to the given GitHub API endpoint via gh CLI.
 /// Returns true if gh exited 0 (or 204 No Content with no body).
+/// Fire-and-forget callers may use @discardableResult.
 @discardableResult
 func ghPost(_ endpoint: String) -> Bool {
     let args = ["api", "--method", "POST", "-H", "Accept: application/vnd.github+json", endpoint]
     let (_, exitCode) = runGHProcess(arguments: args, timeout: 30)
+    // gh exits 0 on HTTP 204 (no body) — this is the normal success for cancel endpoints.
+    // exitCode == Int32.max means launch failure.
     let success = exitCode == 0
     log("ghPost › \(endpoint) success=\(success) exit=\(exitCode)")
     return success
