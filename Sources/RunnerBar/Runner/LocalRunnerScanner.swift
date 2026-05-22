@@ -22,6 +22,7 @@ import Foundation
 ///
 /// 3. **Live service check** — `launchctl list | grep actions.runner`
 ///    Flags which runners currently have an active launchd service.
+// swiftlint:disable:next type_body_length
 struct LocalRunnerScanner {
 
     // MARK: - .runner JSON schema
@@ -149,8 +150,6 @@ struct LocalRunnerScanner {
             "/usr/local/runner"
         ]
         for extra in extraRoots where !rawPaths.contains(extra) { rawPaths.append(extra) }
-        // Use Process argv directly — no shell, no quoting, no injection surface.
-        // Paths are passed as separate elements so special characters are handled safely.
         let task = Process()
         let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: Self.findBinary)

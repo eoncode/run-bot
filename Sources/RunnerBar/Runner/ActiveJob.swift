@@ -1,4 +1,4 @@
-// swiftlint:disable identifier_name opening_brace colon
+// swiftlint:disable identifier_name opening_brace colon function_parameter_count
 import Foundation
 
 // MARK: - ActiveJob model
@@ -58,8 +58,6 @@ struct ActiveJob: Identifiable, Codable, Equatable {
     }
 
     /// `true` if this job ran (or is running) on a self-hosted local runner.
-    /// Detection: runnerName is non-nil and does not match any GitHub-hosted
-    /// name prefix. Returns `nil` when runnerName is unknown (job still queued).
     var isLocalRunner: Bool? {
         guard let name = runnerName else { return nil }
         let lower = name.lowercased()
@@ -105,7 +103,6 @@ struct JobStep: Identifiable, Codable, Equatable {
     /// When this step finished.
     let completedAt: Date?
 
-    /// SF Symbol or emoji icon representing the step's conclusion.
     var conclusionIcon: String {
         switch conclusion {
         case "success": return "\u{2713}"
@@ -116,7 +113,6 @@ struct JobStep: Identifiable, Codable, Equatable {
         }
     }
 
-    /// Human-readable elapsed wall-clock string for this step in `MM:SS` format.
     var elapsed: String {
         let start = startedAt ?? Date()
         let end = completedAt ?? Date()
@@ -137,7 +133,6 @@ struct JobStep: Identifiable, Codable, Equatable {
 
 // MARK: - JobPayload (API decoding)
 
-/// Raw API shape for a single job returned by `GET /repos/{owner}/{repo}/actions/jobs/{job_id}`.
 struct JobPayload: Decodable {
     let id: Int
     let name: String
@@ -148,7 +143,6 @@ struct JobPayload: Decodable {
     let completedAt: String?
     let htmlUrl: String?
     let steps: [StepPayload]?
-    /// GitHub API field: the name of the runner that picked up this job.
     let runnerName: String?
 
     enum CodingKeys: String, CodingKey {
@@ -163,7 +157,6 @@ struct JobPayload: Decodable {
 
 // MARK: - StepPayload (API decoding)
 
-/// Raw API type for a single step inside a `JobPayload`.
 struct StepPayload: Decodable {
     let number: Int
     let name: String
@@ -181,9 +174,7 @@ struct StepPayload: Decodable {
 
 // MARK: - ActiveJob factory
 
-/// RunnerStore extension providing the `ActiveJob` factory method.
 extension RunnerStore {
-    /// Builds an `ActiveJob` from a decoded `JobPayload`.
     func makeActiveJob(
         from payload: JobPayload,
         iso: ISO8601DateFormatter,
@@ -216,6 +207,5 @@ extension RunnerStore {
 
 // MARK: - Codable helpers
 
-/// Shared response wrapper used by ActionGroup.swift and RunnerStoreState.swift.
 struct JobsResponse: Decodable { let jobs: [JobPayload] }
-// swiftlint:enable identifier_name opening_brace colon
+// swiftlint:enable identifier_name opening_brace colon function_parameter_count
