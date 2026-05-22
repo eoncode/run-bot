@@ -56,4 +56,41 @@ final class LocalRunnerStore: ObservableObject {
             }
         }
     }
+
+    // MARK: - Optimistic mutations
+
+    func optimisticallyRemove(_ runnerName: String) {
+        log("LocalRunnerStore > optimisticallyRemove — runnerName=\(runnerName) runners.count was \(runners.count)")
+        runners.removeAll { $0.runnerName == runnerName }
+        log("LocalRunnerStore > optimisticallyRemove — done, runners.count=\(runners.count)")
+    }
+
+    func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
+        let names = runners.map { $0.runnerName }.joined(separator: ", ")
+        log("LocalRunnerStore > optimisticallySetRunning runnerName=\(runnerName) isRunning=\(isRunning) — current runners=[\(names)]")
+        guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else {
+            log("LocalRunnerStore > optimisticallySetRunning — NOT FOUND for \(runnerName)")
+            return
+        }
+        log("LocalRunnerStore > optimisticallySetRunning — FOUND at index \(idx), old isRunning=\(runners[idx].isRunning), setting to \(isRunning)")
+        runners[idx].isRunning = isRunning
+        runners[idx].lifecycleWarning = nil
+        log("LocalRunnerStore > optimisticallySetRunning — cleared lifecycleWarning for \(runnerName)")
+        objectWillChange.send()
+        log("LocalRunnerStore > optimisticallySetRunning — done, runners.count=\(runners.count)")
+    }
+
+    func setLifecycleWarning(_ runnerName: String, warning: String?) {
+        let w = warning ?? "nil"
+        log("LocalRunnerStore > setLifecycleWarning called: runnerName=\(runnerName) warning=\(w)")
+        guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else {
+            log("LocalRunnerStore > setLifecycleWarning — NOT FOUND for \(runnerName)")
+            return
+        }
+        log("LocalRunnerStore > setLifecycleWarning — FOUND at index \(idx), setting warning=\(w) on runner \(runnerName)")
+        runners[idx].lifecycleWarning = warning
+        objectWillChange.send()
+        let displayStatus = runners[idx].displayStatus
+        log("LocalRunnerStore > setLifecycleWarning — done for \(runnerName), displayStatus is now: \(displayStatus)")
+    }
 }
