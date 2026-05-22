@@ -1,4 +1,7 @@
+import Combine
 import Foundation
+
+// MARK: - LocalRunnerStore
 
 @MainActor
 final class LocalRunnerStore: ObservableObject {
@@ -14,32 +17,36 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Refresh
 
-    /// Triggers a background scan + enrichment pass.
-    /// Safe to call from the main thread — all heavy work runs on a global queue.
     func refresh() {
+        log("LocalRunnerStore > refresh() called — isScanning=\(isScanning) runners.count=\(runners.count)")
         guard !isScanning else {
-            log("LocalRunnerStore > refresh() — already scanning, skipping")
+            log("LocalRunnerStore > refresh() SKIPPED — already scanning")
             return
         }
         isScanning = true
-        log("LocalRunnerStore > refresh() — starting background scan")
+        log("LocalRunnerStore > refresh() — isScanning set to true, dispatching background scan")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
+            log("LocalRunnerStore > refresh() background — starting scanner.scan()")
             let scanned = self.scanner.scan()
             let summary = scanned.map { "\($0.runnerName)(isRunning=\($0.isRunning))" }.joined(separator: ", ")
             log("LocalRunnerStore > refresh() background — scanner.scan() returned \(scanned.count) runner(s): [\(summary)]")
+
             let token = githubToken()
             var enriched = scanned
             if token != nil {
-                log("LocalRunnerStore > refresh() background — token present, running enricher")
+                log("LocalRunnerStore > refresh() background — token present, calling enricher")
                 enriched = self.enricher.enrich(runners: scanned)
-                let enrichedSummary = enriched.map {
-                    "\($0.runnerName)(status=\(String(describing: $0.status)) isBusy=\($0.isBusy))"
+                let enrichedSummary = enriched.map { r -> String in
+                    let st = r.githubStatus ?? "nil"
+                    let w = r.lifecycleWarning ?? "none"
+                    return "\(r.runnerName)(isRunning=\(r.isRunning),status=\(st),warning=\(w))"
                 }.joined(separator: ", ")
-                log("LocalRunnerStore > refresh() background — enricher returned: [\(enrichedSummary)]")
+                log("LocalRunnerStore > refresh() background — enricher returned \(enriched.count) runner(s): [\(enrichedSummary)]")
             } else {
                 log("LocalRunnerStore > refresh() background — no token, skipping enricher")
             }
+
             // Phase 3 (#591): enrich each busy runner with per-runner CPU/MEM metrics.
             // Matched by installPath so each runner gets its own process metrics, not slot-index.
             for idx in enriched.indices {
@@ -47,12 +54,13 @@ final class LocalRunnerStore: ObservableObject {
                 enriched[idx].metrics = metricsForRunner(installPath: installPath)
                 log("LocalRunnerStore > refresh() background — metrics for \(enriched[idx].runnerName): \(String(describing: enriched[idx].metrics))")
             }
+
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 log("LocalRunnerStore > refresh() main — assigning \(enriched.count) runner(s) to self.runners (was \(self.runners.count))")
                 self.runners = enriched
                 self.isScanning = false
-                log("LocalRunnerStore > refresh() main — done")
+                log("LocalRunnerStore > refresh() main — done. runners.count=\(self.runners.count) isScanning=\(self.isScanning)")
             }
         }
     }
