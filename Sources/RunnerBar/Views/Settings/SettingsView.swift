@@ -82,7 +82,6 @@ struct SettingsView: View {
         .frame(idealWidth: 480, maxWidth: .infinity)
         .onAppear(perform: onAppearAction)
         .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
-        .onDisappear { ScopeStore.shared.onMutate = nil }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
         .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .modifier(removalAlertModifier)
@@ -137,7 +136,6 @@ struct SettingsView: View {
             isOAuthAuthenticated = false
             isCLIAuthenticated = githubToken() != nil
         }
-        ScopeStore.shared.onMutate = { [weak store] in store?.reload() }
         localRunnerStore.refresh()
     }
 
