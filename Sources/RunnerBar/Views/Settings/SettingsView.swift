@@ -54,6 +54,8 @@ struct SettingsView: View {
     @State private var removeErrorMessage: String?
     /// Retains the Combine subscription for ScopeStore.didMutate.
     @State private var scopeMutateCancellable: AnyCancellable?
+    /// Retains the Combine subscription for OAuthService.didSignOut.
+    @State private var signOutCancellable: AnyCancellable?
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -129,10 +131,13 @@ struct SettingsView: View {
             isCLIAuthenticated = !success && githubToken() != nil
             isSigningIn = false
         }
-        OAuthService.shared.onSignOut = {
-            isOAuthAuthenticated = false
-            isCLIAuthenticated = githubToken() != nil
-        }
+        // #723: subscribe to didSignOut via Combine — consistent with didUpdate/didMutate pattern.
+        signOutCancellable = OAuthService.shared.didSignOut
+            .receive(on: DispatchQueue.main)
+            .sink {
+                isOAuthAuthenticated = false
+                isCLIAuthenticated = githubToken() != nil
+            }
         // #695: Subscribe to ScopeStore.didMutate via Combine instead of the old
         // onMutate closure (which no longer exists after the Combine migration).
         scopeMutateCancellable = ScopeStore.shared.didMutate
