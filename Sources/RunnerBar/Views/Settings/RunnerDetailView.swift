@@ -104,8 +104,8 @@ struct RunnerDetailView: View {
         }
         .frame(idealWidth: 480, maxWidth: .infinity)
         .onAppear(perform: loadEditableFields)
-        .onChange(of: localRunnerStore.runners) { updated in
-            if let fresh = updated.first(where: { $0.id == runner.id }) {
+        .onChange(of: localRunnerStore.runners) { _ in
+            if let fresh = localRunnerStore.runners.first(where: { $0.id == runner.id }) {
                 isRunning = fresh.isRunning
                 displayStatus = fresh.displayStatus
             }

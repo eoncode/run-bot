@@ -185,7 +185,7 @@ extension FailureHookCommandSheet {
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
         let width = proposal.width ?? 400
         var x: CGFloat = 0
         var y: CGFloat = 0
@@ -199,7 +199,7 @@ struct FlowLayout: Layout {
         return CGSize(width: width, height: y + rowH)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
         var x: CGFloat = bounds.minX
         var y: CGFloat = bounds.minY
         var rowH: CGFloat = 0
