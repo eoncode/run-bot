@@ -103,12 +103,18 @@ final class RunnerStore {
         let snapPrevGroups = prevLiveGroups
         let snapGroupCache = actionGroupCache
 
-        // #697: Snapshot LocalRunnerStore on the calling thread (always main at
-        // runtime) before entering the background queue. This eliminates the
-        // DispatchQueue.main.sync hop that was inside fetchAndEnrichRunners() and
-        // removes the latent deadlock if any future caller invokes fetch() from
-        // the main thread (e.g. in a unit test).
-        let installPathByName: [String: String] = buildInstallPathMap(scopes: scopesSnapshot)
+        // #697: Snapshot LocalRunnerStore.runners on the calling thread (always main
+        // at runtime) before entering the background queue. Passed into
+        // buildInstallPathMap which is nonisolated and safe to call from any thread.
+        let localRunners: [RunnerModel]
+        if Thread.isMainThread {
+            localRunners = LocalRunnerStore.shared.runners
+        } else {
+            var tmp: [RunnerModel] = []
+            DispatchQueue.main.sync { tmp = LocalRunnerStore.shared.runners }
+            localRunners = tmp
+        }
+        let installPathByName = buildInstallPathMap(scopes: scopesSnapshot, localRunners: localRunners)
 
         DispatchQueue.global(qos: .background).async { [weak self] in
             guard let self else {
@@ -136,18 +142,16 @@ final class RunnerStore {
         }
     }
 
-    /// Builds a scope-qualified name → installPath map from LocalRunnerStore.
+    /// Builds a scope-qualified name → installPath map from a pre-snapshotted runner list.
     ///
-    /// Must run on the main thread — `LocalRunnerStore.shared.runners` is
-    /// `@MainActor`-isolated. Called from `fetch()` before the background
-    /// dispatch so no sync hop is needed inside the background closure.
+    /// Nonisolated — safe to call from any thread. The caller is responsible for
+    /// snapshotting `LocalRunnerStore.shared.runners` on the main thread before calling.
     ///
     /// Keys are `"scope/runnerName"` to handle same-named runners across
     /// scopes. (#697, #702)
-    @MainActor
-    private func buildInstallPathMap(scopes: [String]) -> [String: String] {
+    private func buildInstallPathMap(scopes: [String], localRunners: [RunnerModel]) -> [String: String] {
         var map: [String: String] = [:]
-        for localRunner in LocalRunnerStore.shared.runners {
+        for localRunner in localRunners {
             guard let path = localRunner.installPath else { continue }
             for scope in scopes {
                 map["\(scope)/\(localRunner.runnerName)"] = path

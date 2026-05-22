@@ -14,7 +14,7 @@ import Foundation
 // This preserves the original 1–2 API-calls-per-poll-cycle behaviour and routes
 // through ghAPI so ghIsRateLimited is honoured and the gh-CLI fallback is available.
 
-final class RunnerStatusEnricher {
+final class RunnerStatusEnricher: @unchecked Sendable {
     static let shared = RunnerStatusEnricher()
     private init() {}
 
