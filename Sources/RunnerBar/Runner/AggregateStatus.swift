@@ -1,4 +1,3 @@
-// swiftlint:disable type_body_length
 // MARK: - AggregateStatus
 
 enum AggregateStatus {
@@ -22,4 +21,3 @@ enum AggregateStatus {
         }
     }
 }
-// swiftlint:enable type_body_length
