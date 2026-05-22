@@ -6,7 +6,35 @@ import os
 private let rateLimitLock = OSAllocatedUnfairLock(initialState: false)
 var ghIsRateLimited: Bool {
     get { rateLimitLock.withLock { $0 } }
-    set { rateLimitLock.withLock { $0 = newValue } }
+    set {
+        rateLimitLock.withLock { $0 = newValue }
+        if newValue {
+            // Auto-reset is scheduled by scheduleRateLimitReset(resetAt:).
+            // If called without a header value (e.g. from a CLI code path),
+            // fall back to a 60-minute window.
+            scheduleRateLimitReset(resetAt: nil)
+        }
+    }
+}
+
+/// Schedules an automatic reset of `ghIsRateLimited` to `false`.
+/// - Parameter resetAt: Unix timestamp from the `X-RateLimit-Reset` response
+///   header. When non-nil the reset fires precisely at that time; otherwise
+///   falls back to 60 minutes from now.
+private func scheduleRateLimitReset(resetAt: TimeInterval?) {
+    let delay: TimeInterval
+    if let ts = resetAt {
+        let secondsUntilReset = ts - Date().timeIntervalSince1970
+        // Clamp: never fire in less than 5 s or more than 2 h.
+        delay = min(max(secondsUntilReset, 5), 7200)
+    } else {
+        delay = 3600 // GitHub default: 60 min
+    }
+    log("ghIsRateLimited › auto-reset scheduled in \(Int(delay))s")
+    DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+        rateLimitLock.withLock { $0 = false }
+        log("ghIsRateLimited › auto-reset after \(Int(delay))s")
+    }
 }
 
 // MARK: - URLSession transport
@@ -52,7 +80,13 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
         if let error { log("urlSessionAPI › network error: \(error.localizedDescription)") ; return }
         if let http = response as? HTTPURLResponse {
             log("urlSessionAPI › \(urlString) status=\(http.statusCode)")
-            if http.statusCode == 403 || http.statusCode == 429 { ghIsRateLimited = true; return }
+            if http.statusCode == 403 || http.statusCode == 429 {
+                let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                    .flatMap { TimeInterval($0) }
+                rateLimitLock.withLock { $0 = true }
+                scheduleRateLimitReset(resetAt: resetTS)
+                return
+            }
             guard (200..<300).contains(http.statusCode) else { return }
         }
         result = data
@@ -84,7 +118,13 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
             defer { sem.signal() }
             if let error { log("urlSessionAPIPaginated › network error: \(error.localizedDescription)") ; return }
             if let http = response as? HTTPURLResponse {
-                if http.statusCode == 403 || http.statusCode == 429 { ghIsRateLimited = true; return }
+                if http.statusCode == 403 || http.statusCode == 429 {
+                    let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                        .flatMap { TimeInterval($0) }
+                    rateLimitLock.withLock { $0 = true }
+                    scheduleRateLimitReset(resetAt: resetTS)
+                    return
+                }
                 guard (200..<300).contains(http.statusCode) else { return }
                 linkHeader = http.value(forHTTPHeaderField: "Link")
             }
