@@ -99,7 +99,10 @@ final class RunnerStore {
             localRunners: LocalRunnerStore.shared.runners
         )
 
-        Task(priority: .background) { [weak self] in
+        // Task.detached ensures the body runs off the main actor so that
+        // urlSessionAPI's dispatchPrecondition(.notOnQueue(.main)) does not trap.
+        // (A plain Task on a @MainActor type inherits the actor and stays on the main thread.)
+        Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
             ghIsRateLimited = false
             let enrichedRunners = self.fetchAndEnrichRunners(
@@ -112,11 +115,13 @@ final class RunnerStore {
                 snapGroupCache: snapGroupCache,
                 jobCache: jobResult.newCache
             )
-            self.applyFetchResult(
-                enrichedRunners: enrichedRunners,
-                jobResult: jobResult,
-                groupResult: groupResult
-            )
+            await MainActor.run {
+                self.applyFetchResult(
+                    enrichedRunners: enrichedRunners,
+                    jobResult: jobResult,
+                    groupResult: groupResult
+                )
+            }
         }
     }
 
