@@ -19,7 +19,12 @@ func ghBinaryPath() -> String? {
 /// Runs `gh` with the given arguments. Returns (output, exitCode).
 /// output is nil when the process produces no stdout (e.g. HTTP 204 No Content).
 /// exitCode is Int32.max on launch failure.
-private func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> (data: Data?, exitCode: Int32) {
+/// Pass `stdin` to write data to the process's standard input (e.g. for `--input -`).
+private func runGHProcess(
+    arguments: [String],
+    stdin: Data? = nil,
+    timeout: TimeInterval = 20
+) -> (data: Data?, exitCode: Int32) {
     guard let ghPath = ghBinaryPath() else {
         log("runGHProcess › gh not found in known paths")
         return (nil, Int32.max)
@@ -31,6 +36,17 @@ private func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> (d
     task.arguments = arguments
     task.standardOutput = pipe
     task.standardError = Pipe()
+
+    // Wire up stdin pipe when body data is provided (e.g. PUT/POST with `--input -`).
+    let inputPipe: Pipe?
+    if stdin != nil {
+        let p = Pipe()
+        task.standardInput = p
+        inputPipe = p
+    } else {
+        inputPipe = nil
+    }
+
     var outputData = Data()
     let lock = NSLock()
     pipe.fileHandleForReading.readabilityHandler = { handle in
@@ -42,6 +58,11 @@ private func runGHProcess(arguments: [String], timeout: TimeInterval = 20) -> (d
         log("runGHProcess › launch error: \(error)")
         pipe.fileHandleForReading.readabilityHandler = nil
         return (nil, Int32.max)
+    }
+    // Write stdin body after launch so the process is ready to read it.
+    if let inputPipe, let stdinData = stdin {
+        inputPipe.fileHandleForWriting.write(stdinData)
+        inputPipe.fileHandleForWriting.closeFile()
     }
     let timeoutItem = DispatchWorkItem { task.terminate() }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
@@ -125,35 +146,17 @@ func patchRunnerLabels(scope: String, runnerID: Int, labels: [String]) -> [Strin
         ? "repos/\(scope)/actions/runners/\(runnerID)/labels"
         : "orgs/\(scope)/actions/runners/\(runnerID)/labels"
     log("patchRunnerLabels › PUT \(endpoint) labels=\(labels)")
-    guard let bodyData = try? JSONSerialization.data(withJSONObject: ["labels": labels]),
-          let ghPath = ghBinaryPath()
-    else { log("patchRunnerLabels › failed to build request"); return nil }
-    let task = Process()
-    let outPipe = Pipe()
-    task.executableURL = URL(fileURLWithPath: ghPath)
-    task.arguments = ["api", "--method", "PUT",
-                      "-H", "Accept: application/vnd.github+json",
-                      "-H", "Content-Type: application/json",
-                      "--input", "-", endpoint]
-    task.standardOutput = outPipe
-    task.standardError = Pipe()
-    let inputPipe = Pipe()
-    task.standardInput = inputPipe
-    do { try task.run() } catch {
-        log("patchRunnerLabels › launch error: \(error)")
-        return nil
-    }
-    inputPipe.fileHandleForWriting.write(bodyData)
-    inputPipe.fileHandleForWriting.closeFile()
-    let timeoutItem = DispatchWorkItem { task.terminate() }
-    DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutItem)
-    task.waitUntilExit()
-    timeoutItem.cancel()
-    let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-    let raw = String(data: outData, encoding: .utf8) ?? ""
-    log("patchRunnerLabels › exit=\(task.terminationStatus) response=\(raw.prefix(300))")
-    guard task.terminationStatus == 0 else {
-        log("patchRunnerLabels › non-zero exit for endpoint=\(endpoint)")
+    guard let bodyData = try? JSONSerialization.data(withJSONObject: ["labels": labels])
+    else { log("patchRunnerLabels › failed to serialise request body"); return nil }
+    let args: [String] = ["api", "--method", "PUT",
+                          "-H", "Accept: application/vnd.github+json",
+                          "-H", "Content-Type: application/json",
+                          "--input", "-", endpoint]
+    let (outData, exitCode) = runGHProcess(arguments: args, stdin: bodyData, timeout: 30)
+    let raw = outData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    log("patchRunnerLabels › exit=\(exitCode) response=\(raw.prefix(300))")
+    guard exitCode == 0, let outData else {
+        log("patchRunnerLabels › non-zero exit or no data for endpoint=\(endpoint)")
         return nil
     }
     struct LabelsResponse: Decodable {
