@@ -28,7 +28,7 @@ struct GroupPollResult {
 // sites are unchanged while the logic lives in the independently testable builder.
 extension RunnerStore {
 
-    func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
+    nonisolated func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
         PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
             snapCache: snapCache,
@@ -40,12 +40,12 @@ extension RunnerStore {
                 return jobs
             },
             backfill: { cache in
-                backfillSteps(into: &cache)
+                self.backfillSteps(into: &cache)
             }
         )
     }
 
-    func buildGroupState(
+    nonisolated func buildGroupState(
         snapPrevGroups: [String: ActionGroup],
         snapGroupCache: [String: ActionGroup],
         jobCache: [Int: ActiveJob]
@@ -61,17 +61,17 @@ extension RunnerStore {
                 }
                 return groups
             },
-            scopeFromGroup: { group in scopeFromActionGroup(group) },
+            scopeFromGroup: { group in self.scopeFromActionGroup(group) },
             fireFailureHook: { group, scope in
                 FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
             },
-            enrichJobs: { jobs in enrichGroupJobs(jobs, jobCache: jobCache) }
+            enrichJobs: { jobs in self.enrichGroupJobs(jobs, jobCache: jobCache) }
         )
     }
 
     // MARK: - Backfill (retains ghAPI access via RunnerStore)
 
-    func backfillSteps(into cache: inout [Int: ActiveJob]) {
+    nonisolated func backfillSteps(into cache: inout [Int: ActiveJob]) {
         let iso = ISO8601DateFormatter()
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
@@ -89,7 +89,7 @@ extension RunnerStore {
 
     // MARK: - Group helpers (retain RunnerStore context)
 
-    func scopeFromActionGroup(_ group: ActionGroup) -> String {
+    nonisolated func scopeFromActionGroup(_ group: ActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")
@@ -106,7 +106,7 @@ extension RunnerStore {
         return ""
     }
 
-    func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
+    nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
