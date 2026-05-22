@@ -137,10 +137,14 @@ final class RunnerStore {
     }
 
     /// Builds a scope-qualified name → installPath map from LocalRunnerStore.
-    /// Must be called on the main thread. Extracted so fetch() remains readable.
     ///
-    /// Keys are "scope/runnerName" to handle same-named runners across scopes.
-    /// (#697, #702)
+    /// Must run on the main thread — `LocalRunnerStore.shared.runners` is
+    /// `@MainActor`-isolated. Called from `fetch()` before the background
+    /// dispatch so no sync hop is needed inside the background closure.
+    ///
+    /// Keys are `"scope/runnerName"` to handle same-named runners across
+    /// scopes. (#697, #702)
+    @MainActor
     private func buildInstallPathMap(scopes: [String]) -> [String: String] {
         var map: [String: String] = [:]
         for localRunner in LocalRunnerStore.shared.runners {
@@ -179,7 +183,7 @@ final class RunnerStore {
     ///
     /// - Parameters:
     ///   - scopes: Active scope list, already snapshotted on the main thread in `fetch()`.
-    ///   - installPathByName: Scope-qualified ("scope/name") → installPath map,
+    ///   - installPathByName: Scope-qualified (`"scope/name"`) → installPath map,
     ///     also snapshotted on the main thread. No main-thread hop needed here.
     func fetchAndEnrichRunners(scopes: [String], installPathByName: [String: String]) -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER")
