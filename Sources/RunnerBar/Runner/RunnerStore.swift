@@ -102,13 +102,24 @@ final class RunnerStore {
         let snapCache = completedCache
         let snapPrevGroups = prevLiveGroups
         let snapGroupCache = actionGroupCache
+
+        // #697: Snapshot LocalRunnerStore on the calling thread (always main at
+        // runtime) before entering the background queue. This eliminates the
+        // DispatchQueue.main.sync hop that was inside fetchAndEnrichRunners() and
+        // removes the latent deadlock if any future caller invokes fetch() from
+        // the main thread (e.g. in a unit test).
+        let installPathByName: [String: String] = buildInstallPathMap(scopes: scopesSnapshot)
+
         DispatchQueue.global(qos: .background).async { [weak self] in
             guard let self else {
                 log("RunnerStore › fetch background — self is nil, aborting")
                 return
             }
             ghIsRateLimited = false
-            let enrichedRunners = self.fetchAndEnrichRunners()
+            let enrichedRunners = self.fetchAndEnrichRunners(
+                scopes: scopesSnapshot,
+                installPathByName: installPathByName
+            )
             let jobResult = self.buildJobState(snapPrev: snapPrev, snapCache: snapCache)
             let groupResult = self.buildGroupState(
                 snapPrevGroups: snapPrevGroups,
@@ -123,6 +134,23 @@ final class RunnerStore {
                 )
             }
         }
+    }
+
+    /// Builds a scope-qualified name → installPath map from LocalRunnerStore.
+    /// Must be called on the main thread. Extracted so fetch() remains readable.
+    ///
+    /// Keys are "scope/runnerName" to handle same-named runners across scopes.
+    /// (#697, #702)
+    private func buildInstallPathMap(scopes: [String]) -> [String: String] {
+        var map: [String: String] = [:]
+        for localRunner in LocalRunnerStore.shared.runners {
+            guard let path = localRunner.installPath else { continue }
+            for scope in scopes {
+                map["\(scope)/\(localRunner.runnerName)"] = path
+            }
+        }
+        log("RunnerStore › buildInstallPathMap — keys=\(map.keys.sorted())")
+        return map
     }
 
     /// Applies a completed fetch result on the main thread.
@@ -147,10 +175,14 @@ final class RunnerStore {
         scheduleTimer(liveActions: groupResult.newPrevLiveGroups.map { $0.value })
     }
 
-    func fetchAndEnrichRunners() -> [Runner] {
+    /// Fetches runners for every active scope and enriches each with local metrics.
+    ///
+    /// - Parameters:
+    ///   - scopes: Active scope list, already snapshotted on the main thread in `fetch()`.
+    ///   - installPathByName: Scope-qualified ("scope/name") → installPath map,
+    ///     also snapshotted on the main thread. No main-thread hop needed here.
+    func fetchAndEnrichRunners(scopes: [String], installPathByName: [String: String]) -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER")
-        // Phase 4 (#503): activeScopes only.
-        let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › fetchAndEnrichRunners — activeScopes=\(scopes)")
 
         // Collect runners per scope so we can build scope-qualified lookup keys.
@@ -168,19 +200,6 @@ final class RunnerStore {
             }
         }
 
-        // Build a scope-qualified name → installPath lookup from LocalRunnerStore.
-        // Must be read on the main thread; snapshot via sync hop.
-        var installPathByName: [String: String] = [:]
-        DispatchQueue.main.sync {
-            for localRunner in LocalRunnerStore.shared.runners {
-                guard let path = localRunner.installPath else { continue }
-                // Register the path under every active scope's qualified key.
-                // The correct scope's entry matches at read time; extras are harmless.
-                for scope in scopes {
-                    installPathByName["\(scope)/\(localRunner.runnerName)"] = path
-                }
-            }
-        }
         log("RunnerStore › fetchAndEnrichRunners — installPathByName keys=\(installPathByName.keys.sorted())")
 
         // Assign metrics per-runner using the scope-qualified key so same-named
