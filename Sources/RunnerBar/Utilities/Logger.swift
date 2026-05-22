@@ -1,7 +1,26 @@
 import Foundation
+import os
 
-/// Writes a timestamped, file-annotated message to stderr.
-/// Visible in Terminal, Console.app, and crash logs.
+// MARK: - Unified logging
+//
+// log() is the single call-site throughout the app.
+// Backed by os.Logger so messages appear in Console.app with
+// subsystem/category filtering and are zero-cost in release builds
+// (.debug level is compiled out by the OS when not actively streaming).
+
+private let logger = Logger(
+    subsystem: "com.eoncode.runner-bar",
+    category: "general"
+)
+
+/// Writes a debug-level message to the unified logging system.
+///
+/// Messages are visible in:
+///   - Console.app (filter by subsystem: com.eoncode.runner-bar)
+///   - `log stream --level debug --predicate 'subsystem == "com.eoncode.runner-bar"'`
+///   - Xcode debug console when running from Xcode
+///
+/// In release builds the OS elides .debug calls at zero cost.
 func log(
     _ message: String,
     file: String = #file,
@@ -9,11 +28,5 @@ func log(
 ) {
     let filename = URL(fileURLWithPath: file)
         .deletingPathExtension().lastPathComponent
-    let timestamp = logFormatter.string(from: Date())
-    fputs("[RunnerBar \(timestamp)] \(filename):\(line) — \(message)\n", stderr)
+    logger.debug("\(filename, privacy: .public):\(line, privacy: .public) — \(message, privacy: .public)")
 }
-
-/// Shared ISO-8601 formatter for log timestamps.
-/// ISO8601DateFormatter is expensive to allocate; keeping one static instance
-/// avoids repeated allocation on every `log()` call.
-private let logFormatter = ISO8601DateFormatter()
