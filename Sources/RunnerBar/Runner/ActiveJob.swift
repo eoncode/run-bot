@@ -200,7 +200,7 @@ struct StepPayload: Decodable {
 // MARK: - ActiveJob factory
 
 extension RunnerStore {
-    func makeActiveJob(
+    nonisolated func makeActiveJob(
         from payload: JobPayload,
         iso: ISO8601DateFormatter,
         isDimmed: Bool
