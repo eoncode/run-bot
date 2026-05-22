@@ -5,6 +5,7 @@ import Foundation
 // MARK: - RunnerStore
 
 // swiftlint:disable:next type_body_length
+@MainActor
 final class RunnerStore {
     static let shared = RunnerStore()
 
@@ -50,7 +51,6 @@ final class RunnerStore {
             }
     }
 
-    @MainActor
     func start() {
         let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › start — activeScopes=\(scopes)")
@@ -77,16 +77,13 @@ final class RunnerStore {
             withTimeInterval: interval,
             repeats: false
         ) { [weak self] _ in
-            log("RunnerStore › timer fired — hopping to main then calling fetch()")
+            log("RunnerStore › timer fired — calling fetch()")
             DispatchQueue.main.async {
                 self?.fetch()
             }
         }
     }
 
-    /// Always called on the main thread. @MainActor allows reading
-    /// LocalRunnerStore.shared.runners without an actor hop.
-    @MainActor
     func fetch() {
         let scopesSnapshot = ScopeStore.shared.activeScopes
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
@@ -98,6 +95,7 @@ final class RunnerStore {
         let snapPrevGroups = prevLiveGroups
         let snapGroupCache = actionGroupCache
 
+        // Safe: RunnerStore is @MainActor, so this runs on main — same actor as LocalRunnerStore.
         let installPathByName = buildInstallPathMap(
             scopes: scopesSnapshot,
             localRunners: LocalRunnerStore.shared.runners
