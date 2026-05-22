@@ -68,7 +68,7 @@ struct PopoverLocalRunnerRow: View {
     @ViewBuilder private func runnerList(_ busy: [RunnerModel]) -> some View {
         ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
         if busy.count > 3 {
-            Text("+ \(busy.count - 3) more\u{2026}")
+            Text("+ \(busy.count - 3) more…")
                 .font(.caption2).foregroundColor(.secondary)
                 .padding(.horizontal, DesignTokens.Spacing.rowHPad).padding(.vertical, 2)
         }
@@ -105,7 +105,6 @@ struct PopoverLocalRunnerRow: View {
 struct ActionRowView: View {
     let group: ActionGroup
     let tick: Int
-    let onSelect: () -> Void
     let onStepTap: (ActiveJob, JobStep) -> Void
     @State private var expandState: Bool?
     @State private var previousStatus: RBStatus?
