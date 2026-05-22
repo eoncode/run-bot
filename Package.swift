@@ -12,10 +12,7 @@ let package = Package(
         .testTarget(
             name: "RunnerBarTests",
             dependencies: [],
-            path: "Tests/RunnerBarTests",
-            swiftSettings: [
-                .unsafeFlags(["-Xfrontend", "-disable-access-control"])
-            ]
+            path: "Tests/RunnerBarTests"
         )
     ]
 )
