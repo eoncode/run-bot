@@ -13,6 +13,10 @@ import Foundation
 //
 // This preserves the original 1–2 API-calls-per-poll-cycle behaviour and routes
 // through ghAPI so ghIsRateLimited is honoured and the gh-CLI fallback is available.
+//
+// NOTE: ghAPI returns Data?. fetchRunnersForScope decodes it via JSONSerialization
+// rather than casting directly — a direct `as? [String: Any]` cast from Data? always
+// fails at runtime because Data and Dictionary are unrelated types.
 
 final class RunnerStatusEnricher: @unchecked Sendable {
     static let shared = RunnerStatusEnricher()
@@ -67,7 +71,9 @@ final class RunnerStatusEnricher: @unchecked Sendable {
             endpoint = "/orgs/\(parts[0])/actions/runners"
         }
 
-        guard let json = ghAPI(endpoint) as? [String: Any],
+        // ghAPI returns Data?; decode via JSONSerialization before casting.
+        guard let data = ghAPI(endpoint),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let runners = json["runners"] as? [[String: Any]] else { return [] }
         return runners
     }

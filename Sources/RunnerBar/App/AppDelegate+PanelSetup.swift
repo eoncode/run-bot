@@ -67,8 +67,8 @@ extension AppDelegate {
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.observable.reload(localRunnerStore: LocalRunnerStore.shared)
+                guard self != nil else { return }
+                self?.observable.reload(localRunnerStore: LocalRunnerStore.shared)
             }
             .store(in: &cancellables)
 
