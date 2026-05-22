@@ -16,7 +16,7 @@
 // - Shows a code like "ABCD-1234"
 // - Tells the user to manually navigate to github.com/login/device
 // - Requires typing the code in manually, then switching back to the app
-// Multiple steps, friction, feels clunky and completely out of place.
+// - Multiple steps, friction, feels clunky and completely out of place.
 //
 // OAuth Authorization Code flow is one click:
 // User clicks "Sign in with GitHub" → browser opens → one click "Authorize"

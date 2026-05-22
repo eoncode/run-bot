@@ -1,7 +1,8 @@
+// DEPRECATED: Zero callsites. Was Phase 2 inline config sheet; never wired up.
+
 import SwiftUI
 
 // MARK: - RunnerConfigSheet
-// DEPRECATED: Zero callsites. Was Phase 2 inline config sheet; never wired up.
 
 /// Phase 2: Inline sheet for editing a runner's labels and work folder.
 /// Changes are written to the `.runner` JSON file via `RunnerLifecycleService`.

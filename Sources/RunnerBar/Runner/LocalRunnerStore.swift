@@ -45,6 +45,7 @@ final class LocalRunnerStore: ObservableObject {
             } else {
                 log("LocalRunnerStore > refresh() background — no token, skipping enricher")
             }
+            // Phase 3 (#591): enrich each busy runner with per-runner CPU/MEM metrics.
             for idx in enriched.indices {
                 guard enriched[idx].isBusy, let installPath = enriched[idx].installPath else { continue }
                 enriched[idx].metrics = metricsForRunner(installPath: installPath)

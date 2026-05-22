@@ -132,7 +132,7 @@ extension RepoSelectorSheet {
 
     func itemRow(_ item: String) -> some View {
         Button(action: {
-            log("RepoSelectorSheet › selected item='\(item)'")
+            log("RepoSelectorSheet \u{203a} selected item='\(item)'")
             onSelect(item)
         }) {
             HStack(spacing: 8) {
