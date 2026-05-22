@@ -53,6 +53,7 @@ struct RunnerModel: Identifiable, Equatable {
 
     // MARK: - Init
 
+    // swiftlint:disable:next function_parameter_count
     init(
         id: String? = nil,
         runnerName: String,

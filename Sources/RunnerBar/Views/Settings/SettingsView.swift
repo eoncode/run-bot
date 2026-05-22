@@ -1,3 +1,4 @@
+// swiftlint:disable orphaned_doc_comment
 import ServiceManagement
 import SwiftUI
 
@@ -558,3 +559,4 @@ struct SettingsView: View {
         }
     }
 }
+// swiftlint:enable orphaned_doc_comment
