@@ -709,9 +709,9 @@ struct RunnerDetailView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = RunnerLifecycleService.shared.start(runner: runner)
             DispatchQueue.main.async {
-                switch result {
-                case .success: break
-                default:
+                if case .success = result {
+                    // success — no additional action needed
+                } else {
                     isRunning = false
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
                 }
@@ -726,9 +726,9 @@ struct RunnerDetailView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = RunnerLifecycleService.shared.stop(runner: runner)
             DispatchQueue.main.async {
-                switch result {
-                case .success: break
-                default:
+                if case .success = result {
+                    // success — no additional action needed
+                } else {
                     isRunning = true
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
                 }

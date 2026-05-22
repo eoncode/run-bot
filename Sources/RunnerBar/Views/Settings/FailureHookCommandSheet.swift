@@ -187,7 +187,9 @@ struct FlowLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 400
-        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowH: CGFloat = 0
         for view in subviews {
             let size = view.sizeThatFits(.unspecified)
             if x + size.width > width && x > 0 { x = 0; y += rowH + spacing; rowH = 0 }
@@ -198,7 +200,9 @@ struct FlowLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x: CGFloat = bounds.minX, y: CGFloat = bounds.minY, rowH: CGFloat = 0
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowH: CGFloat = 0
         for view in subviews {
             let size = view.sizeThatFits(.unspecified)
             if x + size.width > bounds.maxX && x > bounds.minX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
