@@ -76,6 +76,8 @@ struct RunnerStatusEnricher {
                 let pageRunners = decoded.runners
                 for apiRunner in pageRunners {
                     byID[apiRunner.id] = apiRunner
+                    // Key is "scope/runnerName" to prevent cross-scope collisions
+                    // for identically-named runners in different scopes.
                     byName["\(scope)/\(apiRunner.name)"] = apiRunner
                 }
                 totalFetched += pageRunners.count
