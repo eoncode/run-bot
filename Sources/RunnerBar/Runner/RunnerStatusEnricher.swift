@@ -64,11 +64,13 @@ final class RunnerStatusEnricher: @unchecked Sendable {
             .map(String.init)
         guard !parts.isEmpty else { return [] }
 
+        // ⚠️ No leading slash — ghAPI builds the full URL itself.
+        // All other callers use "repos/…" or "orgs/…" without a leading "/".
         let endpoint: String
         if parts.count >= 2 {
-            endpoint = "/repos/\(parts[0])/\(parts[1])/actions/runners"
+            endpoint = "repos/\(parts[0])/\(parts[1])/actions/runners"
         } else {
-            endpoint = "/orgs/\(parts[0])/actions/runners"
+            endpoint = "orgs/\(parts[0])/actions/runners"
         }
 
         // ghAPI returns Data?; decode via JSONSerialization before casting.
