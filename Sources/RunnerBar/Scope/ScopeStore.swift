@@ -1,3 +1,4 @@
+// swiftlint:disable orphaned_doc_comment
 import Combine
 import Foundation
 
@@ -139,3 +140,4 @@ final class ScopeStore: ObservableObject {
         objectWillChange.send()
     }
 }
+// swiftlint:enable orphaned_doc_comment

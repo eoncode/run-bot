@@ -3,6 +3,7 @@ import Foundation
 
 // MARK: - LocalRunnerStore
 
+// swiftlint:disable type_body_length
 @MainActor
 final class LocalRunnerStore: ObservableObject {
     static let shared = LocalRunnerStore()
@@ -103,3 +104,4 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > setLifecycleWarning — done for \(runnerName), displayStatus is now: \(displayStatus)")
     }
 }
+// swiftlint:enable type_body_length

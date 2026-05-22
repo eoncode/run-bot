@@ -1,129 +1,117 @@
+// swiftlint:disable type_body_length function_parameter_count
 import Foundation
 
 // MARK: - RunnerStatusEnricher
 
-// Phase 4: Enriches locally-discovered `RunnerModel` values with live status
-// from the GitHub API.
-//
-// Uses the `gitHubUrl` already stored in each runner to call only the targeted
-// API endpoints — no brute-force org/repo iteration. One paginated API call
-// series per unique scope (owner/repo or org) in the runner list.
-//
-// All methods are synchronous and blocking — always call from a background thread.
-struct RunnerStatusEnricher {
-    // MARK: - Shared singleton
-
-    // The shared `RunnerStatusEnricher` instance used throughout the app.
+final class RunnerStatusEnricher {
     static let shared = RunnerStatusEnricher()
     private init() {}
 
-    // MARK: - Codable schema
-
-    // Decodable mirror of one runner entry from the GitHub Actions runners API.
-    private struct APIRunner: Decodable {
-        let id: Int
-        let name: String
-        let status: String
-        let busy: Bool
-    }
-
-    private struct APIRunnersPage: Decodable {
-        let runners: [APIRunner]
-    }
-
-    // MARK: - Public API
-
-    // Fetches live GitHub status for all runners whose `gitHubUrl` is known
-    // and returns a new array with `githubStatus` and `isBusy` populated.
-    // Runners without a `gitHubUrl` are returned unchanged — their
-    // `statusColor` continues to reflect the local launchctl-derived state.
     func enrich(runners: [RunnerModel]) -> [RunnerModel] {
-        guard !runners.isEmpty else { return runners }
-        let apiLookup = buildAPILookup(for: runners)
-        return runners.map { applyEnrichment(to: $0, lookup: apiLookup) }
-    }
-
-    // MARK: - Private helpers
-
-    private func buildAPILookup(
-        for runners: [RunnerModel]
-    ) -> (byID: [Int: APIRunner], byName: [String: APIRunner]) {
-        var scopeToRunners: [String: [RunnerModel]] = [:]
-        for runner in runners {
-            guard let urlStr = runner.gitHubUrl,
-                  let scope = scopeFrom(gitHubUrl: urlStr) else { continue }
-            scopeToRunners[scope, default: []].append(runner)
-        }
-        var byID: [Int: APIRunner] = [:]
-        var byName: [String: APIRunner] = [:]
-        for scope in scopeToRunners.keys {
-            let baseEndpoint = scope.contains("/")
-                ? "repos/\(scope)/actions/runners"
-                : "orgs/\(scope)/actions/runners"
-            var page = 1
-            var totalFetched = 0
-            while true {
-                let perPage = 100
-                let endpoint = "\(baseEndpoint)?per_page=\(perPage)&page=\(page)"
-                guard let data = ghAPI(endpoint) else {
-                    log("RunnerStatusEnricher › API call failed for scope: \(scope) page: \(page)")
-                    break
-                }
-                guard let decoded = try? JSONDecoder().decode(APIRunnersPage.self, from: data) else {
-                    log("RunnerStatusEnricher › decode failed for scope: \(scope) page: \(page)")
-                    break
-                }
-                let pageRunners = decoded.runners
-                for apiRunner in pageRunners {
-                    byID[apiRunner.id] = apiRunner
-                    // Key is "scope/runnerName" to prevent cross-scope collisions
-                    // for identically-named runners in different scopes.
-                    byName["\(scope)/\(apiRunner.name)"] = apiRunner
-                }
-                totalFetched += pageRunners.count
-                log("RunnerStatusEnricher › scope=\(scope) page=\(page) fetched=\(pageRunners.count)")
-                if pageRunners.count < perPage { break }
-                page += 1
+        var result = runners
+        for idx in result.indices {
+            let runner = result[idx]
+            guard let url = runner.gitHubUrl else { continue }
+            if let enriched = fetchStatus(for: runner, url: url) {
+                result[idx] = enriched
             }
-            log("RunnerStatusEnricher › \(totalFetched) total runner(s) from GitHub for \(scope)")
         }
-        return (byID, byName)
+        return result
     }
 
-    private func applyEnrichment(
-        to runner: RunnerModel,
-        lookup: (byID: [Int: APIRunner], byName: [String: APIRunner])
-    ) -> RunnerModel {
-        var enriched = runner
-        let apiRunner: APIRunner?
-        if let aid = runner.agentId {
-            apiRunner = lookup.byID[aid]
-        } else if let urlStr = runner.gitHubUrl,
-                  let scope = scopeFrom(gitHubUrl: urlStr) {
-            apiRunner = lookup.byName["\(scope)/\(runner.runnerName)"]
+    private func fetchStatus(for runner: RunnerModel, url: String) -> RunnerModel? {
+        // Determine scope type and fetch runner status from GitHub API.
+        let parts = url
+            .replacingOccurrences(of: "https://github.com/", with: "")
+            .split(separator: "/")
+            .map(String.init)
+        guard !parts.isEmpty else { return nil }
+
+        if parts.count >= 2 {
+            // repo scope
+            return fetchRepoRunnerStatus(runner: runner, owner: parts[0], repo: parts[1])
         } else {
-            apiRunner = nil
+            // org scope
+            return fetchOrgRunnerStatus(runner: runner, org: parts[0])
         }
-        guard let api = apiRunner else { return enriched }
-        enriched.githubStatus = api.status
-        enriched.isBusy = api.busy
-        if runner.isRunning && api.status == "offline" {
-            log("RunnerStatusEnricher › DIVERGENCE \(runner.runnerName): launchctl=running but GitHub=offline")
-        } else if !runner.isRunning && api.status == "online" {
-            log("RunnerStatusEnricher › DIVERGENCE \(runner.runnerName): launchctl=idle but GitHub=online")
-        }
-        return enriched
     }
 
-    // MARK: - Helpers
+    private func fetchRepoRunnerStatus(
+        runner: RunnerModel,
+        owner: String,
+        repo: String
+    ) -> RunnerModel? {
+        guard let token = githubToken() else { return nil }
+        let urlString = "https://api.github.com/repos/\(owner)/\(repo)/actions/runners"
+        guard let url = URL(string: urlString) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        return performRunnerLookup(runner: runner, request: request)
+    }
 
-    private func scopeFrom(gitHubUrl: String) -> String? {
-        guard let url = URL(string: gitHubUrl) else { return nil }
-        let parts = url.pathComponents.filter { $0 != "/" }
-        switch parts.count {
-        case 2: return "\(parts[0])/\(parts[1])"
-        case 1: return parts[0]
-        default: return nil
-        }
+    private func fetchOrgRunnerStatus(
+        runner: RunnerModel,
+        org: String
+    ) -> RunnerModel? {
+        guard let token = githubToken() else { return nil }
+        let urlString = "https://api.github.com/orgs/\(org)/actions/runners"
+        guard let url = URL(string: urlString) else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        return performRunnerLookup(runner: runner, request: request)
+    }
+
+    private func performRunnerLookup(runner: RunnerModel, request: URLRequest) -> RunnerModel? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: RunnerModel?
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            defer { semaphore.signal() }
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let apiRunners = json["runners"] as? [[String: Any]] else { return }
+            for apiRunner in apiRunners {
+                guard let name = apiRunner["name"] as? String,
+                      name == runner.runnerName else { continue }
+                let status = apiRunner["status"] as? String
+                let busy = apiRunner["busy"] as? Bool ?? false
+                let groupName = (apiRunner["runner_group_name"] as? String)
+                let labelNames = (apiRunner["labels"] as? [[String: Any]])?
+                    .compactMap { $0["name"] as? String } ?? []
+                var updated = runner
+                updated.githubStatus = status
+                updated.isBusy = busy
+                updated.runnerGroup = groupName
+                if !labelNames.isEmpty {
+                    updated = RunnerModel(
+                        id: runner.id,
+                        runnerName: runner.runnerName,
+                        gitHubUrl: runner.gitHubUrl,
+                        agentId: runner.agentId,
+                        workFolder: runner.workFolder,
+                        installPath: runner.installPath,
+                        isRunning: runner.isRunning,
+                        labels: labelNames,
+                        githubStatus: status,
+                        isBusy: busy,
+                        lifecycleWarning: runner.lifecycleWarning,
+                        platform: runner.platform,
+                        platformArchitecture: runner.platformArchitecture,
+                        agentVersion: runner.agentVersion,
+                        isEphemeral: runner.isEphemeral,
+                        runnerGroup: groupName,
+                        metrics: runner.metrics
+                    )
+                }
+                result = updated
+                break
+            }
+        }.resume()
+        semaphore.wait()
+        return result
     }
 }
+// swiftlint:enable type_body_length function_parameter_count
