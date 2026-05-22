@@ -29,7 +29,7 @@ struct ScopeEntry: Identifiable, Codable, Equatable {
 /// launch it is converted to `[ScopeEntry]` (all enabled) and the old key is deleted.
 ///
 /// Conforms to `ObservableObject` — SwiftUI views should use `@ObservedObject`.
-/// Set `onMutate` to be notified after any structural change (add / remove).
+/// Subscribe to `didMutate` to be notified after any structural change (add / remove).
 final class ScopeStore: ObservableObject {
     /// Shared singleton — single source of truth for all scope operations.
     static let shared = ScopeStore()
@@ -37,8 +37,10 @@ final class ScopeStore: ObservableObject {
     private let entriesKey = "scopeEntries"
     private let legacyKey = "scopes"
 
-    /// Optional callback invoked after add or remove (not on toggle).
-    var onMutate: (() -> Void)?
+    /// Emits after every structural mutation (add / remove). Callers subscribe and
+    /// store the resulting `AnyCancellable`. Using a subject instead of a plain
+    /// optional closure avoids any risk of a retain cycle at the call site.
+    let didMutate = PassthroughSubject<Void, Never>()
 
     /// All scope entries, persisted as JSON in `UserDefaults`.
     /// Publishes `objectWillChange` before every write so observing views update.
@@ -108,7 +110,7 @@ final class ScopeStore: ObservableObject {
         entries.append(ScopeEntry(scope: trimmed))
         persist()
         log("ScopeStore › added scope: \(trimmed)")
-        onMutate?()
+        didMutate.send()
     }
 
     /// Removes the entry with the given ID. No-ops if not found.
@@ -117,7 +119,7 @@ final class ScopeStore: ObservableObject {
         entries.removeAll(where: { $0.id == id })
         persist()
         log("ScopeStore › removed scope id: \(id)")
-        onMutate?()
+        didMutate.send()
     }
 
     /// Legacy remove by scope string — kept for backward compatibility.
@@ -127,7 +129,7 @@ final class ScopeStore: ObservableObject {
     }
 
     /// Toggles the `isEnabled` flag for the entry with the given ID.
-    /// Does NOT invoke `onMutate` — enable/disable is not a structural change.
+    /// Does NOT send `didMutate` — enable/disable is not a structural change.
     func setEnabled(_ id: UUID, _ enabled: Bool) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].isEnabled = enabled
