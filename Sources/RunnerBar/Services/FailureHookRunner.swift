@@ -169,10 +169,10 @@ enum FailureHookRunner {
                 let failedSteps = (job.steps ?? []).filter { failureConclusions.contains(($0.conclusion ?? "").lowercased()) }
                 var lines: [String] = ["Job: \(job.name) [failed]"]
                 if failedSteps.isEmpty {
-                    lines.append(" (no failed steps reported)")
+                    lines.append("  (no failed steps reported)")
                 } else {
                     for step in failedSteps {
-                        lines.append(" ✗ Step \(step.number): \(step.name) — \(step.conclusion ?? step.status)")
+                        lines.append("  ✗ Step \(step.number): \(step.name) — \(step.conclusion ?? step.status)")
                     }
                 }
                 parts.append(lines.joined(separator: "\n"))
