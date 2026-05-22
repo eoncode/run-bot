@@ -146,8 +146,8 @@ final class RunnerStore {
     /// Applies a completed fetch result on the main thread.
     private func applyFetchResult(
         enrichedRunners: [Runner],
-        jobResult: JobStateResult,
-        groupResult: GroupStateResult
+        jobResult: JobPollResult,
+        groupResult: GroupPollResult
     ) {
         runners = enrichedRunners
         jobs = jobResult.display
