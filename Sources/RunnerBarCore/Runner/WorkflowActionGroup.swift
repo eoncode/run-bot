@@ -163,9 +163,9 @@ public struct WorkflowActionGroup: Identifiable, Equatable {
             // ⚠️ Do NOT change this to read from runs[].conclusion — run-level API
             // conclusions are stale and can report "failure" even when all jobs pass
             // (e.g. after a retry). This caused the spurious FAILED badge (issue #294).
-            if jobs.contains(where: { $0.conclusion == "failure" })   { return "failure" }
-            if jobs.contains(where: { $0.conclusion == "cancelled" }) { return "cancelled" }
-            if jobs.contains(where: { $0.conclusion == "skipped" })   { return "skipped" }
+            if jobs.contains(where: { $0.conclusion == .failure })   { return "failure" }
+            if jobs.contains(where: { $0.conclusion == .cancelled }) { return "cancelled" }
+            if jobs.contains(where: { $0.conclusion == .skipped })   { return "skipped" }
             return "success"
         }
         // ── Run-based conclusion (fallback when jobs haven't loaded yet) ────────────────────
@@ -190,8 +190,8 @@ public struct WorkflowActionGroup: Identifiable, Equatable {
 
     /// Name of the first in-progress job, or first queued, or "—".
     public var currentJobName: String {
-        if let job = jobs.first(where: { $0.status == "in_progress" }) { return job.name }
-        if let job = jobs.first(where: { $0.status == "queued" })      { return job.name }
+        if let job = jobs.first(where: { $0.status == .inProgress }) { return job.name }
+        if let job = jobs.first(where: { $0.status == .queued })     { return job.name }
         return "—"
     }
 
