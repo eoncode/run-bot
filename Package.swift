@@ -13,6 +13,11 @@ let package = Package(
             name: "RunnerBar",
             dependencies: ["RunnerBarCore"],
             path: "Sources/RunnerBar"
+        ),
+        .testTarget(
+            name: "RunnerBarCoreTests",
+            dependencies: ["RunnerBarCore"],
+            path: "Tests/RunnerBarCoreTests"
         )
     ]
 )

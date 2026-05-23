@@ -5,9 +5,14 @@ import Foundation
 /// CPU and memory utilisation snapshot for a single `Runner.Worker` process.
 public struct RunnerMetrics: Equatable {
     /// The cpu constant.
-    let cpu: Double
+    public let cpu: Double
     /// The mem constant.
-    let mem: Double
+    public let mem: Double
+
+    public init(cpu: Double, mem: Double) {
+        self.cpu = cpu
+        self.mem = mem
+    }
 }
 
 /// Returns CPU+MEM metrics for the `Runner.Worker` / `Runner.Listener` processes
