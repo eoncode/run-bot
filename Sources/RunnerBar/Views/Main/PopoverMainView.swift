@@ -10,7 +10,7 @@ import SwiftUI
 //
 // RULE 2: ALL rows use .padding(.horizontal, 12)
 // RULE 3: Job row HStack Spacer() is LOAD-BEARING.
-// RULE 4: RunnerStoreObservable.reload() uses withAnimation(nil).
+// RULE 4: RunnerViewModel.reload() uses withAnimation(nil).
 //
 // RULE 5: actionsSection is wrapped in a ScrollView capped at screenScrollMaxHeight.
 // screenScrollMaxHeight = NSScreen.main.visibleFrame.height * 0.80.
@@ -37,9 +37,7 @@ import SwiftUI
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
 struct PopoverMainView: View {
-    @ObservedObject var store: RunnerStoreObservable
-    let onSelectJob: (ActiveJob) -> Void
-    let onSelectAction: (ActionGroup) -> Void
+    @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row in an inline job list. (#455)
     let onStepTap: (ActiveJob, JobStep) -> Void
     let onSelectSettings: () -> Void
@@ -115,7 +113,6 @@ struct PopoverMainView: View {
                     ActionRowView(
                         group: group,
                         tick: displayTick,
-                        onSelect: { onSelectAction(group) },
                         onStepTap: onStepTap
                     )
                 }
@@ -130,7 +127,7 @@ struct PopoverMainView: View {
             Button(
                 action: { visibleCount += nextBatch },
                 label: {
-                    Text("Load \(nextBatch) more workflows\u{2026}")
+                    Text("Load \(nextBatch) more workflows…")
                         .font(.caption).foregroundColor(.secondary)
                 }
             )

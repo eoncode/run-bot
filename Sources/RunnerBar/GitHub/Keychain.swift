@@ -6,6 +6,12 @@ import Security
 // Wraps Security.framework to store and retrieve the OAuth token.
 // Uses SecItemUpdate/SecItemAdd (upsert pattern) with errSecDuplicateItem
 // retry guard, SecItemCopyMatching, and SecItemDelete.
+//
+// kSecUseDataProtectionKeychain: true forces all operations through the modern
+// Data Protection Keychain, bypassing the legacy CSSM-based keychain entirely.
+// Without this, SecItemCopyMatching can trigger a C++ CSSMERR_DL_DATASTORE_DOESNOT_EXIST
+// exception that crashes the process on launch when the legacy keychain DB file
+// is missing or was created under a different signing identity.
 
 enum Keychain {
     private static let service = "runner-bar"
@@ -17,7 +23,8 @@ enum Keychain {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true
         ]
     }
 

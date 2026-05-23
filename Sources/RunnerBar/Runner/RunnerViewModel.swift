@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-// MARK: - RunnerStoreObservable
+// MARK: - RunnerViewModel
 
 /// Observable bridge between the singleton `RunnerStore` and SwiftUI views.
 /// `PopoverMainView`, `SettingsView`, and `AppDelegate` hold one shared instance.
@@ -12,7 +12,7 @@ import SwiftUI
 /// ⚠️ @MainActor: ensures all Published mutations happen on the main actor.
 /// AppDelegate creates this as a stored property; init() is safe because
 /// AppDelegate itself runs on the main thread at launch.
-final class RunnerStoreObservable: ObservableObject {
+final class RunnerViewModel: ObservableObject {
     /// Mirrors `RunnerStore.shared.runners` (remote GitHub API runners).
     @Published private(set) var runners: [Runner] = []
     /// Mirrors `RunnerStore.shared.jobs`.
@@ -42,7 +42,7 @@ final class RunnerStoreObservable: ObservableObject {
         // referenced from a nonisolated context" that arises with default parameter exprs.
         let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
-        log("RunnerStoreObservable › reload — actions=\(store.actions.count) jobs=\(store.jobs.count) runners=\(store.runners.count) localRunners=\(localStore.runners.count)")
+        log("RunnerViewModel › reload — actions=\(store.actions.count) jobs=\(store.jobs.count) runners=\(store.runners.count) localRunners=\(localStore.runners.count)")
         withAnimation(nil) {
             runners = store.runners
             jobs = store.jobs

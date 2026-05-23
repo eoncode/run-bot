@@ -127,10 +127,10 @@ struct RunnerLifecycleService {
             log("RunnerLifecycle > REMOVE abort — no gitHubUrl on runner \(runner.runnerName)")
             return false
         }
-        let scope = scopeFromGitHubUrl(gitHubUrl)
-        log("RunnerLifecycle > REMOVE step2: fetching removal token for scope=\(scope)")
-        guard let token = fetchRemovalToken(scope: scope) else {
-            log("RunnerLifecycle > REMOVE abort — fetchRemovalToken returned nil for scope=\(scope)")
+        let scopeString = scopeFromGitHubUrl(gitHubUrl)
+        log("RunnerLifecycle > REMOVE step2: fetching removal token for scope=\(scopeString)")
+        guard let token = fetchRemovalToken(scope: scopeString) else {
+            log("RunnerLifecycle > REMOVE abort — fetchRemovalToken returned nil for scope=\(scopeString)")
             return false
         }
         log("RunnerLifecycle > REMOVE step2: got token len=\(token.count)")
@@ -144,8 +144,8 @@ struct RunnerLifecycleService {
                 || cfgOutput.contains("must run from runner root")
             log("RunnerLifecycle > REMOVE step3b: config.sh failed isCorrupt=\(isCorrupt) — trying API DELETE fallback")
             if let agentId = runner.agentId {
-                log("RunnerLifecycle > REMOVE step3b: calling deleteRunnerByID scope=\(scope) agentId=\(agentId)")
-                let apiOk = deleteRunnerByID(scope: scope, runnerID: agentId)
+                log("RunnerLifecycle > REMOVE step3b: calling deleteRunnerByID scope=\(scopeString) agentId=\(agentId)")
+                let apiOk = deleteRunnerByID(scope: scopeString, runnerID: agentId)
                 log("RunnerLifecycle > REMOVE step3b: deleteRunnerByID result=\(apiOk)")
                 removeOk = apiOk
             } else {
@@ -203,6 +203,7 @@ struct RunnerLifecycleService {
 
     // MARK: - Script runner
 
+    // Thin wrapper around `ProcessRunner.run` for shell scripts relative to a working directory.
     private func runScriptWithOutput(
         executableName: String,
         arguments: [String],
@@ -218,43 +219,16 @@ struct RunnerLifecycleService {
             log("RunnerLifecycle > runScript [\(logTag)]: ABORT not executable")
             return (false, "")
         }
-        let task = Process()
-        task.executableURL = executableURL
-        task.currentDirectoryURL = workingDirectory
-        task.arguments = arguments
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        var outputData = Data()
-        let lock = NSLock()
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            lock.lock(); outputData.append(chunk); lock.unlock()
-        }
-        do {
-            try task.run()
-            log("RunnerLifecycle > runScript [\(logTag)]: launched pid=\(task.processIdentifier)")
-        } catch {
-            pipe.fileHandleForReading.readabilityHandler = nil
-            log("RunnerLifecycle > runScript [\(logTag)]: launch FAILED: \(error)")
-            return (false, "")
-        }
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
-        let timeoutItem = DispatchWorkItem {
-            log("RunnerLifecycle > runScript [\(logTag)]: TIMEOUT — terminating")
-            task.terminate()
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-        pipe.fileHandleForReading.readabilityHandler = nil
-        let tail = pipe.fileHandleForReading.readDataToEndOfFile()
-        if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        log("RunnerLifecycle > runScript [\(logTag)]: exit=\(task.terminationStatus) output=\(output.prefix(500))")
-        return (task.terminationStatus == 0, output)
+        let result = ProcessRunner.run(
+            executableURL: executableURL,
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            mergeStderr: true,
+            timeout: timeout
+        )
+        let output = result.output
+        log("RunnerLifecycle > runScript [\(logTag)]: exit=\(result.exitCode) output=\(output.prefix(500))")
+        return (result.exitCode == 0, output)
     }
 
     // MARK: - Update config

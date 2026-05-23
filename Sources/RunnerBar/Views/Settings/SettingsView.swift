@@ -1,3 +1,5 @@
+// swiftlint:disable orphaned_doc_comment
+import Combine
 import ServiceManagement
 import SwiftUI
 
@@ -35,16 +37,13 @@ struct SettingsView: View {
     let onSelectRunner: (RunnerModel) -> Void
     /// #499: Called when the user taps a scope row; navigates to ScopeDetailView.
     let onSelectScope: (ScopeEntry) -> Void
-    @ObservedObject var store: RunnerStoreObservable
+    @ObservedObject var store: RunnerViewModel
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var notifications = NotificationPrefsStore.shared
     @ObservedObject private var legal = LegalPrefsStore.shared
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
     @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var launchAtLogin = LoginItem.isEnabled
-    // isOAuthAuthenticated: true only when a token is stored in Keychain via native OAuth.
-    // isCLIAuthenticated: true when gh CLI provides a token but no Keychain OAuth token exists.
-    // These two are mutually exclusive. Sign in button is shown whenever isOAuthAuthenticated == false.
     @State private var isOAuthAuthenticated = (Keychain.token != nil)
     @State private var isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
     @State private var isSigningIn = false
@@ -53,6 +52,10 @@ struct SettingsView: View {
     @State private var showAddRunnerSheet = false
     @State private var showAddScopeSheet = false
     @State private var removeErrorMessage: String?
+    /// Retains the Combine subscription for ScopeStore.didMutate.
+    @State private var scopeMutateCancellable: AnyCancellable?
+    /// Retains the Combine subscription for OAuthService.didSignOut.
+    @State private var signOutCancellable: AnyCancellable?
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -82,7 +85,6 @@ struct SettingsView: View {
         .frame(idealWidth: 480, maxWidth: .infinity)
         .onAppear(perform: onAppearAction)
         .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
-        .onDisappear { ScopeStore.shared.onMutate = nil }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
         .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .modifier(removalAlertModifier)
@@ -124,14 +126,23 @@ struct SettingsView: View {
     private func onAppearAction() {
         isOAuthAuthenticated = (Keychain.token != nil)
         isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
-        // Register onCompletion ONCE here — do NOT re-assign in signInWithGitHub().
-        // Re-assigning mid-flow would race with an in-flight callback.
         OAuthService.shared.onCompletion = { success in
             isOAuthAuthenticated = success
             isCLIAuthenticated = !success && githubToken() != nil
             isSigningIn = false
         }
-        ScopeStore.shared.onMutate = { [weak store] in store?.reload() }
+        // #723: subscribe to didSignOut via Combine — consistent with didUpdate/didMutate pattern.
+        signOutCancellable = OAuthService.shared.didSignOut
+            .receive(on: DispatchQueue.main)
+            .sink {
+                isOAuthAuthenticated = false
+                isCLIAuthenticated = githubToken() != nil
+            }
+        // #695: Subscribe to ScopeStore.didMutate via Combine instead of the old
+        // onMutate closure (which no longer exists after the Combine migration).
+        scopeMutateCancellable = ScopeStore.shared.didMutate
+            .receive(on: DispatchQueue.main)
+            .sink { [weak store] in store?.reload() }
         localRunnerStore.refresh()
     }
 
@@ -174,7 +185,6 @@ struct SettingsView: View {
         .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
     }
 
-    // #512: Description below Local Runners header (mirrors Scopes section)
     private var localRunnersSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             localRunnersSectionHeader
@@ -212,7 +222,6 @@ struct SettingsView: View {
         )
     }
 
-    // #507: chevron is now always the last item before the remove button (far right).
     private func localRunnerRowContent(_ runner: RunnerModel) -> some View {
         let hasWarning = runner.lifecycleWarning != nil
         let displayStatus = runner.displayStatus
@@ -462,29 +471,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Account
-    //
-    // Four visible states:
-    //
-    //  1. Signing in (in-flight):  spinner + "Waiting for browser…"
-    //
-    //  2. OAuth (Keychain token):  ● green  "Authenticated"
-    //                              caption: "via OAuth"
-    //                              [Sign out] bordered danger button
-    //
-    //  3. gh env token (CLI):      ● green  "Authenticated"
-    //                              caption: "via gh env token"
-    //                              [Sign in with GitHub] bordered button (optional upgrade)
-    //
-    //  4. No token at all:         [Sign in with GitHub] bordered button only
-    //
-    // Both state 2 and 3 are fully authenticated with equal API access.
-    // The caption communicates the method, not the capability.
-    //
-    // Button styling:
-    //   "Sign in with GitHub" — .buttonStyle(.bordered), .font(.caption2)
-    //   "Sign out"            — .buttonStyle(.bordered), .tint(.rbDanger), .font(.caption2)
-    //
-    // ❌ NEVER revert buttons to .buttonStyle(.plain) without a visual affordance.
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -498,7 +484,6 @@ struct SettingsView: View {
                         Text("Waiting for browser…").font(.caption).foregroundColor(Color.rbTextSecondary)
                     }
                 } else if isOAuthAuthenticated {
-                    // State 2: OAuth token in Keychain.
                     HStack(spacing: 10) {
                         HStack(spacing: 4) {
                             Circle().fill(Color.rbSuccess).frame(width: 7, height: 7)
@@ -519,7 +504,6 @@ struct SettingsView: View {
                         .help("Remove OAuth token from Keychain. gh env token used as fallback if available.")
                     }
                 } else if isCLIAuthenticated {
-                    // State 3: gh env token present, no Keychain OAuth token.
                     HStack(spacing: 10) {
                         HStack(spacing: 4) {
                             Circle().fill(Color.rbSuccess).frame(width: 7, height: 7)
@@ -539,7 +523,6 @@ struct SettingsView: View {
                         .help("Authorize RunnerBar via GitHub OAuth and store token in Keychain")
                     }
                 } else {
-                    // State 4: No token at all.
                     Button(action: signInWithGitHub) {
                         Text("Sign in with GitHub").font(.caption2)
                     }
@@ -569,14 +552,10 @@ struct SettingsView: View {
 
     private func signInWithGitHub() {
         isSigningIn = true
-        // onCompletion is already registered in onAppearAction() — do not re-assign here.
         OAuthService.shared.signIn()
     }
 
     private func signOutOfGitHub() {
-        // OAuthService.signOut() wipes Keychain token and calls onCompletion?(false).
-        // onCompletion re-evaluates both isOAuthAuthenticated and isCLIAuthenticated,
-        // so the UI will flip to CLI state automatically if gh CLI token is still present.
         OAuthService.shared.signOut()
     }
 
@@ -593,3 +572,4 @@ struct SettingsView: View {
         }
     }
 }
+// swiftlint:enable orphaned_doc_comment

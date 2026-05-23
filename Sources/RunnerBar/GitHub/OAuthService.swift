@@ -1,13 +1,14 @@
 import AppKit
+import Combine
 import Foundation
 
 // MARK: - OAuthService
 //
 // Implements the GitHub OAuth Authorization Code flow.
 //
-// @MainActor ensures all access to `pendingState` and `onCompletion` is
-// serialised on the main thread. This matches how AppKit delivers
-// application(_:open:) callbacks and how SwiftUI reads `isSignedIn`.
+// @MainActor ensures all access to `pendingState`, `onCompletion`, and
+// `didSignOut` is serialised on the main thread. This matches how AppKit
+// delivers application(_:open:) callbacks and how SwiftUI reads `isSignedIn`.
 // It also silences the -strict-concurrency warning about non-Sendable
 // captures of `self` in DispatchQueue.main.async closures.
 //
@@ -47,6 +48,10 @@ final class OAuthService {
     /// Register once in SettingsView.onAppearAction — do NOT re-assign in signIn().
     var onCompletion: ((Bool) -> Void)?
 
+    /// Emits on the main thread after a successful sign-out.
+    /// Subscribe via `.sink { }.store(in: &cancellables)` — do NOT use a raw closure.
+    let didSignOut = PassthroughSubject<Void, Never>()
+
     var isSignedIn: Bool { Keychain.token != nil }
 
     // MARK: Sign In
@@ -73,7 +78,7 @@ final class OAuthService {
         // Only report sign-out success when the token was actually removed.
         let deleted = Keychain.delete()
         if !deleted { log("OAuthService › signOut: Keychain.delete failed") }
-        onCompletion?(false)
+        didSignOut.send()
     }
 
     // MARK: Callback Handler

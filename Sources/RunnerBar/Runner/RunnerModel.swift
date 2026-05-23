@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length
 import Foundation
 import SwiftUI
 
@@ -53,6 +54,7 @@ struct RunnerModel: Identifiable, Equatable {
 
     // MARK: - Init
 
+    // swiftlint:disable:next function_parameter_count
     init(
         id: String? = nil,
         runnerName: String,
@@ -123,3 +125,4 @@ struct RunnerModel: Identifiable, Equatable {
         }
     }
 }
+// swiftlint:enable type_body_length

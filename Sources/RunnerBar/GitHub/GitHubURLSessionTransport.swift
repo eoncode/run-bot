@@ -3,10 +3,63 @@ import os
 
 // MARK: - Rate limit flag
 
-private let rateLimitLock = OSAllocatedUnfairLock(initialState: false)
+/// OSAllocatedUnfairLock state: (isRateLimited: Bool, resetItem: DispatchWorkItem?)
+/// Both fields are mutated together under the same lock so the cancel-and-replace
+/// of the reset timer is always atomic with the flag write.
+private struct RateLimitState {
+    var isLimited: Bool = false
+    var resetItem: DispatchWorkItem?
+}
+private let rateLimitLock = OSAllocatedUnfairLock(initialState: RateLimitState())
+
 var ghIsRateLimited: Bool {
-    get { rateLimitLock.withLock { $0 } }
-    set { rateLimitLock.withLock { $0 = newValue } }
+    get { rateLimitLock.withLock { $0.isLimited } }
+    set {
+        rateLimitLock.withLock { $0.isLimited = newValue }
+        if newValue {
+            // Auto-reset is scheduled by scheduleRateLimitReset(resetAt:).
+            // If called without a header value (e.g. from a CLI code path),
+            // fall back to a 60-minute window.
+            scheduleRateLimitReset(resetAt: nil)
+        }
+    }
+}
+
+/// Schedules an automatic reset of `ghIsRateLimited` to `false`.
+///
+/// Uses a cancel-and-replace `DispatchWorkItem` so that multiple concurrent
+/// 403/429 responses (e.g. from paginated requests) never leave more than one
+/// pending reset timer in flight. The latest `X-RateLimit-Reset` value wins.
+///
+/// - Parameter resetAt: Unix timestamp from the `X-RateLimit-Reset` response
+///   header. When non-nil the reset fires precisely at that time; otherwise
+///   falls back to 60 minutes from now.
+private func scheduleRateLimitReset(resetAt: TimeInterval?) {
+    let delay: TimeInterval
+    if let ts = resetAt {
+        let secondsUntilReset = ts - Date().timeIntervalSince1970
+        // Clamp: never fire in less than 5 s or more than 2 h.
+        delay = min(max(secondsUntilReset, 5), 7200)
+    } else {
+        delay = 3600 // GitHub default: 60 min
+    }
+    log("ghIsRateLimited › auto-reset scheduled in \(Int(delay))s")
+
+    // Cancel any previously scheduled reset before registering a new one.
+    // This ensures concurrent 403/429 responses from paginated requests do
+    // not stack up multiple timers that could prematurely clear the flag.
+    let item = DispatchWorkItem {
+        rateLimitLock.withLock {
+            $0.isLimited = false
+            $0.resetItem = nil
+        }
+        log("ghIsRateLimited › auto-reset after \(Int(delay))s")
+    }
+    rateLimitLock.withLock {
+        $0.resetItem?.cancel()
+        $0.resetItem = item
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: item)
 }
 
 // MARK: - URLSession transport
@@ -52,7 +105,13 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
         if let error { log("urlSessionAPI › network error: \(error.localizedDescription)") ; return }
         if let http = response as? HTTPURLResponse {
             log("urlSessionAPI › \(urlString) status=\(http.statusCode)")
-            if http.statusCode == 403 || http.statusCode == 429 { ghIsRateLimited = true; return }
+            if http.statusCode == 403 || http.statusCode == 429 {
+                let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                    .flatMap { TimeInterval($0) }
+                rateLimitLock.withLock { $0.isLimited = true }
+                scheduleRateLimitReset(resetAt: resetTS)
+                return
+            }
             guard (200..<300).contains(http.statusCode) else { return }
         }
         result = data
@@ -84,7 +143,13 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
             defer { sem.signal() }
             if let error { log("urlSessionAPIPaginated › network error: \(error.localizedDescription)") ; return }
             if let http = response as? HTTPURLResponse {
-                if http.statusCode == 403 || http.statusCode == 429 { ghIsRateLimited = true; return }
+                if http.statusCode == 403 || http.statusCode == 429 {
+                    let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                        .flatMap { TimeInterval($0) }
+                    rateLimitLock.withLock { $0.isLimited = true }
+                    scheduleRateLimitReset(resetAt: resetTS)
+                    return
+                }
                 guard (200..<300).contains(http.statusCode) else { return }
                 linkHeader = http.value(forHTTPHeaderField: "Link")
             }
@@ -121,11 +186,18 @@ private func extractNextURL(from header: String?) -> String? {
 // MARK: - Public API entry points
 //
 // Prefer URLSession (native OAuth token) when available; fall back to gh CLI subprocess.
+// The CLI fallback is skipped when ghIsRateLimited is true — a rate-limit hit on the
+// URLSession path must not trigger a second outbound request via the CLI on the same cycle.
 
 func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     if githubToken() != nil {
         let data = urlSessionAPI(endpoint, timeout: timeout)
-        if data != nil { return data }
+        // If the URLSession call set ghIsRateLimited, bail out immediately.
+        // Falling through to the CLI would fire another request against a rate-limited API.
+        if data != nil || ghIsRateLimited {
+            if ghIsRateLimited { log("ghAPI › rate limited, skipping CLI fallback for: \(endpoint)") }
+            return data
+        }
     }
     return ghAPICLI(endpoint, timeout: timeout)
 }
@@ -133,7 +205,11 @@ func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
 func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     if githubToken() != nil {
         let data = urlSessionAPIPaginated(endpoint, timeout: timeout)
-        if data != nil { return data }
+        // If the URLSession call set ghIsRateLimited, bail out immediately.
+        if data != nil || ghIsRateLimited {
+            if ghIsRateLimited { log("ghAPIPaginated › rate limited, skipping CLI fallback for: \(endpoint)") }
+            return data
+        }
     }
     return ghAPIPaginatedCLI(endpoint, timeout: timeout)
 }

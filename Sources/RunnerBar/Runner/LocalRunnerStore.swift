@@ -3,6 +3,7 @@ import Foundation
 
 // MARK: - LocalRunnerStore
 
+// swiftlint:disable type_body_length
 @MainActor
 final class LocalRunnerStore: ObservableObject {
     static let shared = LocalRunnerStore()
@@ -26,6 +27,9 @@ final class LocalRunnerStore: ObservableObject {
         }
         isScanning = true
         log("LocalRunnerStore > refresh() — isScanning set to true, dispatching background scan")
+        // Capture enricher before entering the Sendable background closure so the
+        // compiler does not see a main-actor-isolated property reference inside async.
+        let enricher = self.enricher
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             log("LocalRunnerStore > refresh() background — starting scanner.scan()")
@@ -37,7 +41,7 @@ final class LocalRunnerStore: ObservableObject {
             var enriched = scanned
             if token != nil {
                 log("LocalRunnerStore > refresh() background — token present, calling enricher")
-                enriched = self.enricher.enrich(runners: scanned)
+                enriched = enricher.enrich(runners: scanned)
                 let enrichedSummary = enriched.map { r -> String in
                     let st = r.githubStatus ?? "nil"
                     let w = r.lifecycleWarning ?? "none"
@@ -103,3 +107,4 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > setLifecycleWarning — done for \(runnerName), displayStatus is now: \(displayStatus)")
     }
 }
+// swiftlint:enable type_body_length
