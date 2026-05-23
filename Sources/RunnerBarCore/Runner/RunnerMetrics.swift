@@ -106,9 +106,11 @@ public func metricsForRunner(installPath: String) -> RunnerMetrics? {
 public func allWorkerMetrics() -> [RunnerMetrics] {
     log("allWorkerMetrics › ENTER — using direct pgrep + ps (no shell wrapper)")
 
-    // Step 1: find matching PIDs only — fast, doesn't walk full process table
+    // Step 1: find matching PIDs only — fast, doesn't walk full process table.
+    // Dots are escaped (\.) so pgrep treats them as literal characters,
+    // not regex wildcards — avoids false matches like 'RunnerXWorker'.
     let pidsOutput = runProcess(
-        "/usr/bin/pgrep", ["-f", "Runner.Worker|Runner.Listener"], timeout: 3
+        "/usr/bin/pgrep", ["-f", "Runner\\.Worker|Runner\\.Listener"], timeout: 3
     )
     guard !pidsOutput.isEmpty else {
         log("allWorkerMetrics › no Runner.Worker / Runner.Listener processes found — returning []")
