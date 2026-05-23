@@ -268,7 +268,8 @@ public struct PollResultBuilder {
 
     /// Trims the group cache to at most `limit` entries, keeping the most recently completed.
     public static func trimGroupCache(_ cache: inout [String: WorkflowActionGroup], limit: Int) {
-        guard cache.count > limit else { return }\n        let sorted = cache.values.sorted {
+        guard cache.count > limit else { return }
+        let sorted = cache.values.sorted {
             ($0.lastJobCompletedAt ?? $0.createdAt ?? .distantPast)
                 > ($1.lastJobCompletedAt ?? $1.createdAt ?? .distantPast)
         }
