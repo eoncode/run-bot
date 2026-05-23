@@ -68,6 +68,7 @@ extension JobStatus: Codable {
 }
 // swiftlint:enable missing_docs
 
+// swiftlint:disable:next missing_docs
 extension JobStatus: CustomStringConvertible {
     /// A human-readable description equal to `rawValue`.
     public var description: String { rawValue }
@@ -151,6 +152,7 @@ extension JobConclusion: Codable {
 }
 // swiftlint:enable missing_docs
 
+// swiftlint:disable:next missing_docs
 extension JobConclusion: CustomStringConvertible {
     /// A human-readable description equal to `rawValue`.
     public var description: String { rawValue }
