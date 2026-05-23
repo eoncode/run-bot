@@ -24,6 +24,12 @@ final class RunnerViewModel: ObservableObject {
     @Published private(set) var actions: [WorkflowActionGroup] = []
     /// Mirrors `RunnerStore.shared.isRateLimited`.
     @Published private(set) var isRateLimited = false
+    /// Mirrors `RunnerStore.shared.rateLimitResetDate`.
+    ///
+    /// Non-nil while a rate-limit is active; `nil` once polls resume.
+    /// Consumed by `PanelMainView.rateLimitBanner` together with the
+    /// 1-second `displayTick` to render a live countdown label.
+    @Published private(set) var rateLimitResetDate: Date?
     /// Mirrors `LocalRunnerStore.shared.runners` (local self-hosted runners).
     @Published private(set) var localRunners: [RunnerModel] = []
 
@@ -51,6 +57,7 @@ final class RunnerViewModel: ObservableObject {
             jobs = store.jobs
             actions = store.actions
             isRateLimited = store.isRateLimited
+            rateLimitResetDate = store.rateLimitResetDate
             localRunners = localStore.runners
         }
     }

@@ -5,30 +5,58 @@ import os
 
 // MARK: - Rate limit flag
 
-/// OSAllocatedUnfairLock state: (isRateLimited: Bool, resetItem: DispatchWorkItem?)
-/// Both fields are mutated together under the same lock so the cancel-and-replace
-/// of the reset timer is always atomic with the flag write.
+/// Combined rate-limit state held under a single lock.
+///
+/// Both `isLimited` and `resetDate` are mutated together so that a reader
+/// can never observe `isLimited == true` with a stale / nil `resetDate`.
+///
+/// Pipeline:
+///   1. `urlSessionAPI` / `urlSessionAPIPaginated` receive a 403/429.
+///   2. They write `isLimited = true` + `resetDate` under this lock and call
+///      `scheduleRateLimitReset(resetAt:)` to auto-clear after the window.
+///   3. `ghIsRateLimited` / `ghRateLimitResetDate` module vars expose the
+///      current values for consumption on any thread.
+///   4. `RunnerStore.applyFetchResult` copies both into its own
+///      `@MainActor` properties (`isRateLimited`, `rateLimitResetDate`).
+///   5. `RunnerViewModel.reload()` mirrors them into `@Published` props.
+///   6. `PanelMainView.rateLimitBanner` renders a live countdown using
+///      `store.rateLimitResetDate` + the existing 1-second `displayTick`.
 private struct RateLimitState {
-    /// The isLimited property.
+    /// Whether the GitHub API is currently rate-limiting this client.
     var isLimited: Bool = false
-    /// The resetItem property.
+    /// The moment at which the rate-limit window expires (mirrors X-RateLimit-Reset).
+    /// `nil` when the reset time is unknown (e.g. CLI code path).
+    var resetDate: Date?
+    /// Pending work item that clears `isLimited` when it fires.
     var resetItem: DispatchWorkItem?
 }
 /// The rateLimitLock constant.
 private let rateLimitLock = OSAllocatedUnfairLock(initialState: RateLimitState())
 
-/// The ghIsRateLimited property.
+/// Thread-safe read/write access to the rate-limited flag.
+///
+/// Setting to `true` without a reset date (legacy / CLI path) schedules a
+/// 60-minute auto-reset via `scheduleRateLimitReset(resetAt: nil)`.
 var ghIsRateLimited: Bool {
     get { rateLimitLock.withLock { $0.isLimited } }
     set {
-        rateLimitLock.withLock { $0.isLimited = newValue }
+        rateLimitLock.withLock {
+            $0.isLimited = newValue
+            if !newValue { $0.resetDate = nil }
+        }
         if newValue {
-            // Auto-reset is scheduled by scheduleRateLimitReset(resetAt:).
-            // If called without a header value (e.g. from a CLI code path),
-            // fall back to a 60-minute window.
             scheduleRateLimitReset(resetAt: nil)
         }
     }
+}
+
+/// The exact `Date` at which the current rate-limit window expires.
+///
+/// `nil` when no rate-limit is active or when the reset time is unknown.
+/// Updated atomically alongside `ghIsRateLimited` whenever a 403/429
+/// response is received so consumers always see a consistent pair.
+var ghRateLimitResetDate: Date? {
+    rateLimitLock.withLock { $0.resetDate }
 }
 
 /// Schedules an automatic reset of `ghIsRateLimited` to `false`.
@@ -42,28 +70,30 @@ var ghIsRateLimited: Bool {
 ///   falls back to 60 minutes from now.
 private func scheduleRateLimitReset(resetAt: TimeInterval?) {
     let delay: TimeInterval
+    let resetDate: Date
     if let ts = resetAt {
         let secondsUntilReset = ts - Date().timeIntervalSince1970
-        // Clamp: never fire in less than 5 s or more than 2 h.
         delay = min(max(secondsUntilReset, 5), 7200)
+        resetDate = Date(timeIntervalSince1970: ts)
     } else {
-        delay = 3600 // GitHub default: 60 min
+        delay = 3600
+        resetDate = Date().addingTimeInterval(delay)
     }
-    log("ghIsRateLimited › auto-reset scheduled in \(Int(delay))s")
+    log("ghIsRateLimited › auto-reset scheduled in \(Int(delay))s (resetDate=\(resetDate))")
 
-    // Cancel any previously scheduled reset before registering a new one.
-    // This ensures concurrent 403/429 responses from paginated requests do
-    // not stack up multiple timers that could prematurely clear the flag.
     let item = DispatchWorkItem {
         rateLimitLock.withLock {
             $0.isLimited = false
+            $0.resetDate = nil
             $0.resetItem = nil
         }
-        log("ghIsRateLimited › auto-reset after \(Int(delay))s")
+        log("ghIsRateLimited › auto-reset fired after \(Int(delay))s")
     }
     rateLimitLock.withLock {
         $0.resetItem?.cancel()
         $0.resetItem = item
+        // Always update resetDate so ghRateLimitResetDate reflects the latest window.
+        $0.resetDate = resetDate
     }
     DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: item)
 }
@@ -73,13 +103,7 @@ private func scheduleRateLimitReset(resetAt: TimeInterval?) {
 // urlSessionAPI / urlSessionAPIPaginated use the Keychain token (set by OAuthService)
 // with a plain URLSession + Authorization: Bearer header.
 //
-// Both functions present a synchronous interface to existing call sites (all of which
-// dispatch via DispatchQueue.global()), but internally use async/await + URLSession.data(for:)
-// so the underlying thread is freed during the network wait rather than blocked.
-//
-// Bridging pattern: a DispatchSemaphore is signalled from inside a Task once the
-// await returns. The semaphore wait is extremely short — it only blocks until the
-// async result is available, not for the duration of I/O.
+// Both functions block the calling thread via DispatchSemaphore.
 // ⚠️ Must always be called from a background thread.
 // All existing call sites dispatch via DispatchQueue.global().
 
@@ -94,34 +118,7 @@ private func makeRequest(url: URL, token: String, timeout: TimeInterval) -> URLR
     return req
 }
 
-/// Performs a single async URLSession fetch, handling rate-limit headers.
-/// Returns `(data, linkHeader)` on success, or `nil` on error / non-2xx / rate-limit.
-private func fetchPage(req: URLRequest) async -> (Data, String?)? {
-    do {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { return nil }
-        log("urlSessionAPI › \(req.url?.absoluteString ?? "-") status=\(http.statusCode)")
-        if http.statusCode == 403 || http.statusCode == 429 {
-            let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
-                .flatMap { TimeInterval($0) }
-            rateLimitLock.withLock { $0.isLimited = true }
-            scheduleRateLimitReset(resetAt: resetTS)
-            return nil
-        }
-        guard (200..<300).contains(http.statusCode) else { return nil }
-        let link = http.value(forHTTPHeaderField: "Link")
-        return (data, link)
-    } catch {
-        log("urlSessionAPI › network error: \(error.localizedDescription)")
-        return nil
-    }
-}
-
-/// Fetches a single GitHub API page.
-///
-/// Internally uses `async/await` + `URLSession.data(for:)` so the GCD thread is
-/// freed during the network wait. A `DispatchSemaphore` bridges the async result
-/// back to the synchronous call site and signals immediately once the await returns.
+/// Fetches a single GitHub API page synchronously (blocking the calling thread).
 /// ⚠️ Must be called from a background thread, never from the main thread.
 func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     dispatchPrecondition(condition: .notOnQueue(.main))
@@ -139,20 +136,28 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     let req = makeRequest(url: url, token: token, timeout: timeout)
     let sem = DispatchSemaphore(value: 0)
     var result: Data?
-    Task {
-        result = await fetchPage(req: req).map { $0.0 }
-        sem.signal()
-    }
+    URLSession.shared.dataTask(with: req) { data, response, error in
+        defer { sem.signal() }
+        if let error { log("urlSessionAPI › network error: \(error.localizedDescription)") ; return }
+        if let http = response as? HTTPURLResponse {
+            log("urlSessionAPI › \(urlString) status=\(http.statusCode)")
+            if http.statusCode == 403 || http.statusCode == 429 {
+                let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                    .flatMap { TimeInterval($0) }
+                rateLimitLock.withLock { $0.isLimited = true }
+                scheduleRateLimitReset(resetAt: resetTS)
+                return
+            }
+            guard (200..<300).contains(http.statusCode) else { return }
+        }
+        result = data
+    }.resume()
     sem.wait()
     return result
 }
 
 /// Fetches all pages of a GitHub API endpoint, concatenating JSON arrays.
 /// Follows the `Link: <url>; rel="next"` header automatically.
-///
-/// Internally uses `async/await` + `URLSession.data(for:)` per page so GCD threads
-/// are freed during each network wait. A `DispatchSemaphore` bridges the async
-/// result back to the synchronous call site.
 /// ⚠️ Must be called from a background thread, never from the main thread.
 func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     dispatchPrecondition(condition: .notOnQueue(.main))
@@ -160,25 +165,39 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         log("urlSessionAPIPaginated › no token available")
         return nil
     }
-    let firstURL: String = endpoint.hasPrefix("http")
+    var nextURL: String? = endpoint.hasPrefix("http")
         ? endpoint
         : "\(GitHubConstants.apiBase)/\(endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/")))"
-    let sem = DispatchSemaphore(value: 0)
     var allItems: [[String: Any]] = []
-    Task {
-        var nextURL: String? = firstURL
-        while let urlString = nextURL {
-            guard let url = URL(string: urlString) else { break }
-            let req = makeRequest(url: url, token: token, timeout: timeout)
-            guard let (data, linkHeader) = await fetchPage(req: req) else { break }
-            if let page = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                allItems.append(contentsOf: page)
+    while let urlString = nextURL {
+        guard let url = URL(string: urlString) else { break }
+        let req = makeRequest(url: url, token: token, timeout: timeout)
+        let sem = DispatchSemaphore(value: 0)
+        var pageData: Data?
+        var linkHeader: String?
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            defer { sem.signal() }
+            if let error { log("urlSessionAPIPaginated › network error: \(error.localizedDescription)") ; return }
+            if let http = response as? HTTPURLResponse {
+                if http.statusCode == 403 || http.statusCode == 429 {
+                    let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                        .flatMap { TimeInterval($0) }
+                    rateLimitLock.withLock { $0.isLimited = true }
+                    scheduleRateLimitReset(resetAt: resetTS)
+                    return
+                }
+                guard (200..<300).contains(http.statusCode) else { return }
+                linkHeader = http.value(forHTTPHeaderField: "Link")
             }
-            nextURL = extractNextURL(from: linkHeader)
+            pageData = data
+        }.resume()
+        sem.wait()
+        guard let data = pageData else { break }
+        if let page = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            allItems.append(contentsOf: page)
         }
-        sem.signal()
+        nextURL = extractNextURL(from: linkHeader)
     }
-    sem.wait()
     guard !allItems.isEmpty else { return nil }
     return try? JSONSerialization.data(withJSONObject: allItems)
 }
@@ -210,8 +229,6 @@ private func extractNextURL(from header: String?) -> String? {
 func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     if githubToken() != nil {
         let data = urlSessionAPI(endpoint, timeout: timeout)
-        // If the URLSession call set ghIsRateLimited, bail out immediately.
-        // Falling through to the CLI would fire another request against a rate-limited API.
         if data != nil || ghIsRateLimited {
             if ghIsRateLimited { log("ghAPI › rate limited, skipping CLI fallback for: \(endpoint)") }
             return data
@@ -224,7 +241,6 @@ func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
 func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     if githubToken() != nil {
         let data = urlSessionAPIPaginated(endpoint, timeout: timeout)
-        // If the URLSession call set ghIsRateLimited, bail out immediately.
         if data != nil || ghIsRateLimited {
             if ghIsRateLimited { log("ghAPIPaginated › rate limited, skipping CLI fallback for: \(endpoint)") }
             return data
