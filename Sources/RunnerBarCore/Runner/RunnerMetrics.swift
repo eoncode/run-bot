@@ -22,6 +22,7 @@ public struct RunnerMetrics: Equatable {
 /// Avoids `/bin/zsh -c` overhead, shell quoting edge-cases, and command-injection risk.
 /// Timeout is enforced via `DispatchSemaphore`; the process is terminated on expiry.
 /// Returns trimmed stdout, or an empty string on timeout / launch failure.
+// swiftlint:disable closure_spacing
 private func runProcess(_ path: String, _ arguments: [String], timeout: TimeInterval = 5) -> String {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: path)
@@ -47,6 +48,7 @@ private func runProcess(_ path: String, _ arguments: [String], timeout: TimeInte
     return String(data: data, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 }
+// swiftlint:enable closure_spacing
 
 // MARK: - Per-runner metrics
 
@@ -64,6 +66,7 @@ public func metricsForRunner(installPath: String) -> RunnerMetrics? {
         log("metricsForRunner › no processes found for installPath=\(installPath)")
         return nil
     }
+    // swiftlint:disable:next closure_spacing
     let pidList = pidsOutput
         .split(separator: "\n")
         .map(String.init)
@@ -116,6 +119,7 @@ public func allWorkerMetrics() -> [RunnerMetrics] {
         log("allWorkerMetrics › no Runner.Worker / Runner.Listener processes found — returning []")
         return []
     }
+    // swiftlint:disable:next closure_spacing
     let pidList = pidsOutput
         .split(separator: "\n")
         .map(String.init)
