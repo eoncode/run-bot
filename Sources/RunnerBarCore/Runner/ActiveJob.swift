@@ -6,7 +6,7 @@ import Foundation
 // MARK: - Top-level job
 
 /// A live or recently-completed GitHub Actions job visible in the panel.
-public struct ActiveJob: Identifiable, Equatable {
+public struct ActiveJob: Identifiable, Equatable, Sendable {
     // MARK: Identity
     /// The unique GitHub job ID.
     public let id: Int
@@ -72,7 +72,7 @@ public struct ActiveJob: Identifiable, Equatable {
 // MARK: - Job step
 
 /// A single step within an `ActiveJob`.
-public struct JobStep: Identifiable, Equatable {
+public struct JobStep: Identifiable, Equatable, Sendable {
     /// The step number used as a stable identifier (1-based).
     public let id: Int
     /// The display name of the step.
@@ -113,7 +113,7 @@ public struct JobStep: Identifiable, Equatable {
 
 /// Raw API payload decoded from `/actions/runs/{id}/jobs` responses.
 /// Converted to `ActiveJob` via `makeActiveJob(from:iso:isDimmed:)`.
-public struct JobPayload: Decodable {
+public struct JobPayload: Decodable, Sendable {
     /// The unique GitHub job ID.
     public let id: Int
     /// The display name of the job.
@@ -147,7 +147,7 @@ public struct JobPayload: Decodable {
 }
 
 /// Raw API payload for a single job step, decoded from the `steps` array in a jobs response.
-public struct StepPayload: Decodable {
+public struct StepPayload: Decodable, Sendable {
     /// The display name of the step.
     public let name: String
     /// Typed lifecycle status of the step.
@@ -172,7 +172,7 @@ public struct StepPayload: Decodable {
 }
 
 /// Wraps the top-level JSON object returned by `/actions/runs/{id}/jobs`.
-public struct JobsResponse: Decodable {
+public struct JobsResponse: Decodable, Sendable {
     /// The array of job payloads contained in the response.
     public let jobs: [JobPayload]
 }
