@@ -3,11 +3,19 @@ import os
 
 // MARK: - Rate limit flag
 
-private let rateLimitLock = OSAllocatedUnfairLock(initialState: false)
+/// OSAllocatedUnfairLock state: (isRateLimited: Bool, resetItem: DispatchWorkItem?)
+/// Both fields are mutated together under the same lock so the cancel-and-replace
+/// of the reset timer is always atomic with the flag write.
+private struct RateLimitState {
+    var isLimited: Bool = false
+    var resetItem: DispatchWorkItem?
+}
+private let rateLimitLock = OSAllocatedUnfairLock(initialState: RateLimitState())
+
 var ghIsRateLimited: Bool {
-    get { rateLimitLock.withLock { $0 } }
+    get { rateLimitLock.withLock { $0.isLimited } }
     set {
-        rateLimitLock.withLock { $0 = newValue }
+        rateLimitLock.withLock { $0.isLimited = newValue }
         if newValue {
             // Auto-reset is scheduled by scheduleRateLimitReset(resetAt:).
             // If called without a header value (e.g. from a CLI code path),
@@ -18,6 +26,11 @@ var ghIsRateLimited: Bool {
 }
 
 /// Schedules an automatic reset of `ghIsRateLimited` to `false`.
+///
+/// Uses a cancel-and-replace `DispatchWorkItem` so that multiple concurrent
+/// 403/429 responses (e.g. from paginated requests) never leave more than one
+/// pending reset timer in flight. The latest `X-RateLimit-Reset` value wins.
+///
 /// - Parameter resetAt: Unix timestamp from the `X-RateLimit-Reset` response
 ///   header. When non-nil the reset fires precisely at that time; otherwise
 ///   falls back to 60 minutes from now.
@@ -31,10 +44,22 @@ private func scheduleRateLimitReset(resetAt: TimeInterval?) {
         delay = 3600 // GitHub default: 60 min
     }
     log("ghIsRateLimited › auto-reset scheduled in \(Int(delay))s")
-    DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
-        rateLimitLock.withLock { $0 = false }
+
+    // Cancel any previously scheduled reset before registering a new one.
+    // This ensures concurrent 403/429 responses from paginated requests do
+    // not stack up multiple timers that could prematurely clear the flag.
+    let item = DispatchWorkItem {
+        rateLimitLock.withLock {
+            $0.isLimited = false
+            $0.resetItem = nil
+        }
         log("ghIsRateLimited › auto-reset after \(Int(delay))s")
     }
+    rateLimitLock.withLock {
+        $0.resetItem?.cancel()
+        $0.resetItem = item
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: item)
 }
 
 // MARK: - URLSession transport
@@ -83,7 +108,7 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
             if http.statusCode == 403 || http.statusCode == 429 {
                 let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
                     .flatMap { TimeInterval($0) }
-                rateLimitLock.withLock { $0 = true }
+                rateLimitLock.withLock { $0.isLimited = true }
                 scheduleRateLimitReset(resetAt: resetTS)
                 return
             }
@@ -121,7 +146,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
                 if http.statusCode == 403 || http.statusCode == 429 {
                     let resetTS = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
                         .flatMap { TimeInterval($0) }
-                    rateLimitLock.withLock { $0 = true }
+                    rateLimitLock.withLock { $0.isLimited = true }
                     scheduleRateLimitReset(resetAt: resetTS)
                     return
                 }
