@@ -12,7 +12,7 @@ public enum AggregateStatus {
     case allOffline
 
     /// The dot property.
-    var dot: String {
+    public var dot: String {
         switch self {
         case .allOnline:  return "🟢"
         case .someOffline: return "🟡"
@@ -21,7 +21,7 @@ public enum AggregateStatus {
     }
 
     /// The symbolName property.
-    var symbolName: String {
+    public var symbolName: String {
         switch self {
         case .allOnline:  return "circle.fill"
         case .someOffline: return "circle.lefthalf.filled"
