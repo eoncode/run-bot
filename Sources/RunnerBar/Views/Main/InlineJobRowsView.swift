@@ -1,8 +1,8 @@
 // InlineJobRowsView.swift
 // RunnerBar
 
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
 // MARK: - TreeLineLeader
 /// Vertical tree-connector line drawn to the left of a job or step row.
 /// Renders a straight bar with an elbow arrow at the bottom for the last item.
@@ -44,8 +44,6 @@ private struct TreeLineLeader: View {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - JobInlineProgress
 /// Compact progress bar shown inside a job row while the job is running.
 /// Fills proportionally to `fractionComplete`; hidden when no progress is available.
@@ -66,8 +64,6 @@ private struct JobInlineProgress: View {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - StepRowView
 /// Single step row inside an expanded job card.
 /// Shows the step icon, name, and elapsed time aligned with the tree connector.
@@ -139,8 +135,6 @@ private struct StepRowView: View {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - JobRowCard
 /// Expandable card that represents one job within a workflow run.
 /// Tapping the header toggles the step list; long-press opens the job in Safari.
@@ -250,8 +244,6 @@ private struct JobRowCard: View {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - InlineJobRowsView
 /// Vertically stacked list of `JobRowCard` views for a single workflow run.
 /// Rendered inside the action row when the run is expanded.

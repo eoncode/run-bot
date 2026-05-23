@@ -1,8 +1,8 @@
 // PanelProgressViews.swift
 // RunnerBar
 
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
 // MARK: - PieProgressDot
 /// Small animated pie/radial fill indicator used on action and job rows.
 /// Sized to match the existing 8 pt dot footprint so layout is unchanged.
@@ -148,8 +148,6 @@ struct PieProgressDot: View {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - RelativeTimeFormatter
 /// Formats a `Date` into a compact relative string like `"3m ago"`, `"1h ago"`, `"2d ago"`.
 ///
@@ -170,8 +168,6 @@ enum RelativeTimeFormatter {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - WorkflowActionGroup + progressFraction
 /// Adds a pie-progress fraction property to `WorkflowActionGroup` for use with `PieProgressDot`.
 extension WorkflowActionGroup {
@@ -187,8 +183,6 @@ extension WorkflowActionGroup {
     }
 }
 
-import SwiftUI
-import RunnerBarCore
 // MARK: - ActiveJob + progressFraction
 /// Adds a pie-progress fraction property to `ActiveJob` for use with `PieProgressDot`.
 extension ActiveJob {

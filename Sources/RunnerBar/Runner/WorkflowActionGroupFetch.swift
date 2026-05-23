@@ -4,10 +4,13 @@ import Foundation
 import RunnerBarCore
 
 // MARK: - Fetch + Group
+// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
+// enriches each group with its flattened job list, and returns groups sorted:
+// in_progress first, then queued, then done — newest first.
+// swiftlint:disable:next function_body_length cyclomatic_complexity
 /// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
 /// enriches each group with its flattened job list, and returns groups sorted:
 /// in_progress first, then queued, then done — newest first.
-// swiftlint:disable:next function_body_length cyclomatic_complexity
 func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) -> [WorkflowActionGroup] {
     guard scope.contains("/") else {
         log("fetchActionGroups › skipping org scope \(scope)")
@@ -180,6 +183,3 @@ private func statusPriority(_ status: GroupStatus) -> Int {
     case .completed:  return 2
     }
 }
-
-// swiftlint:enable opening_brace identifier_name missing_docs orphaned_doc_comment type_body_length
-// swiftlint:enable file_length

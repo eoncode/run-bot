@@ -1,8 +1,10 @@
 // WorkflowContextMenuModifier.swift
 // RunnerBar
 
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
+
+// swiftlint:disable missing_docs
 
 // MARK: - Pasteboard helper
 /// Copies `text` to the general pasteboard on the main thread.
@@ -209,3 +211,4 @@ private struct StepContextMenuModifier: ViewModifier {
         }
     }
 }
+// swiftlint:enable missing_docs

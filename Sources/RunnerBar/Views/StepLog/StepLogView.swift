@@ -1,8 +1,8 @@
 // StepLogView.swift
 // RunnerBar
 import AppKit
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
 // ╔════════════════════════════════════════════════════════════════════════════╗
 // ║ ☹️ StepLogView — LAYOUT + SIZING CONTRACT ☹️                              ║
 // ╠════════════════════════════════════════════════════════════════════════════╣
