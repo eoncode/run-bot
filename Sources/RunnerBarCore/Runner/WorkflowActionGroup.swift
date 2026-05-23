@@ -289,3 +289,4 @@ public func prLabel(from run: RunPayload) -> String {
     }
     return String(run.headSha.prefix(7))
 }
+// swiftlint:enable opening_brace identifier_name missing_docs orphaned_doc_comment type_body_length

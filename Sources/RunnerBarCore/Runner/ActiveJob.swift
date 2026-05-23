@@ -79,6 +79,8 @@ public struct ActiveJob: Identifiable, Codable, Equatable {
         return !isHosted
     }
 
+    /// Creates a new instance.
+    /// Creates a new instance.
     public init(
         id: Int,
         name: String,
@@ -175,6 +177,8 @@ public struct JobStep: Identifiable, Codable, Equatable {
         return String(format: "%02d:%02d", m, s)
     }
 
+    /// Creates a new instance.
+    /// Creates a new instance.
     public init(
         id: Int,
         name: String,
