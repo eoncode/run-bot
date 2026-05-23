@@ -10,25 +10,40 @@ import RunnerBarCore
 /// keeping one instance avoids repeated allocation on every fetch cycle.
 private let iso8601 = ISO8601DateFormatter()
 
+/// Top-level response envelope for the GitHub Actions workflow runs list endpoint.
 private struct ActionRunsResponse: Codable {
+    /// The array of workflow run payloads returned by the API.
     let workflowRuns: [RunPayload]
     enum CodingKeys: String, CodingKey {
         case workflowRuns = "workflow_runs"
     }
 }
 
+/// Decoded representation of a single GitHub Actions workflow run.
 private struct RunPayload: Codable {
+    /// The unique run identifier.
     let id: Int
+    /// The workflow file name (e.g. "SwiftLint", "SonarQube").
     let name: String
+    /// Current run status (e.g. "in_progress", "queued", "completed").
     let status: String
+    /// Run conclusion once completed (e.g. "success", "failure"), or nil while running.
     let conclusion: String?
+    /// The branch this run was triggered on.
     let headBranch: String?
+    /// The commit SHA that triggered this run.
     let headSha: String
+    /// Human-readable title shown in the GitHub UI.
     let displayTitle: String?
+    /// ISO-8601 timestamp when the run was created.
     let createdAt: String?
+    /// ISO-8601 timestamp when the run was last updated.
     let updatedAt: String?
+    /// URL to the run detail page on github.com.
     let htmlUrl: String?
+    /// The head commit associated with this run.
     let headCommit: HeadCommit?
+    /// Pull requests associated with this run, if any.
     let pullRequests: [PRRef]?
     enum CodingKeys: String, CodingKey {
         case id, name, status, conclusion
@@ -43,11 +58,15 @@ private struct RunPayload: Codable {
     }
 }
 
+/// The head commit object nested inside a workflow run payload.
 private struct HeadCommit: Codable {
+    /// The full commit message.
     let message: String
 }
 
+/// A pull request reference nested inside a workflow run payload.
 private struct PRRef: Codable {
+    /// The pull request number.
     let number: Int
 }
 
