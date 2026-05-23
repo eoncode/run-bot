@@ -35,6 +35,9 @@ func runIDFromHtmlUrl(_ url: String?) -> Int? {
 private let iso8601 = ISO8601DateFormatter()
 
 /// Performs the fetchActiveJobs operation.
+/// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) runners.
+/// `scope.apiPrefix` produces the correct `/repos/{owner}/{repo}` or `/orgs/{org}`
+/// prefix for all downstream API calls — no per-scope branching needed here.
 func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchActiveJobs › invalid scope: \(scopeString)")
@@ -61,7 +64,9 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     var jobs: [ActiveJob] = []
     var seenJobIDs = Set<Int>()
     for runID in runIDs {
-        guard case .repo = scope else { continue }
+        // NOTE: No scope-type guard here — both .repo and .org are supported.
+        // scope.apiPrefix already returns the correct /repos/{owner}/{repo} or
+        // /orgs/{org} prefix. Filtering to .repo only was the #774 bug.
         guard let data = ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=100"),
               let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
         else { continue }
