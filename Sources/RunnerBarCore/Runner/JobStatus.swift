@@ -5,23 +5,13 @@ import Foundation
 // MARK: - Job status
 
 /// The lifecycle status of a GitHub Actions job or workflow run.
-///
-/// Uses a custom `Decodable` initialiser with an `.unknown` fallback so that
-/// new GitHub API status values never cause a decode failure.
 public enum JobStatus: Hashable, Sendable {
-    /// Job is waiting to be picked up by a runner.
     case queued
-    /// Job is currently executing on a runner.
     case inProgress
-    /// Job has finished (see `JobConclusion` for the outcome).
     case completed
-    /// Job is waiting on a required deployment environment approval.
     case waiting
-    /// Job has been requested but not yet queued.
     case requested
-    /// Job is pending initial scheduling.
     case pending
-    /// Any status string not matched by the cases above (forward-compatibility).
     case unknown(String)
 
     /// The raw string value as returned by the GitHub API.
@@ -34,6 +24,19 @@ public enum JobStatus: Hashable, Sendable {
         case .requested:      return "requested"
         case .pending:        return "pending"
         case .unknown(let s): return s
+        }
+    }
+
+    /// Initialise from a raw API string. Unknown values map to `.unknown(raw)`.
+    public init(rawString raw: String) {
+        switch raw {
+        case "queued":       self = .queued
+        case "in_progress":  self = .inProgress
+        case "completed":    self = .completed
+        case "waiting":      self = .waiting
+        case "requested":    self = .requested
+        case "pending":      self = .pending
+        default:             self = .unknown(raw)
         }
     }
 
@@ -50,15 +53,7 @@ public enum JobStatus: Hashable, Sendable {
 extension JobStatus: Codable {
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
-        switch raw {
-        case "queued":       self = .queued
-        case "in_progress":  self = .inProgress
-        case "completed":    self = .completed
-        case "waiting":      self = .waiting
-        case "requested":    self = .requested
-        case "pending":      self = .pending
-        default:             self = .unknown(raw)
-        }
+        self = JobStatus(rawString: raw)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -77,29 +72,16 @@ extension JobStatus: CustomStringConvertible {
 // MARK: - Job conclusion
 
 /// The outcome of a completed GitHub Actions job or workflow run.
-///
-/// Uses a custom `Decodable` initialiser with an `.unknown` fallback so that
-/// new GitHub API conclusion values never cause a decode failure.
 public enum JobConclusion: Hashable, Sendable {
-    /// Job completed successfully.
     case success
-    /// Job completed with a failure.
     case failure
-    /// Job was cancelled before completion.
     case cancelled
-    /// Job was skipped (e.g. due to an `if:` condition).
     case skipped
-    /// Job exceeded its timeout limit.
     case timedOut
-    /// Job requires manual approval to proceed.
     case actionRequired
-    /// Job completed with a neutral outcome (no pass/fail signal).
     case neutral
-    /// Job result is stale and no longer relevant.
     case stale
-    /// Job failed to start up before executing any steps.
     case startupFailure
-    /// Any conclusion string not matched by the cases above (forward-compatibility).
     case unknown(String)
 
     /// The raw string value as returned by the GitHub API.
@@ -118,6 +100,22 @@ public enum JobConclusion: Hashable, Sendable {
         }
     }
 
+    /// Initialise from a raw API string. Unknown values map to `.unknown(raw)`.
+    public init(rawString raw: String) {
+        switch raw {
+        case "success":          self = .success
+        case "failure":          self = .failure
+        case "cancelled":        self = .cancelled
+        case "skipped":          self = .skipped
+        case "timed_out":        self = .timedOut
+        case "action_required":  self = .actionRequired
+        case "neutral":          self = .neutral
+        case "stale":            self = .stale
+        case "startup_failure":  self = .startupFailure
+        default:                 self = .unknown(raw)
+        }
+    }
+
     /// Returns `true` for terminal failure-like conclusions.
     public var isFailure: Bool {
         switch self {
@@ -131,18 +129,7 @@ public enum JobConclusion: Hashable, Sendable {
 extension JobConclusion: Codable {
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
-        switch raw {
-        case "success":          self = .success
-        case "failure":          self = .failure
-        case "cancelled":        self = .cancelled
-        case "skipped":          self = .skipped
-        case "timed_out":        self = .timedOut
-        case "action_required":  self = .actionRequired
-        case "neutral":          self = .neutral
-        case "stale":            self = .stale
-        case "startup_failure":  self = .startupFailure
-        default:                 self = .unknown(raw)
-        }
+        self = JobConclusion(rawString: raw)
     }
 
     public func encode(to encoder: Encoder) throws {
