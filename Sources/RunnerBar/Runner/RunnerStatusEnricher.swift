@@ -8,10 +8,12 @@ import Foundation
 // Strategy: batch by unique scope URL.
 //   1. Group runners by their gitHubUrl scope (repo or org).
 //   2. Issue ONE ghAPI call per unique scope — not one call per runner.
+//      Pages through all results (per_page=100) so fleets larger than
+//      GitHub's default page size of 30 are fully covered.
 //   3. Build a name → APIRunner dictionary per scope.
 //   4. Second pass: apply enrichment from the dictionary.
 //
-// This preserves the original 1–2 API-calls-per-poll-cycle behaviour and routes
+// This preserves the original 1–N API-calls-per-poll-cycle behaviour and routes
 // through ghAPI so ghIsRateLimited is honoured and the gh-CLI fallback is available.
 //
 // NOTE: ghAPI returns Data?. fetchRunnersForScope decodes it via JSONSerialization
@@ -53,8 +55,13 @@ final class RunnerStatusEnricher: @unchecked Sendable {
 
     // MARK: - Private
 
-    /// Fetches the full runner list for a scope URL via ghAPI (respects ghIsRateLimited).
+    /// Fetches the **complete** runner list for a scope URL via ghAPI, paginating
+    /// through all pages (per_page=100) until exhausted.
     /// Returns an empty array on failure or when rate-limited.
+    ///
+    /// GitHub's default page size is 30. Without explicit pagination any org/repo
+    /// with more than 30 runners would silently lose enrichment for runners beyond
+    /// the first page. Using per_page=100 (the API maximum) minimises round-trips.
     private func fetchRunnersForScope(_ scopeURL: String) -> [[String: Any]] {
         guard !ghIsRateLimited else { return [] }
 
@@ -66,18 +73,37 @@ final class RunnerStatusEnricher: @unchecked Sendable {
 
         // ⚠️ No leading slash — ghAPI builds the full URL itself.
         // All other callers use "repos/…" or "orgs/…" without a leading "/".
-        let endpoint: String
+        let baseEndpoint: String
         if parts.count >= 2 {
-            endpoint = "repos/\(parts[0])/\(parts[1])/actions/runners"
+            baseEndpoint = "repos/\(parts[0])/\(parts[1])/actions/runners"
         } else {
-            endpoint = "orgs/\(parts[0])/actions/runners"
+            baseEndpoint = "orgs/\(parts[0])/actions/runners"
         }
 
-        // ghAPI returns Data?; decode via JSONSerialization before casting.
-        guard let data = ghAPI(endpoint),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let runners = json["runners"] as? [[String: Any]] else { return [] }
-        return runners
+        // Paginate: request up to 100 runners per page until a page returns
+        // fewer than the page size, indicating we've reached the last page.
+        var allRunners: [[String: Any]] = []
+        var page = 1
+        let perPage = 100
+
+        repeat {
+            guard !ghIsRateLimited else { break }
+            let endpoint = "\(baseEndpoint)?per_page=\(perPage)&page=\(page)"
+
+            // ghAPI returns Data?; decode via JSONSerialization before casting.
+            guard let data = ghAPI(endpoint),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pageRunners = json["runners"] as? [[String: Any]] else { break }
+
+            allRunners.append(contentsOf: pageRunners)
+
+            // If the page returned fewer runners than the page size we've
+            // consumed all available runners — no need for another request.
+            guard pageRunners.count == perPage else { break }
+            page += 1
+        } while true
+
+        return allRunners
     }
 
     /// Applies fields from a raw GitHub API runner dictionary to a RunnerModel.
