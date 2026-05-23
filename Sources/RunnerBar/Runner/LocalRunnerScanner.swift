@@ -24,7 +24,7 @@ import RunnerBarCore
 ///    `/opt/actions-runner`, `/opt/runner`, `/usr/local/actions-runner`,
 ///    `/usr/local/runner` up to depth 6.
 ///
-/// 3. **Live service check** — `launchctl list | grep actions.runner`
+/// 3. **Live service check** — `launchctl list` filtered in-process for `actions.runner`
 ///    Flags which runners currently have an active launchd service.
 struct LocalRunnerScanner {
 
@@ -54,6 +54,8 @@ struct LocalRunnerScanner {
     // MARK: - Filesystem path constants
     /// The findBinary constant.
     private static let findBinary    = "/usr/bin/find"
+    /// Full path to the launchctl binary.
+    private static let launchctlBinary = "/bin/launchctl"
 
     // MARK: - Public API
 
@@ -217,15 +219,21 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 3: Live service check
 
-    /// Performs the scanLiveServices operation.
+    /// Returns the set of active launchd service labels that contain `actions.runner`.
+    ///
+    /// Runs `launchctl list` directly via `ProcessRunner` (no shell wrapper), then
+    /// filters matching lines in-process — avoids `/bin/zsh -c` overhead and the
+    /// shell-injection risk of piping through `grep`.
     private func scanLiveServices() -> Set<String> {
-        let output = shell(
-            "launchctl list 2>/dev/null | grep actions.runner",
+        let result = ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: Self.launchctlBinary),
+            arguments: ["list"],
             timeout: 5
         )
+        let output = result.output
         guard !output.isEmpty else { return [] }
         var labels = Set<String>()
-        for line in output.components(separatedBy: "\n") where !line.isEmpty {
+        for line in output.components(separatedBy: "\n") where line.contains("actions.runner") {
             let columns = line.components(separatedBy: "\t")
             guard columns.count >= 3 else { continue }
             let pid = columns[0].trimmingCharacters(in: .whitespaces)
