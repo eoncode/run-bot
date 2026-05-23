@@ -55,24 +55,22 @@ extension JobStatus: Codable {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = JobStatus(rawString: raw)
     }
-
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }
 }
-// swiftlint:enable missing_docs
 
-// swiftlint:disable:next missing_docs
 extension JobStatus: CustomStringConvertible {
     public var description: String { rawValue }
 }
 
-/// Allows `XCTAssertEqual(job.status, "completed")` in tests.
-// swiftlint:disable:next missing_docs
-public func == (lhs: JobStatus, rhs: String) -> Bool { lhs.rawValue == rhs }
-// swiftlint:disable:next missing_docs
-public func == (lhs: String, rhs: JobStatus) -> Bool { lhs == rhs.rawValue }
+extension JobStatus: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        self = JobStatus(rawString: value)
+    }
+}
+// swiftlint:enable missing_docs
 
 // MARK: - Job conclusion
 
@@ -136,25 +134,19 @@ extension JobConclusion: Codable {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = JobConclusion(rawString: raw)
     }
-
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }
 }
-// swiftlint:enable missing_docs
 
-// swiftlint:disable:next missing_docs
 extension JobConclusion: CustomStringConvertible {
     public var description: String { rawValue }
 }
 
-/// Allows `XCTAssertEqual(job.conclusion, "success")` in tests.
-// swiftlint:disable:next missing_docs
-public func == (lhs: JobConclusion, rhs: String) -> Bool { lhs.rawValue == rhs }
-// swiftlint:disable:next missing_docs
-public func == (lhs: String, rhs: JobConclusion) -> Bool { lhs == rhs.rawValue }
-// swiftlint:disable:next missing_docs
-public func == (lhs: JobConclusion?, rhs: String) -> Bool { lhs?.rawValue == rhs }
-// swiftlint:disable:next missing_docs
-public func == (lhs: String, rhs: JobConclusion?) -> Bool { lhs == rhs?.rawValue }
+extension JobConclusion: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        self = JobConclusion(rawString: value)
+    }
+}
+// swiftlint:enable missing_docs

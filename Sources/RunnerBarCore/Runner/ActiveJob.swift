@@ -16,7 +16,7 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     public let htmlUrl: String?
 
     // MARK: State
-    /// Typed lifecycle status (replaces raw `String`).
+    /// Typed lifecycle status.
     public let status: JobStatus
     /// Typed conclusion (nil while the job is still running).
     public let conclusion: JobConclusion?
@@ -70,35 +70,6 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         self.steps = steps
     }
 
-    // MARK: String-based convenience init (for tests and legacy callers)
-    public init(
-        id: Int,
-        name: String,
-        htmlUrl: String? = nil,
-        status: String,
-        conclusion: String? = nil,
-        isDimmed: Bool = false,
-        runnerName: String? = nil,
-        scope: String? = nil,
-        startedAt: Date? = nil,
-        completedAt: Date? = nil,
-        createdAt: Date? = nil,
-        steps: [JobStep] = []
-    ) {
-        self.id = id
-        self.name = name
-        self.htmlUrl = htmlUrl
-        self.status = JobStatus(rawString: status)
-        self.conclusion = conclusion.map { JobConclusion(rawString: $0) }
-        self.isDimmed = isDimmed
-        self.runnerName = runnerName
-        self.scope = scope
-        self.startedAt = startedAt
-        self.completedAt = completedAt
-        self.createdAt = createdAt
-        self.steps = steps
-    }
-
     // MARK: Derived
 
     /// Human-readable elapsed duration, e.g. `"02:47"`.
@@ -111,7 +82,7 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         return String(format: "%02d:%02d", secs / 60, secs % 60)
     }
 
-    /// `true` when this job ran on a self-hosted (non GitHub-hosted) runner.
+    /// `true` when this job ran on a self-hosted runner; `nil` when runner name is unknown.
     public var isLocalRunner: Bool? {
         guard let name = runnerName?.lowercased() else { return nil }
         let hostedPrefixes = ["ubuntu-", "macos-", "windows-", "buildjet-", "depot-", "github actions "]
@@ -121,8 +92,7 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     /// Display title used in the panel row.
     public var displayTitle: String { name }
 
-    /// Fraction of steps that have a conclusion (0.0–1.0).
-    /// Returns `nil` when the step list is empty (jobs not yet enriched).
+    /// Fraction of steps that have a conclusion (0.0–1.0). `nil` when step list is empty.
     public var progressFraction: Double? {
         guard !steps.isEmpty else { return nil }
         let done = steps.filter { $0.conclusion != nil }.count
@@ -134,22 +104,14 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
 
 /// A single step within an `ActiveJob`.
 public struct JobStep: Identifiable, Equatable, Sendable {
-    /// The step number used as a stable identifier (1-based).
     public let id: Int
-    /// The display name of the step.
     public let name: String
-    /// Typed lifecycle status of the step.
     public let status: JobStatus
-    /// Typed conclusion of the step (nil while the step is still running).
     public let conclusion: JobConclusion?
-    /// The UTC date/time at which this step started.
     public let startedAt: Date?
-    /// The UTC date/time at which this step finished (nil while running).
     public let completedAt: Date?
-    /// The 1-based step number as returned by the API.
     public let number: Int
 
-    // MARK: Designated init
     public init(
         id: Int,
         name: String,
@@ -168,27 +130,7 @@ public struct JobStep: Identifiable, Equatable, Sendable {
         self.number = number
     }
 
-    // MARK: String-based convenience init (for tests and legacy callers)
-    public init(
-        id: Int,
-        name: String,
-        status: String,
-        conclusion: String? = nil,
-        startedAt: Date? = nil,
-        completedAt: Date? = nil,
-        number: Int = 0
-    ) {
-        self.id = id
-        self.name = name
-        self.status = JobStatus(rawString: status)
-        self.conclusion = conclusion.map { JobConclusion(rawString: $0) }
-        self.startedAt = startedAt
-        self.completedAt = completedAt
-        self.number = number
-    }
-
-    /// Human-readable elapsed duration for this step.
-    /// Returns `"00:00"` when `startedAt` is nil.
+    /// Human-readable elapsed duration. Returns `"00:00"` when `startedAt` is nil.
     public var elapsed: String {
         guard let start = startedAt else { return "00:00" }
         let end = completedAt ?? Date()
@@ -196,12 +138,12 @@ public struct JobStep: Identifiable, Equatable, Sendable {
         return String(format: "%02d:%02d", secs / 60, secs % 60)
     }
 
-    /// A single Unicode character summarising the step's outcome for display in the UI.
+    /// Unicode character summarising the step outcome for display.
     public var conclusionIcon: String {
         switch conclusion {
-        case .success:              return "\u{2713}"  // ✓
-        case .failure:              return "\u{2797}"  // ❗
-        case .skipped, .cancelled:  return "\u{2298}"  // ⊘
+        case .success:              return "\u{2713}"
+        case .failure:              return "\u{2797}"
+        case .skipped, .cancelled:  return "\u{2298}"
         case .none, .some:
             return status == .inProgress ? "\u{25B6}" : "\u{00B7}"
         }
@@ -211,7 +153,6 @@ public struct JobStep: Identifiable, Equatable, Sendable {
 // MARK: - API payload (Decodable)
 
 /// Raw API payload decoded from `/actions/runs/{id}/jobs` responses.
-/// Converted to `ActiveJob` via `makeActiveJob(from:iso:isDimmed:)`.
 public struct JobPayload: Decodable {
     public let id: Int
     public let name: String
@@ -224,11 +165,7 @@ public struct JobPayload: Decodable {
     public let steps: [StepPayload]
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case status
-        case conclusion
-        case steps
+        case id, name, status, conclusion, steps
         case startedAt   = "started_at"
         case completedAt = "completed_at"
         case htmlUrl     = "html_url"
@@ -246,10 +183,7 @@ public struct StepPayload: Decodable {
     public let completedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case name
-        case status
-        case conclusion
-        case number
+        case name, status, conclusion, number
         case startedAt   = "started_at"
         case completedAt = "completed_at"
     }
