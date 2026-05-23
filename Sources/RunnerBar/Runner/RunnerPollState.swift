@@ -37,7 +37,6 @@ extension RunnerStore {
         PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
-            jobCache: jobCache,
             fetchGroups: { shaKeyedCache in
                 var groups: [WorkflowActionGroup] = []
                 for scope in ScopeStore.shared.scopes {
