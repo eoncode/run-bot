@@ -1,12 +1,12 @@
 import Combine
 import Foundation
 
-// MARK: - SettingsStore
+// MARK: - AppPreferencesStore
 
 /// Persists general app settings to UserDefaults.
-final class SettingsStore: ObservableObject {
+final class AppPreferencesStore: ObservableObject {
     /// Shared singleton instance.
-    static let shared = SettingsStore()
+    static let shared = AppPreferencesStore()
 
     private enum Key {
         static let pollingInterval    = "settings.pollingInterval"

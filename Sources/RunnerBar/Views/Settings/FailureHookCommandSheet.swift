@@ -25,7 +25,7 @@ struct FailureHookCommandSheet: View {
     init(scope: String, onDismiss: @escaping () -> Void) {
         self.scope = scope
         self.onDismiss = onDismiss
-        let saved = ScopeSettingsStore.failureHookCommand(for: scope) ?? ""
+        let saved = ScopePreferencesStore.failureHookCommand(for: scope) ?? ""
         log("FailureHookCommandSheet \u{203a} init — scope=\(scope) savedCommand='\(saved)' isEmpty=\(saved.isEmpty)")
         _commandText = State(initialValue: saved.isEmpty ? Self.exampleCommand : saved)
         log("FailureHookCommandSheet \u{203a} init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
@@ -156,13 +156,13 @@ extension FailureHookCommandSheet {
 extension FailureHookCommandSheet {
     func save() {
         log("FailureHookCommandSheet \u{203a} save — scope=\(scope) commandText='\(commandText.prefix(200))'")
-        ScopeSettingsStore.setFailureHookCommand(commandText, for: scope)
+        ScopePreferencesStore.setFailureHookCommand(commandText, for: scope)
         log("FailureHookCommandSheet \u{203a} save — done, dismissing")
         onDismiss()
     }
 
     func testCommand() {
-        let localPath = ScopeSettingsStore.localRepoPath(for: scope) ?? ""
+        let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = commandText
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
             .replacingOccurrences(of: "$SCOPE", with: scope)

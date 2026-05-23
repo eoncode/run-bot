@@ -114,7 +114,7 @@ private struct JobRowCard: View {
     let job: ActiveJob
     let status: RBStatus
     let isLast: Bool
-    let group: ActionGroup
+    let group: WorkflowActionGroup
     let isExpanded: Bool
     let onToggle: () -> Void
     let onStepTap: (JobStep) -> Void
@@ -205,7 +205,7 @@ private struct JobRowCard: View {
 
 // MARK: - InlineJobRowsView
 struct InlineJobRowsView: View {
-    let group: ActionGroup
+    let group: WorkflowActionGroup
     let tick: Int
     var fullExpand: Bool = false
     // Default no-op handler; callers that need step navigation override this.
@@ -213,12 +213,12 @@ struct InlineJobRowsView: View {
         // Intentionally empty: default is a no-op.
         // Callers that require navigation provide a real implementation.
     }
-    @EnvironmentObject private var popoverState: PopoverOpenState
+    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
     @State private var expandedJobIDs: Set<Int> = []
     private var tickSnapshot: Int { tick }
     var body: some View {
         Group {
-            if popoverState.isOpen {
+            if panelVisibilityState.isOpen {
                 let jobs = fullExpand ? group.jobs : group.jobs.filter { $0.status == "in_progress" }
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(jobs.enumerated()), id: \.element.id) { index, job in

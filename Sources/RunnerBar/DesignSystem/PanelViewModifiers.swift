@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - StatPill
 /// Compact ultraThinMaterial pill showing a label + value (e.g. "CPU 3.2%").
-/// Used in PopoverLocalRunnerRow to surface per-runner CPU / MEM metrics.
+/// Used in PanelLocalRunnerRow to surface per-runner CPU / MEM metrics.
 struct StatPill: View {
     /// The short metric label (e.g. "CPU", "MEM").
     let label: String

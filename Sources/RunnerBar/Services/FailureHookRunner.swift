@@ -2,8 +2,8 @@ import Foundation
 
 // MARK: - FailureHookRunner
 
-// #544: Fires the per-scope failure hook command when an ActionGroup transitions to failure.
-// #546: Resolves $LOCAL_PATH from ScopeSettingsStore.
+// #544: Fires the per-scope failure hook command when an WorkflowActionGroup transitions to failure.
+// #546: Resolves $LOCAL_PATH from ScopePreferencesStore.
 // #552: Fetches failed job/step details on background thread before building $FAILURE_LOG.
 // #560: Branch filter — skip if a branch filter is set and does not match group.headBranch.
 //
@@ -34,16 +34,16 @@ enum FailureHookRunner {
 
     /// Call this whenever a group transitions to done with a failure conclusion.
     /// Dispatches to a background thread, fetches failed job/step details, then fires.
-    static func fireIfNeeded(group: ActionGroup, scope: String, callsite: String = "unknown") {
+    static func fireIfNeeded(group: WorkflowActionGroup, scope: String, callsite: String = "unknown") {
         log("FailureHookRunner › fireIfNeeded ENTER — callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
-        let hookEnabled = ScopeSettingsStore.failureHookEnabled(for: scope)
+        let hookEnabled = ScopePreferencesStore.failureHookEnabled(for: scope)
         log("FailureHookRunner › failureHookEnabled for scope=\(scope) → \(hookEnabled)")
         guard hookEnabled else {
             log("FailureHookRunner › SKIP — hook not enabled for scope=\(scope)")
             return
         }
         // #560: Branch filter — skip if a branch filter is set and doesn't match
-        let filterBranch = ScopeSettingsStore.failureHookBranch(for: scope)
+        let filterBranch = ScopePreferencesStore.failureHookBranch(for: scope)
         if let filter = filterBranch {
             let groupBranch = group.headBranch ?? ""
             guard groupBranch == filter else {
@@ -52,7 +52,7 @@ enum FailureHookRunner {
             }
             log("FailureHookRunner › branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
         }
-        let storedCommand = ScopeSettingsStore.failureHookCommand(for: scope)
+        let storedCommand = ScopePreferencesStore.failureHookCommand(for: scope)
         log("FailureHookRunner › storedCommand for scope=\(scope) → \(storedCommand ?? "<nil — will use defaultCommand>")")
         let command = storedCommand ?? Self.defaultCommand
         log("FailureHookRunner › resolved command (first 200): \(command.prefix(200))")
@@ -81,7 +81,7 @@ enum FailureHookRunner {
 
     private static let failureConclusions: Set = ["failure", "timed_out", "cancelled", "startup_failure"]
 
-    private static func isFailure(group: ActionGroup) -> Bool {
+    private static func isFailure(group: WorkflowActionGroup) -> Bool {
         group.runs.contains {
             guard let c = $0.conclusion else { return false }
             return failureConclusions.contains(c.lowercased())
@@ -95,7 +95,7 @@ enum FailureHookRunner {
 
     /// Fetches jobs (with steps) and raw log tail for all failed runs in the group.
     /// Blocking — must be called from a background thread.
-    private static func fetchFailedJobs(group: ActionGroup, scope: String) -> [FailedJobResult] {
+    private static func fetchFailedJobs(group: WorkflowActionGroup, scope: String) -> [FailedJobResult] {
         var result: [FailedJobResult] = []
         var seenIDs = Set<Int>()
         for run in group.runs {
@@ -145,7 +145,7 @@ enum FailureHookRunner {
     /// Each failed job gets its raw log tail (last 150 lines).
     /// Falls back to job/step names if no log was fetched.
     private static func buildLogContent(
-        group: ActionGroup,
+        group: WorkflowActionGroup,
         scope _: String,
         jobs: [FailedJobResult]
     ) -> String {
@@ -183,11 +183,11 @@ enum FailureHookRunner {
 
     private static func resolveTokens(
         _ command: String,
-        group: ActionGroup,
+        group: WorkflowActionGroup,
         scope: String,
         jobs: [FailedJobResult]
     ) -> String {
-        let localPath = ScopeSettingsStore.localRepoPath(for: scope) ?? ""
+        let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
         let branch = group.headBranch ?? ""
         let sha = group.headSha
         let workflow = group.title

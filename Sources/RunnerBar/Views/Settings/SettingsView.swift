@@ -38,9 +38,9 @@ struct SettingsView: View {
     /// #499: Called when the user taps a scope row; navigates to ScopeDetailView.
     let onSelectScope: (ScopeEntry) -> Void
     @ObservedObject var store: RunnerViewModel
-    @ObservedObject private var settings = SettingsStore.shared
-    @ObservedObject private var notifications = NotificationPrefsStore.shared
-    @ObservedObject private var legal = LegalPrefsStore.shared
+    @ObservedObject private var settings = AppPreferencesStore.shared
+    @ObservedObject private var notifications = NotificationPreferences.shared
+    @ObservedObject private var legal = LegalPreferences.shared
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
     @ObservedObject private var scopeStore = ScopeStore.shared
     @State private var launchAtLogin = LoginItem.isEnabled
@@ -347,7 +347,7 @@ struct SettingsView: View {
 
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
-        let displayName = ScopeSettingsStore.displayName(for: entry.scope)
+        let displayName = ScopePreferencesStore.displayName(for: entry.scope)
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         return Button(action: { onSelectScope(entry) }) {
             HStack(spacing: 8) {
@@ -364,7 +364,7 @@ struct SettingsView: View {
                         .font(.system(size: 12))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if ScopeSettingsStore.alias(for: entry.scope) != nil {
+                    if ScopePreferencesStore.alias(for: entry.scope) != nil {
                         Text(entry.scope)
                             .font(.caption2)
                             .foregroundColor(Color.rbTextTertiary)
@@ -395,7 +395,7 @@ struct SettingsView: View {
 
                 // swiftlint:disable:next multiple_closures_with_trailing_closure
                 Button(action: {
-                    ScopeSettingsStore.cleanUp(scope: entry.scope)
+                    ScopePreferencesStore.cleanUp(scope: entry.scope)
                     ScopeStore.shared.remove(id: entry.id)
                     RunnerStore.shared.start()
                 }) {

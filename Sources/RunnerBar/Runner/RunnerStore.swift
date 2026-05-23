@@ -11,12 +11,12 @@ final class RunnerStore {
 
     private(set) var runners: [Runner] = []
     private(set) var jobs: [ActiveJob] = []
-    private(set) var actions: [ActionGroup] = []
+    private(set) var actions: [WorkflowActionGroup] = []
 
     private var prevLiveJobs: [Int: ActiveJob] = [:]
     private var completedCache: [Int: ActiveJob] = [:]
-    private var prevLiveGroups: [String: ActionGroup] = [:]
-    private var actionGroupCache: [String: ActionGroup] = [:]
+    private var prevLiveGroups: [String: WorkflowActionGroup] = [:]
+    private var actionGroupCache: [String: WorkflowActionGroup] = [:]
 
     private(set) var isRateLimited = false
     private var timer: Timer?
@@ -36,7 +36,7 @@ final class RunnerStore {
 
     private init() {
         log("RunnerStore › init")
-        intervalCancellable = SettingsStore.shared.$pollingInterval
+        intervalCancellable = AppPreferencesStore.shared.$pollingInterval
             .dropFirst(1)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newInterval in
@@ -62,7 +62,7 @@ final class RunnerStore {
         fetch()
     }
 
-    private func scheduleTimer(liveActions: [ActionGroup]? = nil) {
+    private func scheduleTimer(liveActions: [WorkflowActionGroup]? = nil) {
         timer?.invalidate()
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
         let actionsToCheck = liveActions ?? self.actions
@@ -70,7 +70,7 @@ final class RunnerStore {
             $0.groupStatus == .inProgress || $0.groupStatus == .queued
         }
         let hasActive = hasActiveJobs || hasActiveActions
-        let baseIdle = max(10, SettingsStore.shared.pollingInterval)
+        let baseIdle = max(10, AppPreferencesStore.shared.pollingInterval)
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
         log("RunnerStore › scheduleTimer — next poll in \(Int(interval))s (hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle))")
         timer = Timer.scheduledTimer(

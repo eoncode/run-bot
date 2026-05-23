@@ -14,8 +14,8 @@ struct SectionHeaderLabel: View {
     }
 }
 
-// MARK: - PopoverHeaderView
-struct PopoverHeaderView: View {
+// MARK: - PanelHeaderView
+struct PanelHeaderView: View {
     @ObservedObject var statsVM: SystemStatsViewModel
     let isAuthenticated: Bool
     let onSelectSettings: () -> Void
@@ -58,8 +58,8 @@ private struct RunnerTypeIcon: View {
     }
 }
 
-// MARK: - PopoverLocalRunnerRow
-struct PopoverLocalRunnerRow: View {
+// MARK: - PanelLocalRunnerRow
+struct PanelLocalRunnerRow: View {
     let runners: [RunnerModel]
     var body: some View {
         let busy = runners.filter { $0.isBusy }
@@ -103,7 +103,7 @@ struct PopoverLocalRunnerRow: View {
 
 // MARK: - ActionRowView
 struct ActionRowView: View {
-    let group: ActionGroup
+    let group: WorkflowActionGroup
     let tick: Int
     let onStepTap: (ActiveJob, JobStep) -> Void
     @State private var expandState: Bool?

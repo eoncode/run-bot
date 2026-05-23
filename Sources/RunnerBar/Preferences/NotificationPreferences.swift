@@ -1,11 +1,11 @@
 import Combine
 import Foundation
 
-// MARK: - NotificationPrefsStore
+// MARK: - NotificationPreferences
 
 /// Persists notification preferences to UserDefaults.
-final class NotificationPrefsStore: ObservableObject {
-    static let shared = NotificationPrefsStore()
+final class NotificationPreferences: ObservableObject {
+    static let shared = NotificationPreferences()
 
     private enum Key {
         static let notifyOnSuccess = "notifications.notifyOnSuccess"
@@ -23,7 +23,7 @@ final class NotificationPrefsStore: ObservableObject {
     }
 
     private init() {
-        NotificationPrefsStore.register(defaults: .standard)
+        NotificationPreferences.register(defaults: .standard)
         notifyOnSuccess = UserDefaults.standard.bool(forKey: Key.notifyOnSuccess)
         notifyOnFailure = UserDefaults.standard.bool(forKey: Key.notifyOnFailure)
     }

@@ -1,43 +1,43 @@
 import SwiftUI
 
 // ════════════════════════════════════════════════════════════════════════════════
-// ⚠️ PopoverOpenState — SIDE-JUMP REGRESSION GUARD (ref #377 #375 #376)
+// ⚠️ PanelVisibilityState — SIDE-JUMP REGRESSION GUARD (ref #377 #375 #376)
 // ════════════════════════════════════════════════════════════════════════════════
 //
 // PURPOSE:
-// 1. Provides a live, mutable signal of whether the NSPopover is currently open.
+// 1. Provides a live, mutable signal of whether the NSPanel is currently open.
 // 2. Carries a one-shot height-ready callback used by the GeometryReader/PreferenceKey
 //    dynamic height solution (Architecture 3).
 //
 // WHY NOT A PLAIN Bool PROP:
-// AppDelegate constructs PopoverMainView (via mainView()) BEFORE the popover
-// opens. Any plain `var isPopoverOpen: Bool` prop is therefore always `false`
+// AppDelegate constructs PanelMainView (via mainView()) BEFORE the panel
+// opens. Any plain `var isPanelOpen: Bool` prop is therefore always `false`
 // at the point InlineJobRowsView evaluates it. This @EnvironmentObject is
-// mutated by AppDelegate immediately before NSPopover.show() and after
-// NSPopover.close(), so the value seen inside the view is always live.
+// mutated by AppDelegate immediately before NSPanel.show() and after
+// NSPanel.close(), so the value seen inside the view is always live.
 //
 // HEIGHT CALLBACK (onHeightReady):
-// AppDelegate sets onHeightReady BEFORE show(). PopoverMainView calls it ONCE
-// via .onPreferenceChange(PopoverHeightKey.self), guarded by heightReported.
-// AppDelegate's callback calls popover.setContentSize(). animates=false = no jump.
+// AppDelegate sets onHeightReady BEFORE show(). PanelMainView calls it ONCE
+// via .onPreferenceChange(PanelHeightKey.self), guarded by heightReported.
+// AppDelegate's callback calls panel.setFrame(). animates=false = no jump.
 // After the callback fires, heightReported = true prevents repeated calls.
 //
 // USAGE:
 // AppDelegate:
-//   popoverOpenState.isOpen = true
-//   popoverOpenState.heightReported = false
-//   popoverOpenState.onHeightReady = { [weak popover] h in
+//   panelVisibilityState.isOpen = true
+//   panelVisibilityState.heightReported = false
+//   panelVisibilityState.onHeightReady = { [weak panel] h in
 //       let w = AppDelegate.fixedWidth
 //       let max = self.maxHeight
-//       popover?.setContentSize(NSSize(width: w, height: min(h, max)))
+//       panel?.setFrame(NSRect(...))
 //   }
-//   popover.show(...)
+//   panel.orderFront(nil)
 //
-// PopoverMainView:
-//   .onPreferenceChange(PopoverHeightKey.self) { h in
-//       guard h > 10, !popoverOpenState.heightReported else { return }
-//       popoverOpenState.heightReported = true
-//       popoverOpenState.onHeightReady?(h)
+// PanelMainView:
+//   .onPreferenceChange(PanelHeightKey.self) { h in
+//       guard h > 10, !panelVisibilityState.heightReported else { return }
+//       panelVisibilityState.heightReported = true
+//       panelVisibilityState.onHeightReady?(h)
 //   }
 //
 // ⚠️ CONTRACT:
@@ -50,9 +50,9 @@ import SwiftUI
 // is major major major.
 // ════════════════════════════════════════════════════════════════════════════════
 
-/// Observable wrapper for NSPopover open/closed state + one-shot height callback.
-final class PopoverOpenState: ObservableObject {
-    /// `true` from immediately before `NSPopover.show()` until after `NSPopover.close()`.
+/// Observable wrapper for NSPanel open/closed state + one-shot height callback.
+final class PanelVisibilityState: ObservableObject {
+    /// `true` from immediately before the panel opens until after it closes.
     @Published var isOpen: Bool = false
 
     /// Set to `false` before each `show()`, set to `true` after first height report.
@@ -61,7 +61,7 @@ final class PopoverOpenState: ObservableObject {
     var heightReported: Bool = false
 
     /// Called ONCE after the first real rendered height is known.
-    /// Set by AppDelegate before show(). Calls popover.setContentSize().
+    /// Set by AppDelegate before show(). Calls panel.setFrame().
     /// ❌ NEVER call more than once per open.
     var onHeightReady: ((CGFloat) -> Void)?
 }

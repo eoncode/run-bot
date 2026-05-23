@@ -15,11 +15,11 @@ struct JobPollResult {
 // Result returned by `PollResultBuilder.buildGroupState`.
 struct GroupPollResult {
     // Action groups to display in the popover.
-    let display: [ActionGroup]
+    let display: [WorkflowActionGroup]
     // Updated group cache, trimmed to groupCacheLimit entries.
-    let newGroupCache: [String: ActionGroup]
+    let newGroupCache: [String: WorkflowActionGroup]
     // Live-group snapshot for the next poll's diff.
-    let newPrevLiveGroups: [String: ActionGroup]
+    let newPrevLiveGroups: [String: WorkflowActionGroup]
 }
 
 // MARK: - RunnerStore thin wrappers
@@ -46,8 +46,8 @@ extension RunnerStore {
     }
 
     nonisolated func buildGroupState(
-        snapPrevGroups: [String: ActionGroup],
-        snapGroupCache: [String: ActionGroup],
+        snapPrevGroups: [String: WorkflowActionGroup],
+        snapGroupCache: [String: WorkflowActionGroup],
         jobCache: [Int: ActiveJob]
     ) -> GroupPollResult {
         PollResultBuilder.buildGroupState(
@@ -55,7 +55,7 @@ extension RunnerStore {
             snapGroupCache: snapGroupCache,
             jobCache: jobCache,
             fetchGroups: { shaKeyedCache in
-                var groups: [ActionGroup] = []
+                var groups: [WorkflowActionGroup] = []
                 for scope in ScopeStore.shared.scopes {
                     groups.append(contentsOf: fetchActionGroups(for: scope, cache: shaKeyedCache))
                 }
@@ -89,7 +89,7 @@ extension RunnerStore {
 
     // MARK: - Group helpers (retain RunnerStore context)
 
-    nonisolated func scopeFromActionGroup(_ group: ActionGroup) -> String {
+    nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")

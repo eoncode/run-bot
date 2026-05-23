@@ -23,9 +23,9 @@ enum GroupStatus {
 }
 
 // MARK: - WorkflowRunRef
-/// Lightweight reference to a single workflow run inside an ActionGroup.
+/// Lightweight reference to a single workflow run inside a WorkflowActionGroup.
 /// Holds only the data needed for display and job fetching — deliberately
-/// minimal so the full job list lives on the parent ActionGroup instead.
+/// minimal so the full job list lives on the parent WorkflowActionGroup instead.
 struct WorkflowRunRef: Identifiable {
     let id: Int
     let name: String       // workflow file name, e.g. "SonarQube", "vitest"
@@ -34,15 +34,15 @@ struct WorkflowRunRef: Identifiable {
     let htmlUrl: String?
 }
 
-// MARK: - ActionGroup
+// MARK: - WorkflowActionGroup
 /// Represents one **commit / PR trigger**: all GitHub Actions workflow runs
 /// that share the same `head_sha`. Mirrors ci-dash.py's "Group" concept from
 /// `group_runs()` + `enrich_group()`.
 ///
-/// Hierarchy: ActionGroup → jobs (flat across all sibling runs) → JobStep → log.
+/// Hierarchy: WorkflowActionGroup → jobs (flat across all sibling runs) → JobStep → log.
 /// `ActionDetailView` drills into the flat job list; `JobDetailView`/`StepLogView`
 /// are reused unchanged below that.
-struct ActionGroup: Identifiable, Equatable {
+struct WorkflowActionGroup: Identifiable, Equatable {
     let headSha: String        // head_sha — kept as the underlying group identity
     let label: String          // "#1270" if PR, else "d6281b" (sha[:7])
     let title: String          // commit/PR message first line (≤40 chars)
@@ -74,17 +74,17 @@ struct ActionGroup: Identifiable, Equatable {
 
     // MARK: Equatable
     // Identity-based equality: two groups are equal when their stable `id` matches.
-    // This satisfies the `onChange(of: store.actions)` requirement in PopoverMainView
+    // This satisfies the `onChange(of: store.actions)` requirement in PanelMainView
     // without deep-comparing mutable job arrays on every poll.
-    static func == (lhs: ActionGroup, rhs: ActionGroup) -> Bool {
+    static func == (lhs: WorkflowActionGroup, rhs: WorkflowActionGroup) -> Bool {
         lhs.id == rhs.id
     }
 
     /// Returns a copy of this group with a replacement jobs array.
     /// Used in `RunnerStore` to enrich job data without reconstructing the
     /// full struct at every call site.
-    func withJobs(_ newJobs: [ActiveJob]) -> ActionGroup {
-        ActionGroup(
+    func withJobs(_ newJobs: [ActiveJob]) -> WorkflowActionGroup {
+        WorkflowActionGroup(
             headSha: headSha,
             label: label,
             title: title,
@@ -263,7 +263,7 @@ private func prLabel(from run: RunPayload) -> String {
 /// enriches each group with its flattened job list, and returns groups sorted:
 /// in_progress first, then queued, then done — newest first.
 // swiftlint:disable:next function_body_length cyclomatic_complexity
-func fetchActionGroups(for scope: String, cache: [String: ActionGroup] = [:]) -> [ActionGroup] {
+func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) -> [WorkflowActionGroup] {
     guard scope.contains("/") else {
         log("fetchActionGroups › skipping org scope \(scope)")
         return []
@@ -294,7 +294,7 @@ func fetchActionGroups(for scope: String, cache: [String: ActionGroup] = [:]) ->
         }
     }
 
-    var groups: [ActionGroup] = bySha.map { sha, shaRuns in
+    var groups: [WorkflowActionGroup] = bySha.map { sha, shaRuns in
         let rep = shaRuns.sorted { ($0.createdAt ?? "") > ($1.createdAt ?? "") }.first!
         let label    = prLabel(from: rep)
         let rawTitle = rep.displayTitle ?? rep.headCommit
@@ -330,7 +330,7 @@ func fetchActionGroups(for scope: String, cache: [String: ActionGroup] = [:]) ->
         }
         let starts = allJobs.compactMap { $0.startedAt }
         let ends   = allJobs.compactMap { $0.completedAt }
-        return ActionGroup(
+        return WorkflowActionGroup(
             headSha: sha,
             label: label,
             title: title,

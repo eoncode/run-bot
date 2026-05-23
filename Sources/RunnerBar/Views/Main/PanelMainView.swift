@@ -27,21 +27,21 @@ import SwiftUI
 // RULE 6b: systemStats must RESTART when the main view becomes visible again.
 //
 // RULE 7: RunnerStore self-schedules via its own adaptive timer after each fetch().
-// ❌ NEVER add a second repeating timer in PopoverMainView that calls
+// ❌ NEVER add a second repeating timer in PanelMainView that calls
 // store.reload() — it doubles API calls and drains GitHub quota.
 // LocalRunnerStore.refresh() (local-only, no API) may be called from onAppear.
 //
 // RULE 8: AppDelegate.initPanelWidth is 320.
 // RULE 9: displayTick fires every 1 second ALWAYS (no open-state gate).
-/// Root popover view rendered inside the NSPanel.
+/// Root panel view rendered inside the NSPanel.
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
-struct PopoverMainView: View {
+struct PanelMainView: View {
     @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row in an inline job list. (#455)
     let onStepTap: (ActiveJob, JobStep) -> Void
     let onSelectSettings: () -> Void
-    @EnvironmentObject private var popoverOpenState: PopoverOpenState
+    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
     @State private var isAuthenticated = (githubToken() != nil)
     @StateObject private var systemStats = SystemStatsViewModel()
     @State private var visibleCount: Int = 10
@@ -52,14 +52,14 @@ struct PopoverMainView: View {
     }
     /// True only when at least one local runner is actively busy AND there is
     /// at least one in-progress workflow. Gates both the section header and
-    /// PopoverLocalRunnerRow so the section never appears without an active run.
+    /// PanelLocalRunnerRow so the section never appears without an active run.
     private var hasBusyLocalRunners: Bool {
         store.localRunners.contains { $0.isBusy }
             && store.actions.contains { $0.groupStatus == .inProgress }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PopoverHeaderView(
+            PanelHeaderView(
                 statsVM: systemStats,
                 isAuthenticated: isAuthenticated,
                 onSelectSettings: onSelectSettings,
@@ -70,7 +70,7 @@ struct PopoverMainView: View {
             if store.isRateLimited { rateLimitBanner; Divider() }
             if hasBusyLocalRunners {
                 SectionHeaderLabel(title: "Local Runners")
-                PopoverLocalRunnerRow(runners: store.localRunners)
+                PanelLocalRunnerRow(runners: store.localRunners)
             }
             Color.clear.frame(width: 0, height: 0)
                 .onAppear {
@@ -81,14 +81,14 @@ struct PopoverMainView: View {
         .frame(minWidth: 280, maxWidth: 900, alignment: .top)
         .onAppear {
             isAuthenticated = (githubToken() != nil)
-            if !popoverOpenState.isOpen { systemStats.start() }
+            if !panelVisibilityState.isOpen { systemStats.start() }
             startDisplayTickTimer()
         }
         .onDisappear {
             systemStats.stop()
             stopDisplayTickTimer()
         }
-        .onChange(of: popoverOpenState.isOpen) { open in
+        .onChange(of: panelVisibilityState.isOpen) { open in
             if open { systemStats.stop() } else { systemStats.start() }
         }
         .onChange(of: store.actions) { _ in visibleCount = 10 }
