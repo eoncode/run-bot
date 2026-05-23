@@ -1,8 +1,9 @@
 // PanelMainView+Subviews.swift
 // RunnerBar
 // swiftlint:disable colon opening_brace
-import SwiftUI
 
+import SwiftUI
+import RunnerBarCore
 // MARK: - SectionHeaderLabel
 /// Uppercase small-caps label used as a section divider inside the panel.
 /// Displays a title string in the muted secondary style.
@@ -20,6 +21,8 @@ struct SectionHeaderLabel: View {
     }
 }
 
+import SwiftUI
+import RunnerBarCore
 // MARK: - PanelHeaderView
 /// Top bar of the popover panel showing the RunnerBar logo, sign-in state,
 /// and the settings gear button.
@@ -61,6 +64,8 @@ struct PanelHeaderView: View {
     }
 }
 
+import SwiftUI
+import RunnerBarCore
 // MARK: - RunnerTypeIcon
 /// Small SF Symbol icon indicating whether a runner is local (self-hosted)
 /// or a GitHub-hosted cloud runner.
@@ -75,6 +80,8 @@ private struct RunnerTypeIcon: View {
     }
 }
 
+import SwiftUI
+import RunnerBarCore
 // MARK: - PanelLocalRunnerRow
 /// Row displaying a single local self-hosted runner: name, status badge, and
 /// CPU/memory stats. Only shown when `showLocalRunnerSection` is true.
@@ -124,6 +131,8 @@ struct PanelLocalRunnerRow: View {
     }
 }
 
+import SwiftUI
+import RunnerBarCore
 // MARK: - ActionRowView
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.

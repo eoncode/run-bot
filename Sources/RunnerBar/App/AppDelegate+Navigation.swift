@@ -1,6 +1,7 @@
 // AppDelegate+Navigation.swift
 // RunnerBar
 import SwiftUI
+import RunnerBarCore
 
 // MARK: - Navigation & view factories
 //

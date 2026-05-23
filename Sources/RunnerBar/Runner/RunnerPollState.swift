@@ -1,6 +1,7 @@
 // RunnerPollState.swift
 // RunnerBar
 import Foundation
+import RunnerBarCore
 
 // MARK: - RunnerStore thin wrappers
 

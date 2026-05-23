@@ -1,7 +1,6 @@
 // PollResultBuilder.swift
 // RunnerBar
 import Foundation
-import RunnerBarCore
 
 // MARK: - PollResultBuilder
 
@@ -9,7 +8,7 @@ import RunnerBarCore
 /// All methods are static and operate only on data passed as parameters.
 /// Fetch / API side-effects are injected as closures so this type is
 /// independently unit-testable without a RunnerStore instance.
-struct PollResultBuilder {
+public struct PollResultBuilder {
 
     // MARK: - Cache limits
 

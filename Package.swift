@@ -5,8 +5,13 @@ let package = Package(
     name: "RunnerBar",
     platforms: [.macOS(.v13)],
     targets: [
+        .target(
+            name: "RunnerBarCore",
+            path: "Sources/RunnerBarCore"
+        ),
         .executableTarget(
             name: "RunnerBar",
+            dependencies: ["RunnerBarCore"],
             path: "Sources/RunnerBar"
         )
     ]

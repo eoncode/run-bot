@@ -1,13 +1,12 @@
 // PollResults.swift
 // RunnerBar
 import Foundation
-import RunnerBarCore
 
 // MARK: - Poll result value types
 
 // Result returned by `PollResultBuilder.buildJobState`.
 /// A value type representing JobPollResult.
-struct JobPollResult {
+public struct JobPollResult {
     // Jobs to display in the popover (in_progress → queued → cached done).
     /// The display constant.
     let display: [ActiveJob]
@@ -21,7 +20,7 @@ struct JobPollResult {
 
 // Result returned by `PollResultBuilder.buildGroupState`.
 /// A value type representing GroupPollResult.
-struct GroupPollResult {
+public struct GroupPollResult {
     // Action groups to display in the popover.
     /// The display constant.
     let display: [WorkflowActionGroup]
