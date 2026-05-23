@@ -2,6 +2,8 @@
 import SwiftUI
 
 // MARK: - SectionHeaderLabel
+/// Uppercase small-caps label used as a section divider inside the panel.
+/// Displays a title string in the muted secondary style.
 struct SectionHeaderLabel: View {
     let title: String
     var body: some View {
@@ -15,6 +17,8 @@ struct SectionHeaderLabel: View {
 }
 
 // MARK: - PanelHeaderView
+/// Top bar of the popover panel showing the RunnerBar logo, sign-in state,
+/// and the settings gear button.
 struct PanelHeaderView: View {
     @ObservedObject var statsVM: SystemStatsViewModel
     let isAuthenticated: Bool
@@ -49,6 +53,8 @@ struct PanelHeaderView: View {
 }
 
 // MARK: - RunnerTypeIcon
+/// Small SF Symbol icon indicating whether a runner is local (self-hosted)
+/// or a GitHub-hosted cloud runner.
 private struct RunnerTypeIcon: View {
     let isLocal: Bool
     var body: some View {
@@ -59,6 +65,8 @@ private struct RunnerTypeIcon: View {
 }
 
 // MARK: - PanelLocalRunnerRow
+/// Row displaying a single local self-hosted runner: name, status badge, and
+/// CPU/memory stats. Only shown when `showLocalRunnerSection` is true.
 struct PanelLocalRunnerRow: View {
     let runners: [RunnerModel]
     var body: some View {
@@ -102,6 +110,8 @@ struct PanelLocalRunnerRow: View {
 }
 
 // MARK: - ActionRowView
+/// Row representing one GitHub Actions workflow run.
+/// Tapping expands inline job rows; long-press opens the run URL in Safari.
 struct ActionRowView: View {
     let group: WorkflowActionGroup
     let tick: Int
