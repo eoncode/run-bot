@@ -8,7 +8,7 @@ import Foundation
 ///
 /// Uses a custom `Decodable` initialiser with an `.unknown` fallback so that
 /// new GitHub API status values never cause a decode failure.
-public enum JobStatus: Hashable {
+public enum JobStatus: Hashable, Sendable {
     /// Job is waiting to be picked up by a runner.
     case queued
     /// Job is currently executing on a runner.
@@ -80,7 +80,7 @@ extension JobStatus: CustomStringConvertible {
 ///
 /// Uses a custom `Decodable` initialiser with an `.unknown` fallback so that
 /// new GitHub API conclusion values never cause a decode failure.
-public enum JobConclusion: Hashable {
+public enum JobConclusion: Hashable, Sendable {
     /// Job completed successfully.
     case success
     /// Job completed with a failure.
