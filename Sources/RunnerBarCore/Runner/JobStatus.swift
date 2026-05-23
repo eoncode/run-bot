@@ -65,9 +65,14 @@ extension JobStatus: Codable {
 
 // swiftlint:disable:next missing_docs
 extension JobStatus: CustomStringConvertible {
-    /// A human-readable description equal to `rawValue`.
     public var description: String { rawValue }
 }
+
+/// Allows `XCTAssertEqual(job.status, "completed")` in tests.
+// swiftlint:disable:next missing_docs
+public func == (lhs: JobStatus, rhs: String) -> Bool { lhs.rawValue == rhs }
+// swiftlint:disable:next missing_docs
+public func == (lhs: String, rhs: JobStatus) -> Bool { lhs == rhs.rawValue }
 
 // MARK: - Job conclusion
 
@@ -141,6 +146,15 @@ extension JobConclusion: Codable {
 
 // swiftlint:disable:next missing_docs
 extension JobConclusion: CustomStringConvertible {
-    /// A human-readable description equal to `rawValue`.
     public var description: String { rawValue }
 }
+
+/// Allows `XCTAssertEqual(job.conclusion, "success")` in tests.
+// swiftlint:disable:next missing_docs
+public func == (lhs: JobConclusion, rhs: String) -> Bool { lhs.rawValue == rhs }
+// swiftlint:disable:next missing_docs
+public func == (lhs: String, rhs: JobConclusion) -> Bool { lhs == rhs.rawValue }
+// swiftlint:disable:next missing_docs
+public func == (lhs: JobConclusion?, rhs: String) -> Bool { lhs?.rawValue == rhs }
+// swiftlint:disable:next missing_docs
+public func == (lhs: String, rhs: JobConclusion?) -> Bool { lhs == rhs?.rawValue }
