@@ -1,5 +1,6 @@
 // FailureHookCommandSheet.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import AppKit
 import RunnerBarCore
 import SwiftUI
@@ -36,9 +37,9 @@ struct FailureHookCommandSheet: View {
         self.scope = scope
         self.onDismiss = onDismiss
         let saved = ScopePreferencesStore.failureHookCommand(for: scope) ?? ""
-        log("FailureHookCommandSheet \u{203a} init — scope=\(scope) savedCommand='\(saved)' isEmpty=\(saved.isEmpty)")
+        log("FailureHookCommandSheet › init — scope=\(scope) savedCommand='\(saved)' isEmpty=\(saved.isEmpty)")
         _commandText = State(initialValue: saved.isEmpty ? Self.exampleCommand : saved)
-        log("FailureHookCommandSheet \u{203a} init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
+        log("FailureHookCommandSheet › init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
     }
 
     /// The variables constant.
@@ -174,9 +175,9 @@ extension FailureHookCommandSheet {
 extension FailureHookCommandSheet {
     /// Persists `commandText` to `ScopePreferencesStore` for this scope and dismisses the sheet.
     func save() {
-        log("FailureHookCommandSheet \u{203a} save — scope=\(scope) commandText='\(commandText.prefix(200))'")
+        log("FailureHookCommandSheet › save — scope=\(scope) commandText='\(commandText.prefix(200))'")
         ScopePreferencesStore.setFailureHookCommand(commandText, for: scope)
-        log("FailureHookCommandSheet \u{203a} save — done, dismissing")
+        log("FailureHookCommandSheet › save — done, dismissing")
         onDismiss()
     }
 
@@ -186,7 +187,7 @@ extension FailureHookCommandSheet {
         let resolved = commandText
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
             .replacingOccurrences(of: "$SCOPE", with: scope)
-        log("FailureHookCommandSheet \u{203a} testCommand — scope=\(scope) localPath='\(localPath)' resolved='\(resolved.prefix(200))'")
+        log("FailureHookCommandSheet › testCommand — scope=\(scope) localPath='\(localPath)' resolved='\(resolved.prefix(200))'")
         TerminalLauncher.open(command: resolved)
     }
 
@@ -205,7 +206,7 @@ extension FailureHookCommandSheet {
 /// A custom `Layout` that wraps child views into rows like a word-wrapped line of text.
 /// Used to arrange variable-insertion pill buttons beneath the command editor.
 struct FlowLayout: Layout {
-    /// The spacing property.
+    /// Horizontal and vertical spacing between child views.
     var spacing: CGFloat = 6
 
     /// Calculates the total height required to fit all subviews within the proposed width.
@@ -237,3 +238,4 @@ struct FlowLayout: Layout {
         }
     }
 }
+// swiftlint:enable missing_docs

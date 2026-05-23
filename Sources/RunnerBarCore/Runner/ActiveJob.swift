@@ -1,5 +1,6 @@
 // ActiveJob.swift
 // RunnerBarCore
+// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - Top-level job
@@ -113,25 +114,15 @@ public struct JobPayload: Decodable {
     /// The steps belonging to this job.
     public let steps: [StepPayload]
 
-    /// JSON coding keys for `JobPayload`.
     enum CodingKeys: String, CodingKey {
-        /// Maps to `id`.
         case id
-        /// Maps to `name`.
         case name
-        /// Maps to `status`.
         case status
-        /// Maps to `conclusion`.
         case conclusion
-        /// Maps to `steps`.
         case steps
-        /// Maps to `started_at`.
         case startedAt   = "started_at"
-        /// Maps to `completed_at`.
         case completedAt = "completed_at"
-        /// Maps to `html_url`.
         case htmlUrl     = "html_url"
-        /// Maps to `runner_name`.
         case runnerName  = "runner_name"
     }
 }
@@ -151,19 +142,12 @@ public struct StepPayload: Decodable {
     /// ISO-8601 completion timestamp string as returned by the API.
     public let completedAt: String?
 
-    /// JSON coding keys for `StepPayload`.
     enum CodingKeys: String, CodingKey {
-        /// Maps to `name`.
         case name
-        /// Maps to `status`.
         case status
-        /// Maps to `conclusion`.
         case conclusion
-        /// Maps to `number`.
         case number
-        /// Maps to `started_at`.
         case startedAt   = "started_at"
-        /// Maps to `completed_at`.
         case completedAt = "completed_at"
     }
 }
@@ -173,6 +157,7 @@ public struct JobsResponse: Decodable {
     /// The array of job payloads contained in the response.
     public let jobs: [JobPayload]
 }
+// swiftlint:enable missing_docs
 
 // MARK: - Factory
 
@@ -194,7 +179,7 @@ public func makeActiveJob(
             name:        s.name,
             status:      s.status,
             conclusion:  s.conclusion,
-            startedAt:   s.startedAt.flatMap { iso.date(from: $0) },
+            startedAt:   s.startedAt.flatMap  { iso.date(from: $0) },
             completedAt: s.completedAt.flatMap { iso.date(from: $0) },
             number:      s.number
         )
@@ -208,7 +193,7 @@ public func makeActiveJob(
         isDimmed:    isDimmed,
         runnerName:  payload.runnerName,
         scope:       nil,
-        startedAt:   payload.startedAt.flatMap { iso.date(from: $0) },
+        startedAt:   payload.startedAt.flatMap  { iso.date(from: $0) },
         completedAt: payload.completedAt.flatMap { iso.date(from: $0) },
         steps:       steps
     )

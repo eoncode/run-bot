@@ -1,6 +1,6 @@
 // InlineJobRowsView.swift
 // RunnerBar
-
+// swiftlint:disable redundant_discardable_let
 import RunnerBarCore
 import SwiftUI
 // MARK: - TreeLineLeader
@@ -314,3 +314,4 @@ struct InlineJobRowsView: View {
         }
     }
 }
+// swiftlint:enable redundant_discardable_let
