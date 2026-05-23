@@ -108,7 +108,7 @@ struct RunnerModel: Identifiable, Equatable {
     var displayStatus: String {
         if let warning = lifecycleWarning { return warning }
         if isRunning {
-            if isBusy || githubStatus == "busy" { return "running" }
+            if isBusy || githubStatus == "busy" { return "busy" }
             return "running"
         } else {
             switch githubStatus {
