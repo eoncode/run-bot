@@ -88,7 +88,7 @@ struct PollResultBuilder {
         let shaKeyedCache = makeShaKeyedCache(snapGroupCache)
         let allFetched = fetchGroups(shaKeyedCache)
         // Early-exit diagnostic: if fetchGroups returned nothing, active scopes are
-        // likely empty or misconfigured. Log clearly so it’s easy to diagnose.
+        // likely empty or misconfigured. Log clearly so it's easy to diagnose.
         if allFetched.isEmpty {
             log("PollResultBuilder › buildGroupState — ⚠️ fetchGroups returned 0 groups; activeScopes may be empty or all scopes are unreachable")
         }
@@ -201,6 +201,14 @@ struct PollResultBuilder {
         return cache.filter { !freshShas.contains($0.value.headSha) }
     }
 
+    /// Freezes action groups that were live in the previous poll but have since
+    /// vanished from the live feed (i.e. completed without appearing in fetchGroups).
+    ///
+    /// - Important: Both `snapPrev` and the `cache` parameter are keyed by
+    ///   `ActionGroup.id`, **not** by `headSha`. `liveIDs` must also be a
+    ///   `Set<String>` of `ActionGroup.id` values for the containment check to
+    ///   be correct. Do not rekey either dictionary by headSha without updating
+    ///   all three sites consistently.
     static func freezeVanishedGroups(
         snapPrev: [String: ActionGroup],
         liveIDs: Set<String>,
@@ -210,15 +218,17 @@ struct PollResultBuilder {
         fireFailureHook: (ActionGroup, String) -> Void
     ) {
         log("PollResultBuilder › freezeVanishedGroups — snapPrev=\(snapPrev.count) liveIDs=\(liveIDs)")
-        for (sha, group) in snapPrev where !liveIDs.contains(sha) {
-            log("PollResultBuilder › freezeVanishedGroups — vanished groupID=\(group.id) inCache=\(cache[sha] != nil)")
-            if let existing = cache[sha], existing.isDimmed, existing.jobs.count >= group.jobs.count {
+        // groupID is ActionGroup.id — the dictionary key for both snapPrev and cache.
+        // (Do not confuse with headSha, which is a separate property on ActionGroup.)
+        for (groupID, group) in snapPrev where !liveIDs.contains(groupID) {
+            log("PollResultBuilder › freezeVanishedGroups — vanished groupID=\(group.id) inCache=\(cache[groupID] != nil)")
+            if let existing = cache[groupID], existing.isDimmed, existing.jobs.count >= group.jobs.count {
                 log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping")
                 continue
             }
-            if cache[sha] == nil {
+            if cache[groupID] == nil {
                 let scope = scopeFromGroup(group)
-                log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) cache[sha]==nil → fireFailureHook scope=\(scope)")
+                log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) cache[groupID]==nil → fireFailureHook scope=\(scope)")
                 fireFailureHook(group, scope)
             }
             var frozen = group
@@ -238,7 +248,7 @@ struct PollResultBuilder {
                     isDimmed: true
                 )
             }
-            cache[sha] = frozen
+            cache[groupID] = frozen
         }
     }
 
@@ -248,6 +258,7 @@ struct PollResultBuilder {
             ($0.lastJobCompletedAt ?? $0.createdAt ?? .distantPast)
                 > ($1.lastJobCompletedAt ?? $1.createdAt ?? .distantPast)
         }
+        // Cache is keyed by ActionGroup.id — preserve that key when rebuilding.
         cache = Dictionary(uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
