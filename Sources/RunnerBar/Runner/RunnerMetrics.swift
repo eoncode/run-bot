@@ -4,7 +4,9 @@ import Foundation
 
 /// CPU and memory utilisation snapshot for a single `Runner.Worker` process.
 struct RunnerMetrics: Equatable {
+    /// The cpu constant.
     let cpu: Double
+    /// The mem constant.
     let mem: Double
 }
 
@@ -60,6 +62,7 @@ func metricsForRunner(installPath: String) -> RunnerMetrics? {
     return result
 }
 
+/// Performs the allWorkerMetrics operation.
 func allWorkerMetrics() -> [RunnerMetrics] {
     log("allWorkerMetrics › ENTER — using pgrep + targeted ps")
 

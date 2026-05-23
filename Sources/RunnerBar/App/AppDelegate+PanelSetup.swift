@@ -13,6 +13,7 @@ import SwiftUI
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
 
+/// Extension adding functionality to `AppDelegate`.
 extension AppDelegate {
 
     // MARK: Panel construction
@@ -53,6 +54,7 @@ extension AppDelegate {
 
     // MARK: KVO
 
+    /// Performs the setupKVO operation.
     private func setupKVO(controller: NSHostingController<AnyView>) {
         sizeObservation = controller.observe(
             \.preferredContentSize,
@@ -65,6 +67,7 @@ extension AppDelegate {
 
     // MARK: Combine subscriptions
 
+    /// Performs the setupCombineSubscriptions operation.
     private func setupCombineSubscriptions() {
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)

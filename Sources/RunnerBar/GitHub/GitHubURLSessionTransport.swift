@@ -9,11 +9,15 @@ import os
 /// Both fields are mutated together under the same lock so the cancel-and-replace
 /// of the reset timer is always atomic with the flag write.
 private struct RateLimitState {
+    /// The isLimited property.
     var isLimited: Bool = false
+    /// The resetItem property.
     var resetItem: DispatchWorkItem?
 }
+/// The rateLimitLock constant.
 private let rateLimitLock = OSAllocatedUnfairLock(initialState: RateLimitState())
 
+/// The ghIsRateLimited property.
 var ghIsRateLimited: Bool {
     get { rateLimitLock.withLock { $0.isLimited } }
     set {
@@ -191,6 +195,7 @@ private func extractNextURL(from header: String?) -> String? {
 // The CLI fallback is skipped when ghIsRateLimited is true — a rate-limit hit on the
 // URLSession path must not trigger a second outbound request via the CLI on the same cycle.
 
+/// Performs the ghAPI operation.
 func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     if githubToken() != nil {
         let data = urlSessionAPI(endpoint, timeout: timeout)
@@ -204,6 +209,7 @@ func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     return ghAPICLI(endpoint, timeout: timeout)
 }
 
+/// Performs the ghAPIPaginated operation.
 func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     if githubToken() != nil {
         let data = urlSessionAPIPaginated(endpoint, timeout: timeout)

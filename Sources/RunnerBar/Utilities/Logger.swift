@@ -10,6 +10,7 @@ import os
 // subsystem/category filtering and are zero-cost in release builds
 // (.debug level is compiled out by the OS when not actively streaming).
 
+/// The logger constant.
 private let logger = Logger(
     subsystem: "com.eoncode.runner-bar",
     category: "general"

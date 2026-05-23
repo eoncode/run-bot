@@ -4,8 +4,11 @@ import Foundation
 
 // MARK: - Scope
 
+/// Represents a GitHub monitoring scope — either a single repository or an entire organisation.
 enum Scope {
+    /// A single repository identified by owner and repo name.
     case repo(owner: String, name: String)
+    /// An entire GitHub organisation.
     case org(String)
 
     /// Parses a raw scope string (e.g. "owner/repo" or "orgname") into a typed `Scope`.

@@ -25,7 +25,10 @@ struct Runner: Codable, Identifiable {
 
     /// Excludes `metrics` from JSON decoding — it is assigned locally after fetch,
     /// not returned by the GitHub API.
-    enum CodingKeys: String, CodingKey { case id, name, status, busy }
+    enum CodingKeys: String, CodingKey {
+        /// The `id` case.
+        case id, name, status, busy
+    }
 
     /// A single-line status string for display in the runner list row.
     ///

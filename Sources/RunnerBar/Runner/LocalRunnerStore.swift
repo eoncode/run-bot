@@ -4,23 +4,32 @@ import Combine
 import Foundation
 
 // MARK: - LocalRunnerStore
+/// Manages LocalRunnerStore state and behaviour.
 
 // swiftlint:disable type_body_length
+/// Manages LocalRunnerStore state and behaviour.
 @MainActor
 final class LocalRunnerStore: ObservableObject {
+    /// The shared constant.
     static let shared = LocalRunnerStore()
+    /// Private initialiser — use `shared`.
     private init() {
         // Singleton — no custom initialisation needed; default property values are sufficient.
     }
 
+    /// The runners property.
     @Published var runners: [RunnerModel] = []
+    /// The isScanning property.
     @Published var isScanning: Bool = false
 
+    /// The scanner constant.
     private let scanner = LocalRunnerScanner()
+    /// The enricher constant.
     private let enricher = RunnerStatusEnricher.shared
 
     // MARK: - Refresh
 
+    /// Performs the refresh operation.
     func refresh() {
         log("LocalRunnerStore > refresh() called — isScanning=\(isScanning) runners.count=\(runners.count)")
         guard !isScanning else {
@@ -74,12 +83,14 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Optimistic mutations
 
+    /// Performs the optimisticallyRemove operation.
     func optimisticallyRemove(_ runnerName: String) {
         log("LocalRunnerStore > optimisticallyRemove — runnerName=\(runnerName) runners.count was \(runners.count)")
         runners.removeAll { $0.runnerName == runnerName }
         log("LocalRunnerStore > optimisticallyRemove — done, runners.count=\(runners.count)")
     }
 
+    /// Performs the optimisticallySetRunning operation.
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         let names = runners.map { $0.runnerName }.joined(separator: ", ")
         log("LocalRunnerStore > optimisticallySetRunning runnerName=\(runnerName) isRunning=\(isRunning) — current runners=[\(names)]")
@@ -95,6 +106,7 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > optimisticallySetRunning — done, runners.count=\(runners.count)")
     }
 
+    /// Performs the setLifecycleWarning operation.
     func setLifecycleWarning(_ runnerName: String, warning: String?) {
         let w = warning ?? "nil"
         log("LocalRunnerStore > setLifecycleWarning called: runnerName=\(runnerName) warning=\(w)")

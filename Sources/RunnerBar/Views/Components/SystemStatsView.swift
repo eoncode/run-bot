@@ -5,8 +5,10 @@ import SwiftUI
 // MARK: - SystemStatsView
 /// Full-page system stats view shown in the settings panel.
 struct SystemStatsView: View {
+    /// The viewModel property.
     @StateObject private var viewModel = SystemStatsViewModel()
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("System Stats")
@@ -51,11 +53,16 @@ struct SystemStatsView: View {
 ///
 /// Do NOT restore the VStack layout -- it makes the header ~70pt tall.
 struct SparklineMetricView: View {
+    /// The label constant.
     let label: String
+    /// The value constant.
     let value: String
+    /// The history constant.
     let history: [Double]
+    /// The currentPct constant.
     let currentPct: Double
 
+    /// The body property.
     var body: some View {
         HStack(spacing: 5) {
             Text(label)
@@ -74,6 +81,7 @@ struct SparklineMetricView: View {
         .fixedSize()
     }
 
+    /// The labelColor property.
     private var labelColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }
@@ -93,8 +101,10 @@ struct SparklineMetricView: View {
 /// Always renders at its intrinsic size -- never truncates.
 struct DiskPillBadge: View {
     // Percentage of disk space that is FREE (0-100).
+    /// The freePct constant.
     let freePct: Double
 
+    /// The body property.
     var body: some View {
         Text(String(format: "%.0f%% free", freePct))
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
@@ -107,6 +117,7 @@ struct DiskPillBadge: View {
             .fixedSize()
     }
 
+    /// The pillColor property.
     private var pillColor: Color {
         if freePct < 15 { return .rbDanger }
         if freePct < 40 { return .rbWarning }
@@ -124,9 +135,12 @@ struct DiskPillBadge: View {
 //
 // Accepts an existing SystemStatsViewModel so it shares the sampler
 // already running in PopoverMainView -- no second timer is created.
+/// A value type representing HeaderStatsBar.
 struct HeaderStatsBar: View {
+    /// The statsVM property.
     @ObservedObject var statsVM: SystemStatsViewModel
 
+    /// The body property.
     var body: some View {
         HStack(spacing: RBSpacing.md) {
             SparklineMetricView(
@@ -180,10 +194,14 @@ struct HeaderStatsBar: View {
 // MARK: - BlockBarView (kept for backward compat)
 // Renders a coloured block-bar and percentage label for a given metric.
 // Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
+/// A value type representing BlockBarView.
 struct BlockBarView: View {
+    /// The label constant.
     let label: String
+    /// The pct constant.
     let pct: Double
 
+    /// The body property.
     var body: some View {
         HStack(spacing: 6) {
             Text(label)
@@ -208,6 +226,7 @@ struct BlockBarView: View {
         }
     }
 
+    /// The usageColor property.
     private var usageColor: Color {
         DesignTokens.Colors.usage(pct: pct)
     }

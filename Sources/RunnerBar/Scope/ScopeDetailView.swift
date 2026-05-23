@@ -27,12 +27,19 @@ struct ScopeDetailView: View {
     /// `SettingsView`.
     let onBack: () -> Void
 
+    /// The scopeStore property.
     @ObservedObject private var scopeStore = ScopeStore.shared
+    /// The showHookSheet property.
     @State private var showHookSheet = false
+    /// The showBranchSheet property.
     @State private var showBranchSheet = false
+    /// The hookEnabled property.
     @State private var hookEnabled: Bool
+    /// The hookBranch property.
     @State private var hookBranch: String?
+    /// The localRepoPath property.
     @State private var localRepoPath: String
+    /// The isEditingPath property.
     @State private var isEditingPath = false
 
     /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
@@ -66,6 +73,7 @@ struct ScopeDetailView: View {
     /// The GitHub web URL for this scope, used to render the "Open on GitHub" link.
     private var gitHURL: URL? { URL(string: "https://github.com/\(scope)") }
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
@@ -100,6 +108,7 @@ struct ScopeDetailView: View {
 }
 
 // MARK: - Sections
+/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Top navigation bar showing a back button and the scope display name.
     var headerBar: some View {
@@ -244,6 +253,7 @@ extension ScopeDetailView {
 }
 
 // MARK: - Failure Hook Rows
+/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Toggle row enabling or disabling the failure-hook for this scope.
     var hookToggleRow: some View {
@@ -403,6 +413,7 @@ extension ScopeDetailView {
 }
 
 // MARK: - Actions
+/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Enters inline editing mode for the local-path field, pre-filling `~/`
     /// if the path is currently empty.
@@ -469,6 +480,7 @@ extension ScopeDetailView {
 }
 
 // MARK: - Sub-view helpers
+/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Renders a styled section-header label.
     /// - Parameter title: The display text for the section heading.

@@ -60,17 +60,20 @@ struct StepLogView: View {
     @State private var isLoading = true
 
     // MARK: - Formatters (static to avoid re-allocation)
+    /// The timeFmt constant.
     private static let timeFmt: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+    /// The dateFmt constant.
     private static let dateFmt: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Top bar ──────────────────────────────────────────────────────────────────
@@ -211,6 +214,7 @@ struct StepLogView: View {
     }
 
     // MARK: - Log loading
+    /// Performs the loadLog operation.
     private func loadLog() {
         isLoading = true
         let jobID = job.id

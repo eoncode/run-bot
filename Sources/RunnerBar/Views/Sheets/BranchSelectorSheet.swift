@@ -17,22 +17,32 @@ import SwiftUI
 // An empty result after a successful fetch is treated as a load error so
 // the user is not misled by a silent blank list.
 
+/// A value type representing BranchSelectorSheet.
 struct BranchSelectorSheet: View {
+    /// The scope constant.
     let scope: String
+    /// The onDismiss constant.
     let onDismiss: () -> Void
+    /// The onSelect constant.
     let onSelect: (String?) -> Void
 
+    /// The branches property.
     @State private var branches: [String] = []
+    /// The searchText property.
     @State private var searchText = ""
+    /// The isLoading property.
     @State private var isLoading = true
+    /// The loadError property.
     @State private var loadError = false
 
+    /// The filtered property.
     private var filtered: [String] {
         searchText.isEmpty
             ? branches
             : branches.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerSection
@@ -51,7 +61,9 @@ struct BranchSelectorSheet: View {
 
 // MARK: - Subviews
 
+/// Extension adding functionality to `BranchSelectorSheet`.
 extension BranchSelectorSheet {
+    /// The headerSection property.
     var headerSection: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Select Branch")
@@ -66,6 +78,7 @@ extension BranchSelectorSheet {
         .padding(.bottom, 10)
     }
 
+    /// The searchSection property.
     var searchSection: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
@@ -92,8 +105,10 @@ extension BranchSelectorSheet {
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    /// The listSection computed view.
     }
 
+    /// The listSection computed view.
     @ViewBuilder
     var listSection: some View {
         if isLoading {
@@ -143,6 +158,7 @@ extension BranchSelectorSheet {
         }
     }
 
+    /// Performs the branchRow operation.
     func branchRow(_ branch: String) -> some View {
         Button(action: {
             log("BranchSelectorSheet › selected branch='\(branch)' for scope='\(scope)'")
@@ -167,6 +183,7 @@ extension BranchSelectorSheet {
         .buttonStyle(.plain)
     }
 
+    /// The footerSection property.
     var footerSection: some View {
         HStack {
             Button(action: {
@@ -200,7 +217,9 @@ extension BranchSelectorSheet {
 
 // MARK: - Data loading
 
+/// Extension adding functionality to `BranchSelectorSheet`.
 extension BranchSelectorSheet {
+    /// Performs the loadBranches operation.
     func loadBranches() {
         log("BranchSelectorSheet › loadBranches START scope='\(scope)'")
         DispatchQueue.global(qos: .userInitiated).async {

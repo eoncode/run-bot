@@ -3,6 +3,7 @@
 import Foundation
 
 // MARK: - Filesystem path constants
+/// The unzipBinaryPath constant.
 private let unzipBinaryPath = "/usr/bin/unzip"
 
 // MARK: - Raw binary/text fetch via gh CLI

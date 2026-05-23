@@ -52,6 +52,7 @@ func runGHProcess(
 
 // MARK: - CLI API wrappers
 
+/// Performs the ghAPICLI operation.
 func ghAPICLI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     let (outputData, _) = runGHProcess(arguments: ["api", endpoint], timeout: timeout)
     guard let outputData else { return nil }
@@ -66,6 +67,7 @@ func ghAPICLI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
     return outputData
 }
 
+/// Performs the ghAPIPaginatedCLI operation.
 func ghAPIPaginatedCLI(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     let (outputData, exitCode) = runGHProcess(
         arguments: ["api", "--paginate", endpoint],

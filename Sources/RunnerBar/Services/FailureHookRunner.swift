@@ -28,6 +28,7 @@ import Foundation
 // $WORKFLOW_NAME, $RUN_LINK, $COMMIT_LINK, $BRANCH_LINK, $REPO_LINK) are
 // available for use in the command but are NOT injected automatically —
 // the user must include them as placeholders in their command string.
+/// Enumerates possible values for FailureHookRunner.
 enum FailureHookRunner {
 
     /// Default command used when no command has been explicitly saved for the scope.
@@ -81,6 +82,7 @@ enum FailureHookRunner {
 
     // MARK: - Private
 
+    /// The failureConclusions constant.
     private static let failureConclusions: Set = ["failure", "timed_out", "cancelled", "startup_failure"]
 
     /// Returns `true` when at least one run in `group` has a failure-class conclusion
@@ -92,8 +94,11 @@ enum FailureHookRunner {
         }
     }
 
+    /// A value type representing FailedJobResult.
     private struct FailedJobResult {
+        /// The job constant.
         let job: JobPayload
+        /// The logTail constant.
         let logTail: String?
     }
 

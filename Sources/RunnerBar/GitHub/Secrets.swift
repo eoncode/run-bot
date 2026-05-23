@@ -35,7 +35,10 @@
 // client_secret in a native binary is effectively public regardless. Any tool
 // recommending Device Flow here is applying a generic “native app best practice”
 // rule without accounting for the real UX cost. This choice is intentional.
+/// Backwards-compatible alias for OAuth app credentials used by older call sites.
 enum Secrets {
+    /// Public client identifier for the registered GitHub OAuth app.
     static let clientID = "Ov23linOj2gogHg7LdFd"
+    /// Client secret bundled with the native app as documented above.
     static let clientSecret = "ddacc9a959a60584b01f2830827dcf55a8fb4659"
 }

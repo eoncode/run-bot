@@ -8,6 +8,7 @@ import SwiftUI
 // All view factory methods and the enrichment helper live here so AppDelegate.swift
 // can focus on panel lifecycle, status item, and event monitor concerns.
 
+/// Extension adding functionality to `AppDelegate`.
 extension AppDelegate {
 
     // MARK: - Enrichment helper
@@ -16,6 +17,7 @@ extension AppDelegate {
     // ❌ NEVER call from the main thread.
     // ❌ NEVER call directly — always dispatch via DispatchQueue.global().
     // Marked nonisolated to opt out of @MainActor isolation.
+    /// Performs the enrichStepsIfNeeded operation.
     nonisolated func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
         guard job.steps.isEmpty || job.steps.contains(where: { $0.status == "in_progress" }),
               let scope = scopeFromHtmlUrl(job.htmlUrl),
@@ -28,6 +30,7 @@ extension AppDelegate {
 
     // MARK: - View factories
 
+    /// Performs the mainView operation.
     func mainView() -> AnyView {
         savedNavState = nil
         return wrapEnv(PanelMainView(
@@ -64,6 +67,7 @@ extension AppDelegate {
         ))
     }
 
+    /// Performs the settingsView operation.
     func settingsView() -> AnyView {
         savedNavState = .settings
         makeKeyForTextInput()
@@ -111,6 +115,7 @@ extension AppDelegate {
         ))
     }
 
+    /// Performs the validatedView operation.
     func validatedView(for state: NavState) -> AnyView? {
         savedNavState = nil
         let store = RunnerStore.shared

@@ -11,6 +11,7 @@ struct CancelButton: View {
     /// When true the button is rendered at reduced opacity and cannot be tapped.
     var isDisabled: Bool = false
 
+    /// The phase property.
     @State private var phase: ButtonPhaseView.Phase?
 
     // MARK: - Body
@@ -37,6 +38,7 @@ struct CancelButton: View {
     }
 
     // MARK: - Actions
+    /// Performs the startCancel operation.
     private func startCancel() {
         guard phase == nil else { return }
         phase = .loading

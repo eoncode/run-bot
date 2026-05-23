@@ -18,6 +18,7 @@ struct ReRunFailedButton: View {
     /// When true the button is completely hidden and takes no layout space.
     var isDisabled: Bool = false
 
+    /// The phase property.
     @State private var phase: Phase = .idle
 
     // MARK: - Phase

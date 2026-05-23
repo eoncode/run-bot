@@ -13,6 +13,7 @@ struct SparklineView: View {
     /// Current value used to determine the theme color (0–100).
     let currentPct: Double
 
+    /// The body property.
     var body: some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         GeometryReader { geo in
@@ -34,6 +35,7 @@ struct SparklineView: View {
     }
 
     // MARK: - Helpers
+    /// The themeColor property.
     private var themeColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }

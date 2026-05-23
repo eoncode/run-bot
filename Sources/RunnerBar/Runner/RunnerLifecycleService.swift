@@ -4,21 +4,30 @@ import Foundation
 
 // MARK: - LifecycleResult
 
+/// Enumerates possible values for LifecycleResult.
 enum LifecycleResult {
+    /// The `success` case.
     case success
+    /// The `corruptInstall` case.
     case corruptInstall
+    /// The `failed` case.
     case failed(String)
 }
 
 // MARK: - RunnerLifecycleService
 
 // swiftlint:disable:next type_body_length
+/// A value type representing RunnerLifecycleService.
 struct RunnerLifecycleService {
+    /// The shared constant.
     static let shared = RunnerLifecycleService()
+    /// Private initialiser — use `shared`.
     private init() {}
 
+    /// Performs the start operation.
     // MARK: - Start
 
+    /// Performs the start operation.
     @discardableResult
     func start(runner: RunnerModel) -> LifecycleResult {
         let ip = runner.installPath ?? "nil"
@@ -69,8 +78,10 @@ struct RunnerLifecycleService {
         return .failed(msg)
     }
 
+    /// Performs the stop operation.
     // MARK: - Stop
 
+    /// Performs the stop operation.
     @discardableResult
     func stop(runner: RunnerModel) -> LifecycleResult {
         let ip = runner.installPath ?? "nil"
@@ -110,8 +121,10 @@ struct RunnerLifecycleService {
         return .failed(msg)
     }
 
+    /// Performs the remove operation.
     // MARK: - Remove
 
+    /// Performs the remove operation.
     @discardableResult
     func remove(runner: RunnerModel) -> Bool {
         let ip = runner.installPath ?? "nil"
@@ -170,6 +183,7 @@ struct RunnerLifecycleService {
 
     // MARK: - Corrupt install detection
 
+    /// Performs the isCorruptInstall operation.
     private func isCorruptInstall(output: String) -> Bool {
         let lower = output.lowercased()
         let result = lower.contains("must run from runner root") || lower.contains("install is corrupt")
@@ -179,6 +193,7 @@ struct RunnerLifecycleService {
 
     // MARK: - LaunchAgent plist cleanup
 
+    /// Performs the deleteLaunchAgentPlist operation.
     private func deleteLaunchAgentPlist(for runnerName: String) {
         let laDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -195,6 +210,7 @@ struct RunnerLifecycleService {
 
     // MARK: - Scope helper
 
+    /// Performs the scopeFromGitHubUrl operation.
     private func scopeFromGitHubUrl(_ urlString: String) -> String {
         guard let url = URL(string: urlString) else { return urlString }
         let parts = url.pathComponents.filter { $0 != "/" }
@@ -206,6 +222,7 @@ struct RunnerLifecycleService {
     // MARK: - Script runner
 
     // Thin wrapper around `ProcessRunner.run` for shell scripts relative to a working directory.
+    /// Performs the runScriptWithOutput operation.
     private func runScriptWithOutput(
         executableName: String,
         arguments: [String],
@@ -233,8 +250,10 @@ struct RunnerLifecycleService {
         return (result.exitCode == 0, output)
     }
 
+    /// Performs the updateConfig operation.
     // MARK: - Update config
 
+    /// Performs the updateConfig operation.
     @discardableResult
     func updateConfig(runner: RunnerModel, labels: [String], workFolder: String) -> Bool {
         guard let path = runner.installPath else { return false }

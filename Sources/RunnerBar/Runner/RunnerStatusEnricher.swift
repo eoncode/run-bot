@@ -23,14 +23,17 @@ import Foundation
 // fails at runtime because Data and Dictionary are unrelated types.
 //
 // All methods are synchronous and blocking — always call from a background thread.
+/// A value type representing RunnerStatusEnricher.
 struct RunnerStatusEnricher {
     // MARK: - Shared singleton
 
     // The shared `RunnerStatusEnricher` instance used throughout the app.
     // Declared as a static let on the struct for convenient access; callers
     // may also construct a local instance (e.g. in tests) without side effects.
+    /// The shared constant.
     static let shared = RunnerStatusEnricher()
 
+    /// Performs the enrich operation.
     func enrich(runners: [RunnerModel]) -> [RunnerModel] {
         // Step 1: collect unique scope URLs and the runners belonging to each.
         var scopeToRunnerIndices: [String: [Int]] = [:]

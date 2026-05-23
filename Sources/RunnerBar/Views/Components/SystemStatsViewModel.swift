@@ -7,9 +7,12 @@ import Foundation
 // MARK: - RingBuffer
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {
+    /// The storage property.
     private var storage: [Double]
+    /// The capacity constant.
     private let capacity: Int
 
+    /// Creates a new instance.
     init(capacity: Int, fill: Double = 0) {
         self.capacity = capacity
         self.storage = Array(repeating: fill, count: capacity)
@@ -34,15 +37,21 @@ final class SystemStatsViewModel: ObservableObject {
     @Published private(set) var stats: SystemStats = .zero
     /// Rolling 60-sample history for sparkline charts.
     @Published private(set) var cpuHistory: RingBuffer = RingBuffer(capacity: 60)
+    /// Documentation.
     @Published private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
+    /// Documentation.
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
 
+    /// The timer property.
     private var timer: Timer?
+    /// The prevCPUInfo property.
     private var prevCPUInfo: processor_info_array_t?
+    /// The prevNumCPUInfo property.
     private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
+    /// Creates a new instance.
     init() {
         // No custom initialisation needed; all properties have defaults.
     }

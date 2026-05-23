@@ -7,7 +7,9 @@ import SwiftUI
 /// Uppercase small-caps label used as a section divider inside the panel.
 /// Displays a title string in the muted secondary style.
 struct SectionHeaderLabel: View {
+    /// The title constant.
     let title: String
+    /// The body property.
     var body: some View {
         Text(title.uppercased())
             .font(RBFont.sectionCaption)
@@ -22,10 +24,15 @@ struct SectionHeaderLabel: View {
 /// Top bar of the popover panel showing the RunnerBar logo, sign-in state,
 /// and the settings gear button.
 struct PanelHeaderView: View {
+    /// The statsVM property.
     @ObservedObject var statsVM: SystemStatsViewModel
+    /// The isAuthenticated constant.
     let isAuthenticated: Bool
+    /// The onSelectSettings constant.
     let onSelectSettings: () -> Void
+    /// The onSignIn constant.
     let onSignIn: () -> Void
+    /// The body property.
     var body: some View {
         HStack(spacing: 6) {
             HeaderStatsBar(statsVM: statsVM)
@@ -58,7 +65,9 @@ struct PanelHeaderView: View {
 /// Small SF Symbol icon indicating whether a runner is local (self-hosted)
 /// or a GitHub-hosted cloud runner.
 private struct RunnerTypeIcon: View {
+    /// The isLocal constant.
     let isLocal: Bool
+    /// The body property.
     var body: some View {
         Image(systemName: isLocal ? "desktopcomputer" : "cloud")
             .font(.system(size: 9))
@@ -70,7 +79,9 @@ private struct RunnerTypeIcon: View {
 /// Row displaying a single local self-hosted runner: name, status badge, and
 /// CPU/memory stats. Only shown when `showLocalRunnerSection` is true.
 struct PanelLocalRunnerRow: View {
+    /// The runners constant.
     let runners: [RunnerModel]
+    /// The body property.
     var body: some View {
         let busy = runners.filter { $0.isBusy }
         if !busy.isEmpty { runnerList(busy) }
@@ -117,11 +128,17 @@ struct PanelLocalRunnerRow: View {
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.
 struct ActionRowView: View {
+    /// The group constant.
     let group: WorkflowActionGroup
+    /// The tick constant.
     let tick: Int
+    /// The onStepTap constant.
     let onStepTap: (ActiveJob, JobStep) -> Void
+    /// The expandState property.
     @State private var expandState: Bool?
+    /// The previousStatus property.
     @State private var previousStatus: RBStatus?
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {

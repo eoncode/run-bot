@@ -7,10 +7,13 @@ import SwiftUI
 /// States: idle (doc.on.doc + "Copy log") → loading (spinner + "Copying…") → done (✓ + "Done", 1.5s) OR failed (✗ + "Failed", 1.5s) → idle
 struct LogCopyButton: View {
     // Called on tap. Pass nil or empty string on failure — button still resets to idle.
+    /// The fetch constant.
     let fetch: (@escaping (String?) -> Void) -> Void
     // When true the button is rendered at reduced opacity and cannot be tapped.
+    /// The isDisabled property.
     var isDisabled: Bool = false
 
+    /// The phase property.
     @State private var phase: Phase = .idle
 
     /// Visual states of the copy button lifecycle.
@@ -25,6 +28,7 @@ struct LogCopyButton: View {
         case failed
     }
 
+    /// The body property.
     var body: some View {
         Group {
             switch phase {
@@ -73,6 +77,7 @@ struct LogCopyButton: View {
         }
     }
 
+    /// Performs the startCopy operation.
     private func startCopy() {
         guard phase == .idle else { return }
         phase = .loading

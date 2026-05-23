@@ -16,6 +16,7 @@ import Foundation
 
 import os
 
+/// Lock-protected in-memory cache for the resolved GitHub token.
 private let tokenCacheLock = OSAllocatedUnfairLock(initialState: Optional<String>.none)
 
 /// Clears the in-memory token cache. Call after saving a new token to Keychain

@@ -10,8 +10,11 @@ import Foundation
 /// Both `runGHProcess` (GitHubCLITransport) and `runScriptWithOutput`
 /// (RunnerLifecycleService) are thin wrappers around this type.
 enum ProcessRunner {
+    /// A value type representing Result.
     struct Result {
+        /// The data constant.
         let data: Data?
+        /// The exitCode constant.
         let exitCode: Int32
         /// Convenience: decoded UTF-8 string of `data`, or empty string.
         var output: String { data.flatMap { String(data: $0, encoding: .utf8) } ?? "" }

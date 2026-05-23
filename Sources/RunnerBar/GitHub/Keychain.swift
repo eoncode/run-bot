@@ -15,12 +15,16 @@ import Security
 // exception that crashes the process on launch when the legacy keychain DB file
 // is missing or was created under a different signing identity.
 
+/// Wrapper around Security.framework for storing and retrieving the GitHub OAuth token.
 enum Keychain {
+    /// Keychain service name used for RunnerBar credentials.
     private static let service = "runner-bar"
+    /// Keychain account name used for the stored OAuth token.
     private static let account = "github-oauth-token"
 
     // MARK: - Private helpers
 
+    /// Returns the base Keychain query shared by all token operations.
     private static func baseQuery() -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

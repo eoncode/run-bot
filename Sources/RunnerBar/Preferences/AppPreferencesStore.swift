@@ -10,8 +10,11 @@ final class AppPreferencesStore: ObservableObject {
     /// Shared singleton instance.
     static let shared = AppPreferencesStore()
 
+    /// UserDefaults key constants.
     private enum Key {
+        /// Key for the polling interval setting.
         static let pollingInterval    = "settings.pollingInterval"
+        /// Key for the show-dimmed-runners toggle.
         static let showDimmedRunners  = "settings.showDimmedRunners"
     }
 
@@ -36,6 +39,7 @@ final class AppPreferencesStore: ObservableObject {
         didSet { UserDefaults.standard.set(showDimmedRunners, forKey: Key.showDimmedRunners) }
     }
 
+    /// Private initialiser — use `shared`.
     private init() {
         let stored = UserDefaults.standard.integer(forKey: Key.pollingInterval)
         // #511: Default changed from 30 s to 15 s for more responsive monitoring.
@@ -52,7 +56,9 @@ final class AppPreferencesStore: ObservableObject {
 
 // MARK: - Comparable+clamped
 
+/// Extension adding functionality to `Comparable`.
 private extension Comparable {
+    /// Clamps the value to the given closed range.
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }

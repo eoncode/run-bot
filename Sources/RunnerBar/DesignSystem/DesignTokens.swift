@@ -6,6 +6,7 @@ import SwiftUI
 
 // MARK: - Hex Color Helper
 
+/// Convenience initialisers for constructing `Color` values from raw hex strings.
 extension Color {
     /// Initialises a `Color` from a CSS-style hex string (with or without leading `#`).
     init(hex: String) {
@@ -20,6 +21,7 @@ extension Color {
 
 // MARK: - Adaptive Color Helper
 
+/// Helpers for creating appearance-adaptive `Color` values that respond to light/dark mode.
 extension Color {
     /// Returns a color that resolves to `light` in light-appearance contexts and `dark` in dark-appearance contexts.
     static func adaptive(light: Color, dark: Color) -> Color {
@@ -33,6 +35,7 @@ extension Color {
 
 // MARK: - Color Tokens
 
+/// Semantic color tokens used throughout RunnerBar for status, surface, and text styling.
 extension Color {
     /// Primary blue accent — used for in-progress status indicators and interactive highlights.
     static let rbBlue = Color(red: 0.04, green: 0.52, blue: 1.00)

@@ -20,13 +20,18 @@ private func copyToPasteboard(_ text: String) {
 //   copy log (always)
 //   show workflow file on GitHub (always, opens first run's html_url)
 //   show GitHub SHA (always, opens commit)
+/// A value type representing WorkflowContextMenuModifier.
 private struct WorkflowContextMenuModifier: ViewModifier {
+    /// The group constant.
     let group: WorkflowActionGroup
 
+    /// Performs the body operation.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
+    /// The menuItems computed view.
     }
 
+    /// The menuItems computed view.
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = group.groupStatus == .completed
@@ -107,14 +112,20 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 
 // MARK: - JobContextMenuModifier
 // Adds a right-click context menu to a JobRowCard (job level).
+/// A value type representing JobContextMenuModifier.
 private struct JobContextMenuModifier: ViewModifier {
+    /// The job constant.
     let job: ActiveJob
+    /// The group constant.
     let group: WorkflowActionGroup
 
+    /// Performs the body operation.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
+    /// The menuItems computed view.
     }
 
+    /// The menuItems computed view.
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
@@ -179,16 +190,22 @@ private struct JobContextMenuModifier: ViewModifier {
 //   show on github — opens job html_url (GitHub has no direct per-step URL)
 //   show log in app — fires onTap closure (navigates to StepLogView)
 // NOTE: JobStep.id IS the step sequence number (1-based) per WorkflowActionGroup.swift comment.
+/// A value type representing StepContextMenuModifier.
 private struct StepContextMenuModifier: ViewModifier {
+    /// The step constant.
     let step: JobStep
+    /// The job constant.
     let job: ActiveJob
     /// Fires the same navigation as a row tap — opens StepLogView.
     let onTap: () -> Void
 
+    /// Performs the body operation.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
+    /// The menuItems computed view.
     }
 
+    /// The menuItems computed view.
     @ViewBuilder
     private var menuItems: some View {
         // Show log in app — same as tapping the row
@@ -230,6 +247,7 @@ private struct StepContextMenuModifier: ViewModifier {
 }
 
 // MARK: - View extensions
+/// Extension adding functionality to `View`.
 extension View {
     /// Attaches the workflow-level context menu (right-click) to an action row.
     func workflowContextMenu(group: WorkflowActionGroup) -> some View {

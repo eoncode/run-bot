@@ -80,14 +80,23 @@ struct ActiveJob: Identifiable, Codable, Equatable {
     }
 
     // MARK: Codable
+    /// UserDefaults key constants.
     enum CodingKeys: String, CodingKey {
+        /// The `id` case.
         case id, name, status, conclusion
+        /// Coding key for the `startedAt` field.
         case startedAt = "started_at"
+        /// Coding key for the `createdAt` field.
         case createdAt = "created_at"
+        /// Coding key for the `completedAt` field.
         case completedAt = "completed_at"
+        /// Coding key for the `htmlUrl` field.
         case htmlUrl = "html_url"
+        /// The `isDimmed` case.
         case isDimmed
+        /// The `steps` case.
         case steps
+        /// Coding key for the `runnerName` field.
         case runnerName = "runner_name"
     }
 }
@@ -140,10 +149,15 @@ struct JobStep: Identifiable, Codable, Equatable {
         return String(format: "%02d:%02d", m, s)
     }
 
+    /// UserDefaults key constants.
     enum CodingKeys: String, CodingKey {
+        /// Coding key for the `id` field.
         case id = "number"
+        /// The `name` case.
         case name, status, conclusion
+        /// Coding key for the `startedAt` field.
         case startedAt = "started_at"
+        /// Coding key for the `completedAt` field.
         case completedAt = "completed_at"
     }
 }
@@ -157,23 +171,40 @@ struct JobStep: Identifiable, Codable, Equatable {
 /// `ActiveJob`. This type is intentionally separate from `ActiveJob` so the
 /// domain model stays free of JSON-parsing concerns.
 struct JobPayload: Decodable {
+    /// The id constant.
     let id: Int
+    /// The name constant.
     let name: String
+    /// The status constant.
     let status: String
+    /// The conclusion constant.
     let conclusion: String?
+    /// The startedAt constant.
     let startedAt: String?
+    /// The createdAt constant.
     let createdAt: String?
+    /// The completedAt constant.
     let completedAt: String?
+    /// The htmlUrl constant.
     let htmlUrl: String?
+    /// The steps constant.
     let steps: [StepPayload]?
+    /// The runnerName constant.
     let runnerName: String?
 
+    /// UserDefaults key constants.
     enum CodingKeys: String, CodingKey {
+        /// The `id` case.
         case id, name, status, conclusion, steps
+        /// Coding key for the `startedAt` field.
         case startedAt = "started_at"
+        /// Coding key for the `createdAt` field.
         case createdAt = "created_at"
+        /// Coding key for the `completedAt` field.
         case completedAt = "completed_at"
+        /// Coding key for the `htmlUrl` field.
         case htmlUrl = "html_url"
+        /// Coding key for the `runnerName` field.
         case runnerName = "runner_name"
     }
 }
@@ -185,23 +216,35 @@ struct JobPayload: Decodable {
 /// Converted to `JobStep` (with proper `Date` values) by
 /// `RunnerStore.makeActiveJob(from:iso:isDimmed:)`.
 struct StepPayload: Decodable {
+    /// The number constant.
     let number: Int
+    /// The name constant.
     let name: String
+    /// The status constant.
     let status: String
+    /// The conclusion constant.
     let conclusion: String?
+    /// The startedAt constant.
     let startedAt: String?
+    /// The completedAt constant.
     let completedAt: String?
 
+    /// UserDefaults key constants.
     enum CodingKeys: String, CodingKey {
+        /// The `number` case.
         case number, name, status, conclusion
+        /// Coding key for the `startedAt` field.
         case startedAt = "started_at"
+        /// Coding key for the `completedAt` field.
         case completedAt = "completed_at"
     }
 }
 
 // MARK: - ActiveJob factory
 
+/// Extension adding functionality to `RunnerStore`.
 extension RunnerStore {
+    /// Performs the makeActiveJob operation.
     nonisolated func makeActiveJob(
         from payload: JobPayload,
         iso: ISO8601DateFormatter,
@@ -234,5 +277,9 @@ extension RunnerStore {
 
 // MARK: - Codable helpers
 
-struct JobsResponse: Decodable { let jobs: [JobPayload] }
+/// A value type representing JobsResponse.
+struct JobsResponse: Decodable {
+    /// The `jobs` property.
+    let jobs: [JobPayload]
+}
 // swiftlint:enable identifier_name opening_brace colon function_parameter_count

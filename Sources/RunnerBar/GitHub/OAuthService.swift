@@ -26,20 +26,28 @@ import Foundation
 //    onCompletion is called on the main thread with the actual save result.
 //
 // Client credentials are in Secrets.swift — see that file for why they are
+/// Manages OAuthService state and behaviour.
 // intentionally committed (open-source native app industry standard).
 
+/// Manages OAuthService state and behaviour.
 @MainActor
 final class OAuthService {
+    /// The shared constant.
     static let shared = OAuthService()
+    /// Private initialiser — use `shared`.
     private init() {
         // Singleton — intentionally empty; default property values are sufficient.
     }
 
+    /// The redirectURI constant.
     private let redirectURI = "runnerbar://oauth/callback"
+    /// The scopes constant.
     private let scopes = "repo read:org"
 
     // MARK: - OAuth endpoint constants
+    /// The authorizeURL constant.
     private let authorizeURL    = "\(GitHubConstants.base)/login/oauth/authorize"
+    /// The accessTokenURL constant.
     private let accessTokenURL  = "\(GitHubConstants.base)/login/oauth/access_token"
 
     /// CSRF nonce generated in signIn(), verified in handleCallback().
@@ -54,10 +62,12 @@ final class OAuthService {
     /// Subscribe via `.sink { }.store(in: &cancellables)` — do NOT use a raw closure.
     let didSignOut = PassthroughSubject<Void, Never>()
 
+    /// The isSignedIn property.
     var isSignedIn: Bool { Keychain.token != nil }
 
     // MARK: Sign In
 
+    /// Performs the signIn operation.
     func signIn() {
         let state = UUID().uuidString
         pendingState = state
@@ -74,6 +84,7 @@ final class OAuthService {
 
     // MARK: Sign Out
 
+    /// Performs the signOut operation.
     func signOut() {
         pendingState = nil
         // Keychain.delete() returns false if SecItemDelete failed (token may still exist).
@@ -85,6 +96,7 @@ final class OAuthService {
 
     // MARK: Callback Handler
 
+    /// Performs the handleCallback operation.
     func handleCallback(_ url: URL) {
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
@@ -103,6 +115,7 @@ final class OAuthService {
 
     // MARK: Token Exchange
 
+    /// Performs the exchangeCode operation.
     private func exchangeCode(_ code: String) async {
         guard let url = URL(string: accessTokenURL) else { return }
         var req = URLRequest(url: url)

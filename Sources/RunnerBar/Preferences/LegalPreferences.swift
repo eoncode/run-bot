@@ -8,9 +8,12 @@ import Foundation
 /// Persists legal/analytics preferences to UserDefaults.
 /// `analyticsEnabled` defaults to `false` (opt-in, not opt-out) per issue #221/#245.
 final class LegalPreferences: ObservableObject {
+    /// The shared constant.
     static let shared = LegalPreferences()
 
+    /// UserDefaults key constants.
     private enum Key {
+        /// Key for the analytics opt-in flag.
         static let analyticsEnabled = "legal.analyticsEnabled"
     }
 
@@ -19,6 +22,7 @@ final class LegalPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(analyticsEnabled, forKey: Key.analyticsEnabled) }
     }
 
+    /// Private initialiser — use `shared`.
     private init() {
         // Explicit nil-check: treat absent key as false (opt-in, never assume consent).
         if UserDefaults.standard.object(forKey: Key.analyticsEnabled) == nil {

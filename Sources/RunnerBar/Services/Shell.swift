@@ -4,14 +4,18 @@
 import Foundation
 
 // MARK: - Filesystem path constants
+/// The zshBinaryPath constant.
 private let zshBinaryPath = "/bin/zsh"
 
 // Executes shell commands synchronously.
+/// Enumerates possible values for Shell.
 enum Shell {
 
     /// The output and exit code produced by a shell command execution.
     struct Result {
+        /// The output constant.
         let output: String
+        /// The exitCode constant.
         let exitCode: Int32
     }
 

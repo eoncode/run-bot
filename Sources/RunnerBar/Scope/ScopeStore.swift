@@ -12,8 +12,11 @@ import Foundation
 /// `isEnabled` controls whether `RunnerStore` polls this scope; disabled scopes
 /// are retained in the list but silently skipped during fetch.
 struct ScopeEntry: Identifiable, Codable, Equatable {
+    /// The id constant.
     let id: UUID
+    /// The scope property.
     var scope: String
+    /// The isEnabled property.
     var isEnabled: Bool
 
     /// Convenience init with a new random ID and enabled by default.
@@ -37,7 +40,9 @@ final class ScopeStore: ObservableObject {
     /// Shared singleton — single source of truth for all scope operations.
     static let shared = ScopeStore()
 
+    /// The entriesKey constant.
     private let entriesKey = "scopeEntries"
+    /// The legacyKey constant.
     private let legacyKey = "scopes"
 
     /// Emits after every structural mutation (add / remove). Callers subscribe and

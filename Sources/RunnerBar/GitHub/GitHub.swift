@@ -4,6 +4,7 @@ import Foundation
 
 // MARK: - URL helpers
 
+/// Performs the scopeFromHtmlUrl operation.
 func scopeFromHtmlUrl(_ urlString: String?) -> String? {
     guard let urlString,
           let url = URL(string: urlString),
@@ -13,6 +14,7 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
     return "\(components[1])/\(components[2])"
 }
 
+/// Performs the runIDFromHtmlUrl operation.
 func runIDFromHtmlUrl(_ url: String?) -> Int? {
     guard let url else { return nil }
     let parts = url.components(separatedBy: "/")
@@ -26,6 +28,7 @@ func runIDFromHtmlUrl(_ url: String?) -> Int? {
 
 // MARK: - Fetch all jobs from active runs
 
+/// Performs the fetchActiveJobs operation.
 func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchActiveJobs › invalid scope: \(scopeString)")
@@ -68,15 +71,26 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
 
 // MARK: - Codable helpers
 
+/// A value type representing WorkflowRunsResponse.
 private struct WorkflowRunsResponse: Codable {
+    /// The workflowRuns constant.
     let workflowRuns: [WorkflowRun]
-    enum CodingKeys: String, CodingKey { case workflowRuns = "workflow_runs" }
+    /// UserDefaults key constants.
+    enum CodingKeys: String, CodingKey {
+        /// Coding key mapping to the `workflowRuns` JSON field.
+        case workflowRuns = "workflow_runs"
+    }
 }
 
-private struct WorkflowRun: Codable { let id: Int }
+/// A value type representing WorkflowRun.
+private struct WorkflowRun: Codable {
+    /// The `id` property.
+    let id: Int
+}
 
 // MARK: - Runners
 
+/// Performs the fetchRunners operation.
 func fetchRunners(for scopeString: String) -> [Runner] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRunners › invalid scope: \(scopeString)")
@@ -96,10 +110,15 @@ func fetchRunners(for scopeString: String) -> [Runner] {
     return response.runners
 }
 
-private struct RunnersResponse: Codable { let runners: [Runner] }
+/// A value type representing RunnersResponse.
+private struct RunnersResponse: Codable {
+    /// The `runners` property.
+    let runners: [Runner]
+}
 
 // MARK: - User orgs and repos
 
+/// Performs the fetchUserOrgs operation.
 func fetchUserOrgs() -> [String] {
     guard let data = ghAPIPaginated("/user/orgs?per_page=100") else { return [] }
     struct Org: Decodable { let login: String }
@@ -107,6 +126,7 @@ func fetchUserOrgs() -> [String] {
     return orgs.map(\.login)
 }
 
+/// Performs the fetchUserRepos operation.
 func fetchUserRepos() -> [String] {
     guard let data = ghAPIPaginated("/user/repos?per_page=100&sort=updated") else { return [] }
     struct Repo: Decodable {
@@ -125,6 +145,7 @@ private let _ansiRegex = try! NSRegularExpression(
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 
+/// Performs the fetchStepLog operation.
 func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)")
@@ -180,6 +201,7 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> Str
     return section.isEmpty ? cleaned : section
 }
 
+/// Performs the stripAnsi operation.
 private func stripAnsi(_ input: String) -> String {
     _ansiRegex.stringByReplacingMatches(
         in: input,

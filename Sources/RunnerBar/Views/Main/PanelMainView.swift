@@ -39,16 +39,25 @@ import SwiftUI
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
 struct PanelMainView: View {
+    /// The store property.
     @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row in an inline job list. (#455)
     let onStepTap: (ActiveJob, JobStep) -> Void
+    /// The onSelectSettings constant.
     let onSelectSettings: () -> Void
+    /// The panelVisibilityState property.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    /// The isAuthenticated property.
     @State private var isAuthenticated = (githubToken() != nil)
+    /// The systemStats property.
     @StateObject private var systemStats = SystemStatsViewModel()
+    /// The visibleCount property.
     @State private var visibleCount: Int = 10
+    /// The displayTick property.
     @State private var displayTick: Int = 0
+    /// The displayTickTimer property.
     @State private var displayTickTimer: Timer?
+    /// The screenScrollMaxHeight property.
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }

@@ -39,6 +39,7 @@ struct PieProgressDot: View {
     @State private var spinAngle: Double = 0
     /// Scale factor for the completion pulse. 1.0 → 1.25 → 1.0 on reaching 100%.
     @State private var completionScale: CGFloat = 1.0
+    /// The body property.
     var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)

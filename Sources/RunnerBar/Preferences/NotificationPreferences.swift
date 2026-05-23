@@ -7,10 +7,14 @@ import Foundation
 
 /// Persists notification preferences to UserDefaults.
 final class NotificationPreferences: ObservableObject {
+    /// The shared constant.
     static let shared = NotificationPreferences()
 
+    /// UserDefaults key constants.
     private enum Key {
+        /// Key for the notify-on-success flag.
         static let notifyOnSuccess = "notifications.notifyOnSuccess"
+        /// Key for the notify-on-failure flag.
         static let notifyOnFailure = "notifications.notifyOnFailure"
     }
 
@@ -24,6 +28,7 @@ final class NotificationPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(notifyOnFailure, forKey: Key.notifyOnFailure) }
     }
 
+    /// Private initialiser — use `shared`.
     private init() {
         NotificationPreferences.register(defaults: .standard)
         notifyOnSuccess = UserDefaults.standard.bool(forKey: Key.notifyOnSuccess)

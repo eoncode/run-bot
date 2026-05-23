@@ -5,22 +5,30 @@ import Foundation
 // MARK: - Poll result value types
 
 // Result returned by `PollResultBuilder.buildJobState`.
+/// A value type representing JobPollResult.
 struct JobPollResult {
     // Jobs to display in the popover (in_progress → queued → cached done).
+    /// The display constant.
     let display: [ActiveJob]
     // Updated completed-job cache, trimmed to jobCacheLimit entries.
+    /// The newCache constant.
     let newCache: [Int: ActiveJob]
     // Live-job snapshot for the next poll's diff.
+    /// The newPrevLive constant.
     let newPrevLive: [Int: ActiveJob]
 }
 
 // Result returned by `PollResultBuilder.buildGroupState`.
+/// A value type representing GroupPollResult.
 struct GroupPollResult {
     // Action groups to display in the popover.
+    /// The display constant.
     let display: [WorkflowActionGroup]
     // Updated group cache, trimmed to groupCacheLimit entries.
+    /// The newGroupCache constant.
     let newGroupCache: [String: WorkflowActionGroup]
     // Live-group snapshot for the next poll's diff.
+    /// The newPrevLiveGroups constant.
     let newPrevLiveGroups: [String: WorkflowActionGroup]
 }
 
@@ -28,8 +36,10 @@ struct GroupPollResult {
 
 // These extensions delegate to PollResultBuilder so RunnerStore.fetch() call
 // sites are unchanged while the logic lives in the independently testable builder.
+/// Extension adding functionality to `RunnerStore`.
 extension RunnerStore {
 
+    /// Performs the buildJobState operation.
     nonisolated func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
         PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
@@ -47,6 +57,7 @@ extension RunnerStore {
         )
     }
 
+    /// Performs the buildGroupState operation.
     nonisolated func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
@@ -73,6 +84,7 @@ extension RunnerStore {
 
     // MARK: - Backfill (retains ghAPI access via RunnerStore)
 
+    /// Performs the backfillSteps operation.
     nonisolated func backfillSteps(into cache: inout [Int: ActiveJob]) {
         let iso = ISO8601DateFormatter()
         for cacheID in Array(cache.keys) {
@@ -91,6 +103,7 @@ extension RunnerStore {
 
     // MARK: - Group helpers (retain RunnerStore context)
 
+    /// Performs the scopeFromActionGroup operation.
     nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
@@ -108,6 +121,7 @@ extension RunnerStore {
         return ""
     }
 
+    /// Performs the enrichGroupJobs operation.
     nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }

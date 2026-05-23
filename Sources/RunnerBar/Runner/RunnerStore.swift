@@ -5,29 +5,44 @@ import Combine
 import Foundation
 
 // MARK: - RunnerStore
+/// Manages RunnerStore state and behaviour.
 
 // swiftlint:disable:next type_body_length
+/// Manages RunnerStore state and behaviour.
 @MainActor
 final class RunnerStore {
+    /// The shared constant.
     static let shared = RunnerStore()
 
+    /// Documentation.
     private(set) var runners: [Runner] = []
+    /// Documentation.
     private(set) var jobs: [ActiveJob] = []
+    /// Documentation.
     private(set) var actions: [WorkflowActionGroup] = []
 
+    /// The prevLiveJobs property.
     private var prevLiveJobs: [Int: ActiveJob] = [:]
+    /// The completedCache property.
     private var completedCache: [Int: ActiveJob] = [:]
+    /// The prevLiveGroups property.
     private var prevLiveGroups: [String: WorkflowActionGroup] = [:]
+    /// The actionGroupCache property.
     private var actionGroupCache: [String: WorkflowActionGroup] = [:]
 
+    /// Documentation.
     private(set) var isRateLimited = false
+    /// The timer property.
     private var timer: Timer?
+    /// The intervalCancellable property.
     private var intervalCancellable: AnyCancellable?
+    /// The scopeCancellable property.
     private var scopeCancellable: AnyCancellable?
 
     /// Emits whenever a fetch cycle completes and the store's state has been updated.
     let didUpdate = PassthroughSubject<Void, Never>()
 
+    /// The aggregateStatus property.
     var aggregateStatus: AggregateStatus {
         guard !runners.isEmpty else { return .allOffline }
         let onlineCount = runners.filter { $0.status == "online" }.count
@@ -36,6 +51,7 @@ final class RunnerStore {
         return .someOffline
     }
 
+    /// Private initialiser — use `shared`.
     private init() {
         log("RunnerStore › init")
         intervalCancellable = AppPreferencesStore.shared.$pollingInterval
@@ -53,6 +69,7 @@ final class RunnerStore {
             }
     }
 
+    /// Performs the start operation.
     func start() {
         let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › start — activeScopes=\(scopes)")
@@ -64,6 +81,7 @@ final class RunnerStore {
         fetch()
     }
 
+    /// Performs the scheduleTimer operation.
     private func scheduleTimer(liveActions: [WorkflowActionGroup]? = nil) {
         timer?.invalidate()
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
@@ -86,6 +104,7 @@ final class RunnerStore {
         }
     }
 
+    /// Performs the fetch operation.
     func fetch() {
         let scopesSnapshot = ScopeStore.shared.activeScopes
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
@@ -160,6 +179,7 @@ final class RunnerStore {
         return (byFullKey, byName)
     }
 
+    /// Performs the applyFetchResult operation.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -178,6 +198,7 @@ final class RunnerStore {
         scheduleTimer(liveActions: groupResult.newPrevLiveGroups.map { $0.value })
     }
 
+    /// Performs the fetchAndEnrichRunners operation.
     nonisolated func fetchAndEnrichRunners(
         scopes: [String],
         installPathByName: [String: String],

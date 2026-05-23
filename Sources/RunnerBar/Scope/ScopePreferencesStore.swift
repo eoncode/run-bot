@@ -15,6 +15,7 @@ import Foundation
 //
 // Call ScopePreferencesStore.cleanUp(scope:) from ScopeStore.remove(id:) to avoid
 // orphaned keys accumulating in UserDefaults.
+/// Enumerates possible values for ScopePreferencesStore.
 enum ScopePreferencesStore {
 
     // MARK: - Key builders

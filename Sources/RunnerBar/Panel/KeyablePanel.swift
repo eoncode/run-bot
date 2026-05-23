@@ -33,6 +33,8 @@ import AppKit
 //    at least internal so both files can reference it without a visibility error.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE.
+/// An `NSPanel` subclass that conditionally accepts key-window status to allow
+/// text field input while preserving non-activating panel behaviour.
 final class KeyablePanel: NSPanel {
     /// Set to true immediately before navigating to a view that contains TextFields.
     /// Reset to false in closePanel().

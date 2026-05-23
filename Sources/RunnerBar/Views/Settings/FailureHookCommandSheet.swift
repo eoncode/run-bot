@@ -13,9 +13,12 @@ import SwiftUI
 /// Sheet for editing the shell command run by `FailureHookRunner` when a workflow fails.
 /// Provides a monospaced `TextEditor` and variable-insertion pill buttons.
 struct FailureHookCommandSheet: View {
+    /// The scope constant.
     let scope: String
+    /// The onDismiss constant.
     let onDismiss: () -> Void
 
+    /// The commandText property.
     @State private var commandText: String = ""
 
     // $FAILURE_LOG is pre-resolved by FailureHookRunner in Swift before the command
@@ -24,8 +27,10 @@ struct FailureHookCommandSheet: View {
     //
     // NOTE: This is the same constant as FailureHookRunner.defaultCommand.
     // If the user never saves, FailureHookRunner falls back to this value automatically.
+    /// The exampleCommand constant.
     private static let exampleCommand = FailureHookRunner.defaultCommand
 
+    /// Creates a new instance.
     init(scope: String, onDismiss: @escaping () -> Void) {
         self.scope = scope
         self.onDismiss = onDismiss
@@ -35,6 +40,7 @@ struct FailureHookCommandSheet: View {
         log("FailureHookCommandSheet \u{203a} init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
     }
 
+    /// The variables constant.
     private let variables: [String] = [
         "$SCOPE", "$LOCAL_PATH", "$BRANCH", "$RUN_ID", "$COMMIT_SHA",
         "$WORKFLOW_NAME", "$FAILURE_LOG",
@@ -57,7 +63,9 @@ struct FailureHookCommandSheet: View {
 
 // MARK: - Subviews
 
+/// Extension adding functionality to `FailureHookCommandSheet`.
 extension FailureHookCommandSheet {
+    /// The headerSection property.
     var headerSection: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Failure Hook Command")
@@ -72,6 +80,7 @@ extension FailureHookCommandSheet {
         .padding(.bottom, 10)
     }
 
+    /// The editorSection property.
     var editorSection: some View {
         TextEditor(text: $commandText)
             .font(.system(size: 11, design: .monospaced))
@@ -85,6 +94,7 @@ extension FailureHookCommandSheet {
             .padding(.horizontal, 16)
     }
 
+    /// The pillSection property.
     var pillSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Insert variable at cursor:")
@@ -113,6 +123,7 @@ extension FailureHookCommandSheet {
         .padding(.top, 10)
     }
 
+    /// The footerSection property.
     var footerSection: some View {
         HStack {
             Spacer()
@@ -158,6 +169,7 @@ extension FailureHookCommandSheet {
 
 // MARK: - Actions
 
+/// Extension adding functionality to `FailureHookCommandSheet`.
 extension FailureHookCommandSheet {
     /// Persists `commandText` to `ScopePreferencesStore` for this scope and dismisses the sheet.
     func save() {
@@ -192,6 +204,7 @@ extension FailureHookCommandSheet {
 /// A custom `Layout` that wraps child views into rows like a word-wrapped line of text.
 /// Used to arrange variable-insertion pill buttons beneath the command editor.
 struct FlowLayout: Layout {
+    /// The spacing property.
     var spacing: CGFloat = 6
 
     /// Calculates the total height required to fit all subviews within the proposed width.

@@ -15,58 +15,86 @@ import SwiftUI
 // MARK: - Save state helper
 /// Tracks the lifecycle of an async save operation for a single editable field.
 private enum SaveState: Equatable {
+    /// The `idle` case.
     case idle
+    /// The `saving` case.
     case saving
+    /// The `success` case.
     case success
+    /// The `failure` case.
     case failure(String)
 }
 
 // MARK: - Danger action
 /// Represents a destructive action the user can trigger from the Danger Zone section.
 private enum DangerAction: Identifiable, Equatable {
+    /// The `remove` case.
     case remove
 
+    /// The id property.
     var id: String { "remove" }
 
+    /// The title property.
     var title: String { "Remove runner" }
 
+    /// The confirmLabel property.
     var confirmLabel: String { "Remove" }
 
+    /// The destructive property.
     var destructive: Bool { true }
 }
 
 // swiftlint:disable:next type_body_length
 /// Detail screen for a single self-hosted runner: displays info, editable config fields, and the Danger Zone.
 struct RunnerDetailView: View {
+    /// The runner constant.
     let runner: RunnerModel
+    /// The onBack constant.
     let onBack: () -> Void
 
+    /// The isRunning property.
     @State private var isRunning: Bool
+    /// The displayStatus property.
     @State private var displayStatus: String
+    /// The localRunnerStore property.
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
 
     // MARK: - Editable field state (#492)
+    /// The labelsText property.
     @State private var labelsText: String
+    /// The labelsSaveState property.
     @State private var labelsSaveState: SaveState = .idle
+    /// The workFolderText property.
     @State private var workFolderText: String
+    /// The workFolderSaveState property.
     @State private var workFolderSaveState: SaveState = .idle
     /// `true` = auto-update enabled (written to .runner JSON as disableUpdate: false)
     @State private var autoUpdate: Bool
+    /// The autoUpdateSaveState property.
     @State private var autoUpdateSaveState: SaveState = .idle
     // #532: unified proxy card — single save state for URL + user + pass
+    /// The proxyUrl property.
     @State private var proxyUrl: String
+    /// The proxyUser property.
     @State private var proxyUser: String
+    /// The proxyPassword property.
     @State private var proxyPassword: String
+    /// The proxySaveState property.
     @State private var proxySaveState: SaveState = .idle
 
     // MARK: - Info fields loaded from .runner JSON (#533)
+    /// The displayOsArch property.
     @State private var displayOsArch: String = ""
+    /// The displayVersion property.
     @State private var displayVersion: String = ""
 
     // MARK: - Danger Zone state (#493)
+    /// The pendingDangerAction property.
     @State private var pendingDangerAction: DangerAction?
+    /// The dangerActionState property.
     @State private var dangerActionState: SaveState = .idle
 
+    /// Creates a new instance.
     init(runner: RunnerModel, onBack: @escaping () -> Void) {
         self.runner = runner
         self.onBack = onBack
@@ -454,10 +482,11 @@ struct RunnerDetailView: View {
         }
     }
 
+    /// Performs the saveButton operation.
     // MARK: - Save button helper
 
+    /// Performs the saveButton operation.
     @ViewBuilder
-    /// Small "Save" button that shows a spinner while saving and is hidden when idle.
     private func saveButton(state: SaveState, action: @escaping () -> Void) -> some View {
         switch state {
         case .saving:
@@ -471,10 +500,11 @@ struct RunnerDetailView: View {
         default:
             Button(action: action) { Text("Save").font(.caption2) }.buttonStyle(.bordered)
         }
+    /// Performs the saveStateRow operation.
     }
 
+    /// Performs the saveStateRow operation.
     @ViewBuilder
-    /// Feedback row shown below a config card: success checkmark, failure message, or optional restart note.
     private func saveStateRow(_ state: SaveState, restartNote: Bool) -> some View {
         if restartNote, state == .success {
             Text("Changes take effect after the next runner restart.")

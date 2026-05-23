@@ -13,11 +13,17 @@ struct RunnerModel: Identifiable, Equatable {
 
     /// String-based ID so LocalRunnerScanner can use runnerName as the dedup key.
     let id: String
+    /// The runnerName constant.
     let runnerName: String
+    /// The installPath constant.
     let installPath: String?
+    /// The gitHubUrl property.
     var gitHubUrl: String?   // var — LocalRunnerScanner may patch this after init
+    /// The agentId constant.
     let agentId: Int?
+    /// The workFolder constant.
     let workFolder: String?
+    /// The labels constant.
     let labels: [String]
 
     // MARK: - Fields from .runner JSON (#491)
@@ -57,6 +63,7 @@ struct RunnerModel: Identifiable, Equatable {
     // MARK: - Init
 
     // swiftlint:disable:next function_parameter_count
+    /// Creates a new instance.
     init(
         id: String? = nil,
         runnerName: String,
@@ -113,7 +120,11 @@ struct RunnerModel: Identifiable, Equatable {
         }
     }
 
-    enum StatusColor { case running, busy, idle, offline }
+    /// Enumerates possible values for StatusColor.
+    enum StatusColor {
+        /// The `running` case.
+        case running, busy, idle, offline
+    }
 
     /// Dot color category used by `SettingsView.localRunnerDotColor(for:)`.
     var statusColor: StatusColor {

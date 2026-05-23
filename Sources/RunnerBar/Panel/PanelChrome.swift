@@ -63,7 +63,9 @@ let cornerRadius: CGFloat = 10  // matches NSPopover body corner
 // MARK: - NSBezierPath → CGPath (macOS 13 compatible)
 // ❌ NEVER replace with .cgPath — requires macOS 14+.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+/// macOS 13-compatible `CGPath` conversion for `NSBezierPath`.
 private extension NSBezierPath {
+    /// Converts this `NSBezierPath` to a `CGPath` without using `.cgPath` (macOS 14+).
     var compatCGPath: CGPath {
         let path = CGMutablePath()
         var pts = [NSPoint](repeating: .zero, count: 3)
@@ -100,6 +102,7 @@ private extension NSBezierPath {
     }
 }
 
+/// Custom `NSView` that renders the HUD panel chrome: vibrancy background, rounded corners, and the arrow pointer.
 final class PanelChromeView: NSView {
     /// Panel-local X of arrow tip centre.
     /// Formula: button.window!.frame.midX - panel.frame.minX
@@ -109,6 +112,7 @@ final class PanelChromeView: NSView {
         didSet { needsDisplay = true; updateFxMask() }
     }
 
+    /// The visual effect view providing the HUD vibrancy background.
     private let vibrancyView: NSVisualEffectView = {
         let view = NSVisualEffectView()
         // .hudWindow gives a cool dark translucent look — no warm tint.
@@ -133,6 +137,7 @@ final class PanelChromeView: NSView {
         addSubview(vibrancyView)
     }
 
+    /// Not implemented — this view is only created programmatically.
     required init?(coder _: NSCoder) { fatalError() }
 
     /// The rectangle occupied by the panel body (excluding the arrow tip area).
@@ -152,6 +157,7 @@ final class PanelChromeView: NSView {
         }
     }
 
+    /// Recomputes and applies the CAShapeLayer mask that clips vibrancy to the chrome path.
     private func updateFxMask() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let maskLayer = CAShapeLayer()
@@ -181,6 +187,7 @@ final class PanelChromeView: NSView {
     // ❌ NEVER add a tip arc.
     // ❌ NEVER use appendArc at BASE corners.
     // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+    /// Builds the rounded-rect + upward arrow bezier path used for both masking and drawing the panel chrome.
     private func chromePath(in rect: NSRect) -> NSBezierPath {
         let width     = rect.width
         let height    = rect.height

@@ -29,19 +29,29 @@ struct LocalRunnerScanner {
 
     // MARK: - .runner JSON schema
 
+    /// A value type representing RunnerJSON.
     private struct RunnerJSON: Decodable {
+        /// The gitHubUrl constant.
         let gitHubUrl: String?
+        /// The runnerName constant.
         let runnerName: String?
+        /// The agentId constant.
         let agentId: Int?
+        /// The workFolder constant.
         let workFolder: String?
         // #491 — additional fields present in the GitHub runner .runner JSON
+        /// The platform constant.
         let platform: String?
+        /// The platformArchitecture constant.
         let platformArchitecture: String?
+        /// The agentVersion constant.
         let agentVersion: String?
+        /// The ephemeral constant.
         let ephemeral: Bool?
     }
 
     // MARK: - Filesystem path constants
+    /// The findBinary constant.
     private static let findBinary    = "/usr/bin/find"
 
     // MARK: - Public API
@@ -91,6 +101,7 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 1: LaunchAgents
 
+    /// Performs the scanLaunchAgents operation.
     private func scanLaunchAgents() -> (models: [RunnerModel], installPaths: Set<String>) {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -140,6 +151,7 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 2: .runner JSON files
 
+    /// Performs the scanRunnerJSONFiles operation.
     private func scanRunnerJSONFiles(extraRoots: Set<String>) -> [RunnerModel] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var rawPaths = [
@@ -204,6 +216,7 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 3: Live service check
 
+    /// Performs the scanLiveServices operation.
     private func scanLiveServices() -> Set<String> {
         let output = shell(
             "launchctl list 2>/dev/null | grep actions.runner",

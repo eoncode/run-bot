@@ -12,7 +12,9 @@ struct PollResultBuilder {
 
     // MARK: - Cache limits
 
+    /// The jobCacheLimit constant.
     static let jobCacheLimit = 3
+    /// The groupCacheLimit constant.
     static let groupCacheLimit = 30
 
     // MARK: - Job state
@@ -141,6 +143,7 @@ struct PollResultBuilder {
 
     // MARK: - Private job helpers
 
+    /// Performs the applyVanishedJobs operation.
     static func applyVanishedJobs(
         snapPrev: [Int: ActiveJob],
         liveIDs: Set<Int>,
@@ -165,6 +168,7 @@ struct PollResultBuilder {
         }
     }
 
+    /// Performs the trimJobCache operation.
     static func trimJobCache(_ cache: inout [Int: ActiveJob], limit: Int) {
         guard cache.count > limit else { return }
         let sorted = cache.values.sorted {
@@ -173,6 +177,7 @@ struct PollResultBuilder {
         cache = Dictionary(uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
+    /// Performs the buildJobDisplay operation.
     static func buildJobDisplay(live: [ActiveJob], cache: [Int: ActiveJob]) -> [ActiveJob] {
         let inProgress = live.filter { $0.status == "in_progress" }
         let queued     = live.filter { $0.status == "queued" }
@@ -188,6 +193,7 @@ struct PollResultBuilder {
 
     // MARK: - Private group helpers
 
+    /// Performs the makeShaKeyedCache operation.
     static func makeShaKeyedCache(_ cache: [String: WorkflowActionGroup]) -> [String: WorkflowActionGroup] {
         Dictionary(
             cache.values.map { ($0.headSha, $0) },
@@ -195,6 +201,7 @@ struct PollResultBuilder {
         )
     }
 
+    /// Performs the evictFreshShas operation.
     static func evictFreshShas(
         from cache: [String: WorkflowActionGroup],
         freshGroups: [WorkflowActionGroup]
@@ -254,6 +261,7 @@ struct PollResultBuilder {
         }
     }
 
+    /// Performs the trimGroupCache operation.
     static func trimGroupCache(_ cache: inout [String: WorkflowActionGroup], limit: Int) {
         guard cache.count > limit else { return }
         let sorted = cache.values.sorted {
@@ -264,6 +272,7 @@ struct PollResultBuilder {
         cache = Dictionary(uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
+    /// Performs the buildGroupDisplay operation.
     static func buildGroupDisplay(
         live: [WorkflowActionGroup],
         cache: [String: WorkflowActionGroup]

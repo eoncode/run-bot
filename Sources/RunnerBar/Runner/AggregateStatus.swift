@@ -2,11 +2,16 @@
 // RunnerBar
 // MARK: - AggregateStatus
 
+/// Enumerates possible values for AggregateStatus.
 enum AggregateStatus {
+    /// The `allOnline` case.
     case allOnline
+    /// The `someOffline` case.
     case someOffline
+    /// The `allOffline` case.
     case allOffline
 
+    /// The dot property.
     var dot: String {
         switch self {
         case .allOnline:  return "🟢"
@@ -15,6 +20,7 @@ enum AggregateStatus {
         }
     }
 
+    /// The symbolName property.
     var symbolName: String {
         switch self {
         case .allOnline:  return "circle.fill"

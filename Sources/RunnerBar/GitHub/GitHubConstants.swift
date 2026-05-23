@@ -8,6 +8,7 @@ import Foundation
 // and view layers so SonarCloud no longer flags them as hardcoded URIs.
 // All consumers must import this file (same module — no import needed).
 
+/// Shared base URLs used across GitHub transports, OAuth, and links.
 enum GitHubConstants {
     /// Base URL for the GitHub REST API.
     static let apiBase = "https://api.github.com"

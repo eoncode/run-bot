@@ -17,20 +17,28 @@ import SwiftUI
 //     onSelect: { selectedRepo = $0; showSheet = false }
 // )
 
+/// A value type representing RepoSelectorSheet.
 struct RepoSelectorSheet: View {
+    /// The items constant.
     let items: [String]
+    /// The label constant.
     let label: String
+    /// The onDismiss constant.
     let onDismiss: () -> Void
+    /// The onSelect constant.
     let onSelect: (String) -> Void
 
+    /// The searchText property.
     @State private var searchText = ""
 
+    /// The filtered property.
     private var filtered: [String] {
         searchText.isEmpty
             ? items
             : items.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerSection
@@ -48,7 +56,9 @@ struct RepoSelectorSheet: View {
 
 // MARK: - Subviews
 
+/// Extension adding functionality to `RepoSelectorSheet`.
 extension RepoSelectorSheet {
+    /// The headerSection property.
     var headerSection: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Select \(label)")
@@ -63,6 +73,7 @@ extension RepoSelectorSheet {
         .padding(.bottom, 10)
     }
 
+    /// The searchSection property.
     var searchSection: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
@@ -89,8 +100,10 @@ extension RepoSelectorSheet {
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    /// The listSection computed view.
     }
 
+    /// The listSection computed view.
     @ViewBuilder
     var listSection: some View {
         if items.isEmpty {
@@ -132,6 +145,7 @@ extension RepoSelectorSheet {
         }
     }
 
+    /// Performs the itemRow operation.
     func itemRow(_ item: String) -> some View {
         Button(action: {
             log("RepoSelectorSheet \u{203a} selected item='\(item)'")
@@ -155,6 +169,7 @@ extension RepoSelectorSheet {
         .buttonStyle(.plain)
     }
 
+    /// The footerSection property.
     var footerSection: some View {
         HStack {
             Spacer()

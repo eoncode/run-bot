@@ -4,9 +4,13 @@ import SwiftUI
 
 // MARK: - ScopeType
 
+/// Enumerates possible values for ScopeType.
 private enum ScopeType: String, CaseIterable, Identifiable {
+    /// Coding key for the `org` field.
     case org  = "Organisation"
+    /// Coding key for the `repo` field.
     case repo = "Repository"
+    /// The id property.
     var id: String { rawValue }
 }
 
@@ -20,16 +24,26 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 ///
 /// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
 struct AddScopeSheet: View {
+    /// The isPresented property.
     @Binding var isPresented: Bool
 
+    /// The scopeType property.
     @State private var scopeType: ScopeType = .org
+    /// The selectedScope property.
     @State private var selectedScope: String = ""
+    /// The manualScope property.
     @State private var manualScope: String = ""
+    /// The orgs property.
     @State private var orgs: [String] = []
+    /// The repos property.
     @State private var repos: [String] = []
+    /// The isFetching property.
     @State private var isFetching = false
+    /// The errorMessage property.
     @State private var errorMessage: String?
+    /// The usePicker property.
     @State private var usePicker = false
+    /// The showScopeSelector property.
     @State private var showScopeSelector = false
 
     /// The list of picker options matching the current `scopeType` (orgs or repos).
@@ -46,6 +60,7 @@ struct AddScopeSheet: View {
     /// Guards the Add button: `true` when `effectiveScope` is non-empty.
     private var canAdd: Bool { !effectiveScope.isEmpty }
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Header ─────────────────────────────────────────────────────

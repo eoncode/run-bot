@@ -7,10 +7,15 @@ import SwiftUI
 // MARK: - AddRunnerSheet
 
 // MARK: - URI Constants
+/// Enumerates possible values for GitHubURIs.
 private enum GitHubURIs {
+    /// The base constant.
     static let base            = "https://github.com/"
+    /// The apiRunnerLatest constant.
     static let apiRunnerLatest = "https://api.github.com/repos/actions/runner/releases/latest"
+    /// The launchAgentsDir constant.
     static let launchAgentsDir = "Library/LaunchAgents"
+    /// The actionsRunnerDefaultDir constant.
     static let actionsRunnerDefaultDir = "actions-runner/my-runner"
 }
 
@@ -32,41 +37,60 @@ private enum GitHubURIs {
 ///
 /// Requires a GitHub token for "Add new" only (`gh auth login`, GH_TOKEN, or GITHUB_TOKEN).
 struct AddRunnerSheet: View {
+    /// The isPresented property.
     @Binding var isPresented: Bool
+    /// The onComplete constant.
     let onComplete: () -> Void
 
     // MARK: - Add Mode
 
     /// Controls which form body is shown in the sheet.
     enum AddMode: String, CaseIterable, Identifiable {
+        /// Coding key for the `addNew` field.
         case addNew      = "Add new"
+        /// Coding key for the `addExisting` field.
         case addExisting = "Add pre-existing"
+        /// The id property.
         var id: String { rawValue }
     }
 
+    /// The addMode property.
     @State private var addMode: AddMode = .addNew
 
     // MARK: Scope state (Add new only)
 
     /// Determines whether the runner is registered at repo or organisation scope.
     enum ScopeType: String, CaseIterable, Identifiable {
+        /// Coding key for the `repo` field.
         case repo = "Repository"
+        /// Coding key for the `org` field.
         case org  = "Organisation"
+        /// The id property.
         var id: String { rawValue }
     }
 
+    /// The scopeType property.
     @State private var scopeType: ScopeType = .repo
+    /// The selectedRepo property.
     @State private var selectedRepo = ""
+    /// The selectedOrg property.
     @State private var selectedOrg  = ""
+    /// The repos property.
     @State private var repos: [String] = []
+    /// The orgs property.
     @State private var orgs:  [String] = []
+    /// The isLoadingScopes property.
     @State private var isLoadingScopes = false
+    /// The showRepoSelector property.
     @State private var showRepoSelector = false
+    /// The showOrgSelector property.
     @State private var showOrgSelector  = false
 
     // MARK: Runner config state (Add new only)
 
+    /// The runnerName property.
     @State private var runnerName = ""
+    /// The labelsText property.
     @State private var labelsText = "self-hosted,macOS"
     /// Default: ~/actions-runner/my-runner — user should rename the last
     /// component to match their runner name. Each runner needs its own folder.
@@ -76,8 +100,11 @@ struct AddRunnerSheet: View {
 
     // MARK: Registration state (Add new only)
 
+    /// The isRegistering property.
     @State private var isRegistering    = false
+    /// The registrationStep property.
     @State private var registrationStep = ""
+    /// The errorMessage property.
     @State private var errorMessage: String?
 
     // MARK: Pre-existing state (Add pre-existing only)
@@ -97,6 +124,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Body
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add runner").font(.headline)
@@ -391,6 +419,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Helpers (Add new)
 
+    /// The effectiveScope property.
     private var effectiveScope: String { scopeType == .repo ? selectedRepo : selectedOrg }
 
     /// Returns `true` when the chosen install directory already contains a `.runner` file,
