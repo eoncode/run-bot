@@ -244,36 +244,3 @@ final class RunnerStore {
         return result
     }
 }
-
-/// Extension adding functionality to `RunnerStore`.
-extension RunnerStore {
-    /// Performs the makeActiveJob operation.
-    nonisolated func makeActiveJob(
-        from payload: JobPayload,
-        iso: ISO8601DateFormatter,
-        isDimmed: Bool
-    ) -> ActiveJob {
-        ActiveJob(
-            id: payload.id,
-            name: payload.name,
-            status: payload.status,
-            conclusion: payload.conclusion,
-            startedAt: payload.startedAt.flatMap { iso.date(from: $0) },
-            createdAt: payload.createdAt.flatMap { iso.date(from: $0) },
-            completedAt: payload.completedAt.flatMap { iso.date(from: $0) },
-            htmlUrl: payload.htmlUrl,
-            isDimmed: isDimmed,
-            steps: (payload.steps ?? []).map { stepPayload in
-                JobStep(
-                    id: stepPayload.number,
-                    name: stepPayload.name,
-                    status: stepPayload.status,
-                    conclusion: stepPayload.conclusion,
-                    startedAt: stepPayload.startedAt.flatMap { iso.date(from: $0) },
-                    completedAt: stepPayload.completedAt.flatMap { iso.date(from: $0) }
-                )
-            },
-            runnerName: payload.runnerName
-        )
-    }
-}
