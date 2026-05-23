@@ -1,3 +1,5 @@
+// SystemStatsViewModel.swift
+// RunnerBar
 import Combine
 import Darwin
 import Foundation
@@ -99,11 +101,11 @@ final class SystemStatsViewModel: ObservableObject {
     }
 
     // MARK: CPU (Mach host_processor_info)
+    // swiftlint:disable:next function_body_length
     /// Reads per-core tick counts via `host_processor_info` and returns the
     /// aggregate CPU utilisation as a percentage (0–100).
     /// Diffs against the previous sample stored in `prevCPUInfo`; returns `0` on the first call.
     /// - Returns: CPU usage percentage, or `0` if the kernel call fails.
-    // swiftlint:disable:next function_body_length
     private func sampleCPU() -> Double {
         var numCPUsU: natural_t = 0
         var cpuInfo: processor_info_array_t?

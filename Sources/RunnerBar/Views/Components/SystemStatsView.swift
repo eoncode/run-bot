@@ -1,3 +1,5 @@
+// SystemStatsView.swift
+// RunnerBar
 import SwiftUI
 
 // MARK: - SystemStatsView

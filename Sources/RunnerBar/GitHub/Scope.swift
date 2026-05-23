@@ -1,3 +1,5 @@
+// Scope.swift
+// RunnerBar
 import Foundation
 
 // MARK: - Scope

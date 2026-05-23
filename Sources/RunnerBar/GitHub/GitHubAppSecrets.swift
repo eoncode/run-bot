@@ -1,3 +1,5 @@
+// GitHubAppSecrets.swift
+// RunnerBar
 // MARK: - OAuth App Credentials
 //
 // NOTE: These credentials are intentionally committed to the repository.

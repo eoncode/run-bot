@@ -1,3 +1,5 @@
+// AggregateStatus.swift
+// RunnerBar
 // MARK: - AggregateStatus
 
 enum AggregateStatus {

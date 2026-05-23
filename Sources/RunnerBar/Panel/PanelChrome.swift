@@ -1,3 +1,5 @@
+// PanelChrome.swift
+// RunnerBar
 import AppKit
 
 // MARK: - PanelChrome

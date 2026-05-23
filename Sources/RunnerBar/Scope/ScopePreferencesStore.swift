@@ -1,3 +1,5 @@
+// ScopePreferencesStore.swift
+// RunnerBar
 import Foundation
 
 // MARK: - ScopePreferencesStore

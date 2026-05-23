@@ -1,3 +1,5 @@
+// NotificationPreferences.swift
+// RunnerBar
 import Combine
 import Foundation
 

@@ -1,3 +1,5 @@
+// RunnerPollState.swift
+// RunnerBar
 import Foundation
 
 // MARK: - Poll result value types

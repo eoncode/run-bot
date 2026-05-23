@@ -1,3 +1,5 @@
+// PollResultBuilder.swift
+// RunnerBar
 import Foundation
 
 // MARK: - PollResultBuilder

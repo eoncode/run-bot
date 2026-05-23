@@ -1,3 +1,5 @@
+// PanelVisibilityState.swift
+// RunnerBar
 import SwiftUI
 
 // ════════════════════════════════════════════════════════════════════════════════

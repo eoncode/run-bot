@@ -1,3 +1,5 @@
+// AddRunnerSheet.swift
+// RunnerBar
 import AppKit
 import SwiftUI
 
@@ -569,9 +571,9 @@ struct AddRunnerSheet: View {
 
     // MARK: - Register (Add new)
 
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     /// Downloads, unpacks, and configures a new runner, then writes the LaunchAgent plist and dismisses.
     /// Runs entirely on a background thread; updates `registrationStep` via `setStep(_:)`.
-    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func register() {
         guard canRegister else { return }
         errorMessage = nil

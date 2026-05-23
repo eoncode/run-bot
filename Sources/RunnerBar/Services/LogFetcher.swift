@@ -1,3 +1,5 @@
+// LogFetcher.swift
+// RunnerBar
 import Foundation
 
 // MARK: - Filesystem path constants

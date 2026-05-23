@@ -1,3 +1,5 @@
+// PanelViewModifiers.swift
+// RunnerBar
 import SwiftUI
 
 // MARK: - StatPill

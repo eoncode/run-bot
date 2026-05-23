@@ -1,3 +1,5 @@
+// ScopeDetailView.swift
+// RunnerBar
 import SwiftUI
 
 // MARK: - ScopeDetailView

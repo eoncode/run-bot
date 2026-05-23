@@ -1,3 +1,5 @@
+// Auth.swift
+// RunnerBar
 import Foundation
 
 // MARK: - Token cache

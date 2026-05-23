@@ -1,3 +1,5 @@
+// PanelMainView.swift
+// RunnerBar
 import SwiftUI
 // REGRESSION GUARD — DO NOT REMOVE - see regression history (ref #52 #54 #57 #375 #376 #377)
 //

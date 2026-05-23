@@ -1,3 +1,5 @@
+// LogCopyButton.swift
+// RunnerBar
 import AppKit
 import SwiftUI
 

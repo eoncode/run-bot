@@ -1,3 +1,5 @@
+// LegalPreferences.swift
+// RunnerBar
 import Combine
 import Foundation
 

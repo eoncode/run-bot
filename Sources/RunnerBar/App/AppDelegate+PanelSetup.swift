@@ -1,3 +1,5 @@
+// AppDelegate+PanelSetup.swift
+// RunnerBar
 import AppKit
 import Combine
 import SwiftUI

@@ -1,3 +1,5 @@
+// Shell.swift
+// RunnerBar
 // swiftlint:disable function_body_length
 import Foundation
 

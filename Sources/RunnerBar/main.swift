@@ -1,3 +1,5 @@
+// main.swift
+// RunnerBar
 /// Entry point — instantiates `AppDelegate` and starts the run loop.
 /// Wrapped in `MainActor.assumeIsolated` because `AppDelegate` is `@MainActor`-isolated
 /// via its `NSApplicationDelegate` conformance on Swift 5.10+. The OS always starts

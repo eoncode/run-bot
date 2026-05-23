@@ -1,3 +1,5 @@
+// KeyablePanel.swift
+// RunnerBar
 import AppKit
 
 // MARK: - KeyablePanel

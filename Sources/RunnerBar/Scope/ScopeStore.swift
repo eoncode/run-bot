@@ -1,3 +1,5 @@
+// ScopeStore.swift
+// RunnerBar
 // swiftlint:disable orphaned_doc_comment
 import Combine
 import Foundation

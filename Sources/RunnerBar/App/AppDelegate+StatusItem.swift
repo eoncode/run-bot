@@ -1,3 +1,5 @@
+// AppDelegate+StatusItem.swift
+// RunnerBar
 import AppKit
 
 // MARK: - AppDelegate + Status Item
