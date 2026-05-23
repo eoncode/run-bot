@@ -33,6 +33,7 @@ public struct SystemStats {
         return ((diskTotalGB - diskUsedGB) / diskTotalGB) * 100
     }
 
+    /// Creates a new ``SystemStats`` snapshot with the given metric values.
     public init(cpuPct: Double, memUsedGB: Double, memTotalGB: Double, diskUsedGB: Double, diskTotalGB: Double) {
         self.cpuPct = cpuPct
         self.memUsedGB = memUsedGB
