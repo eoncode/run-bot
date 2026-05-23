@@ -11,17 +11,17 @@ public struct Runner: Codable, Identifiable {
     /// GitHub's unique numeric ID for this runner.
     public let id: Int
     /// Human-readable runner name as configured on the host machine.
-    public let name: String
+    let name: String
     /// Runner connectivity status as reported by the GitHub API: `"online"` or `"offline"`.
-    public let status: String
+    let status: String
     /// `true` when the runner is currently executing a job.
     /// A busy+online runner shows a yellow dot in the UI.
-    public let busy: Bool
+    let busy: Bool
     /// CPU/memory utilisation from the local `ps aux` snapshot.
     /// `nil` if no matching `Runner.Worker` process was found for this runner's slot.
     /// Populated by `RunnerStore.fetch()` after the API response is decoded —
     /// not present in the JSON payload.
-    public var metrics: RunnerMetrics?
+    var metrics: RunnerMetrics?
 
     /// Excludes `metrics` from JSON decoding — it is assigned locally after fetch,
     /// not returned by the GitHub API.
@@ -36,7 +36,7 @@ public struct Runner: Codable, Identifiable {
     /// - `"offline"` — runner is not connected
     /// - `"idle (CPU: — MEM: —)"` — online but no matching process found
     /// - `"active (CPU: 12.3% MEM: 4.5%)"` — online and executing a job
-    public var displayStatus: String {
+    var displayStatus: String {
         if status == "offline" { return "offline" }
         let label = busy ? "active" : "idle"
         guard let runnerMetrics = metrics else { return "\(label) (CPU: \u{2014} MEM: \u{2014})" }
