@@ -1,5 +1,6 @@
 // JobStatus.swift
 // RunnerBarCore
+// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - Job status
@@ -49,7 +50,6 @@ public enum JobStatus: Hashable, Sendable {
     }
 }
 
-// swiftlint:disable missing_docs
 extension JobStatus: Codable {
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
@@ -70,7 +70,6 @@ extension JobStatus: ExpressibleByStringLiteral {
         self = JobStatus(rawString: value)
     }
 }
-// swiftlint:enable missing_docs
 
 // MARK: - Job conclusion
 
@@ -128,7 +127,6 @@ public enum JobConclusion: Hashable, Sendable {
     }
 }
 
-// swiftlint:disable missing_docs
 extension JobConclusion: Codable {
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
