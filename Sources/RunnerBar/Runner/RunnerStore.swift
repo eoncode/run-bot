@@ -5,7 +5,6 @@ import Combine
 import Foundation
 
 // MARK: - RunnerStore
-/// Manages RunnerStore state and behaviour.
 
 // swiftlint:disable:next type_body_length
 /// Manages RunnerStore state and behaviour.

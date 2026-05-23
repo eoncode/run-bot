@@ -26,7 +26,6 @@ import Foundation
 //    onCompletion is called on the main thread with the actual save result.
 //
 // Client credentials are in Secrets.swift — see that file for why they are
-/// Manages OAuthService state and behaviour.
 // intentionally committed (open-source native app industry standard).
 
 /// Manages OAuthService state and behaviour.

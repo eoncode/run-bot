@@ -482,7 +482,6 @@ struct RunnerDetailView: View {
         }
     }
 
-    /// Performs the saveButton operation.
     // MARK: - Save button helper
 
     /// Performs the saveButton operation.

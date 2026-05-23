@@ -77,7 +77,6 @@ import SwiftUI
 //
 // ❌ NEVER remove @MainActor from this class declaration.
 // ❌ NEVER remove `nonisolated` from enrichStepsIfNeeded.
-/// Manages AppDelegate state and behaviour.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE.
 /// Manages AppDelegate state and behaviour.

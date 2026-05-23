@@ -24,7 +24,6 @@ struct RunnerLifecycleService {
     /// Private initialiser — use `shared`.
     private init() {}
 
-    /// Performs the start operation.
     // MARK: - Start
 
     /// Performs the start operation.
@@ -78,7 +77,6 @@ struct RunnerLifecycleService {
         return .failed(msg)
     }
 
-    /// Performs the stop operation.
     // MARK: - Stop
 
     /// Performs the stop operation.
@@ -121,7 +119,6 @@ struct RunnerLifecycleService {
         return .failed(msg)
     }
 
-    /// Performs the remove operation.
     // MARK: - Remove
 
     /// Performs the remove operation.
@@ -250,7 +247,6 @@ struct RunnerLifecycleService {
         return (result.exitCode == 0, output)
     }
 
-    /// Performs the updateConfig operation.
     // MARK: - Update config
 
     /// Performs the updateConfig operation.

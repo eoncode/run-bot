@@ -4,7 +4,6 @@ import Combine
 import Foundation
 
 // MARK: - LocalRunnerStore
-/// Manages LocalRunnerStore state and behaviour.
 
 // swiftlint:disable type_body_length
 /// Manages LocalRunnerStore state and behaviour.

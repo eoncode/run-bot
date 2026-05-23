@@ -141,7 +141,7 @@ func fetchUserRepos() -> [String] {
 
 // swiftlint:disable:next force_try
 /// Compiled once at load time. The pattern is a string literal and never fails.
-private let _ansiRegex = try! NSRegularExpression(
+private let _ansiRegex = try NSRegularExpression(
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 
