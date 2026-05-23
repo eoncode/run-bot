@@ -30,9 +30,9 @@ struct ScopeDetailView: View {
     init(scopeEntry: ScopeEntry, onBack: @escaping () -> Void) {
         self.scopeEntry = scopeEntry
         self.onBack = onBack
-        _hookEnabled = State(initialValue: ScopeSettingsStore.failureHookEnabled(for: scopeEntry.scope))
-        _hookBranch = State(initialValue: ScopeSettingsStore.failureHookBranch(for: scopeEntry.scope))
-        _localRepoPath = State(initialValue: ScopeSettingsStore.localRepoPath(for: scopeEntry.scope) ?? "")
+        _hookEnabled = State(initialValue: ScopePreferencesStore.failureHookEnabled(for: scopeEntry.scope))
+        _hookBranch = State(initialValue: ScopePreferencesStore.failureHookBranch(for: scopeEntry.scope))
+        _localRepoPath = State(initialValue: ScopePreferencesStore.localRepoPath(for: scopeEntry.scope) ?? "")
     }
 
     private var liveEntry: ScopeEntry? {
@@ -41,7 +41,7 @@ struct ScopeDetailView: View {
     private var isEnabled: Bool { liveEntry?.isEnabled ?? scopeEntry.isEnabled }
     private var scope: String { scopeEntry.scope }
     private var isRepo: Bool { scope.contains("/") }
-    private var hookCommand: String? { ScopeSettingsStore.failureHookCommand(for: scope) }
+    private var hookCommand: String? { ScopePreferencesStore.failureHookCommand(for: scope) }
     private var gitHURL: URL? { URL(string: "https://github.com/\(scope)") }
 
     var body: some View {
@@ -69,7 +69,7 @@ struct ScopeDetailView: View {
                 onDismiss: { showBranchSheet = false },
                 onSelect: { chosen in
                     hookBranch = chosen
-                    ScopeSettingsStore.setFailureHookBranch(chosen, for: scope)
+                    ScopePreferencesStore.setFailureHookBranch(chosen, for: scope)
                     showBranchSheet = false
                 }
             )
@@ -98,7 +98,7 @@ extension ScopeDetailView {
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(Color.rbSurfaceElevated))
                     .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-                Text(ScopeSettingsStore.displayName(for: scope))
+                Text(ScopePreferencesStore.displayName(for: scope))
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
             }
@@ -231,7 +231,7 @@ extension ScopeDetailView {
                 get: { hookEnabled },
                 set: { newVal in
                     hookEnabled = newVal
-                    ScopeSettingsStore.setFailureHookEnabled(newVal, for: scope)
+                    ScopePreferencesStore.setFailureHookEnabled(newVal, for: scope)
                 }
             ))
             .toggleStyle(.switch)
@@ -319,7 +319,7 @@ extension ScopeDetailView {
                 if !localRepoPath.isEmpty {
                     Button(action: {
                         localRepoPath = ""
-                        ScopeSettingsStore.setLocalRepoPath(nil, for: scope)
+                        ScopePreferencesStore.setLocalRepoPath(nil, for: scope)
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
@@ -378,12 +378,12 @@ extension ScopeDetailView {
         let trimmed = localRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleaned = (trimmed == "~/") ? "" : trimmed
         localRepoPath = cleaned
-        ScopeSettingsStore.setLocalRepoPath(cleaned.isEmpty ? nil : cleaned, for: scope)
+        ScopePreferencesStore.setLocalRepoPath(cleaned.isEmpty ? nil : cleaned, for: scope)
     }
 
     func clearBranchFilter() {
         hookBranch = nil
-        ScopeSettingsStore.setFailureHookBranch(nil, for: scope)
+        ScopePreferencesStore.setFailureHookBranch(nil, for: scope)
     }
 
     func openFolderPicker() {
@@ -408,14 +408,14 @@ extension ScopeDetailView {
                 let abs = url.path
                 let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
                 localRepoPath = tilde
-                ScopeSettingsStore.setLocalRepoPath(tilde, for: scope)
+                ScopePreferencesStore.setLocalRepoPath(tilde, for: scope)
             }
             appDelegate?.openPanel()
         }
     }
 
     func removeScope() {
-        ScopeSettingsStore.cleanUp(scope: scope)
+        ScopePreferencesStore.cleanUp(scope: scope)
         ScopeStore.shared.remove(id: scopeEntry.id)
         RunnerStore.shared.start()
         onBack()

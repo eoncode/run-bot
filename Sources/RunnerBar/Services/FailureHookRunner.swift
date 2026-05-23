@@ -3,7 +3,7 @@ import Foundation
 // MARK: - FailureHookRunner
 
 // #544: Fires the per-scope failure hook command when an ActionGroup transitions to failure.
-// #546: Resolves $LOCAL_PATH from ScopeSettingsStore.
+// #546: Resolves $LOCAL_PATH from ScopePreferencesStore.
 // #552: Fetches failed job/step details on background thread before building $FAILURE_LOG.
 // #560: Branch filter — skip if a branch filter is set and does not match group.headBranch.
 //
@@ -36,14 +36,14 @@ enum FailureHookRunner {
     /// Dispatches to a background thread, fetches failed job/step details, then fires.
     static func fireIfNeeded(group: ActionGroup, scope: String, callsite: String = "unknown") {
         log("FailureHookRunner › fireIfNeeded ENTER — callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
-        let hookEnabled = ScopeSettingsStore.failureHookEnabled(for: scope)
+        let hookEnabled = ScopePreferencesStore.failureHookEnabled(for: scope)
         log("FailureHookRunner › failureHookEnabled for scope=\(scope) → \(hookEnabled)")
         guard hookEnabled else {
             log("FailureHookRunner › SKIP — hook not enabled for scope=\(scope)")
             return
         }
         // #560: Branch filter — skip if a branch filter is set and doesn't match
-        let filterBranch = ScopeSettingsStore.failureHookBranch(for: scope)
+        let filterBranch = ScopePreferencesStore.failureHookBranch(for: scope)
         if let filter = filterBranch {
             let groupBranch = group.headBranch ?? ""
             guard groupBranch == filter else {
@@ -52,7 +52,7 @@ enum FailureHookRunner {
             }
             log("FailureHookRunner › branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
         }
-        let storedCommand = ScopeSettingsStore.failureHookCommand(for: scope)
+        let storedCommand = ScopePreferencesStore.failureHookCommand(for: scope)
         log("FailureHookRunner › storedCommand for scope=\(scope) → \(storedCommand ?? "<nil — will use defaultCommand>")")
         let command = storedCommand ?? Self.defaultCommand
         log("FailureHookRunner › resolved command (first 200): \(command.prefix(200))")
@@ -187,7 +187,7 @@ enum FailureHookRunner {
         scope: String,
         jobs: [FailedJobResult]
     ) -> String {
-        let localPath = ScopeSettingsStore.localRepoPath(for: scope) ?? ""
+        let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
         let branch = group.headBranch ?? ""
         let sha = group.headSha
         let workflow = group.title

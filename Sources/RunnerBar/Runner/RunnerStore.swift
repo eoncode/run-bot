@@ -36,7 +36,7 @@ final class RunnerStore {
 
     private init() {
         log("RunnerStore › init")
-        intervalCancellable = SettingsStore.shared.$pollingInterval
+        intervalCancellable = AppPreferencesStore.shared.$pollingInterval
             .dropFirst(1)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newInterval in
@@ -70,7 +70,7 @@ final class RunnerStore {
             $0.groupStatus == .inProgress || $0.groupStatus == .queued
         }
         let hasActive = hasActiveJobs || hasActiveActions
-        let baseIdle = max(10, SettingsStore.shared.pollingInterval)
+        let baseIdle = max(10, AppPreferencesStore.shared.pollingInterval)
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
         log("RunnerStore › scheduleTimer — next poll in \(Int(interval))s (hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle))")
         timer = Timer.scheduledTimer(

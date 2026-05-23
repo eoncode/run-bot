@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - ScopeSettingsStore
+// MARK: - ScopePreferencesStore
 
 // #505: Per-scope UserDefaults schema.
 //
@@ -8,12 +8,12 @@ import Foundation
 //
 // Keys are namespaced under "scope.<scope>.<field>" so each scope has its
 // own independent settings bucket. All values are optional — nil means "use the
-// global setting" (alias: use raw scope string; polling: use SettingsStore.pollingInterval;
-// notifications: use NotificationPrefsStore values).
+// global setting" (alias: use raw scope string; polling: use AppPreferencesStore.pollingInterval;
+// notifications: use NotificationPreferences values).
 //
-// Call ScopeSettingsStore.cleanUp(scope:) from ScopeStore.remove(id:) to avoid
+// Call ScopePreferencesStore.cleanUp(scope:) from ScopeStore.remove(id:) to avoid
 // orphaned keys accumulating in UserDefaults.
-enum ScopeSettingsStore {
+enum ScopePreferencesStore {
 
     // MARK: - Key builders
 
@@ -36,7 +36,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "alias"))
         }
-        log("ScopeSettingsStore › alias for \(scope) = \(trimmed ?? "nil (cleared)")")
+        log("ScopePreferencesStore › alias for \(scope) = \(trimmed ?? "nil (cleared)")")
     }
 
     /// Display name: alias if set, otherwise the raw scope string.
@@ -58,7 +58,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "pollingInterval"))
         }
-        log("ScopeSettingsStore › pollingInterval for \(scope) = \(interval.map(String.init) ?? "nil (use global)")")
+        log("ScopePreferencesStore › pollingInterval for \(scope) = \(interval.map(String.init) ?? "nil (use global)")")
     }
 
     // MARK: - Notification overrides (#504)
@@ -75,7 +75,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "notifyOnSuccess"))
         }
-        log("ScopeSettingsStore › notifyOnSuccess for \(scope) = \(value.map(String.init) ?? "nil (use global)")")
+        log("ScopePreferencesStore › notifyOnSuccess for \(scope) = \(value.map(String.init) ?? "nil (use global)")")
     }
 
     /// Per-scope notify-on-failure override. `nil` = use global.
@@ -90,7 +90,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "notifyOnFailure"))
         }
-        log("ScopeSettingsStore › notifyOnFailure for \(scope) = \(value.map(String.init) ?? "nil (use global)")")
+        log("ScopePreferencesStore › notifyOnFailure for \(scope) = \(value.map(String.init) ?? "nil (use global)")")
     }
 
     // MARK: - Failure Hook (#544)
@@ -102,7 +102,7 @@ enum ScopeSettingsStore {
 
     static func setFailureHookEnabled(_ enabled: Bool, for scope: String) {
         UserDefaults.standard.set(enabled, forKey: key(scope, "failureHookEnabled"))
-        log("ScopeSettingsStore › failureHookEnabled for \(scope) = \(enabled)")
+        log("ScopePreferencesStore › failureHookEnabled for \(scope) = \(enabled)")
     }
 
     /// The shell command to run on failure. `nil` = no command set.
@@ -118,7 +118,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "failureHookCommand"))
         }
-        log("ScopeSettingsStore › failureHookCommand for \(scope) = \(trimmed ?? "nil (cleared)")")
+        log("ScopePreferencesStore › failureHookCommand for \(scope) = \(trimmed ?? "nil (cleared)")")
     }
 
     /// Local filesystem path to the repo for this scope. Used to resolve $LOCAL_PATH in hook commands.
@@ -135,7 +135,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "localRepoPath"))
         }
-        log("ScopeSettingsStore › localRepoPath for \(scope) = \(trimmed ?? "nil (cleared)")")
+        log("ScopePreferencesStore › localRepoPath for \(scope) = \(trimmed ?? "nil (cleared)")")
     }
 
     // MARK: - Failure Hook Branch Filter (#560)
@@ -152,7 +152,7 @@ enum ScopeSettingsStore {
         } else {
             UserDefaults.standard.removeObject(forKey: key(scope, "failureHookBranch"))
         }
-        log("ScopeSettingsStore › failureHookBranch for \(scope) = \(branch ?? "nil (all branches)")")
+        log("ScopePreferencesStore › failureHookBranch for \(scope) = \(branch ?? "nil (all branches)")")
     }
 
     // MARK: - Cleanup (#505)
@@ -165,6 +165,6 @@ enum ScopeSettingsStore {
         for field in fields {
             UserDefaults.standard.removeObject(forKey: key(scope, field))
         }
-        log("ScopeSettingsStore › cleaned up all keys for scope: \(scope)")
+        log("ScopePreferencesStore › cleaned up all keys for scope: \(scope)")
     }
 }

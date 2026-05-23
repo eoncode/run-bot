@@ -1,12 +1,12 @@
 import Combine
 import Foundation
 
-// MARK: - LegalPrefsStore
+// MARK: - LegalPreferences
 
 /// Persists legal/analytics preferences to UserDefaults.
 /// `analyticsEnabled` defaults to `false` (opt-in, not opt-out) per issue #221/#245.
-final class LegalPrefsStore: ObservableObject {
-    static let shared = LegalPrefsStore()
+final class LegalPreferences: ObservableObject {
+    static let shared = LegalPreferences()
 
     private enum Key {
         static let analyticsEnabled = "legal.analyticsEnabled"
