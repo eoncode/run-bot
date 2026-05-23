@@ -310,7 +310,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
             if NSRunningApplication.current != NSWorkspace.shared.frontmostApplication {
                 Task { @MainActor [weak self] in self?.closePanel() }
             }
