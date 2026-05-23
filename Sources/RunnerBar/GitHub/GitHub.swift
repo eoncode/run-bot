@@ -154,10 +154,10 @@ private let _ansiRegex = try! NSRegularExpression( // Compiled once; literal pat
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 
-/// URLSession configured to NOT follow redirects.
-/// Used for the first leg of fetchStepLog so we can capture the pre-signed S3
-/// Location URL from the GitHub 302 response before fetching the log body.
 // swiftlint:disable missing_docs
+// URLSession configured to NOT follow redirects.
+// Used for the first leg of fetchStepLog so we can capture the pre-signed S3
+// Location URL from the GitHub 302 response before fetching the log body.
 private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,

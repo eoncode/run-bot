@@ -6,7 +6,7 @@ import Foundation
 // MARK: - Top-level job
 
 /// A live or recently-completed GitHub Actions job visible in the panel.
-public struct ActiveJob: Identifiable, Equatable, Sendable {
+public struct ActiveJob: Identifiable, Equatable {
     // MARK: Identity
     /// The unique GitHub job ID.
     public let id: Int
@@ -51,28 +51,20 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     }
 
     /// `true` when this job ran on a self-hosted (non GitHub-hosted) runner.
-    public var isLocalRunner: Bool? {
-        guard let name = runnerName?.lowercased() else { return nil }
-        let hostedPrefixes = ["ubuntu-", "macos-", "windows-", "buildjet-", "depot-", "github actions "]
+    public var isLocalRunner: Bool {
+        guard let name = runnerName?.lowercased() else { return false }
+        let hostedPrefixes = ["ubuntu-", "macos-", "windows-", "buildjet-", "depot-"]
         return !hostedPrefixes.contains(where: { name.hasPrefix($0) })
     }
 
     /// Display title used in the panel row.
     public var displayTitle: String { name }
-
-    /// Fraction of steps that have a conclusion (0.0–1.0).
-    /// Returns `nil` when the step list is empty (jobs not yet enriched).
-    public var progressFraction: Double? {
-        guard !steps.isEmpty else { return nil }
-        let done = steps.filter { $0.conclusion != nil }.count
-        return Double(done) / Double(steps.count)
-    }
 }
 
 // MARK: - Job step
 
 /// A single step within an `ActiveJob`.
-public struct JobStep: Identifiable, Equatable, Sendable {
+public struct JobStep: Identifiable, Equatable {
     /// The step number used as a stable identifier (1-based).
     public let id: Int
     /// The display name of the step.
@@ -96,24 +88,13 @@ public struct JobStep: Identifiable, Equatable, Sendable {
         let secs = Int(end.timeIntervalSince(start))
         return String(format: "%02d:%02d", secs / 60, secs % 60)
     }
-
-    /// A single Unicode character summarising the step's outcome for display in the UI.
-    public var conclusionIcon: String {
-        switch conclusion {
-        case .success:              return "\u{2713}"  // ✓
-        case .failure:              return "\u{2797}"  // ❗
-        case .skipped, .cancelled:  return "\u{2298}"  // ⊘
-        case .none, .some:
-            return status == .inProgress ? "\u{25B6}" : "\u{00B7}"
-        }
-    }
 }
 
 // MARK: - API payload (Decodable)
 
 /// Raw API payload decoded from `/actions/runs/{id}/jobs` responses.
 /// Converted to `ActiveJob` via `makeActiveJob(from:iso:isDimmed:)`.
-public struct JobPayload: Decodable, Sendable {
+public struct JobPayload: Decodable {
     /// The unique GitHub job ID.
     public let id: Int
     /// The display name of the job.
@@ -147,7 +128,7 @@ public struct JobPayload: Decodable, Sendable {
 }
 
 /// Raw API payload for a single job step, decoded from the `steps` array in a jobs response.
-public struct StepPayload: Decodable, Sendable {
+public struct StepPayload: Decodable {
     /// The display name of the step.
     public let name: String
     /// Typed lifecycle status of the step.
@@ -172,7 +153,7 @@ public struct StepPayload: Decodable, Sendable {
 }
 
 /// Wraps the top-level JSON object returned by `/actions/runs/{id}/jobs`.
-public struct JobsResponse: Decodable, Sendable {
+public struct JobsResponse: Decodable {
     /// The array of job payloads contained in the response.
     public let jobs: [JobPayload]
 }
@@ -198,7 +179,7 @@ public func makeActiveJob(
             name:        s.name,
             status:      s.status,
             conclusion:  s.conclusion,
-            startedAt:   s.startedAt.flatMap  { iso.date(from: $0) },
+            startedAt:   s.startedAt.flatMap { iso.date(from: $0) },
             completedAt: s.completedAt.flatMap { iso.date(from: $0) },
             number:      s.number
         )
@@ -212,7 +193,7 @@ public func makeActiveJob(
         isDimmed:    isDimmed,
         runnerName:  payload.runnerName,
         scope:       nil,
-        startedAt:   payload.startedAt.flatMap  { iso.date(from: $0) },
+        startedAt:   payload.startedAt.flatMap { iso.date(from: $0) },
         completedAt: payload.completedAt.flatMap { iso.date(from: $0) },
         steps:       steps
     )
