@@ -12,9 +12,9 @@ public struct PollResultBuilder {
 
     // MARK: - Cache limits
 
-    /// The jobCacheLimit constant.
+    /// Maximum number of completed jobs retained in the job cache.
     public static let jobCacheLimit = 3
-    /// The groupCacheLimit constant.
+    /// Maximum number of completed groups retained in the group cache.
     public static let groupCacheLimit = 30
 
     // MARK: - Job state
@@ -137,8 +137,9 @@ public struct PollResultBuilder {
         )
     }
 
-    // MARK: - Private job helpers
+    // MARK: - Job helpers
 
+    /// Moves jobs that vanished from the live feed into the completed-job cache.
     public static func applyVanishedJobs(
         snapPrev: [Int: ActiveJob],
         liveIDs: Set<Int>,
@@ -163,6 +164,7 @@ public struct PollResultBuilder {
         }
     }
 
+    /// Trims the job cache to at most `limit` entries, keeping the most recently completed.
     public static func trimJobCache(_ cache: inout [Int: ActiveJob], limit: Int) {
         guard cache.count > limit else { return }
         let sorted = cache.values.sorted {
@@ -171,6 +173,7 @@ public struct PollResultBuilder {
         cache = Dictionary(uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
+    /// Builds the ordered job display list from live jobs and the completed cache.
     public static func buildJobDisplay(live: [ActiveJob], cache: [Int: ActiveJob]) -> [ActiveJob] {
         let inProgress = live.filter { $0.status == "in_progress" }
         let queued     = live.filter { $0.status == "queued" }
@@ -184,8 +187,9 @@ public struct PollResultBuilder {
         return display
     }
 
-    // MARK: - Private group helpers
+    // MARK: - Group helpers
 
+    /// Returns a copy of the cache re-keyed by `headSha` instead of group ID.
     public static func makeShaKeyedCache(_ cache: [String: WorkflowActionGroup]) -> [String: WorkflowActionGroup] {
         Dictionary(
             cache.values.map { ($0.headSha, $0) },
@@ -193,6 +197,7 @@ public struct PollResultBuilder {
         )
     }
 
+    /// Removes cache entries whose `headSha` appears in the freshly-fetched group list.
     public static func evictFreshShas(
         from cache: [String: WorkflowActionGroup],
         freshGroups: [WorkflowActionGroup]
@@ -249,6 +254,7 @@ public struct PollResultBuilder {
         }
     }
 
+    /// Trims the group cache to at most `limit` entries, keeping the most recently completed.
     public static func trimGroupCache(_ cache: inout [String: WorkflowActionGroup], limit: Int) {
         guard cache.count > limit else { return }
         let sorted = cache.values.sorted {
@@ -258,6 +264,7 @@ public struct PollResultBuilder {
         cache = Dictionary(uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
+    /// Builds the ordered group display list from live groups and the completed cache.
     public static func buildGroupDisplay(
         live: [WorkflowActionGroup],
         cache: [String: WorkflowActionGroup]
