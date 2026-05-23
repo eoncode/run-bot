@@ -1,0 +1,19 @@
+# .periphery.yml
+# Periphery dead-code scanner configuration.
+#
+# docs: https://github.com/peripheryapp/periphery/blob/master/docs/configuration.md
+#
+# retain_public:
+#   Treat all public/open declarations as used. Set to true because RunnerBarCore
+#   exposes a public API surface consumed by the RunnerBar app target. Without this,
+#   Periphery would flag every public symbol as unused when scanning the library alone.
+#
+# targets:
+#   Limit the scan to the two primary targets. Excluding test targets avoids noise
+#   from XCTestCase subclasses and test helpers that are never called directly.
+
+retain_public: true
+
+targets:
+  - RunnerBar
+  - RunnerBarCore
