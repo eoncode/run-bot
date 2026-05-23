@@ -5,13 +5,6 @@ import Foundation
 
 // swiftlint:disable opening_brace identifier_name missing_docs orphaned_doc_comment type_body_length
 
-// MARK: - File-level formatter
-
-/// Shared ISO-8601 date formatter for this file.
-/// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
-/// keeping one instance avoids repeated allocation on every fetch cycle.
-public let iso8601 = ISO8601DateFormatter()
-
 // MARK: - GroupStatus
 /// Type-safe status for a workflow run group (commit/PR trigger).
 /// Mirrors ci-dash.py's group status derivation logic.
@@ -232,61 +225,5 @@ public struct WorkflowActionGroup: Identifiable, Equatable {
         guard !known.isEmpty else { return nil }
         return known.contains(true)
     }
-}
-
-// MARK: - Codable helpers (private to this file)
-
-public struct ActionRunsResponse: Codable {
-    public let workflowRuns: [RunPayload]
-    enum CodingKeys: String, CodingKey {
-        case workflowRuns = "workflow_runs"
-    }
-}
-
-public struct RunPayload: Codable {
-    public let id: Int
-    public let name: String
-    public let status: String
-    public let conclusion: String?
-    public let headBranch: String?
-    public let headSha: String
-    public let displayTitle: String?
-    public let createdAt: String?
-    public let updatedAt: String?
-    public let htmlUrl: String?
-    public let headCommit: HeadCommit?
-    public let pullRequests: [PRRef]?
-    enum CodingKeys: String, CodingKey {
-        case id, name, status, conclusion
-        case headBranch    = "head_branch"
-        case headSha       = "head_sha"
-        case displayTitle  = "display_title"
-        case createdAt     = "created_at"
-        case updatedAt     = "updated_at"
-        case htmlUrl       = "html_url"
-        case headCommit    = "head_commit"
-        case pullRequests  = "pull_requests"
-    }
-}
-
-public struct HeadCommit: Codable {
-    public let message: String
-}
-
-public struct PRRef: Codable {
-    public let number: Int
-}
-
-// MARK: - PR label
-/// Derives the short identifier for an action group row.
-/// Priority: PR number → branch-embedded number → sha[:7].
-public func prLabel(from run: RunPayload) -> String {
-    if let pr = run.pullRequests?.first { return "#\(pr.number)" }
-    if let branch = run.headBranch,
-       let range = branch.range(of: #"/(\d+)/"#, options: .regularExpression) {
-        let digits = branch[range].filter { $0.isNumber }
-        return "#\(digits)"
-    }
-    return String(run.headSha.prefix(7))
 }
 // swiftlint:enable opening_brace identifier_name missing_docs orphaned_doc_comment type_body_length
