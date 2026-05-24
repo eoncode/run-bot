@@ -49,7 +49,7 @@ struct RepoSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(Color.rbSurfaceElevated)
+        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
