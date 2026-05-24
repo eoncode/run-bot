@@ -61,7 +61,7 @@ final class OAuthService {
     /// Subscribe via `.sink { }.store(in: &cancellables)` — do NOT use a raw closure.
     let didSignOut = PassthroughSubject<Void, Never>()
 
-    /// The isSignedIn property.
+    /// `true` when a GitHub token is present in the Keychain.
     var isSignedIn: Bool { Keychain.token != nil } // periphery:ignore
 
     // MARK: Sign In
