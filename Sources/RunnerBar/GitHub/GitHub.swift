@@ -31,7 +31,7 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     var runIDs: [Int] = []
     var seenRunIDs = Set<Int>()
 
-    /// Returns the API endpoint for workflow runs filtered by the given status.
+    // Returns the API endpoint for workflow runs filtered by the given status.
     func runsEndpoint(status: String) -> String {
         "\(scope.apiPrefix)/actions/runs?status=\(status)&per_page=50"
     }
@@ -114,6 +114,7 @@ private struct RunnersResponse: Codable {
 /// Returns the login names of all GitHub organisations the authenticated user belongs to.
 func fetchUserOrgs() -> [String] {
     guard let data = ghAPIPaginated("/user/orgs?per_page=100") else { return [] }
+    // swiftlint:disable:next missing_docs
     struct Org: Decodable { let login: String }
     guard let orgs = try? JSONDecoder().decode([Org].self, from: data) else { return [] }
     return orgs.map(\.login)
@@ -122,10 +123,12 @@ func fetchUserOrgs() -> [String] {
 /// Returns the `owner/repo` full names of all repositories visible to the authenticated user.
 func fetchUserRepos() -> [String] {
     guard let data = ghAPIPaginated("/user/repos?per_page=100&sort=updated") else { return [] }
+    // swiftlint:disable missing_docs
     struct Repo: Decodable {
         let fullName: String
         enum CodingKeys: String, CodingKey { case fullName = "full_name" }
     }
+    // swiftlint:enable missing_docs
     guard let repos = try? JSONDecoder().decode([Repo].self, from: data) else { return [] }
     return repos.map(\.fullName)
 }

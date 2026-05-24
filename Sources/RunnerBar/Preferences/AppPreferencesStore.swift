@@ -55,10 +55,9 @@ final class AppPreferencesStore: ObservableObject {
 }
 
 // MARK: - Comparable+clamped
-// swiftlint:disable missing_docs
 private extension Comparable {
+    // swiftlint:disable:next missing_docs
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }
-// swiftlint:enable missing_docs

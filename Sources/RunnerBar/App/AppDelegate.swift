@@ -85,12 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The cancellables property.
     var cancellables = Set<AnyCancellable>()
 
-    /// Top anchor (screen coords) captured once in openPanel().
-    /// ❌ NEVER re-derive inside resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
+    // Top anchor (screen coords) captured once in openPanel().
+    // ❌ NEVER re-derive inside resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
+    /// The panelTopY property — top anchor in screen coords, captured once in openPanel().
     var panelTopY: CGFloat?                // internal: required for AppDelegate+Navigation
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
     // ❌ NEVER remove. ❌ NEVER remove from wrapEnv(). ❌ NEVER pass as plain Bool to PanelMainView.
+    // swiftlint:disable:next orphaned_doc_comment
     /// The panelVisibilityState constant.
     let panelVisibilityState = PanelVisibilityState() // internal: required for AppDelegate+Navigation
 

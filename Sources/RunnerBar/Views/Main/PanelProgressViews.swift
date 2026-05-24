@@ -1,7 +1,5 @@
 // PanelProgressViews.swift
 // RunnerBar
-// swiftlint:disable missing_docs
-
 import RunnerBarCore
 import SwiftUI
 
@@ -55,4 +53,3 @@ extension ActiveJob {
         }
     }
 }
-// swiftlint:enable missing_docs
