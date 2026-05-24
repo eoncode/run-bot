@@ -7,8 +7,8 @@ import RunnerBarCore
 // MARK: - LocalRunnerStore
 
 /// Manages local GitHub Actions runner discovery, status enrichment, and optimistic mutations.
-// swiftlint:disable:next type_body_length
 @MainActor
+// swiftlint:disable:next type_body_length
 final class LocalRunnerStore: ObservableObject {
     /// The shared singleton instance.
     static let shared = LocalRunnerStore()

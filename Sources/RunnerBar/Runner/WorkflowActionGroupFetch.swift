@@ -49,14 +49,23 @@ private struct RunPayload: Codable {
     let pullRequests: [PRRef]?
     /// Maps Swift property names to their snake_case JSON keys.
     enum CodingKeys: String, CodingKey {
+        /// Unkeyed short fields decoded by matching property name.
         case id, name, status, conclusion
+        /// Maps `headBranch` to `head_branch`.
         case headBranch   = "head_branch"
+        /// Maps `headSha` to `head_sha`.
         case headSha      = "head_sha"
+        /// Maps `displayTitle` to `display_title`.
         case displayTitle = "display_title"
+        /// Maps `createdAt` to `created_at`.
         case createdAt    = "created_at"
+        /// Maps `updatedAt` to `updated_at`.
         case updatedAt    = "updated_at"
+        /// Maps `htmlUrl` to `html_url`.
         case htmlUrl      = "html_url"
+        /// Maps `headCommit` to `head_commit`.
         case headCommit   = "head_commit"
+        /// Maps `pullRequests` to `pull_requests`.
         case pullRequests = "pull_requests"
     }
 }

@@ -150,6 +150,7 @@ private struct GlassSectionModifier: ViewModifier {
     }
 }
 
+/// Liquid Glass view modifier convenience methods for use in SwiftUI view hierarchies.
 extension View {
     /// Applies the `.cardRow()` Liquid Glass ultraThinMaterial modifier with configurable corner radius.
     func cardRow(cornerRadius: CGFloat = RBRadius.small) -> some View {
