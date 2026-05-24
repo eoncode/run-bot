@@ -126,8 +126,8 @@ struct PieProgressDot: View {
             }
         }
         // Animate wedge angle when progress changes.
-        // ❌ macOS 13 compat: single-value onChange only.
-        .onChange(of: progress) { newValue in
+        // Two-argument form avoids the macOS 14 deprecated overload.
+        .onChange(of: progress) { _, newValue in
             withAnimation(.easeInOut(duration: 0.4)) { displayProgress = newValue }
             // Trigger completion pulse when reaching 100%.
             if let value = newValue, value >= 1.0 {
@@ -142,8 +142,8 @@ struct PieProgressDot: View {
             }
         }
         // Animate color crossfade on state transitions.
-        // ❌ macOS 13 compat: single-value onChange only.
-        .onChange(of: color) { newColor in
+        // Two-argument form avoids the macOS 14 deprecated overload.
+        .onChange(of: color) { _, newColor in
             withAnimation(.easeInOut(duration: 0.35)) { displayColor = newColor }
         }
     }
