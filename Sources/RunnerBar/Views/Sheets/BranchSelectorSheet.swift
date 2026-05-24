@@ -84,7 +84,7 @@ extension BranchSelectorSheet {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundColor(Color.rbTextTertiary)
-            TextField("Search branches\u2026", text: $searchText)
+            TextField("Search branches…", text: $searchText)
                 .font(.system(size: 12))
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {
@@ -160,7 +160,7 @@ extension BranchSelectorSheet {
     /// Performs the branchRow operation.
     func branchRow(_ branch: String) -> some View {
         Button(action: {
-            log("BranchSelectorSheet \u203a selected branch='\(branch)' for scope='\(scope)'")
+            log("BranchSelectorSheet › selected branch='\(branch)' for scope='\(scope)'")
             onSelect(branch)
             onDismiss()
         }) {
@@ -186,7 +186,7 @@ extension BranchSelectorSheet {
     var footerSection: some View {
         HStack {
             Button(action: {
-                log("BranchSelectorSheet \u203a cleared branch filter for scope='\(scope)'")
+                log("BranchSelectorSheet › cleared branch filter for scope='\(scope)'")
                 onSelect(nil)
                 onDismiss()
             }) {
@@ -220,16 +220,16 @@ extension BranchSelectorSheet {
 extension BranchSelectorSheet {
     /// Performs the loadBranches operation.
     func loadBranches() {
-        log("BranchSelectorSheet \u203a loadBranches START scope='\(scope)'")
+        log("BranchSelectorSheet › loadBranches START scope='\(scope)'")
         DispatchQueue.global(qos: .userInitiated).async {
             let names = fetchBranchNames(scope: scope)
             DispatchQueue.main.async {
                 if let names, !names.isEmpty {
-                    log("BranchSelectorSheet \u203a loadBranches \u2014 loaded \(names.count) branches")
+                    log("BranchSelectorSheet › loadBranches — loaded \(names.count) branches")
                     branches = names
                     loadError = false
                 } else {
-                    log("BranchSelectorSheet \u203a loadBranches \u2014 fetch failed or returned empty")
+                    log("BranchSelectorSheet › loadBranches — fetch failed or returned empty")
                     loadError = true
                 }
                 isLoading = false
@@ -237,7 +237,7 @@ extension BranchSelectorSheet {
         }
     }
 
-    /// Blocking \u2014 must be called from a background thread.
+    /// Blocking — must be called from a background thread.
     /// Paginates through all pages (per_page=100) until GitHub returns fewer
     /// than 100 items, collecting all branch names across pages.
     private func fetchBranchNames(scope: String) -> [String]? {
@@ -246,15 +246,15 @@ extension BranchSelectorSheet {
         var page = 1
         while true {
             guard let data = ghAPI("repos/\(scope)/branches?per_page=100&page=\(page)") else {
-                log("BranchSelectorSheet \u203a fetchBranchNames \u2014 ghAPI returned nil scope='\(scope)' page=\(page)")
+                log("BranchSelectorSheet › fetchBranchNames — ghAPI returned nil scope='\(scope)' page=\(page)")
                 return allNames.isEmpty ? nil : allNames.sorted()
             }
             guard let items = try? JSONDecoder().decode([BranchItem].self, from: data) else {
-                log("BranchSelectorSheet \u203a fetchBranchNames \u2014 JSON decode failed scope='\(scope)' page=\(page) dataBytes=\(data.count)")
+                log("BranchSelectorSheet › fetchBranchNames — JSON decode failed scope='\(scope)' page=\(page) dataBytes=\(data.count)")
                 return allNames.isEmpty ? nil : allNames.sorted()
             }
             allNames.append(contentsOf: items.map(\.name))
-            log("BranchSelectorSheet \u203a fetchBranchNames \u2014 page=\(page) fetched=\(items.count) total=\(allNames.count)")
+            log("BranchSelectorSheet › fetchBranchNames — page=\(page) fetched=\(items.count) total=\(allNames.count)")
             if items.count < 100 { break }
             page += 1
         }

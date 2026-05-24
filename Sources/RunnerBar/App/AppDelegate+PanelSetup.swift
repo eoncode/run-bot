@@ -13,7 +13,7 @@ import SwiftUI
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
 
-/// Extension adding functionality to `AppDelegate`.
+// swiftlint:disable:next missing_docs
 extension AppDelegate {
 
     // MARK: Panel construction

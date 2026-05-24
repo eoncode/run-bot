@@ -13,9 +13,7 @@ final class LocalRunnerStore: ObservableObject {
     /// The shared constant.
     static let shared = LocalRunnerStore()
     /// Private initialiser — use `shared`.
-    private init() {
-        // Singleton — no custom initialisation needed; default property values are sufficient.
-    }
+    private init() {}
 
     /// The runners property.
     @Published var runners: [RunnerModel] = []
@@ -38,8 +36,6 @@ final class LocalRunnerStore: ObservableObject {
         }
         isScanning = true
         log("LocalRunnerStore > refresh() — isScanning set to true, dispatching background scan")
-        // Capture enricher before entering the Sendable background closure so the
-        // compiler does not see a main-actor-isolated property reference inside async.
         let enricher = self.enricher
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -63,8 +59,6 @@ final class LocalRunnerStore: ObservableObject {
                 log("LocalRunnerStore > refresh() background — no token, skipping enricher")
             }
 
-            // Phase 3 (#591): enrich each busy runner with per-runner CPU/MEM metrics.
-            // Matched by installPath so each runner gets its own process metrics, not slot-index.
             for idx in enriched.indices {
                 guard enriched[idx].isBusy, let installPath = enriched[idx].installPath else { continue }
                 enriched[idx].metrics = metricsForRunner(installPath: installPath)
