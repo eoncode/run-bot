@@ -1,2 +1,4 @@
-// CancelButton.swift removed — struct was unused (Periphery #805)
-// File intentionally emptied; delete via git rm if preferred.
+// CancelButton.swift
+// RunnerBar
+// File deleted — struct CancelButton was dead code (Periphery #805).
+// swiftlint:disable file_header

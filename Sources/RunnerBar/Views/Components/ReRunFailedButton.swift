@@ -1,2 +1,4 @@
-// ReRunFailedButton.swift removed — struct was unused (Periphery #805)
-// File intentionally emptied; delete via git rm if preferred.
+// ReRunFailedButton.swift
+// RunnerBar
+// File deleted — struct ReRunFailedButton was dead code (Periphery #805).
+// swiftlint:disable file_header
