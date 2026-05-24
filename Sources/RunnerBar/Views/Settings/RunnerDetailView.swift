@@ -2,51 +2,37 @@
 // RunnerBar
 // swiftlint:disable missing_docs
 import AppKit
+import Combine
+import Foundation
 import RunnerBarCore
 import SwiftUI
-
-// MARK: - RunnerDetailView
-// Navigation level: SettingsView (runner row tap) → RunnerDetailView ← this view
-//
-// #491: Scaffold + read-only info block
-// #492: Editable config fields (labels, workFolder, autoUpdate, proxy)
-// #493: Danger Zone (remove only)
-// #532: Redesign — two-row header, slim info section, unified proxy card
-// #533: OS/Arch + Version rows in Runner Info; Danger Zone always expanded
 
 // MARK: - Save state helper
 /// Tracks the lifecycle of an async save operation for a single editable field.
 private enum SaveState: Equatable {
-    /// Idle state — no save in progress.
     case idle
-    /// Save is in progress.
     case saving
-    /// Save completed successfully.
     case success
-    /// Save failed with an associated error message.
     case failure(String)
 }
 
 // MARK: - Danger action
 /// Represents a destructive action the user can trigger from the Danger Zone section.
 private enum DangerAction: Identifiable, Equatable {
-    /// Remove the runner.
     case remove
 
-    /// Stable identifier for use with `Identifiable`.
     var id: String { "remove" }
-    /// Human-readable title shown in the UI.
     var title: String { "Remove runner" }
-    /// Label for the confirmation button.
     var confirmLabel: String { "Remove" }
-    /// Whether this action is destructive (affects button tinting).
     var destructive: Bool { true }
 }
 
 // swiftlint:disable:next type_body_length
 /// Detail screen for a single self-hosted runner: displays info, editable config fields, and the Danger Zone.
 struct RunnerDetailView: View {
+    /// The runner model displayed and edited by this view.
     let runner: RunnerModel
+    /// Closure called when the user taps the back button.
     let onBack: () -> Void
 
     @State private var isRunning: Bool
@@ -73,22 +59,18 @@ struct RunnerDetailView: View {
     @State private var pendingDangerAction: DangerAction?
     @State private var dangerActionState: SaveState = .idle
 
+    /// Creates a new `RunnerDetailView` for `runner`, calling `onBack` when the back button is tapped.
     init(runner: RunnerModel, onBack: @escaping () -> Void) {
         self.runner = runner
         self.onBack = onBack
-        self._isRunning = State(initialValue: runner.isRunning)
-        self._displayStatus = State(initialValue: runner.displayStatus)
-        self._labelsText = State(initialValue: runner.labels
-            .filter { !["self-hosted"].contains($0)
-                && !$0.lowercased().contains("x64")
-                && !$0.lowercased().contains("arm64")
-                && !$0.lowercased().contains("linux")
-                && !$0.lowercased().contains("macos")
-                && !$0.lowercased().contains("windows") }
-            .joined(separator: ", ")
-        )
-        self._workFolderText = State(initialValue: runner.workFolder ?? "_work")
-        self._autoUpdate = State(initialValue: true)
+        _isRunning = State(initialValue: runner.isRunning)
+        _displayStatus = State(initialValue: runner.displayStatus ?? "unknown")
+        _labelsText = State(initialValue: runner.labels
+            .filter { $0.type == "custom" }
+            .map { $0.name }
+            .joined(separator: ", "))
+        _workFolderText = State(initialValue: "")
+        _autoUpdate = State(initialValue: true)
         self._proxyUrl = State(initialValue: "")
         self._proxyUser = State(initialValue: "")
         self._proxyPassword = State(initialValue: "")
@@ -98,6 +80,7 @@ struct RunnerDetailView: View {
         self._displayVersion = State(initialValue: runner.agentVersion ?? "")
     }
 
+    /// Root settings detail layout containing the header, runner info, editable configuration, and Danger Zone.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
@@ -108,17 +91,15 @@ struct RunnerDetailView: View {
                     configSection
                     dangerZoneSection
                 }
-                .padding(.bottom, 16)
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxHeight: NSScreen.main.map { $0.visibleFrame.height * 0.75 } ?? 600)
         }
-        .frame(idealWidth: 480, maxWidth: .infinity)
-        .onAppear(perform: loadEditableFields)
-        .onChange(of: localRunnerStore.runners) { _ in
-            if let fresh = localRunnerStore.runners.first(where: { $0.id == runner.id }) {
-                isRunning = fresh.isRunning
-                displayStatus = fresh.displayStatus
-            }
+        .frame(idealWidth: 480, maxWidth: .infinity, alignment: .top)
+        .onAppear { loadEditableFields() }
+        .onChange(of: localRunnerStore.runners) { updated in
+            guard let fresh = updated.first(where: { $0.runnerName == runner.runnerName }) else { return }
+            isRunning = fresh.isRunning
+            displayStatus = fresh.displayStatus ?? "unknown"
         }
         .sheet(item: $pendingDangerAction, content: dangerActionSheet)
     }
@@ -130,29 +111,30 @@ struct RunnerDetailView: View {
             Button(action: onBack) {
                 HStack(spacing: 3) {
                     Image(systemName: "chevron.left").font(.caption)
-                    Text("Settings").font(.caption)
+                    Text("Runners").font(.caption)
                 }
                 .foregroundColor(Color.rbTextSecondary)
             }
             .buttonStyle(.plain)
-
             HStack(spacing: 6) {
-                Circle().fill(dotColor).frame(width: 8, height: 8)
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 8, height: 8)
                 Text(runner.runnerName)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if isRunning {
-                    Button(action: stopRunner) { Text("Stop").font(.caption2) }
-                        .buttonStyle(.bordered).help("Stop runner service")
-                } else {
-                    Button(action: startRunner) { Text("Start").font(.caption2) }
-                        .buttonStyle(.bordered).help("Start runner service")
+                    .truncationMode(.middle)
+                Spacer()
+                Button(action: isRunning ? stopRunner : startRunner) {
+                    Text(isRunning ? "Stop" : "Start")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isRunning ? Color.rbDanger : Color.rbSuccess)
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, RBSpacing.md)
-        .padding(.top, 12)
+        .padding(.top, 10)
         .padding(.bottom, 8)
     }
 
@@ -166,17 +148,13 @@ struct RunnerDetailView: View {
                     infoRow(label: "GitHub URL", value: url, copyable: true)
                     Divider().padding(.leading, RBSpacing.md)
                 }
-                infoRow(label: "Work folder", value: runner.workFolder ?? "_work")
+                infoRow(label: "Work Folder", value: runner.workFolder ?? "—")
                 Divider().padding(.leading, RBSpacing.md)
-                infoRow(label: "Ephemeral", value: runner.isEphemeral ? "Yes" : "No")
-                if !displayOsArch.isEmpty {
-                    Divider().padding(.leading, RBSpacing.md)
-                    infoRow(label: "OS / Arch", value: displayOsArch)
-                }
-                if !displayVersion.isEmpty {
-                    Divider().padding(.leading, RBSpacing.md)
-                    infoRow(label: "Version", value: displayVersion)
-                }
+                infoRow(label: "Ephemeral", value: runner.ephemeral == true ? "Yes" : "No")
+                Divider().padding(.leading, RBSpacing.md)
+                infoRow(label: "OS / Arch", value: displayOsArch.isEmpty ? "—" : displayOsArch)
+                Divider().padding(.leading, RBSpacing.md)
+                infoRow(label: "Version", value: displayVersion.isEmpty ? "—" : displayVersion)
                 Divider().padding(.leading, RBSpacing.md)
                 statusRow
             }
@@ -186,12 +164,13 @@ struct RunnerDetailView: View {
     private var statusRow: some View {
         HStack(alignment: .top, spacing: 8) {
             Text("Status")
-                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                .frame(width: 100, alignment: .leading).fixedSize()
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color.rbTextSecondary)
+                .frame(width: 100, alignment: .leading)
             HStack(spacing: 4) {
                 Circle().fill(dotColor).frame(width: 7, height: 7)
                 Text(displayStatus)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(Color.rbTextPrimary)
             }
             Spacer()
@@ -208,31 +187,32 @@ struct RunnerDetailView: View {
             infoCard {
                 configRow(
                     label: "Labels",
-                    placeholder: "comma-separated",
+                    placeholder: "label1, label2",
                     text: $labelsText,
                     saveState: labelsSaveState,
                     onSave: saveLabels
                 )
+                saveStateRow(labelsSaveState, restartNote: false)
                 Divider().padding(.leading, RBSpacing.md)
                 configRow(
-                    label: "Work folder",
+                    label: "Work Folder",
                     placeholder: "_work",
                     text: $workFolderText,
                     saveState: workFolderSaveState,
                     onSave: saveWorkFolder
                 )
+                saveStateRow(workFolderSaveState, restartNote: true)
                 Divider().padding(.leading, RBSpacing.md)
-                HStack(spacing: 8) {
-                    Text("Autoupdate")
-                        .font(.system(size: 12))
+                HStack {
+                    Text("Auto-Update")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(Color.rbTextSecondary)
                         .frame(width: 100, alignment: .leading)
-                        .fixedSize()
-                    Spacer()
                     Toggle("", isOn: $autoUpdate)
-                        .toggleStyle(.switch)
                         .labelsHidden()
                         .onChange(of: autoUpdate) { _ in saveAutoUpdate() }
+                    Spacer()
+                    saveButton(state: autoUpdateSaveState) { saveAutoUpdate() }
                 }
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.vertical, 8)
@@ -241,39 +221,32 @@ struct RunnerDetailView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(Color.rbTextTertiary)
                     .padding(.horizontal, RBSpacing.md)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                Divider().padding(.leading, RBSpacing.md)
-                HStack {
-                    Text("URL")
-                        .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 100, alignment: .leading).fixedSize()
-                    TextField("http://proxy:8080", text: $proxyUrl)
-                        .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                Divider().padding(.leading, RBSpacing.md)
-                HStack {
-                    Text("Username")
-                        .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 100, alignment: .leading).fixedSize()
-                    TextField("username", text: $proxyUser)
-                        .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                Divider().padding(.leading, RBSpacing.md)
-                HStack {
-                    Text("Password")
-                        .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                        .frame(width: 100, alignment: .leading).fixedSize()
-                    SecureField("password", text: $proxyPassword)
-                        .font(.system(size: 12, design: .monospaced)).textFieldStyle(.plain).frame(maxWidth: .infinity)
-                }
-                .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
-                Divider().padding(.leading, RBSpacing.md)
+                    .padding(.top, 6)
+                configRow(
+                    label: "URL",
+                    placeholder: "http://proxy:8080",
+                    text: $proxyUrl,
+                    saveState: proxySaveState,
+                    onSave: {}
+                )
+                configRow(
+                    label: "Username",
+                    placeholder: "user",
+                    text: $proxyUser,
+                    saveState: proxySaveState,
+                    onSave: {}
+                )
+                configRow(
+                    label: "Password",
+                    placeholder: "••••••",
+                    text: $proxyPassword,
+                    saveState: proxySaveState,
+                    isSecure: true,
+                    onSave: {}
+                )
                 HStack {
                     Spacer()
-                    saveButton(state: proxySaveState, action: saveProxy)
+                    saveButton(state: proxySaveState) { saveProxy() }
                 }
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.vertical, 6)
@@ -287,27 +260,28 @@ struct RunnerDetailView: View {
         placeholder: String,
         text: Binding<String>,
         saveState: SaveState,
-        onSave: @escaping () -> Void,
-        secure: Bool = false
+        isSecure: Bool = false,
+        onSave: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(Color.rbTextSecondary)
                 .frame(width: 100, alignment: .leading)
-                .fixedSize()
-            if secure {
-                SecureField(placeholder, text: text)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textFieldStyle(.plain)
-                    .frame(maxWidth: .infinity)
-            } else {
-                TextField(placeholder, text: text)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textFieldStyle(.plain)
-                    .frame(maxWidth: .infinity)
+            Group {
+                if isSecure {
+                    SecureField(placeholder, text: text)
+                } else {
+                    TextField(placeholder, text: text)
+                }
             }
-            saveButton(state: saveState, action: onSave)
+            .font(.system(size: 11, design: .monospaced))
+            .textFieldStyle(.plain)
+            .onSubmit(onSave)
+            Spacer()
+            if label != "URL" && label != "Username" && label != "Password" {
+                saveButton(state: saveState, action: onSave)
+            }
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, 8)
@@ -318,34 +292,29 @@ struct RunnerDetailView: View {
     private var dangerZoneSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle")
+                Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 11))
                     .foregroundColor(Color.rbDanger)
                 Text("Danger Zone")
                     .font(RBFont.sectionHeader)
                     .foregroundColor(Color.rbDanger)
-                Spacer()
             }
             .padding(.horizontal, RBSpacing.md)
             .padding(.top, 12)
-            .padding(.bottom, 6)
-
-            VStack(alignment: .leading, spacing: 0) {
+            .padding(.bottom, 4)
+            infoCard {
                 dangerActionRow(
                     action: .remove,
-                    description: "Permanently de-registers and removes this runner."
+                    description: "De-register this runner from GitHub and delete its install directory."
                 )
+                if case .failure(let msg) = dangerActionState {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundColor(Color.rbDanger)
+                        .padding(.horizontal, RBSpacing.md)
+                        .padding(.bottom, 6)
+                }
             }
-            .background(
-                RoundedRectangle(cornerRadius: RBRadius.small)
-                    .fill(Color.rbDanger.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: RBRadius.small)
-                            .strokeBorder(Color.rbDanger.opacity(0.25), lineWidth: 0.5)
-                    )
-            )
-            .padding(.horizontal, RBSpacing.md)
-            .padding(.bottom, 8)
         }
     }
 
@@ -353,21 +322,24 @@ struct RunnerDetailView: View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(action.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(action.destructive ? Color.rbDanger : Color.rbTextPrimary)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color.rbTextPrimary)
                 Text(description)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundColor(Color.rbTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: { triggerDangerAction(action) }) {
-                Text(action.title)
-                    .font(.caption2)
-                    .foregroundColor(action.destructive ? Color.rbDanger : Color.rbTextPrimary)
+            Group {
+                if dangerActionState == .saving {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button(action.title) { triggerDangerAction(action) }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(action.destructive ? Color.rbDanger : Color.rbTextSecondary)
+                        .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.bordered)
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, 8)
@@ -378,41 +350,31 @@ struct RunnerDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(action.title)
                 .font(.headline)
-                .padding(.top, 4)
-
-            Text("This will de-register \"\(runner.runnerName)\" from GitHub and remove it from the list. The runner binary remains on disk.")
-                .font(.system(size: 12))
+            Text("This action cannot be undone. The runner will be de-registered from GitHub and its directory deleted.")
+                .font(.body)
                 .foregroundColor(Color.rbTextSecondary)
-
+                .fixedSize(horizontal: false, vertical: true)
             if case .failure(let msg) = dangerActionState {
-                Text(msg).font(.caption2).foregroundColor(Color.rbDanger)
+                Text(msg)
+                    .font(.caption)
+                    .foregroundColor(Color.rbDanger)
             }
-            if dangerActionState == .success {
-                Text("Done.").font(.caption2).foregroundColor(Color.rbSuccess)
-            }
-
-            Divider()
-
             HStack {
-                Button("Cancel") {
-                    pendingDangerAction = nil
-                    dangerActionState = .idle
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(Color.rbTextSecondary)
+                Button("Cancel") { pendingDangerAction = nil }
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
-                if dangerActionState == .saving {
-                    ProgressView().scaleEffect(0.7)
-                } else {
-                    Button(action.confirmLabel) {
-                        executeDangerAction(action)
+                Group {
+                    if dangerActionState == .saving {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(action.confirmLabel) { executeDangerAction(action) }
+                            .foregroundColor(action.destructive ? Color.rbDanger : nil)
+                            .keyboardShortcut(.defaultAction)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.rbDanger)
                 }
             }
         }
-        .padding(20)
+        .padding(RBSpacing.lg)
         .frame(minWidth: 380)
     }
 
@@ -431,14 +393,11 @@ struct RunnerDetailView: View {
             let ok = RunnerLifecycleService.shared.remove(runner: runner)
             DispatchQueue.main.async {
                 if ok {
-                    dangerActionState = .success
-                    LocalRunnerStore.shared.refresh()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        pendingDangerAction = nil
-                        onBack()
-                    }
+                    LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
+                    pendingDangerAction = nil
+                    onBack()
                 } else {
-                    dangerActionState = .failure("Removal failed. Check logs.")
+                    dangerActionState = .failure("Remove failed — check logs")
                 }
             }
         }
@@ -449,28 +408,34 @@ struct RunnerDetailView: View {
     @ViewBuilder
     private func saveButton(state: SaveState, action: @escaping () -> Void) -> some View {
         switch state {
+        case .idle:
+            Button("Save", action: action)
+                .font(.system(size: 11))
+                .buttonStyle(.plain)
+                .foregroundColor(Color.rbTextSecondary)
         case .saving:
-            ProgressView().scaleEffect(0.6).frame(width: 28, height: 20)
+            ProgressView().controlSize(.mini)
         case .success:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13)).foregroundColor(Color.rbSuccess).frame(width: 28)
+            Image(systemName: "checkmark").font(.caption).foregroundColor(Color.rbSuccess)
         case .failure:
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 13)).foregroundColor(Color.rbDanger).frame(width: 28)
-        default:
-            Button(action: action) { Text("Save").font(.caption2) }.buttonStyle(.bordered)
+            Image(systemName: "xmark").font(.caption).foregroundColor(Color.rbDanger)
         }
     }
 
     @ViewBuilder
     private func saveStateRow(_ state: SaveState, restartNote: Bool) -> some View {
         if restartNote, state == .success {
-            Text("Changes take effect after the next runner restart.")
-                .font(.caption2).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
+            Text("Restart the runner service for changes to take effect.")
+                .font(.caption)
+                .foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md)
+                .padding(.bottom, 4)
         } else if case .failure(let msg) = state {
-            Text(msg).font(.caption2).foregroundColor(Color.rbDanger)
-                .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
+            Text(msg)
+                .font(.caption)
+                .foregroundColor(Color.rbDanger)
+                .padding(.horizontal, RBSpacing.md)
+                .padding(.bottom, 4)
         }
     }
 
@@ -485,10 +450,12 @@ struct RunnerDetailView: View {
     private func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) { content() }
             .background(
-                RoundedRectangle(cornerRadius: RBRadius.small)
+                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
                     .fill(Color.rbSurfaceElevated)
-                    .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                    )
             )
             .padding(.horizontal, RBSpacing.md)
             .padding(.bottom, 8)
@@ -497,21 +464,25 @@ struct RunnerDetailView: View {
     private func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(label)
-                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                .frame(width: 100, alignment: .leading).fixedSize()
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color.rbTextSecondary)
+                .frame(width: 100, alignment: .leading)
             Text(value)
-                .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
-                .lineLimit(2).truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(Color.rbTextPrimary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
             if copyable {
-                // swiftlint:disable:next multiple_closures_with_trailing_closure
                 Button(action: {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(value, forType: .string)
                 }) {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color.rbTextTertiary)
                 }
-                .buttonStyle(.plain).help("Copy to clipboard")
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
@@ -528,50 +499,45 @@ struct RunnerDetailView: View {
         log("RunnerDetailView loadEditableFields ENTER runner=\(runner.runnerName) installPath=\(runner.installPath ?? "<nil>") platform=\(runner.platform ?? "<nil>") platformArch=\(runner.platformArchitecture ?? "<nil>") agentVersion=\(runner.agentVersion ?? "<nil>") displayOsArch=\(displayOsArch) displayVersion=\(displayVersion)")
 
         guard let installPath = runner.installPath else {
-            log("RunnerDetailView loadEditableFields BAIL installPath is nil for runner=\(runner.runnerName)")
+            log("RunnerDetailView loadEditableFields — no installPath, skipping JSON reads")
             return
         }
 
-        let runnerJSONPath = installPath + "/.runner"
-        log("RunnerDetailView loadEditableFields reading JSON path=\(runnerJSONPath)")
-
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: runnerJSONPath)) else {
-            log("RunnerDetailView loadEditableFields ERROR could not read .runner file at \(runnerJSONPath)")
+        let runnerFilePath = installPath + "/.runner"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: runnerFilePath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            log("RunnerDetailView loadEditableFields — could not read/parse .runner JSON at \(runnerFilePath)")
             return
         }
+        log("RunnerDetailView loadEditableFields — .runner JSON keys: \(json.keys.sorted())")
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            log("RunnerDetailView loadEditableFields ERROR could not parse JSON at \(runnerJSONPath) dataBytes=\(data.count)")
-            return
+        if let workFolder = json["workFolder"] as? String {
+            workFolderText = workFolder
+            log("RunnerDetailView loadEditableFields workFolder=\(workFolder)")
         }
-
-        log("RunnerDetailView loadEditableFields JSON keys=\(json.keys.sorted().joined(separator: ","))")
-
-        let disableUpdate = json["disableUpdate"] as? Bool ?? false
-        autoUpdate = !disableUpdate
-        log("RunnerDetailView loadEditableFields disableUpdate=\(disableUpdate) → autoUpdate=\(autoUpdate)")
+        if let disableUpdate = json["disableUpdate"] as? Bool {
+            autoUpdate = !disableUpdate
+            log("RunnerDetailView loadEditableFields disableUpdate=\(disableUpdate) → autoUpdate=\(autoUpdate)")
+        }
 
         if displayOsArch.isEmpty {
             let platform = json["platform"] as? String ?? ""
-            let arch = json["platformArchitecture"] as? String ?? ""
-            log("RunnerDetailView loadEditableFields platform=\(platform) arch=\(arch) (from JSON)")
+            let arch     = json["platformArchitecture"] as? String ?? ""
             let combined = [platform, arch].filter { !$0.isEmpty }.joined(separator: " / ")
             if !combined.isEmpty {
                 displayOsArch = combined
-                log("RunnerDetailView loadEditableFields set displayOsArch=\(combined)")
-            } else {
-                log("RunnerDetailView loadEditableFields WARNING platform+arch both empty in JSON, displayOsArch stays empty")
+                log("RunnerDetailView loadEditableFields displayOsArch seeded from JSON=\(combined)")
             }
         } else {
             log("RunnerDetailView loadEditableFields displayOsArch already seeded from model=\(displayOsArch), skipping JSON override")
         }
 
         if displayVersion.isEmpty {
-            if let version = json["agentVersion"] as? String, !version.isEmpty {
+            let version = json["agentVersion"] as? String ?? ""
+            if !version.isEmpty {
                 displayVersion = version
-                log("RunnerDetailView loadEditableFields set displayVersion=\(version)")
-            } else {
-                log("RunnerDetailView loadEditableFields WARNING agentVersion missing or empty in JSON keys=\(json.keys.sorted())")
+                log("RunnerDetailView loadEditableFields displayVersion seeded from JSON=\(version)")
             }
         } else {
             log("RunnerDetailView loadEditableFields displayVersion already seeded from model=\(displayVersion), skipping JSON override")
@@ -581,19 +547,13 @@ struct RunnerDetailView: View {
         let proxyContent = (try? String(contentsOfFile: proxyFilePath, encoding: .utf8))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
         proxyUrl = proxyContent
-        log("RunnerDetailView loadEditableFields proxyUrl=\(proxyUrl.isEmpty ? "<empty>" : proxyUrl)")
 
-        let credPath = installPath + "/.proxycredentials"
-        if let credContent = try? String(contentsOfFile: credPath, encoding: .utf8) {
-            let lines = credContent.components(separatedBy: "\n")
-            proxyUser = lines.first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-            proxyPassword = lines.dropFirst().first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-            log("RunnerDetailView loadEditableFields proxyUser=\(proxyUser.isEmpty ? "<empty>" : "<set>") proxyPassword=\(proxyPassword.isEmpty ? "<empty>" : "<set>")")
-        } else {
-            log("RunnerDetailView loadEditableFields no .proxycredentials file at \(credPath)")
-        }
-
-        log("RunnerDetailView loadEditableFields EXIT displayOsArch=\(displayOsArch) displayVersion=\(displayVersion)")
+        let credFilePath = installPath + "/.proxycredentials"
+        let credContent = (try? String(contentsOfFile: credFilePath, encoding: .utf8)) ?? ""
+        let credLines = credContent.components(separatedBy: "\n")
+        proxyUser     = credLines.first(where: { $0.hasPrefix("username=") }).map { String($0.dropFirst(9)) } ?? ""
+        proxyPassword = credLines.first(where: { $0.hasPrefix("password=") }).map { String($0.dropFirst(9)) } ?? ""
+        log("RunnerDetailView loadEditableFields proxy=\(proxyUrl) user=\(proxyUser) passwordIsEmpty=\(proxyPassword.isEmpty)")
     }
 
     // MARK: - Save Actions
@@ -601,28 +561,30 @@ struct RunnerDetailView: View {
     private func saveLabels() {
         guard let agentId = runner.agentId,
               let gitHubUrl = runner.gitHubUrl,
-              let scope = scopeFromHtmlUrl(gitHubUrl)
-        else {
-            labelsSaveState = .failure("No agent ID or GitHub URL — cannot save via API")
-            return
-        }
-        let parsed = labelsText
-            .components(separatedBy: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+              let installPath = runner.installPath
+        else { labelsSaveState = .failure("Runner metadata missing"); return }
         labelsSaveState = .saving
+        let labels = labelsText
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = patchRunnerLabels(scope: scope, runnerID: agentId, labels: parsed)
-            DispatchQueue.main.async {
-                if result != nil {
-                    labelsSaveState = .success
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        if labelsSaveState == .success { labelsSaveState = .idle }
-                    }
-                } else {
-                    labelsSaveState = .failure("Failed to save labels via GitHub API")
-                }
+            let scope = gitHubUrl
+                .components(separatedBy: "/")
+                .dropFirst(3)
+                .prefix(2)
+                .joined(separator: "/")
+            let endpoint = "repos/\(scope)/actions/runners/\(agentId)/labels"
+            let body: [String: Any] = ["labels": labels]
+            guard let data = try? JSONSerialization.data(withJSONObject: body),
+                  ghAPIPut(endpoint, body: data) != nil
+            else {
+                DispatchQueue.main.async { labelsSaveState = .failure("API call failed") }
+                return
             }
+            patchRunnerJSON(installPath: installPath, key: "labels",
+                            value: labels.map { ["type": "custom", "name": $0] as [String: Any] })
+            DispatchQueue.main.async { labelsSaveState = .success }
         }
     }
 
@@ -631,17 +593,10 @@ struct RunnerDetailView: View {
             workFolderSaveState = .failure("Install path unknown"); return
         }
         workFolderSaveState = .saving
-        let value = workFolderText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folder = workFolderText
         DispatchQueue.global(qos: .userInitiated).async {
-            let ok = patchRunnerJSON(installPath: installPath, key: "workFolder", stringValue: value)
-            DispatchQueue.main.async {
-                workFolderSaveState = ok ? .success : .failure("Failed to write .runner JSON")
-                if ok {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                        if workFolderSaveState == .success { workFolderSaveState = .idle }
-                    }
-                }
-            }
+            patchRunnerJSON(installPath: installPath, key: "workFolder", value: folder)
+            DispatchQueue.main.async { workFolderSaveState = .success }
         }
     }
 
@@ -650,17 +605,10 @@ struct RunnerDetailView: View {
             autoUpdateSaveState = .failure("Install path unknown"); return
         }
         autoUpdateSaveState = .saving
-        let disableUpdate = !autoUpdate
+        let disable = !autoUpdate
         DispatchQueue.global(qos: .userInitiated).async {
-            let ok = patchRunnerJSON(installPath: installPath, key: "disableUpdate", boolValue: disableUpdate)
-            DispatchQueue.main.async {
-                autoUpdateSaveState = ok ? .success : .failure("Failed to write .runner JSON")
-                if ok {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                        if autoUpdateSaveState == .success { autoUpdateSaveState = .idle }
-                    }
-                }
-            }
+            patchRunnerJSON(installPath: installPath, key: "disableUpdate", value: disable)
+            DispatchQueue.main.async { autoUpdateSaveState = .success }
         }
     }
 
@@ -669,38 +617,19 @@ struct RunnerDetailView: View {
             proxySaveState = .failure("Install path unknown"); return
         }
         proxySaveState = .saving
-        let urlValue = proxyUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = proxyUser.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pass = proxyPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url      = proxyUrl
+        let user     = proxyUser
+        let password = proxyPassword
         DispatchQueue.global(qos: .userInitiated).async {
-            var ok = true
-            let proxyFilePath = installPath + "/.proxy"
+            let proxyPath = installPath + "/.proxy"
+            let credPath  = installPath + "/.proxycredentials"
             do {
-                if urlValue.isEmpty {
-                    if FileManager.default.fileExists(atPath: proxyFilePath) {
-                        try FileManager.default.removeItem(atPath: proxyFilePath)
-                    }
-                } else {
-                    try urlValue.write(toFile: proxyFilePath, atomically: true, encoding: .utf8)
-                }
-            } catch { ok = false }
-            let credPath = installPath + "/.proxycredentials"
-            do {
-                if user.isEmpty && pass.isEmpty {
-                    if FileManager.default.fileExists(atPath: credPath) {
-                        try FileManager.default.removeItem(atPath: credPath)
-                    }
-                } else {
-                    try "\(user)\n\(pass)".write(toFile: credPath, atomically: true, encoding: .utf8)
-                }
-            } catch { ok = false }
-            DispatchQueue.main.async {
-                proxySaveState = ok ? .success : .failure("Failed to save proxy settings")
-                if ok {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                        if proxySaveState == .success { proxySaveState = .idle }
-                    }
-                }
+                try url.write(toFile: proxyPath, atomically: true, encoding: .utf8)
+                let cred = "username=\(user)\npassword=\(password)"
+                try cred.write(toFile: credPath, atomically: true, encoding: .utf8)
+                DispatchQueue.main.async { proxySaveState = .success }
+            } catch {
+                DispatchQueue.main.async { proxySaveState = .failure(error.localizedDescription) }
             }
         }
     }
@@ -717,7 +646,6 @@ struct RunnerDetailView: View {
                     isRunning = false
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
                 }
-                LocalRunnerStore.shared.refresh()
             }
         }
     }
@@ -732,7 +660,6 @@ struct RunnerDetailView: View {
                     isRunning = true
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
                 }
-                LocalRunnerStore.shared.refresh()
             }
         }
     }
@@ -744,30 +671,15 @@ struct RunnerDetailView: View {
 private func patchRunnerJSON(
     installPath: String,
     key: String,
-    stringValue: String? = nil,
-    boolValue: Bool? = nil
-) -> Bool {
+    value: Any
+) {
     let path = installPath + "/.runner"
-    let url = URL(fileURLWithPath: path)
-    guard let data = try? Data(contentsOf: url),
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
           var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    else {
-        log("patchRunnerJSON › failed to read \(path)")
-        return false
-    }
-    if let sv = stringValue { json[key] = sv }
-    if let bv = boolValue   { json[key] = bv }
-    guard let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) else {
-        log("patchRunnerJSON › serialization failed for key=\(key)")
-        return false
-    }
-    do {
-        try newData.write(to: url, options: .atomic)
-        log("patchRunnerJSON › wrote key=\(key) to \(path)")
-        return true
-    } catch {
-        log("patchRunnerJSON › write failed: \(error)")
-        return false
-    }
+    else { return }
+    json[key] = value
+    guard let updated = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+    else { return }
+    try? updated.write(to: URL(fileURLWithPath: path))
 }
 // swiftlint:enable missing_docs
