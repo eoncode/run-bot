@@ -136,7 +136,7 @@ struct AddRunnerSheet: View {
                 }
             }
             .pickerStyle(.segmented)
-            .onChange(of: addMode) { _ in
+            .onChange(of: addMode) {
                 resetAddNewState()
                 resetExistingState()
             }
