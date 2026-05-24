@@ -17,7 +17,6 @@ enum LifecycleResult {
 
 // MARK: - RunnerLifecycleService
 
-// swiftlint:disable:next type_body_length
 /// Manages start, stop, and remove lifecycle operations for local GitHub Actions runners.
 struct RunnerLifecycleService {
     /// The shared singleton instance.
