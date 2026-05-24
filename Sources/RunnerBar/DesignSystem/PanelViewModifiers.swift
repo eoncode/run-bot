@@ -52,7 +52,13 @@ private struct GlassSectionMacOS26: ViewModifier {
 struct GlassCard: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to
     /// `RBRadius.card` (8 pt).
-    var cornerRadius: CGFloat = RBRadius.card
+    var cornerRadius: CGFloat
+
+    /// Creates a `GlassCard` modifier.
+    /// - Parameter cornerRadius: Corner radius of the glass shape. Defaults to `RBRadius.card`.
+    init(cornerRadius: CGFloat = RBRadius.card) {
+        self.cornerRadius = cornerRadius
+    }
 
     /// Applies Liquid Glass on macOS 26+ and a material fallback on older OSes.
     func body(content: Content) -> some View {
@@ -81,7 +87,13 @@ struct GlassCard: ViewModifier {
 struct GlassSection: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to
     /// `RBRadius.card` (8 pt).
-    var cornerRadius: CGFloat = RBRadius.card
+    var cornerRadius: CGFloat
+
+    /// Creates a `GlassSection` modifier.
+    /// - Parameter cornerRadius: Corner radius of the glass shape. Defaults to `RBRadius.card`.
+    init(cornerRadius: CGFloat = RBRadius.card) {
+        self.cornerRadius = cornerRadius
+    }
 
     /// Applies prominent Liquid Glass on macOS 26+ and a material fallback on older OSes.
     func body(content: Content) -> some View {

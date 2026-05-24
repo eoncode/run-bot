@@ -186,8 +186,8 @@ struct ActionRowView: View {
         }
     }
 
-    /// Glass card background for the action row, with status colour stripe overlay.
-    /// Routes to the macOS 26-specific implementation when available, otherwise
+    /// Glass card background for the action row.
+    /// Routes to the macOS 26 glass implementation when available, otherwise
     /// renders the legacy `rbSurfaceElevated` fill + border overlay.
     @ViewBuilder private var glassCardBackground: some View {
         if #available(macOS 26, *) {
@@ -202,19 +202,21 @@ struct ActionRowView: View {
         }
     }
 
-    /// Returns the macOS 26 glass-effect background shape.
+    /// Returns the macOS 26 glass-effect background.
     /// Extracted to an `@available`-annotated function so the compiler resolves
     /// `.glassEffect` only against the macOS 26+ SDK.
+    /// Uses `Color.clear` as the view receiver — `.glassEffect(_:in:)` is a `View` modifier,
+    /// not a `Shape` member.
     @available(macOS 26, *)
     private func glassCardView() -> some View {
-        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+        Color.clear
             .glassEffect(
                 .regular.interactive(),
                 in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
             )
     }
 
-    /// Resolves the effective display status, preferring the overridden `expandState` when set.
+    /// Resolves the effective display status for the row.
     private var rowStatus: RBStatus {
         switch group.groupStatus {
         case .inProgress: return .inProgress
@@ -281,7 +283,7 @@ struct ActionRowView: View {
             .fixedSize(horizontal: true, vertical: false)
         statusBadge
     }
-    /// Colored pill badge reflecting the current run status (queued, in-progress, success, failure, etc.).
+    /// Colored pill badge reflecting the current run status.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
         case .inProgress: StatusBadge(status: .inProgress, text: "IN PROGRESS")

@@ -42,24 +42,10 @@ struct ReRunButton: View {
     }
 
     // MARK: - Idle button
+    /// Renders the idle state: glass button on macOS 26+, plain button on older OSes.
     @ViewBuilder private var idleButton: some View {
         if #available(macOS 26, *) {
-            GlassEffectContainer {
-                Button(action: startRerun) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption)
-                        Text("Re-run")
-                            .font(.caption)
-                            .fixedSize()
-                    }
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous))
-            }
+            idleButtonGlass()
         } else {
             Button(action: startRerun) {
                 HStack(spacing: 4) {
@@ -72,6 +58,32 @@ struct ReRunButton: View {
                 .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// Returns the macOS 26 glass-effect idle button.
+    /// Extracted to an `@available`-annotated function so `GlassEffectContainer`
+    /// and `.glassEffect` are resolved only against the macOS 26+ SDK.
+    @available(macOS 26, *)
+    private func idleButtonGlass() -> some View {
+        GlassEffectContainer {
+            Button(action: startRerun) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                    Text("Re-run")
+                        .font(.caption)
+                        .fixedSize()
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(
+                .regular.interactive(),
+                in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+            )
         }
     }
 
