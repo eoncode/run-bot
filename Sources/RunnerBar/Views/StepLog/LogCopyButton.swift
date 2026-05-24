@@ -1,6 +1,5 @@
 // LogCopyButton.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import AppKit
 import SwiftUI
 
@@ -86,7 +85,7 @@ struct LogCopyButton: View {
         switch copyState {
         case .idle:   return isDisabled ? "Log not yet loaded" : "Copy log to clipboard"
         case .copied: return "Copied to clipboard"
-        case .failed: return "Log not available \u{2014} try again once the log has loaded"
+        case .failed: return "Log not available — try again once the log has loaded"
         }
     }
 
@@ -114,4 +113,3 @@ struct LogCopyButton: View {
         }
     }
 }
-// swiftlint:enable missing_docs

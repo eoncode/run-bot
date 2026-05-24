@@ -1,5 +1,6 @@
 // SparklineView.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import SwiftUI
 
 // MARK: - SparklineView
@@ -13,7 +14,7 @@ struct SparklineView: View {
     /// Current value used to determine the theme color (0–100).
     let currentPct: Double
 
-    /// The body property.
+    /// Polyline stroke + gradient fill rendering of `history` data points.
     var body: some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         GeometryReader { geo in
@@ -35,7 +36,8 @@ struct SparklineView: View {
     }
 
     // MARK: - Helpers
-    /// The themeColor property.
+
+    /// Green below 60%, orange 60–85%, red above 85%.
     private var themeColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }
@@ -87,6 +89,7 @@ struct SparklineView: View {
         }
     }
 }
+// swiftlint:enable missing_docs
 
 // MARK: - Preview
 #if DEBUG
