@@ -13,6 +13,7 @@ import SwiftUI
 // #493: Danger Zone (remove only)
 // #532: Redesign — two-row header, slim info section, unified proxy card
 // #533: OS/Arch + Version rows in Runner Info; Danger Zone always expanded
+// Phase 8: .glassEffect for infoCard and Danger Zone on macOS 26+
 
 // MARK: - Save state helper
 /// Tracks the lifecycle of an async save operation for a single editable field.
@@ -116,7 +117,6 @@ struct RunnerDetailView: View {
         self._proxyUrl = State(initialValue: "")
         self._proxyUser = State(initialValue: "")
         self._proxyPassword = State(initialValue: "")
-        // Seed OS/Arch + Version from model — onAppear will override from JSON if needed
         let osArch = [runner.platform, runner.platformArchitecture]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " / ")
         self._displayOsArch = State(initialValue: osArch)
@@ -267,7 +267,6 @@ struct RunnerDetailView: View {
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.vertical, 8)
                 Divider().padding(.leading, RBSpacing.md)
-                // #532: unified proxy — URL + user + pass + single Save
                 Text("Proxy")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(Color.rbTextTertiary)
@@ -369,14 +368,7 @@ struct RunnerDetailView: View {
                     description: "Permanently de-registers and removes this runner."
                 )
             }
-            .background(
-                RoundedRectangle(cornerRadius: RBRadius.small)
-                    .fill(Color.rbDanger.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: RBRadius.small)
-                            .strokeBorder(Color.rbDanger.opacity(0.25), lineWidth: 0.5)
-                    )
-            )
+            .modifier(DangerZoneCardBackground())
             .padding(.horizontal, RBSpacing.md)
             .padding(.bottom, 8)
         }
@@ -525,15 +517,11 @@ struct RunnerDetailView: View {
             .padding(.horizontal, RBSpacing.md).padding(.top, 12).padding(.bottom, 4)
     }
 
-    /// Rounded card container with a subtle border used to group related info or config rows.
+    /// Rounded card container with glass background on macOS 26+, or
+    /// original `rbSurfaceElevated` fill + `rbBorderSubtle` strokeBorder on earlier OS.
     private func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) { content() }
-            .background(
-                RoundedRectangle(cornerRadius: RBRadius.small)
-                    .fill(Color.rbSurfaceElevated)
-                    .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-            )
+            .modifier(InfoCardBackground())
             .padding(.horizontal, RBSpacing.md)
             .padding(.bottom, 8)
     }
@@ -562,7 +550,6 @@ struct RunnerDetailView: View {
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 
-    // dotColor is derived from live isRunning state, not the frozen runner snapshot
     /// Status indicator color: green when running, red when offline, yellow otherwise.
     private var dotColor: Color {
         isRunning ? Color.rbSuccess : Color.rbDanger
@@ -571,7 +558,7 @@ struct RunnerDetailView: View {
     // MARK: - On Appear
 
     // swiftlint:disable:next function_body_length
-    /// Reads the runner's `.runner` JSON file and seeds `autoUpdate`, `proxyUrl`, `proxyUser`, `proxyPassword`, `displayOsArch`, and `displayVersion`.
+    /// Reads the runner’s `.runner` JSON file and seeds editable fields and display values.
     private func loadEditableFields() {
         log("RunnerDetailView loadEditableFields ENTER runner=\(runner.runnerName) installPath=\(runner.installPath ?? "<nil>") platform=\(runner.platform ?? "<nil>") platformArch=\(runner.platformArchitecture ?? "<nil>") agentVersion=\(runner.agentVersion ?? "<nil>") displayOsArch=\(displayOsArch) displayVersion=\(displayVersion)")
 
@@ -625,7 +612,6 @@ struct RunnerDetailView: View {
             log("RunnerDetailView loadEditableFields displayVersion already seeded from model=\(displayVersion), skipping JSON override")
         }
 
-        // Proxy
         let proxyFilePath = installPath + "/.proxy"
         let proxyContent = (try? String(contentsOfFile: proxyFilePath, encoding: .utf8))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
@@ -647,7 +633,7 @@ struct RunnerDetailView: View {
 
     // MARK: - Save Actions
 
-    /// Patches the runner's labels via `patchRunnerJSON` and updates `labelsSaveState`.
+    /// Patches the runner’s labels via `patchRunnerJSON` and updates `labelsSaveState`.
     private func saveLabels() {
         guard let agentId = runner.agentId,
               let gitHubUrl = runner.gitHubUrl,
@@ -676,7 +662,7 @@ struct RunnerDetailView: View {
         }
     }
 
-    /// Patches the runner's work folder path via `patchRunnerJSON` and updates `workFolderSaveState`.
+    /// Patches the runner’s work folder path via `patchRunnerJSON` and updates `workFolderSaveState`.
     private func saveWorkFolder() {
         guard let installPath = runner.installPath else {
             workFolderSaveState = .failure("Install path unknown"); return
@@ -716,7 +702,6 @@ struct RunnerDetailView: View {
         }
     }
 
-    // #532: unified proxy save — writes .proxy + .proxycredentials in one action
     /// Persists proxy URL, username, and password to the runner JSON and updates `proxySaveState`.
     private func saveProxy() {
         guard let installPath = runner.installPath else {
@@ -794,6 +779,68 @@ struct RunnerDetailView: View {
                 }
                 LocalRunnerStore.shared.refresh()
             }
+        }
+    }
+}
+
+// MARK: - InfoCardBackground
+/// Applies the correct card background for `infoCard` in `RunnerDetailView`.
+/// macOS 26+: `.glassEffect(.regular, in: RoundedRectangle(cornerRadius: RBRadius.small))` + thin border.
+/// macOS < 26: original `RoundedRectangle fill(rbSurfaceElevated) + strokeBorder(rbBorderSubtle)` (unchanged).
+private struct InfoCardBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: RBRadius.small)
+                        .fill(Color.rbSurfaceElevated)
+                        .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
+                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+                )
+        }
+    }
+}
+
+// MARK: - DangerZoneCardBackground
+/// Applies the correct background for the Danger Zone action card in `RunnerDetailView`.
+/// macOS 26+: `.glassEffect(.regular)` + danger tint overlay + danger strokeBorder.
+/// macOS < 26: original danger-tinted fill + danger strokeBorder (unchanged).
+private struct DangerZoneCardBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                        .fill(Color.rbDanger.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                        .strokeBorder(Color.rbDanger.opacity(0.25), lineWidth: 0.5)
+                )
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: RBRadius.small)
+                        .fill(Color.rbDanger.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: RBRadius.small)
+                                .strokeBorder(Color.rbDanger.opacity(0.25), lineWidth: 0.5)
+                        )
+                )
         }
     }
 }
