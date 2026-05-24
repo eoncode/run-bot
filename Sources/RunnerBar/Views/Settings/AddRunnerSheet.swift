@@ -799,6 +799,7 @@ struct AddRunnerSheet: View {
 
 /// Queries the GitHub API for the latest macOS runner release and returns the `.tar.gz` download URL
 /// matching the current CPU architecture (`arm64` or `x64`).
+// swiftlint:disable:next type_body_length
 private func fetchRunnerDownloadURL() -> String? {
     let archTask = Process()
     archTask.executableURL  = URL(fileURLWithPath: "/usr/bin/uname")
@@ -838,4 +839,3 @@ private func fetchRunnerDownloadURL() -> String? {
     log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
     return match?.browserDownloadUrl
 }
-// swiftlint:enable type_body_length
