@@ -19,4 +19,7 @@ jobs:
         run: brew install peripheryapp/periphery/periphery
 
       - name: Run Periphery scan
-        run: periphery scan --strict
+        # --strict re-enable once .periphery.yml retain entries cover confirmed false
+        # positives (@Published, @ObservedObject, cross-target, design-system tokens).
+        # Tracked in #805.
+        run: periphery scan
