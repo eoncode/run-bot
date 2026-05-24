@@ -56,24 +56,83 @@ extension Color {
     // ❌ NEVER switch PanelChrome material back to .popover — warm brown tint.
     // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
     //
+    // macOS 26+ (Liquid Glass):
+    //   On macOS 26 the NSGlassEffectView provides blur/tint itself.
+    //   Surface fills must be near-zero so they don't fight the glass backdrop.
+    //   rbSurface         — near-zero (glass handles translucency)
+    //   rbSurfaceElevated — near-zero (glass handles translucency)
+    //
+    // macOS < 26 (HUD vibrancy — unchanged):
     //   rbSurface         — white: 0.11 @ 0.45  (panel bg)
     //   rbSurfaceElevated — white: 0.15 @ 0.25  (rows — very transparent)
 
-    /// Base panel background surface — semi-transparent to preserve HUD vibrancy.
-    static let rbSurface = Color.adaptive(
-        light: Color(white: 0.95).opacity(0.88),
-        dark: Color(white: 0.11).opacity(0.45)
-    )
-    /// Elevated row/card surface — slightly lighter than `rbSurface`.
-    static let rbSurfaceElevated = Color.adaptive(
-        light: Color(white: 0.88).opacity(0.92),
-        dark: Color(white: 0.15).opacity(0.25)
-    )
+    /// Base panel background surface.
+    /// On macOS 26+ returns near-zero opacity — `NSGlassEffectView` provides the translucency.
+    /// On macOS < 26 returns the original HUD-tuned value.
+    static var rbSurface: Color {
+        if #available(macOS 26, *) {
+            return Color.adaptive(
+                light: Color(white: 0.95).opacity(0.04),
+                dark:  Color(white: 0.11).opacity(0.04)
+            )
+        } else {
+            return Color.adaptive(
+                light: Color(white: 0.95).opacity(0.88),
+                dark:  Color(white: 0.11).opacity(0.45)
+            )
+        }
+    }
+
+    /// Elevated row/card surface.
+    /// On macOS 26+ returns near-zero opacity — `NSGlassEffectView` provides the translucency.
+    /// On macOS < 26 returns the original HUD-tuned value.
+    static var rbSurfaceElevated: Color {
+        if #available(macOS 26, *) {
+            return Color.adaptive(
+                light: Color(white: 0.88).opacity(0.05),
+                dark:  Color(white: 0.15).opacity(0.05)
+            )
+        } else {
+            return Color.adaptive(
+                light: Color(white: 0.88).opacity(0.92),
+                dark:  Color(white: 0.15).opacity(0.25)
+            )
+        }
+    }
+
     /// Subtle border — low-contrast outline for cards and separators.
-    static let rbBorderSubtle = Color.adaptive(
-        light: Color(white: 0.0).opacity(0.08),
-        dark: Color(white: 1.0).opacity(0.06)
-    )
+    /// On macOS 26+ light-mode opacity is raised slightly (0.12) to match
+    /// the thin specular border idiom of Liquid Glass.
+    static var rbBorderSubtle: Color {
+        if #available(macOS 26, *) {
+            return Color.adaptive(
+                light: Color(white: 0.0).opacity(0.12),
+                dark:  Color(white: 1.0).opacity(0.06)
+            )
+        } else {
+            return Color.adaptive(
+                light: Color(white: 0.0).opacity(0.08),
+                dark:  Color(white: 1.0).opacity(0.06)
+            )
+        }
+    }
+
+    /// Mid border — slightly stronger outline.
+    /// On macOS 26+ light-mode opacity is raised to 0.14 for Liquid Glass specular edge.
+    static var rbBorderMid: Color {
+        if #available(macOS 26, *) {
+            return Color.adaptive(
+                light: Color(white: 0.0).opacity(0.14),
+                dark:  Color(white: 1.0).opacity(0.10)
+            )
+        } else {
+            return Color.adaptive(
+                light: Color(white: 0.0).opacity(0.10),
+                dark:  Color(white: 1.0).opacity(0.08)
+            )
+        }
+    }
+
     /// Primary text — high contrast body and heading text.
     static let rbTextPrimary = Color.adaptive(
         light: .black,
@@ -100,6 +159,24 @@ extension Color {
     public static let rbRedTint = rbDanger.opacity(0.08)
     /// Low-opacity orange tint — alias for `rbYellowTint`.
     public static let rbOrangeTint = rbWarning.opacity(0.08)
+}
+
+// MARK: - Shadow Tokens
+
+/// Shadow tokens for card/row drop shadows.
+/// On macOS 26+ shadows are softer and more diffuse to complement Liquid Glass.
+/// On macOS < 26 values match the original design.
+enum RBShadow {
+    /// Drop-shadow opacity for card/row elements.
+    /// 0.35 on macOS < 26; 0.18 on macOS 26+ (glass needs a lighter shadow).
+    static var cardOpacity: Double {
+        if #available(macOS 26, *) { return 0.18 } else { return 0.35 }
+    }
+    /// Drop-shadow blur radius for card/row elements.
+    /// 12 pt on macOS < 26; 18 pt on macOS 26+ (softer, more diffuse).
+    static var cardRadius: CGFloat {
+        if #available(macOS 26, *) { return 18 } else { return 12 }
+    }
 }
 
 // MARK: - Status helpers
