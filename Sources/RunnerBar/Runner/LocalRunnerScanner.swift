@@ -56,6 +56,8 @@ struct LocalRunnerScanner {
     private static let findBinary    = "/usr/bin/find"
     /// Full path to the launchctl binary.
     private static let launchctlBinary = "/bin/launchctl"
+    /// Base URL used to construct GitHub repository and organisation URLs from plist labels.
+    private static let gitHubBaseURL = GitHubConstants.base
 
     // MARK: - Public API
 
@@ -128,12 +130,12 @@ struct LocalRunnerScanner {
                 let owner = parts[0]
                 let repo = parts[1]
                 if !owner.isEmpty && !repo.isEmpty {
-                    plistGitHubUrl = "\(GitHubConstants.base)/\(owner)/\(repo)"
+                    plistGitHubUrl = "\(Self.gitHubBaseURL)/\(owner)/\(repo)"
                 }
             } else if parts.count == 2 {
                 // Org-scoped runner: actions.runner.<org>.<runnerName>
                 let org = parts[0]
-                if !org.isEmpty { plistGitHubUrl = "\(GitHubConstants.base)/\(org)" }
+                if !org.isEmpty { plistGitHubUrl = "\(Self.gitHubBaseURL)/\(org)" }
             }
             if let plist = NSDictionary(contentsOf: url),
                let workDir = plist["WorkingDirectory"] as? String,

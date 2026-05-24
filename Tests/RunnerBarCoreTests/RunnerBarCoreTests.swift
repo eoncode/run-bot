@@ -373,7 +373,10 @@ final class PollResultBuilderTests: XCTestCase {
             snapPrev: [:],
             snapCache: [:],
             fetchJobs: { [liveJob] },
-            backfill: { _ in } // no-op: backfill not required for this test case
+            backfill: { _ in
+                // No backfill needed for this test — step-log fetching
+                // is exercised by integration tests, not unit tests.
+            }
         )
         XCTAssertTrue(result.display.contains(where: { $0.id == 99 }))
     }
@@ -384,7 +387,9 @@ final class PollResultBuilderTests: XCTestCase {
             snapPrev: [:],
             snapCache: [:],
             fetchJobs: { [doneJob] },
-            backfill: { _ in } // no-op: backfill not required for this test case
+            backfill: { _ in
+                // No backfill needed — completed job already has full data.
+            }
         )
         XCTAssertTrue(result.newCache.keys.contains(42))
         XCTAssertEqual(result.newCache[42]?.isDimmed, true)
@@ -397,7 +402,9 @@ final class PollResultBuilderTests: XCTestCase {
             snapPrev: [11: prev],
             snapCache: [:],
             fetchJobs: { [] },
-            backfill: { _ in }
+            backfill: { _ in
+                // No backfill needed — vanished job has no new data to fetch.
+            }
         )
         XCTAssertNotNil(result.newCache[11], "Vanished live job should appear in cache")
         XCTAssertEqual(result.newCache[11]?.status, "completed")

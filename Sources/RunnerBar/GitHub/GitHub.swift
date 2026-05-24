@@ -166,7 +166,11 @@ private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        completionHandler(nil) // Cancel the redirect; we want the 302 Location header.
+        // All four parameters are required by the URLSessionTaskDelegate protocol
+        // but the redirect is intentionally cancelled unconditionally — we only
+        // need the 302 Location header captured by the caller, not the redirect target.
+        _ = session; _ = task; _ = response; _ = request
+        completionHandler(nil)
     }
 }
 private let noRedirectDelegate = NoRedirectDelegate()
