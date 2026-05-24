@@ -1,6 +1,6 @@
 // PanelMainView+Subviews.swift
 // RunnerBar
-// swiftlint:disable colon opening_brace
+// swiftlint:disable colon opening_brace missing_docs
 
 import RunnerBarCore
 import SwiftUI

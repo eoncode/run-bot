@@ -1,5 +1,6 @@
 // SystemStatsView.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import RunnerBarCore
 import SwiftUI
 
@@ -43,7 +44,7 @@ struct SystemStatsView: View {
 // MARK: - SparklineMetricView
 /// A single header metric chip: label + inline sparkline + monospaced value.
 ///
-/// Layout: CPU [▄6▄6▄6] 41.1% MEM [▄6▄6▄6] 6.4/16.0GB
+/// Layout: CPU [▆▆▆] 41.1% MEM [▆▆▆] 6.4/16.0GB
 ///
 /// macOS 26+: .glassEffect chip per metric.
 /// macOS < 26: subtle rbSurface background (original — no background applied before,

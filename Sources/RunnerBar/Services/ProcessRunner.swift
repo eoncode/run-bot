@@ -1,5 +1,6 @@
 // ProcessRunner.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - ProcessRunner

@@ -1,5 +1,6 @@
 // SystemStatsViewModel.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import Combine
 import Darwin
 import Foundation

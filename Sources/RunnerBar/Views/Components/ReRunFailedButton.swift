@@ -1,5 +1,6 @@
 // ReRunFailedButton.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import SwiftUI
 
 // MARK: - ReRunFailedButton
