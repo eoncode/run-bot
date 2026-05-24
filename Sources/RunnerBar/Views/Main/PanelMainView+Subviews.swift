@@ -91,15 +91,17 @@ struct PanelLocalRunnerRow: View {
     @ViewBuilder private func runnerList(_ busy: [RunnerModel]) -> some View {
         ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
         if busy.count > 3 {
-            Text("+ \(busy.count - 3) more…")
+            Text("+ \(busy.count - 3) more\u{2026}")
                 .font(.caption2).foregroundColor(.secondary)
                 .padding(.horizontal, DesignTokens.Spacing.rowHPad).padding(.vertical, 2)
         }
         Divider()
     }
     /// Compact card showing a single runner's name, status badge, and CPU/memory stats.
+    /// macOS 26+: .glassEffect backdrop with thin border overlay.
+    /// macOS < 26: original RoundedRectangle fill + strokeBorder (unchanged).
     private func runnerCard(_ runner: RunnerModel) -> some View {
-        HStack(spacing: 8) {
+        let content = HStack(spacing: 8) {
             Circle().fill(Color.rbWarning).frame(width: 7, height: 7)
             Text(runner.runnerName)
                 .font(RBFont.label)
@@ -113,14 +115,30 @@ struct PanelLocalRunnerRow: View {
             }
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xs + 2)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-        )
+
+        return Group {
+            if #available(macOS 26, *) {
+                content
+                    .glassEffect(
+                        .regular,
+                        in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                    )
+            } else {
+                content
+                    .background(
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .fill(Color.rbSurfaceElevated)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                            )
+                    )
+            }
+        }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xxs)
     }
 }
@@ -128,6 +146,8 @@ struct PanelLocalRunnerRow: View {
 // MARK: - ActionRowView
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.
+/// macOS 26+: .glassEffect backdrop with status colour bar overlay.
+/// macOS < 26: original RoundedRectangle fill + strokeBorder (unchanged).
 struct ActionRowView: View {
     /// The group constant.
     let group: WorkflowActionGroup
@@ -151,21 +171,7 @@ struct ActionRowView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-                .overlay(
-                    Rectangle()
-                        .fill(rowStatus.color)
-                        .frame(width: 4)
-                        .frame(maxHeight: .infinity),
-                    alignment: .leading
-                )
-        )
+        .modifier(ActionRowBackground(status: rowStatus))
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .workflowContextMenu(group: group)
@@ -274,6 +280,51 @@ struct ActionRowView: View {
             case "failure": StatusBadge(status: .failed, text: "FAILED")
             default: StatusBadge(status: .unknown, text: "DONE")
             }
+        }
+    }
+}
+
+// MARK: - ActionRowBackground
+/// Applies the correct card background for `ActionRowView` based on OS version.
+/// macOS 26+: .glassEffect with status colour bar overlay + thin border.
+/// macOS < 26: original RoundedRectangle fill + strokeBorder + status bar (unchanged).
+private struct ActionRowBackground: ViewModifier {
+    let status: RBStatus
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+                .overlay(
+                    Rectangle()
+                        .fill(status.color)
+                        .frame(width: 4)
+                        .frame(maxHeight: .infinity),
+                    alignment: .leading
+                )
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                        .fill(Color.rbSurfaceElevated)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                                .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                        )
+                        .overlay(
+                            Rectangle()
+                                .fill(status.color)
+                                .frame(width: 4)
+                                .frame(maxHeight: .infinity),
+                            alignment: .leading
+                        )
+                )
         }
     }
 }
