@@ -298,12 +298,12 @@ struct SettingsView: View {
                 case .success: break
                 case .corruptInstall:
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
-                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "[!] corrupt install")
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "\u{26A0} corrupt install")
                 case .failed(let msg):
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
                     let short = msg.components(separatedBy: "\n")
                         .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
-                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "[!] \(short)")
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "\u{26A0} \(short)")
                 }
                 LocalRunnerStore.shared.refresh()
             }
@@ -320,12 +320,12 @@ struct SettingsView: View {
                 switch result {
                 case .success: break
                 case .corruptInstall:
-                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "[!] corrupt install")
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "\u{26A0} corrupt install")
                 case .failed(let msg):
                     LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
                     let short = msg.components(separatedBy: "\n")
                         .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? msg
-                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "[!] \(short)")
+                    LocalRunnerStore.shared.setLifecycleWarning(runner.runnerName, warning: "\u{26A0} \(short)")
                 }
                 LocalRunnerStore.shared.refresh()
             }

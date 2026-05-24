@@ -157,13 +157,13 @@ struct StepLogView: View {
                 Image(systemName: "clock").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(startLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("->").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
+                Text("\u{2192}").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(endLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text(".").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
+                Text("\u{00B7}").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(step.elapsed)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text(".").font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary)
+                Text("\u{00B7}").font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary)
                 Text(dateLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
                 Spacer()
@@ -253,11 +253,11 @@ extension StepLogView {
     /// Step conclusion label with icon, or live/queued status.
     var stepStatusLabel: String {
         switch step.conclusion {
-        case "success": return "success"
-        case "failure": return "failure"
-        case "skipped": return "skipped"
-        case "cancelled": return "cancelled"
-        default: return step.status == "in_progress" ? "running" : "queued"
+        case "success":   return "\u{2713} success"
+        case "failure":   return "\u{2717} failure"
+        case "skipped":   return "\u{2298} skipped"
+        case "cancelled": return "\u{2298} cancelled"
+        default: return step.status == "in_progress" ? "\u{25B6} running" : "\u{00B7} queued"
         }
     }
 
