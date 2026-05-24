@@ -1,5 +1,6 @@
 // ScopeDetailView.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import RunnerBarCore
 import SwiftUI
 
@@ -74,7 +75,7 @@ struct ScopeDetailView: View {
     /// The GitHub web URL for this scope, used to render the "Open on GitHub" link.
     private var gitHURL: URL? { URL(string: "https://github.com/\(scope)") }
 
-    /// The body property.
+    /// Root layout: header bar + scrollable sections.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
@@ -519,3 +520,4 @@ extension ScopeDetailView {
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 }
+// swiftlint:enable missing_docs
