@@ -78,36 +78,6 @@ struct BranchTagPill: View {
     }
 }
 
-// MARK: - cardRow ViewModifier
-/// Applies a card-row background with rounded corners.
-/// Used by job/action row items inside list-style ScrollViews.
-private struct CardRowModifier: ViewModifier {
-    /// Corner radius applied to the background rectangle.
-    let cornerRadius: CGFloat
-
-    /// Wraps content in a rounded-rect card background with a subtle stroke.
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.rbSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-            )
-    }
-}
-
-/// SwiftUI `View` extensions providing reusable row and badge modifiers.
-extension View {
-    /// Wraps a row in a card-style rounded rectangle background.
-    /// - Parameter cornerRadius: Corner radius — prefer `RBRadius` tokens.
-    func cardRow(cornerRadius: CGFloat) -> some View {
-        modifier(CardRowModifier(cornerRadius: cornerRadius))
-    }
-}
-
 // MARK: - CardRowModifier
 /// Applies Liquid Glass ultraThinMaterial background + subtle white stroke to a card row.
 private struct CardRowModifier: ViewModifier {
