@@ -129,7 +129,7 @@ extension ScopeDetailView {
                     .font(.caption2)
                     .foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.rbSurfaceElevated))
+                    .background(.ultraThinMaterial, in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
                 Text(ScopePreferencesStore.displayName(for: scope))
                     .font(.system(size: 13, weight: .semibold))
@@ -498,12 +498,7 @@ extension ScopeDetailView {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.small)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
-                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-        )
+        .cardRow()
         .padding(.horizontal, RBSpacing.md)
         .padding(.bottom, 8)
     }

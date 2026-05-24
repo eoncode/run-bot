@@ -34,8 +34,8 @@ import SwiftUI
 // ║ is removed is major major major.                                           ║
 // ╙────────────────────────────────────────────────────────────────────────────╜
 // Phase 5: DesignToken colour sweep — .yellow/.green/.red → rbWarning/rbSuccess/rbDanger;
-//          meta badge backgrounds use Color.rbSurfaceElevated;
-//          log area uses Color.rbSurfaceElevated background;
+//          meta badge backgrounds use .ultraThinMaterial (Liquid Glass);
+//          log area uses .ultraThinMaterial background;
 //          all .secondary foreground replaced with Color.rbTextSecondary.
 /// Shows the raw log text for a single `JobStep`.
 ///
@@ -136,7 +136,7 @@ struct StepLogView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Color.rbSurfaceElevated).cornerRadius(RBRadius.small).fixedSize()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.small)).fixedSize()
             }
             .padding(.horizontal, RBSpacing.md).padding(.bottom, 3)
 
@@ -148,7 +148,7 @@ struct StepLogView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Color.rbSurfaceElevated).cornerRadius(RBRadius.small).fixedSize()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.small)).fixedSize()
             }
             .padding(.horizontal, RBSpacing.md).padding(.bottom, 3)
 
@@ -190,7 +190,7 @@ struct StepLogView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
-                        .background(Color.rbSurfaceElevated)
+                        .background(.ultraThinMaterial)
                 } else {
                     Text("Log not available")
                         .font(.caption).foregroundColor(Color.rbTextSecondary)
