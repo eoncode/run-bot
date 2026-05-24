@@ -44,8 +44,11 @@ final class SystemStatsViewModel: ObservableObject {
     /// The timer property — nonisolated(unsafe) so deinit can invalidate it directly.
     nonisolated(unsafe) private var timer: Timer?
     /// The prevCPUInfo property.
+    /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
+    /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
     /// The prevNumCPUInfo property.
+    /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
