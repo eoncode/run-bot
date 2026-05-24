@@ -115,6 +115,8 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
     /// Vertical stack of the Workflows section header, `ActionRowView` items, and the load-more button.
+    /// On macOS 26+ the ForEach of ActionRowView is wrapped in a GlassEffectContainer so that
+    /// adjacent glass cards merge at their shared edges. On macOS < 26 a plain VStack is used.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -124,12 +126,24 @@ struct PanelMainView: View {
                     .padding(.horizontal, 12).padding(.vertical, 8)
             } else {
                 let visible = Array(store.actions.prefix(visibleCount))
-                ForEach(visible) { group in
-                    ActionRowView(
-                        group: group,
-                        tick: displayTick,
-                        onStepTap: onStepTap
-                    )
+                if #available(macOS 26, *) {
+                    GlassEffectContainer {
+                        ForEach(visible) { group in
+                            ActionRowView(
+                                group: group,
+                                tick: displayTick,
+                                onStepTap: onStepTap
+                            )
+                        }
+                    }
+                } else {
+                    ForEach(visible) { group in
+                        ActionRowView(
+                            group: group,
+                            tick: displayTick,
+                            onStepTap: onStepTap
+                        )
+                    }
                 }
                 loadMoreButton
             }

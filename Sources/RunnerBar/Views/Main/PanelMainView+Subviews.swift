@@ -88,8 +88,16 @@ struct PanelLocalRunnerRow: View {
         if !busy.isEmpty { runnerList(busy) }
     }
     /// Renders a vertical stack of `runnerCard` views for each busy local runner.
+    /// On macOS 26+ the cards are wrapped in a GlassEffectContainer so siblings merge.
+    /// On macOS < 26 a plain VStack is used.
     @ViewBuilder private func runnerList(_ busy: [RunnerModel]) -> some View {
-        ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
+        if #available(macOS 26, *) {
+            GlassEffectContainer {
+                ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
+            }
+        } else {
+            ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
+        }
         if busy.count > 3 {
             Text("+ \(busy.count - 3) more\u{2026}")
                 .font(.caption2).foregroundColor(.secondary)
