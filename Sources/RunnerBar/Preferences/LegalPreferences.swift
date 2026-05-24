@@ -4,10 +4,9 @@ import Combine
 import Foundation
 
 // MARK: - LegalPreferences
-
+// periphery:ignore
 /// Persists legal/analytics preferences to UserDefaults.
 /// `analyticsEnabled` defaults to `false` (opt-in, not opt-out) per issue #221/#245.
-// periphery:ignore
 final class LegalPreferences: ObservableObject {
     /// The shared constant.
     static let shared = LegalPreferences()

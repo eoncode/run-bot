@@ -164,7 +164,7 @@ struct StatPill: View {
 
 // MARK: - StatusBadge
 /// Capsule-stroked badge used in action-row trailing area.
-/// Renders a colour-matched border + label for a given RBStatus.
+/// Renders a colour-matched border and label for a given `RBStatus`.
 struct StatusBadge: View {
     /// The status that drives the badge colour.
     let status: RBStatus
