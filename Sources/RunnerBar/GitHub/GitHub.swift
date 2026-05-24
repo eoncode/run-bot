@@ -19,7 +19,10 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
 // MARK: - Fetch all jobs from active runs
 
 /// Shared ISO-8601 date formatter.
-private let iso8601 = ISO8601DateFormatter()
+/// Safety: ISO8601DateFormatter is a reference type. This instance is created once
+/// at module load time and only ever read (never mutated) after that, so concurrent
+/// access is safe despite the `nonisolated(unsafe)` annotation.
+nonisolated(unsafe) private let iso8601 = ISO8601DateFormatter()
 
 /// Fetches all active (in-progress and queued) jobs for a given scope.
 /// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) runners.
@@ -134,7 +137,8 @@ func fetchUserRepos() -> [String] {
 
 // swiftlint:disable:next force_try
 /// Compiled regular expression for stripping ANSI escape sequences from log output.
-private let _ansiRegex = try! NSRegularExpression( // swiftlint:disable:this force_try
+/// Safety: NSRegularExpression is immutable after initialisation — concurrent reads are safe.
+nonisolated(unsafe) private let _ansiRegex = try! NSRegularExpression( // swiftlint:disable:this force_try
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 
@@ -162,9 +166,11 @@ private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
 }
 
 /// Module-level `NoRedirectDelegate` singleton.
-private let noRedirectDelegate = NoRedirectDelegate()
+/// Safety: allocated once at module load; only ever passed to URLSession(configuration:delegate:delegateQueue:).
+nonisolated(unsafe) private let noRedirectDelegate = NoRedirectDelegate()
 /// URLSession that never follows HTTP redirects — used for step-1 of `fetchStepLogViaURLSession`.
-private let noRedirectSession = URLSession(
+/// Safety: URLSession is thread-safe by design; concurrent use is explicitly supported by Apple.
+nonisolated(unsafe) private let noRedirectSession = URLSession(
     configuration: .default,
     delegate: noRedirectDelegate,
     delegateQueue: nil

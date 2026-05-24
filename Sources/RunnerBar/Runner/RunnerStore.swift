@@ -43,7 +43,9 @@ final class RunnerStore {
     private(set) var rateLimitResetDate: Date?
 
     /// The timer property.
-    private var timer: Timer?
+    /// Safety: only mutated on MainActor (scheduleTimer/start). Timer callbacks
+    /// re-enter on the main run loop via Task { @MainActor in }, so no concurrent access.
+    nonisolated(unsafe) private var timer: Timer?
     /// The intervalCancellable property.
     private var intervalCancellable: AnyCancellable?
     /// The scopeCancellable property.
@@ -108,9 +110,7 @@ final class RunnerStore {
             repeats: false
         ) { [weak self] _ in
             log("RunnerStore › timer fired")
-            DispatchQueue.main.async { [self] in
-                self?.fetch()
-            }
+            Task { @MainActor [weak self] in self?.fetch() }
         }
     }
 
