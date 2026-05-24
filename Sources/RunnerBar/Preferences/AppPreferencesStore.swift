@@ -13,9 +13,9 @@ final class AppPreferencesStore: ObservableObject {
     /// UserDefaults key constants.
     private enum Key {
         /// Key for the polling interval setting.
-        static let pollingInterval    = "settings.pollingInterval"
+        static let pollingInterval = "settings.pollingInterval"
         /// Key for the show-dimmed-runners toggle.
-        static let showDimmedRunners  = "settings.showDimmedRunners"
+        static let showDimmedRunners = "settings.showDimmedRunners"
     }
 
     /// Valid range for the polling interval (seconds).
@@ -36,7 +36,9 @@ final class AppPreferencesStore: ObservableObject {
     /// Whether to show dimmed (offline/idle) runners in the runners list.
     /// Retained for backwards compat but no longer surfaced in the UI (#510).
     @Published var showDimmedRunners: Bool {
-        didSet { UserDefaults.standard.set(showDimmedRunners, forKey: Key.showDimmedRunners) }
+        didSet {
+            UserDefaults.standard.set(showDimmedRunners, forKey: Key.showDimmedRunners)
+        }
     }
 
     /// Private initialiser — use `shared`.
@@ -45,7 +47,6 @@ final class AppPreferencesStore: ObservableObject {
         // #511: Default changed from 30 s to 15 s for more responsive monitoring.
         let raw = stored > 0 ? stored : 15
         pollingInterval = raw.clamped(to: Self.pollingRange)
-
         if UserDefaults.standard.object(forKey: Key.showDimmedRunners) == nil {
             showDimmedRunners = true
         } else {
@@ -56,7 +57,7 @@ final class AppPreferencesStore: ObservableObject {
 
 // MARK: - Comparable+clamped
 
-/// Extension adding functionality to `Comparable`.
+/// Extension adding clamping functionality to `Comparable`.
 private extension Comparable {
     /// Clamps the value to the given closed range.
     func clamped(to range: ClosedRange<Self>) -> Self {
