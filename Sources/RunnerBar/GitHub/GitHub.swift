@@ -145,9 +145,8 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Step log
 
-/// Pre-compiled regex that matches ANSI escape sequences for stripping terminal colour codes from log output.
-// swiftlint:disable force_try
-private let _ansiRegex = try! NSRegularExpression(
+// swiftlint:disable force_try missing_docs
+private let _ansiRegex = try! NSRegularExpression( // swiftlint:enable missing_docs
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 // swiftlint:enable force_try
