@@ -6,7 +6,9 @@ on:
 jobs:
   test:
     name: Swift Test
-    runs-on: macos-latest
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.app/Contents/Developer
 
     steps:
       - name: Checkout
