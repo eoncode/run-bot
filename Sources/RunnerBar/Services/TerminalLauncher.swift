@@ -8,9 +8,14 @@ import Foundation
 //
 // Uses NSAppleScript + `do script` — requires no entitlements on an unsandboxed app.
 // Escapes backslashes, double quotes, and newlines before embedding in the AppleScript string.
-/// Enumerates possible values for TerminalLauncher.
+/// Launches commands in Terminal.app via AppleScript's `do script` directive.
+/// Handles escaping of backslashes, double-quotes, and newlines so arbitrary
+/// shell commands are passed through correctly.
 enum TerminalLauncher {
-    /// Opens Terminal.app and runs `command` in a new window.
+    /// Opens a new Terminal.app window and executes `command` inside it.
+    /// Backslashes, double-quotes, and newlines in `command` are escaped
+    /// before embedding in the AppleScript source string.
+    /// Logs an error via `log()` if the AppleScript fails to execute.
     static func open(command: String) {
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")

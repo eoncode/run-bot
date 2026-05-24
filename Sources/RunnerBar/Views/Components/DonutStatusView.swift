@@ -13,31 +13,31 @@ import SwiftUI
 /// Animation contract:
 /// - In-progress background ring uses `@State rotationAngle` driven by
 ///   `.linear(duration: 2).repeatForever(autoreverses: false)` — reassures the
-///   user the row hasn't frozen.
+///   user the row hasn’t frozen.
 /// - Progress arc uses `trim(from: 0, to: fraction)` animated with `.easeInOut`.
 /// - Color transitions use `.easeInOut(duration: 0.35)`.
 ///
 /// ❌ NEVER remove the repeatForever animation — it is the liveness indicator.
 /// ❌ NEVER start the rotation for non-.inProgress states — it wastes CPU/GPU.
 struct DonutStatusView: View {
-    /// The status constant.
+    /// The status that drives ring color and icon selection.
     let status: RBStatus
-    /// Progress fraction 0.0–1.0 for in-progress state. Ignored for other states.
+    /// Progress fraction in the range 0.0–1.0 for the in-progress arc trim. Ignored for all other states.
     var progress: Double = 0
-    /// The size property.
+    /// Outer diameter of the donut ring in points.
     var size: CGFloat = 16
 
-    /// The rotationAngle property.
+    /// Current rotation angle of the shimmer ring; driven by a repeatForever animation while in-progress.
     @State private var rotationAngle: Double = 0
-    /// The displayProgress property.
+    /// Smoothed progress value used for the arc trim animation; updated via `.easeInOut` on `progress` changes.
     @State private var displayProgress: Double = 0
 
-    /// The strokeWidth property.
+    /// Line width of the ring stroke, proportional to `size` (11% of outer diameter).
     private var strokeWidth: CGFloat { size * 0.11 }
-    /// Inner ring diameter derived from the outer size. // periphery:ignore
+    /// Inner ring diameter used for the shimmer arc, set to 82% of the outer `size`. // periphery:ignore
     private var innerSize: CGFloat { size * 0.82 }
 
-    /// The body property.
+    /// Renders the appropriate ring variant for the current `status`.
     var body: some View {
         ZStack {
             switch status {

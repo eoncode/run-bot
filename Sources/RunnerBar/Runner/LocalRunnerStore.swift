@@ -6,30 +6,35 @@ import RunnerBarCore
 
 // MARK: - LocalRunnerStore
 
-// swiftlint:disable type_body_length missing_docs
-/// Manages LocalRunnerStore state and behaviour.
+/// Main-actor observable store for locally installed GitHub Actions runners.
+/// Discovers runners via `LocalRunnerScanner`, optionally enriches them with
+/// GitHub API status via `RunnerStatusEnricher`, and attaches per-runner
+/// CPU/MEM metrics for busy runners.
+/// Use the `shared` singleton from the main thread only.
 @MainActor
 final class LocalRunnerStore: ObservableObject {
-    /// The shared constant.
+    /// The process-wide singleton. All access must be on the main actor.
     static let shared = LocalRunnerStore()
     /// Private initialiser — use `shared`.
     private init() {
         // Singleton — no custom initialisation needed; default property values are sufficient.
     }
 
-    /// The runners property.
+    /// The current list of discovered (and optionally enriched) local runners.
     @Published var runners: [RunnerModel] = []
-    /// The isScanning property.
+    /// True while a background scan is in progress; prevents overlapping scans.
     @Published var isScanning: Bool = false
 
-    /// The scanner constant.
+    /// Responsible for enumerating `.runner` install directories on disk.
     private let scanner = LocalRunnerScanner()
-    /// The enricher constant.
+    /// Enriches scanned runners with GitHub API-reported status and lifecycle warnings.
     private let enricher = RunnerStatusEnricher.shared
 
     // MARK: - Refresh
 
-    /// Performs the refresh operation.
+    /// Initiates a background scan of local runner directories, optionally enriching
+    /// results with GitHub API status when a token is available.
+    /// No-ops if a scan is already in progress (`isScanning == true`).
     func refresh() {
         log("LocalRunnerStore > refresh() called — isScanning=\(isScanning) runners.count=\(runners.count)")
         guard !isScanning else {
@@ -83,14 +88,17 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Optimistic mutations
 
-    /// Performs the optimisticallyRemove operation.
+    /// Immediately removes the runner with the given name from `runners` without waiting
+    /// for the next `refresh()` cycle. Used after a successful uninstall to update the UI instantly.
     func optimisticallyRemove(_ runnerName: String) {
         log("LocalRunnerStore > optimisticallyRemove — runnerName=\(runnerName) runners.count was \(runners.count)")
         runners.removeAll { $0.runnerName == runnerName }
         log("LocalRunnerStore > optimisticallyRemove — done, runners.count=\(runners.count)")
     }
 
-    /// Performs the optimisticallySetRunning operation.
+    /// Immediately updates the `isRunning` flag for the named runner and clears any
+    /// `lifecycleWarning` without waiting for the next `refresh()` cycle.
+    /// Used after a start/stop action to reflect the new state in the UI instantly.
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         let names = runners.map { $0.runnerName }.joined(separator: ", ")
         log("LocalRunnerStore > optimisticallySetRunning runnerName=\(runnerName) isRunning=\(isRunning) — current runners=[\(names)]")
@@ -106,7 +114,9 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > optimisticallySetRunning — done, runners.count=\(runners.count)")
     }
 
-    /// Performs the setLifecycleWarning operation.
+    /// Sets or clears a `lifecycleWarning` string on the named runner and triggers
+    /// an `objectWillChange` notification so the UI refreshes immediately.
+    /// Pass `nil` to clear an existing warning.
     func setLifecycleWarning(_ runnerName: String, warning: String?) {
         let w = warning ?? "nil"
         log("LocalRunnerStore > setLifecycleWarning called: runnerName=\(runnerName) warning=\(w)")
@@ -121,4 +131,3 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > setLifecycleWarning — done for \(runnerName), displayStatus is now: \(displayStatus)")
     }
 }
-// swiftlint:enable type_body_length missing_docs
