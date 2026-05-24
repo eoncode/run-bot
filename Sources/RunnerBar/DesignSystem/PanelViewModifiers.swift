@@ -81,7 +81,9 @@ struct BranchTagPill: View { // periphery:ignore
 // MARK: - CardRowModifier
 /// Applies Liquid Glass ultraThinMaterial background + subtle white stroke to a card row.
 private struct CardRowModifier: ViewModifier {
+    /// Corner radius of the card background. Defaults to `RBRadius.small`.
     var cornerRadius: CGFloat = RBRadius.small
+    /// Applies ultraThinMaterial background and white stroke to the content.
     func body(content: Content) -> some View {
         content
             .background(
@@ -95,7 +97,10 @@ private struct CardRowModifier: ViewModifier {
     }
 }
 
+/// SwiftUI `View` extensions providing Liquid Glass surface modifiers.
 extension View {
+    /// Wraps a row in a Liquid Glass card-style rounded rectangle background.
+    /// - Parameter cornerRadius: Corner radius — prefer `RBRadius` tokens.
     func cardRow(cornerRadius: CGFloat = RBRadius.small) -> some View {
         modifier(CardRowModifier(cornerRadius: cornerRadius))
     }
@@ -104,6 +109,7 @@ extension View {
 // MARK: - GlassPanelModifier
 /// Applies Liquid Glass regularMaterial background + subtle white stroke + shadow to a container.
 private struct GlassPanelModifier: ViewModifier {
+    /// Applies regularMaterial background, white stroke, and shadow to the content.
     func body(content: Content) -> some View {
         content
             .background(
@@ -118,7 +124,9 @@ private struct GlassPanelModifier: ViewModifier {
     }
 }
 
+/// SwiftUI `View` extensions providing Liquid Glass surface modifiers.
 extension View {
+    /// Wraps a container in a Liquid Glass panel background with shadow.
     func glassPanel() -> some View {
         modifier(GlassPanelModifier())
     }

@@ -197,8 +197,8 @@ struct HeaderStatsBar: View {
 // Renders a coloured block-bar and percentage label for a given metric.
 // Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
 // periphery:ignore
-@available(macOS, deprecated: 26, message: "Use SparklineMetricView or HeaderStatsBar instead.")
 /// A value type representing BlockBarView.
+@available(macOS, deprecated: 26, message: "Use SparklineMetricView or HeaderStatsBar instead.")
 struct BlockBarView: View {
     /// The label constant.
     let label: String

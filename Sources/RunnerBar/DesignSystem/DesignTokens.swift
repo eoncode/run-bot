@@ -198,12 +198,13 @@ enum RBFont {
 // MARK: - Liquid Glass Materials
 // On macOS 26+ these resolve to true Liquid Glass.
 // On older OS versions they gracefully degrade to vibrancy materials.
+/// SwiftUI `Material` tokens resolving to Liquid Glass on macOS 26, vibrancy on older OS.
 extension Material {
     /// Primary panel/container background — regularMaterial for Liquid Glass.
     static var rbGlassPanel: Material { .regularMaterial }
     /// Row/card surface — ultraThinMaterial for Liquid Glass.
     static var rbGlassRow: Material { .ultraThinMaterial }
-    /// Subtle badge/pill surface.
+    /// Subtle badge/pill surface — thinMaterial for Liquid Glass overlays.
     static var rbGlassSubtle: Material { .ultraThinMaterial }
 }
 
