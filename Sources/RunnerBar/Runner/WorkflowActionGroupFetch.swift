@@ -1,6 +1,5 @@
 // WorkflowActionGroupFetch.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import Foundation
 import RunnerBarCore
 
@@ -241,4 +240,3 @@ private func statusPriority(_ status: GroupStatus) -> Int {
     case .completed:  return 2
     }
 }
-// swiftlint:enable missing_docs

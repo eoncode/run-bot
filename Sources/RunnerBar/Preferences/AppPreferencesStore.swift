@@ -5,7 +5,7 @@ import Foundation
 
 // MARK: - AppPreferencesStore
 
-// swiftlint:disable missing_docs
+/// Persists general app preferences (polling interval, display options) to UserDefaults.
 final class AppPreferencesStore: ObservableObject {
     /// Shared singleton instance.
     static let shared = AppPreferencesStore()
@@ -53,7 +53,6 @@ final class AppPreferencesStore: ObservableObject {
         }
     }
 }
-// swiftlint:enable missing_docs
 
 // MARK: - Comparable+clamped
 

@@ -52,6 +52,7 @@ import SwiftUI
 // is major major major.
 // ════════════════════════════════════════════════════════════════════════════════
 
+// swiftlint:disable:next missing_docs
 /// Observable wrapper for NSPanel open/closed state + one-shot height callback.
 final class PanelVisibilityState: ObservableObject {
     /// `true` from immediately before the panel opens until after it closes.
