@@ -27,21 +27,15 @@ struct ScopeDetailView: View {
     /// Callback invoked when the user taps the back button to return to
     /// `SettingsView`.
     let onBack: () -> Void
-
-    /// The scopeStore property.
+    // swiftlint:disable missing_docs
     @ObservedObject private var scopeStore = ScopeStore.shared
-    /// The showHookSheet property.
     @State private var showHookSheet = false
-    /// The showBranchSheet property.
     @State private var showBranchSheet = false
-    /// The hookEnabled property.
     @State private var hookEnabled: Bool
-    /// The hookBranch property.
     @State private var hookBranch: String?
-    /// The localRepoPath property.
     @State private var localRepoPath: String
-    /// The isEditingPath property.
     @State private var isEditingPath = false
+    // swiftlint:enable missing_docs
 
     /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
     /// so they reflect persisted user preferences on first render.

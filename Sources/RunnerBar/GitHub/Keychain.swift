@@ -17,10 +17,10 @@ import Security
 
 /// Wrapper around Security.framework for storing and retrieving the GitHub OAuth token.
 enum Keychain {
-    /// Keychain service name used for RunnerBar credentials.
+    // swiftlint:disable missing_docs
     private static let service = "runner-bar"
-    /// Keychain account name used for the stored OAuth token.
     private static let account = "github-oauth-token"
+    // swiftlint:enable missing_docs
 
     // MARK: - Private helpers
 

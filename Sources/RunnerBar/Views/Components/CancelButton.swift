@@ -1,4 +1,4 @@
 // CancelButton.swift
 // RunnerBar
-// File deleted — struct CancelButton was dead code (Periphery #805).
-// swiftlint:disable file_header missing_docs
+// File emptied — struct CancelButton was dead code (Periphery #805).
+// swiftlint:disable:next file_length

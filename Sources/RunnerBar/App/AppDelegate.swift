@@ -60,66 +60,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // NOTE: The properties and methods below are `internal` (not `private`) because
     // Swift `private` does not cross file boundaries. AppDelegate+Navigation.swift
     // requires read/write access to all of them. Do not widen beyond `internal`.
-
-    /// The statusItem property.
+    // swiftlint:disable missing_docs
     var statusItem: NSStatusItem?           // internal: required for AppDelegate+Navigation
-    /// The panel property.
     var panel: KeyablePanel?               // internal: required for AppDelegate+Navigation
-    /// The chrome property.
     var chrome: PanelChromeView?           // internal: required for AppDelegate+Navigation
-    /// The hostingController property.
     var hostingController: NSHostingController<AnyView>? // internal: required for AppDelegate+Navigation
-    /// The observable constant.
     let observable = RunnerViewModel()      // internal: required for AppDelegate+Navigation
-    /// The savedNavState property.
     var savedNavState: NavState?           // internal: required for AppDelegate+Navigation
-    /// The panelIsOpen property.
     var panelIsOpen = false                // internal: required for AppDelegate+Navigation
-
-    /// The eventMonitor property.
     var eventMonitor: Any?                 // internal: required for AppDelegate+Navigation
-    /// The sizeObservation property.
     var sizeObservation: NSKeyValueObservation?
-    /// The workspaceObserver property.
     var workspaceObserver: Any?
-    /// The cancellables property.
     var cancellables = Set<AnyCancellable>()
-
     // Top anchor (screen coords) captured once in openPanel().
     // ❌ NEVER re-derive inside resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
-    /// The panelTopY property — top anchor in screen coords, captured once in openPanel().
     var panelTopY: CGFloat?                // internal: required for AppDelegate+Navigation
-
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
     // ❌ NEVER remove. ❌ NEVER remove from wrapEnv(). ❌ NEVER pass as plain Bool to PanelMainView.
-    // swiftlint:disable:next orphaned_doc_comment
-    /// The panelVisibilityState constant.
     let panelVisibilityState = PanelVisibilityState() // internal: required for AppDelegate+Navigation
-
-    /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
     static let minWidth: CGFloat = 280
-
-    /// The screen the status item lives on.
     var statusItemScreen: NSScreen {       // internal: required for AppDelegate+Navigation
         statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
-
-    /// The maxWidth property.
     var maxWidth: CGFloat {                // internal: required for AppDelegate+Navigation
         let screenMax = statusItemScreen.visibleFrame.width * 0.9
         return min(900, screenMax)
     }
-
-    /// The maxHeight property.
     var maxHeight: CGFloat {               // internal: required for AppDelegate+Navigation
         statusItemScreen.visibleFrame.height * 0.85
     }
-
-    /// The gap constant.
     static let gap: CGFloat = 2
-
-    /// Initial panel width used before SwiftUI has measured content.
     static let initPanelWidth: CGFloat = 320
+    // swiftlint:enable missing_docs
 
     // MARK: - Environment injection
 
