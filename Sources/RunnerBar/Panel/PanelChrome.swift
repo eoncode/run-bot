@@ -112,7 +112,7 @@ final class PanelChromeView: NSView {
         didSet { needsDisplay = true; updateFxMask() }
     }
 
-    /// The visual effect view providing the HUD vibrancy background.
+    /// The visual effect view providing the HUD vibrancy background (macOS < 26).
     private let vibrancyView: NSVisualEffectView = {
         let view = NSVisualEffectView()
         // .hudWindow gives a cool dark translucent look — no warm tint.
@@ -126,6 +126,23 @@ final class PanelChromeView: NSView {
         return view
     }()
 
+    /// On macOS 26+, the Liquid Glass backdrop view replacing `vibrancyView`.
+    @available(macOS 26, *)
+    private lazy var glassView: NSGlassEffectView = {
+        let view = NSGlassEffectView()
+        view.cornerRadius = cornerRadius
+        view.wantsLayer = true
+        return view
+    }()
+
+    /// The backdrop subview actually added — either `glassView` (macOS 26+) or `vibrancyView`.
+    private var backdropView: NSView {
+        if #available(macOS 26, *) {
+            return glassView
+        }
+        return vibrancyView
+    }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -134,7 +151,7 @@ final class PanelChromeView: NSView {
         // Near-zero (0.001) keeps the backdrop sampler active.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         layer?.backgroundColor = CGColor(gray: 1, alpha: 0.001)
-        addSubview(vibrancyView)
+        addSubview(backdropView)
     }
 
     /// Not implemented — this view is only created programmatically.
@@ -147,22 +164,22 @@ final class PanelChromeView: NSView {
 
     override func layout() {
         super.layout()
-        vibrancyView.frame = bounds
+        backdropView.frame = bounds
         updateFxMask()
-        // Re-pin ALL non-fx subviews to contentRect on EVERY layout pass.
+        // Re-pin ALL non-backdrop subviews to contentRect on EVERY layout pass.
         // ❌ NEVER set hosting view frame only at init — dynamic height breaks.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-        for sub in subviews where sub !== vibrancyView {
+        for sub in subviews where sub !== backdropView {
             sub.frame = contentRect
         }
     }
 
-    /// Recomputes and applies the CAShapeLayer mask that clips vibrancy to the chrome path.
+    /// Recomputes and applies the CAShapeLayer mask that clips the backdrop to the chrome path.
     private func updateFxMask() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let maskLayer = CAShapeLayer()
         maskLayer.path = chromePath(in: bounds).compatCGPath
-        vibrancyView.layer?.mask = maskLayer
+        backdropView.layer?.mask = maskLayer
     }
 
     override func draw(_ dirtyRect: NSRect) {
