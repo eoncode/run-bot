@@ -13,21 +13,17 @@ import SwiftUI
 ///
 /// The `.idle` state is intentionally excluded; each button owns its own
 /// idle appearance and action.
+///
+/// ❌ NO .glassEffect here — ButtonPhaseView is an inline loading indicator,
+/// not a floating element. Apple HIG: no glass on inline row content.
 struct ButtonPhaseView: View {
     /// The active non-idle phase to render.
     enum Phase {
-        /// Spinner shown while the async request is in-flight.
-        case loading
-        /// Green checkmark shown for 1.5 s after success.
-        case done
-        /// Red cross shown for 1.5 s after failure.
-        case failed
+        case loading, done, failed
     }
 
-    /// Phase to render. Must be `.loading`, `.done`, or `.failed`.
     let phase: Phase
 
-    /// Renders the appropriate icon+label HStack for the current phase.
     var body: some View {
         switch phase {
         case .loading:

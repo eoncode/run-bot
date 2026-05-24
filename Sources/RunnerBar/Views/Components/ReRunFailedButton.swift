@@ -13,48 +13,26 @@ import SwiftUI
 /// idle (exclamationmark.arrow.clockwise + "Re-run failed") →
 /// loading (spinner + "Running…") →
 /// done (✓ + "Done", 1.5 s) OR failed (✗ + "Failed", 1.5 s) → idle
+/// On macOS 26+ the idle button uses .glassEffect; on macOS < 26 it is plain.
 struct ReRunFailedButton: View {
     /// Called on tap. Must call completion(success: Bool) from any thread.
     let action: (@escaping (Bool) -> Void) -> Void
     /// When true the button is completely hidden and takes no layout space.
     var isDisabled: Bool = false
 
-    /// The phase property.
     @State private var phase: Phase = .idle
 
     // MARK: - Phase
-    /// Visual states of the re-run-failed button lifecycle.
     enum Phase {
-        /// Normal tappable state.
-        case idle
-        /// Spinner shown while the re-run request is in-flight.
-        case loading
-        /// Green checkmark shown for 1.5 s after success.
-        case done
-        /// Red cross shown for 1.5 s after failure.
-        case failed
+        case idle, loading, done, failed
     }
 
     // MARK: - Body
-    /// Renders idle re-run-failed button or delegates to `ButtonPhaseView` for active states.
     var body: some View {
         Group {
             switch phase {
             case .idle:
-                if !isDisabled {
-                    Button(action: startRerun) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.arrow.clockwise")
-                                .font(.caption)
-                            Text("Re-run failed")
-                                .font(.caption)
-                                .fixedSize()
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Re-run only the failed and cancelled jobs in this workflow run")
-                }
+                if !isDisabled { idleButton }
             case .loading:
                 ButtonPhaseView(phase: .loading)
             case .done:
@@ -65,10 +43,36 @@ struct ReRunFailedButton: View {
         }
     }
 
+    // MARK: - Idle button
+    @ViewBuilder
+    private var idleButton: some View {
+        let label = HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.arrow.clockwise")
+                .font(.caption)
+            Text("Re-run failed")
+                .font(.caption)
+                .fixedSize()
+        }
+        .foregroundColor(.secondary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+
+        if #available(macOS 26, *) {
+            Button(action: startRerun) { label }
+                .buttonStyle(.plain)
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .help("Re-run only the failed and cancelled jobs in this workflow run")
+        } else {
+            Button(action: startRerun) { label }
+                .buttonStyle(.plain)
+                .help("Re-run only the failed and cancelled jobs in this workflow run")
+        }
+    }
+
     // MARK: - Actions
-    /// Transitions the button to `.loading`, invokes `action` (which calls the
-    /// "rerun-failed-jobs" endpoint), then transitions to `.done` or `.failed`
-    /// based on the success flag before resetting to `.idle` after 1.5 s.
     private func startRerun() {
         guard phase == .idle else { return }
         phase = .loading
