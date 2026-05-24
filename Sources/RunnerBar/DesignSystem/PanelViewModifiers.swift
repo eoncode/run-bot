@@ -118,6 +118,7 @@ struct GlassSection: ViewModifier {
 }
 
 // MARK: - View extensions
+/// Convenience modifiers for applying Liquid Glass effects to any `View`.
 extension View {
     /// Applies the `GlassCard` modifier to this view.
     /// - Parameter cornerRadius: Corner radius of the glass shape.
