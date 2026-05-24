@@ -2,9 +2,97 @@
 // RunnerBar
 import SwiftUI
 
+// MARK: - GlassCard
+/// Centralised Liquid Glass card modifier.
+/// On macOS 26+ uses `.glassEffect(.regular.interactive())`;
+/// on older OSes falls back to `.ultraThinMaterial` + a subtle stroke overlay.
+///
+/// All phases of the Liquid Glass adoption (Phase 3–7) must use `.glassCard()`
+/// instead of calling `.glassEffect()` or `.ultraThinMaterial` directly on
+/// card containers.
+///
+/// ❌ Do NOT convert `StatPill` to `GlassCard` — it is a capsule-shaped inline
+/// pill, not a card container.
+struct GlassCard: ViewModifier {
+    /// Corner radius applied to the rounded rectangle shape. Defaults to
+    /// `DesignTokens.Radius.card` (10 pt).
+    var cornerRadius: CGFloat = DesignTokens.Radius.card
+
+    /// Applies Liquid Glass on macOS 26+ and a material fallback on older OSes.
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .regular.interactive(),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
+                )
+        }
+    }
+}
+
+// MARK: - GlassSection
+/// Prominent Liquid Glass modifier intended for section headers and containers.
+/// On macOS 26+ uses `.glassEffect(.prominent)`;
+/// on older OSes falls back to `.ultraThinMaterial` + a heavier stroke overlay.
+struct GlassSection: ViewModifier {
+    /// Corner radius applied to the rounded rectangle shape. Defaults to
+    /// `DesignTokens.Radius.card` (10 pt).
+    var cornerRadius: CGFloat = DesignTokens.Radius.card
+
+    /// Applies prominent Liquid Glass on macOS 26+ and a material fallback on older OSes.
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .prominent,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
+                )
+        }
+    }
+}
+
+// MARK: - View extensions
+extension View {
+    /// Applies the `GlassCard` modifier to this view.
+    /// - Parameter cornerRadius: Corner radius of the glass shape.
+    ///   Defaults to `DesignTokens.Radius.card` (10 pt).
+    func glassCard(cornerRadius: CGFloat = DesignTokens.Radius.card) -> some View {
+        modifier(GlassCard(cornerRadius: cornerRadius))
+    }
+
+    /// Applies the `GlassSection` modifier to this view.
+    /// - Parameter cornerRadius: Corner radius of the glass shape.
+    ///   Defaults to `DesignTokens.Radius.card` (10 pt).
+    func glassSection(cornerRadius: CGFloat = DesignTokens.Radius.card) -> some View {
+        modifier(GlassSection(cornerRadius: cornerRadius))
+    }
+}
+
 // MARK: - StatPill
 /// Compact ultraThinMaterial pill showing a label + value (e.g. "CPU 3.2%").
 /// Used in PanelLocalRunnerRow to surface per-runner CPU / MEM metrics.
+/// ❌ Do NOT convert to GlassCard — this is a capsule-shaped inline pill,
+/// not a card container.
 struct StatPill: View {
     /// The short metric label (e.g. "CPU", "MEM").
     let label: String
@@ -80,6 +168,25 @@ struct BranchTagPill: View { // periphery:ignore
 
 // MARK: - Previews
 #if DEBUG
+#Preview("GlassCard") {
+    VStack(spacing: 12) {
+        Text("Glass Card")
+            .padding()
+            .glassCard()
+        Text("Glass Card r=8")
+            .padding()
+            .glassCard(cornerRadius: 8)
+    }
+    .padding()
+}
+
+#Preview("GlassSection") {
+    Text("Section Header")
+        .padding()
+        .glassSection()
+        .padding()
+}
+
 #Preview("StatPill") {
     HStack(spacing: 8) {
         StatPill(label: "CPU", value: "3.6%")
