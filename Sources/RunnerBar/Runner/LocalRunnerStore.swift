@@ -6,28 +6,28 @@ import RunnerBarCore
 
 // MARK: - LocalRunnerStore
 
-// swiftlint:disable type_body_length
-/// Manages LocalRunnerStore state and behaviour.
+/// Manages local GitHub Actions runner discovery, status enrichment, and optimistic mutations.
+// swiftlint:disable:next type_body_length
 @MainActor
 final class LocalRunnerStore: ObservableObject {
-    /// The shared constant.
+    /// The shared singleton instance.
     static let shared = LocalRunnerStore()
     /// Private initialiser — use `shared`.
     private init() {}
 
-    /// The runners property.
+    /// The list of locally discovered runners.
     @Published var runners: [RunnerModel] = []
-    /// The isScanning property.
+    /// Whether a background scan is currently in progress.
     @Published var isScanning: Bool = false
 
-    /// The scanner constant.
+    /// The local runner filesystem scanner.
     private let scanner = LocalRunnerScanner()
-    /// The enricher constant.
+    /// The runner status enricher that calls the GitHub API.
     private let enricher = RunnerStatusEnricher.shared
 
     // MARK: - Refresh
 
-    /// Performs the refresh operation.
+    /// Scans for local runners, enriches with GitHub API status, and updates `runners`.
     func refresh() {
         log("LocalRunnerStore > refresh() called — isScanning=\(isScanning) runners.count=\(runners.count)")
         guard !isScanning else {
@@ -77,14 +77,14 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Optimistic mutations
 
-    /// Performs the optimisticallyRemove operation.
+    /// Immediately removes a runner by name from the list without waiting for a refresh.
     func optimisticallyRemove(_ runnerName: String) {
         log("LocalRunnerStore > optimisticallyRemove — runnerName=\(runnerName) runners.count was \(runners.count)")
         runners.removeAll { $0.runnerName == runnerName }
         log("LocalRunnerStore > optimisticallyRemove — done, runners.count=\(runners.count)")
     }
 
-    /// Performs the optimisticallySetRunning operation.
+    /// Immediately sets the `isRunning` flag for a runner by name without waiting for a refresh.
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         let names = runners.map { $0.runnerName }.joined(separator: ", ")
         log("LocalRunnerStore > optimisticallySetRunning runnerName=\(runnerName) isRunning=\(isRunning) — current runners=[\(names)]")
@@ -100,7 +100,7 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > optimisticallySetRunning — done, runners.count=\(runners.count)")
     }
 
-    /// Performs the setLifecycleWarning operation.
+    /// Sets or clears a lifecycle warning message for a runner by name.
     func setLifecycleWarning(_ runnerName: String, warning: String?) {
         let w = warning ?? "nil"
         log("LocalRunnerStore > setLifecycleWarning called: runnerName=\(runnerName) warning=\(w)")

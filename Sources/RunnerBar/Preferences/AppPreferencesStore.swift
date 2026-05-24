@@ -4,6 +4,7 @@ import Combine
 import Foundation
 
 // MARK: - AppPreferencesStore
+
 /// Persists general app preferences (polling interval, display options) to UserDefaults.
 final class AppPreferencesStore: ObservableObject {
     /// Shared singleton instance.

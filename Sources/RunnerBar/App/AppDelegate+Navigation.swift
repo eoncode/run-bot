@@ -14,7 +14,7 @@ import SwiftUI
 /// keeping one file-level instance avoids repeated allocation on every step enrichment call.
 private let iso8601 = ISO8601DateFormatter()
 
-/// Extension adding functionality to `AppDelegate`.
+// swiftlint:disable:next missing_docs
 extension AppDelegate {
 
     // MARK: - Enrichment helper

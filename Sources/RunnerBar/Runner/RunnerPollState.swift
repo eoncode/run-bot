@@ -13,10 +13,10 @@ import RunnerBarCore
 /// keeping one file-level instance avoids repeated allocation on every poll cycle.
 private let iso8601 = ISO8601DateFormatter()
 
-/// Extension adding functionality to `RunnerStore`.
+// swiftlint:disable:next missing_docs
 extension RunnerStore {
 
-    /// Performs the buildJobState operation.
+    /// Builds a `JobPollResult` by fetching active jobs for all configured scopes.
     nonisolated func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
         PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
@@ -34,7 +34,7 @@ extension RunnerStore {
         )
     }
 
-    /// Performs the buildGroupState operation.
+    /// Builds a `GroupPollResult` by fetching workflow action groups for all configured scopes.
     nonisolated func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
@@ -60,7 +60,7 @@ extension RunnerStore {
 
     // MARK: - Backfill (retains ghAPI access via RunnerStore)
 
-    /// Performs the backfillSteps operation.
+    /// Backfills step data into the job cache for completed jobs with missing or in-progress steps.
     nonisolated func backfillSteps(into cache: inout [Int: ActiveJob]) {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
@@ -77,7 +77,7 @@ extension RunnerStore {
 
     // MARK: - Group helpers (retain RunnerStore context)
 
-    /// Performs the scopeFromActionGroup operation.
+    /// Derives the `owner/repo` scope string from a `WorkflowActionGroup`, falling back to HTML URL parsing.
     nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
@@ -95,7 +95,7 @@ extension RunnerStore {
         return ""
     }
 
-    /// Performs the enrichGroupJobs operation.
+    /// Merges live group jobs with the job cache, preferring cached data when it has a conclusion or more steps.
     nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
