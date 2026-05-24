@@ -109,7 +109,6 @@ struct ScopeDetailView: View {
 }
 
 // MARK: - Sections
-/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Top navigation bar showing a back button and the scope display name.
     var headerBar: some View {
@@ -254,7 +253,6 @@ extension ScopeDetailView {
 }
 
 // MARK: - Failure Hook Rows
-/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Toggle row enabling or disabling the failure-hook for this scope.
     var hookToggleRow: some View {
@@ -414,7 +412,6 @@ extension ScopeDetailView {
 }
 
 // MARK: - Actions
-/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Enters inline editing mode for the local-path field, pre-filling `~/`
     /// if the path is currently empty.
@@ -481,7 +478,6 @@ extension ScopeDetailView {
 }
 
 // MARK: - Sub-view helpers
-/// Extension adding functionality to `ScopeDetailView`.
 extension ScopeDetailView {
     /// Renders a styled section-header label.
     /// - Parameter title: The display text for the section heading.

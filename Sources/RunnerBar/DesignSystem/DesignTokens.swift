@@ -8,8 +8,8 @@ import SwiftUI
 
 /// Convenience initialisers for constructing `Color` values from raw hex strings.
 extension Color {
-    // periphery:ignore - design system API, forward-declared for future use
     /// Initialises a `Color` from a CSS-style hex string (with or without leading `#`).
+    // periphery:ignore - design system API, forward-declared for future use
     init(hex: String) {
         let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         let value = UInt64(cleaned, radix: 16) ?? 0
@@ -75,14 +75,14 @@ extension Color {
         light: Color(white: 0.0).opacity(0.08),
         dark: Color(white: 1.0).opacity(0.06)
     )
-    // periphery:ignore - design system token, forward-declared for upcoming card borders
     /// Mid-weight border — slightly more visible than `rbBorderSubtle`.
+    // periphery:ignore - design system token, forward-declared for upcoming card borders
     static let rbBorderMid = Color.adaptive(
         light: Color(white: 0.0).opacity(0.12),
         dark: Color(white: 1.0).opacity(0.10)
     )
-    // periphery:ignore - design system token, forward-declared for section dividers
     /// Horizontal rule / section divider color.
+    // periphery:ignore - design system token, forward-declared for section dividers
     static let rbDivider = Color.adaptive(
         light: Color(white: 0.0).opacity(0.08),
         dark: Color(white: 1.0).opacity(0.08)
@@ -103,20 +103,20 @@ extension Color {
         dark: Color(white: 0.39)
     )
 
-    // periphery:ignore - design system token
     /// Low-opacity amber tint for row backgrounds in warning/queued state.
+    // periphery:ignore - design system token
     static let rbYellowTint = rbWarning.opacity(0.08)
-    // periphery:ignore - design system token
     /// Low-opacity blue tint for row backgrounds in in-progress state.
+    // periphery:ignore - design system token
     static let rbBlueTint = rbBlue.opacity(0.08)
-    // periphery:ignore - design system token
     /// Low-opacity green tint for row backgrounds in success state.
+    // periphery:ignore - design system token
     static let rbGreenTint = rbSuccess.opacity(0.08)
-    // periphery:ignore - design system token
     /// Low-opacity red tint for row backgrounds in failed/danger state.
-    static let rbRedTint = rbDanger.opacity(0.08)
     // periphery:ignore - design system token
+    static let rbRedTint = rbDanger.opacity(0.08)
     /// Low-opacity orange tint — alias for `rbYellowTint`.
+    // periphery:ignore - design system token
     static let rbOrangeTint = rbWarning.opacity(0.08)
 }
 
@@ -146,8 +146,8 @@ enum RBStatus {
         }
     }
 
-    // periphery:ignore - used by WorkflowContextMenuModifier and row tint logic
     /// A low-opacity background tint to visually distinguish rows by status.
+    // periphery:ignore - used by WorkflowContextMenuModifier and row tint logic
     var tint: Color {
         switch self {
         case .inProgress: return .rbBlueTint
@@ -158,8 +158,8 @@ enum RBStatus {
         }
     }
 
-    // periphery:ignore - used by context menu and status badge rendering
     /// The SF Symbol name that represents this status.
+    // periphery:ignore - used by context menu and status badge rendering
     var sfSymbol: String {
         switch self {
         case .inProgress: return "arrow.trianglehead.2.clockwise"
@@ -183,36 +183,36 @@ enum RBSpacing {
     static let sm: CGFloat = 8
     /// 12 pt — default row horizontal padding.
     static let md: CGFloat = 12
-    // periphery:ignore - design system spacing token
     /// 16 pt — section-level spacing.
+    // periphery:ignore - design system spacing token
     static let lg: CGFloat = 16
-    // periphery:ignore - design system spacing token
     /// 20 pt — generous section spacing.
-    static let xl: CGFloat = 20
     // periphery:ignore - design system spacing token
+    static let xl: CGFloat = 20
     /// 28 pt — large structural spacing.
+    // periphery:ignore - design system spacing token
     static let xxl: CGFloat = 28
 }
 
 /// Corner-radius constants for consistent rounding across components.
 enum RBRadius {
-    // periphery:ignore - design system radius token
     /// 20 pt — full pill shape for tags and badges.
+    // periphery:ignore - design system radius token
     static let pill: CGFloat = 20
     /// 8 pt — standard card corner radius.
     static let card: CGFloat = 8
     /// 5 pt — small card or row corner radius.
     static let small: CGFloat = 5
-    // periphery:ignore - design system radius token
     /// 6 pt — badge corner radius.
-    static let badge: CGFloat = 6
     // periphery:ignore - design system radius token
+    static let badge: CGFloat = 6
     /// 2 pt — subtle indicator corner radius.
+    // periphery:ignore - design system radius token
     static let indicator: CGFloat = 2
 }
 
-// periphery:ignore - design system shadow token enum
 /// Shadow constants used to give cards and panels consistent depth.
+// periphery:ignore - design system shadow token enum
 enum RBShadow {
     /// Opacity of the card drop shadow.
     static let cardOpacity: Double = 0.35
@@ -228,16 +228,16 @@ enum RBShadow {
 enum RBFont {
     /// Caption-sized monospaced font — general-purpose code/metric labels.
     static let mono: Font = .system(.caption, design: .monospaced)
-    // periphery:ignore - design system font token
     /// 11 pt regular monospaced — small metric values.
-    static let monoSmall: Font = .system(size: 11, weight: .regular, design: .monospaced)
     // periphery:ignore - design system font token
+    static let monoSmall: Font = .system(size: 11, weight: .regular, design: .monospaced)
     /// 13 pt semibold monospaced — prominent metric headings.
+    // periphery:ignore - design system font token
     static let monoBold: Font = .system(size: 13, weight: .semibold, design: .monospaced)
     /// 13 pt medium — standard row/list label.
     static let label: Font = .system(size: 13, weight: .medium)
-    // periphery:ignore - design system font token
     /// 12 pt regular — standard body text inside rows.
+    // periphery:ignore - design system font token
     static let body: Font = .system(size: 12, weight: .regular)
     /// 12.5 pt regular — section key labels.
     static let sectionKey: Font = .system(size: 12.5, weight: .regular)
@@ -260,8 +260,8 @@ enum DesignTokens {
     enum Fonts {
         /// Monospaced label font — alias for `RBFont.monoSmall`.
         static let monoLabel: Font = RBFont.monoSmall
-        // periphery:ignore - DesignTokens shim, used by SystemStatsView and SparklineMetricView
         /// Monospaced stat font — alias for `RBFont.monoSmall`.
+        // periphery:ignore - DesignTokens shim, used by SystemStatsView and SparklineMetricView
         static let monoStat: Font = RBFont.monoSmall
         /// Caption monospaced font — alias for `RBFont.mono`.
         static let mono: Font = RBFont.mono
@@ -271,8 +271,8 @@ enum DesignTokens {
         /// Horizontal row padding — alias for `RBSpacing.md`.
         static let rowHPad: CGFloat = RBSpacing.md
     }
-    // periphery:ignore - DesignTokens shim enum, Colors.usage(pct:) called by SystemStatsViewModel
     /// Color helpers forwarded from the `Color` token extensions.
+    // periphery:ignore - DesignTokens shim enum, Colors.usage(pct:) called by SystemStatsViewModel
     enum Colors {
         /// Returns a traffic-light color based on a usage percentage (0–100).
         /// - Green below 60 %, amber 60–85 %, red above 85 %.
