@@ -73,11 +73,16 @@ struct RunnerDetailView: View {
         self.runner = runner
         self.onBack = onBack
         _isRunning = State(initialValue: runner.isRunning)
-        _displayStatus = State(initialValue: runner.displayStatus ?? "unknown")
+        _displayStatus = State(initialValue: runner.displayStatus)
         _labelsText = State(initialValue: runner.labels
-            .filter { $0.type == "custom" }
-            .map { $0.name }
-            .joined(separator: ", "))
+            .filter { !["self-hosted"].contains($0)
+                && !$0.lowercased().contains("x64")
+                && !$0.lowercased().contains("arm64")
+                && !$0.lowercased().contains("linux")
+                && !$0.lowercased().contains("macos")
+                && !$0.lowercased().contains("windows") }
+            .joined(separator: ", ")
+        )
         _workFolderText = State(initialValue: "")
         _autoUpdate = State(initialValue: true)
         self._proxyUrl = State(initialValue: "")
@@ -108,7 +113,7 @@ struct RunnerDetailView: View {
         .onChange(of: localRunnerStore.runners) { updated in
             guard let fresh = updated.first(where: { $0.runnerName == runner.runnerName }) else { return }
             isRunning = fresh.isRunning
-            displayStatus = fresh.displayStatus ?? "unknown"
+            displayStatus = fresh.displayStatus
         }
         .sheet(item: $pendingDangerAction, content: dangerActionSheet)
     }
@@ -161,7 +166,7 @@ struct RunnerDetailView: View {
                 }
                 infoRow(label: "Work Folder", value: runner.workFolder ?? "—")
                 Divider().padding(.leading, RBSpacing.md)
-                infoRow(label: "Ephemeral", value: runner.ephemeral == true ? "Yes" : "No")
+                infoRow(label: "Ephemeral", value: runner.isEphemeral ? "Yes" : "No")
                 Divider().padding(.leading, RBSpacing.md)
                 infoRow(label: "OS / Arch", value: displayOsArch.isEmpty ? "—" : displayOsArch)
                 Divider().padding(.leading, RBSpacing.md)
@@ -391,7 +396,7 @@ struct RunnerDetailView: View {
                 }
             }
         }
-        .padding(RBSpacing.lg)
+        .padding(20)
         .frame(minWidth: 380)
     }
 
@@ -596,22 +601,18 @@ struct RunnerDetailView: View {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         DispatchQueue.global(qos: .userInitiated).async {
-            let scope = gitHubUrl
-                .components(separatedBy: "/")
-                .dropFirst(3)
-                .prefix(2)
-                .joined(separator: "/")
-            let endpoint = "repos/\(scope)/actions/runners/\(agentId)/labels"
-            let body: [String: Any] = ["labels": labels]
-            guard let data = try? JSONSerialization.data(withJSONObject: body),
-                  ghAPIPut(endpoint, body: data) != nil
-            else {
-                DispatchQueue.main.async { labelsSaveState = .failure("API call failed") }
+            guard let scope = scopeFromHtmlUrl(gitHubUrl) else {
+                DispatchQueue.main.async { labelsSaveState = .failure("Could not derive scope from URL") }
                 return
             }
-            patchRunnerJSON(installPath: installPath, key: "labels",
-                            value: labels.map { ["type": "custom", "name": $0] as [String: Any] })
-            DispatchQueue.main.async { labelsSaveState = .success }
+            let result = patchRunnerLabels(scope: scope, runnerID: agentId, labels: labels)
+            if result != nil {
+                patchRunnerJSON(installPath: installPath, key: "labels",
+                                value: labels.map { ["type": "custom", "name": $0] as [String: Any] })
+            }
+            DispatchQueue.main.async {
+                labelsSaveState = result != nil ? .success : .failure("API call failed")
+            }
         }
     }
 
