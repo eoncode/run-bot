@@ -204,7 +204,7 @@ extension Material {
     static var rbGlassPanel: Material { .regularMaterial }
     /// Row/card surface — ultraThinMaterial for Liquid Glass.
     static var rbGlassRow: Material { .ultraThinMaterial }
-    /// Subtle badge/pill surface — thinMaterial for Liquid Glass overlays.
+    /// Subtle badge/pill surface — ultraThinMaterial for Liquid Glass overlays.
     static var rbGlassSubtle: Material { .ultraThinMaterial }
 }
 

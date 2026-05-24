@@ -6,7 +6,7 @@ on:
 jobs:
   test:
     name: Swift Test
-    runs-on: macos-26
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
