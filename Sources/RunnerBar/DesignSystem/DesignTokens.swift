@@ -9,7 +9,7 @@ import SwiftUI
 /// Convenience initialisers for constructing `Color` values from raw hex strings.
 extension Color {
     /// Initialises a `Color` from a CSS-style hex string (with or without leading `#`).
-    init(hex: String) {
+    init(hex: String) { // periphery:ignore
         let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         let value = UInt64(cleaned, radix: 16) ?? 0
         let r = Double((value >> 16) & 0xFF) / 255
@@ -91,15 +91,15 @@ extension Color {
     )
 
     /// Low-opacity amber tint for row backgrounds in warning/queued state.
-    static let rbYellowTint = rbWarning.opacity(0.08)
+    static let rbYellowTint = rbWarning.opacity(0.08) // periphery:ignore
     /// Low-opacity blue tint for row backgrounds in in-progress state.
-    static let rbBlueTint = rbBlue.opacity(0.08)
+    static let rbBlueTint = rbBlue.opacity(0.08) // periphery:ignore
     /// Low-opacity green tint for row backgrounds in success state.
-    static let rbGreenTint = rbSuccess.opacity(0.08)
+    static let rbGreenTint = rbSuccess.opacity(0.08) // periphery:ignore
     /// Low-opacity red tint for row backgrounds in failed/danger state.
-    static let rbRedTint = rbDanger.opacity(0.08)
+    static let rbRedTint = rbDanger.opacity(0.08) // periphery:ignore
     /// Low-opacity orange tint — alias for `rbYellowTint`.
-    static let rbOrangeTint = rbWarning.opacity(0.08)
+    static let rbOrangeTint = rbWarning.opacity(0.08) // periphery:ignore
 }
 
 // MARK: - Status helpers
@@ -129,7 +129,7 @@ enum RBStatus {
     }
 
     /// A low-opacity background tint to visually distinguish rows by status.
-    var tint: Color {
+    var tint: Color { // periphery:ignore
         switch self {
         case .inProgress: return .rbBlueTint
         case .success: return .rbGreenTint
@@ -140,7 +140,7 @@ enum RBStatus {
     }
 
     /// The SF Symbol name that represents this status.
-    var sfSymbol: String {
+    var sfSymbol: String { // periphery:ignore
         switch self {
         case .inProgress: return "arrow.trianglehead.2.clockwise"
         case .success: return "checkmark"

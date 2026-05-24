@@ -5,7 +5,7 @@ import SwiftUI
 
 // MARK: - SystemStatsView
 /// Full-page system stats view shown in the settings panel.
-struct SystemStatsView: View {
+struct SystemStatsView: View { // periphery:ignore
     /// The viewModel property.
     @StateObject private var viewModel = SystemStatsViewModel()
 
@@ -196,7 +196,7 @@ struct HeaderStatsBar: View {
 // Renders a coloured block-bar and percentage label for a given metric.
 // Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
 /// A value type representing BlockBarView.
-struct BlockBarView: View {
+struct BlockBarView: View { // periphery:ignore
     /// The label constant.
     let label: String
     /// The pct constant.

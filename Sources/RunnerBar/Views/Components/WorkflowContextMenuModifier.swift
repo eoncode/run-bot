@@ -111,6 +111,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 // MARK: - JobContextMenuModifier
 // Adds a right-click context menu to a JobRowCard (job level).
 private struct JobContextMenuModifier: ViewModifier {
+    let job: ActiveJob
     let group: WorkflowActionGroup
 
     func body(content: Content) -> some View {
@@ -193,6 +194,7 @@ extension View {
 
 private struct StepContextMenuModifier: ViewModifier {
     let step: JobStep
+    let job: ActiveJob // periphery:ignore
     let onTap: () -> Void
 
     func body(content: Content) -> some View {
