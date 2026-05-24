@@ -17,20 +17,29 @@ import SwiftUI
 // MARK: - Save state helper
 /// Tracks the lifecycle of an async save operation for a single editable field.
 private enum SaveState: Equatable {
+    /// Idle state — no save in progress.
     case idle
+    /// Save is in progress.
     case saving
+    /// Save completed successfully.
     case success
+    /// Save failed with an associated error message.
     case failure(String)
 }
 
 // MARK: - Danger action
 /// Represents a destructive action the user can trigger from the Danger Zone section.
 private enum DangerAction: Identifiable, Equatable {
+    /// Remove the runner.
     case remove
 
+    /// Stable identifier for use with `Identifiable`.
     var id: String { "remove" }
+    /// Human-readable title shown in the UI.
     var title: String { "Remove runner" }
+    /// Label for the confirmation button.
     var confirmLabel: String { "Remove" }
+    /// Whether this action is destructive (affects button tinting).
     var destructive: Bool { true }
 }
 
