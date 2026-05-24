@@ -150,7 +150,7 @@ public struct JobStep: Identifiable, Equatable, Sendable {
         case .success:              return "\u{2713}"
         case .failure:              return "\u{2797}"
         case .skipped, .cancelled:  return "\u{2298}"
-        case .none, .some:
+        default:
             return status == .inProgress ? "\u{25B6}" : "\u{00B7}"
         }
     }

@@ -158,6 +158,8 @@ private let _ansiRegex = try! NSRegularExpression( // Compiled once; literal pat
 // URLSession configured to NOT follow redirects.
 // Used for the first leg of fetchStepLog so we can capture the pre-signed S3
 // Location URL from the GitHub 302 response before fetching the log body.
+// Lifetime: module-level singleton — allocated once at app start, shared for
+// the process lifetime. URLSession is thread-safe and designed for reuse.
 private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
@@ -189,7 +191,8 @@ private let noRedirectSession = URLSession(
 /// 2. Fetch the raw log from the S3 URL without `Authorization` headers
 ///    (pre-signed URLs reject extra auth headers with a 400 SignatureDoesNotMatch error).
 ///
-/// Falls back to `runGHProcess` when no token is available.
+/// Falls back to `fetchStepLogViaCLI` when no token is available OR when step 1
+/// returns no Location header (e.g. 401/404 from a bad/expired token).
 func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)")
@@ -204,7 +207,10 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> Str
 
     let raw: String?
     if let token = githubToken() {
+        // Attempt URLSession path; fall back to CLI if step-1 yields no Location header
+        // (e.g. token is valid for auth but the job log is unavailable / 404).
         raw = fetchStepLogViaURLSession(endpoint: endpoint, token: token)
+            ?? fetchStepLogViaCLI(endpoint: endpoint)
     } else {
         log("fetchStepLog › no token, falling back to gh CLI")
         raw = fetchStepLogViaCLI(endpoint: endpoint)
@@ -222,6 +228,7 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> Str
 }
 
 /// Step 1+2: resolve the 302 redirect then fetch the raw log body.
+/// Returns `nil` if step 1 does not yield a Location header (caller falls back to CLI).
 private func fetchStepLogViaURLSession(endpoint: String, token: String) -> String? {
     let urlString = endpoint.hasPrefix("http")
         ? endpoint
@@ -255,7 +262,8 @@ private func fetchStepLogViaURLSession(endpoint: String, token: String) -> Strin
     sem1.wait()
 
     guard let s3URL = redirectURL else {
-        log("fetchStepLogViaURLSession › no Location header, falling back to CLI")
+        // No Location header — likely 401/404. Return nil so caller can try CLI fallback.
+        log("fetchStepLogViaURLSession › no Location header, returning nil for CLI fallback")
         return nil
     }
 
