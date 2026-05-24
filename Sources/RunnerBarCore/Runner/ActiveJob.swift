@@ -199,7 +199,6 @@ public struct JobPayload: Decodable {
         createdAt   = try c.decodeIfPresent(String.self, forKey: .createdAt)
         htmlUrl     = try c.decodeIfPresent(String.self, forKey: .htmlUrl)
         runnerName  = try c.decodeIfPresent(String.self, forKey: .runnerName)
-        // Default to [] when the key is absent (queued jobs that haven't started yet).
         steps       = try c.decodeIfPresent([StepPayload].self, forKey: .steps) ?? []
     }
 }
@@ -229,8 +228,8 @@ public struct JobsResponse: Decodable {
 // MARK: - Factory
 
 /// Converts a raw `JobPayload` into a fully-typed `ActiveJob`.
-/// This is the single canonical factory used by both `WorkflowActionGroupFetch`
-/// and `GitHub.swift` — keep the two call sites in sync via this one function.
+/// This is the single canonical factory — both `WorkflowActionGroupFetch` and
+/// `GitHub.swift` delegate here. Do not duplicate this logic elsewhere.
 public func makeActiveJob(
     from payload: JobPayload,
     iso: ISO8601DateFormatter,
