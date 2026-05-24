@@ -23,11 +23,20 @@ struct ReRunFailedButton: View {
     @State private var phase: Phase = .idle
 
     // MARK: - Phase
+    /// Visual states of the re-run-failed button lifecycle.
     enum Phase {
-        case idle, loading, done, failed
+        /// Normal tappable state.
+        case idle
+        /// Spinner shown while the re-run request is in-flight.
+        case loading
+        /// Green checkmark shown for 1.5 s after success.
+        case done
+        /// Red cross shown for 1.5 s after failure.
+        case failed
     }
 
     // MARK: - Body
+    /// Renders idle button or delegates to `ButtonPhaseView` for active states.
     var body: some View {
         Group {
             switch phase {
@@ -44,6 +53,7 @@ struct ReRunFailedButton: View {
     }
 
     // MARK: - Idle button
+    /// The idle-state button, styled with glass on macOS 26+ or plain on earlier OS.
     @ViewBuilder
     private var idleButton: some View {
         let label = HStack(spacing: 4) {
@@ -73,6 +83,9 @@ struct ReRunFailedButton: View {
     }
 
     // MARK: - Actions
+    /// Transitions the button to `.loading`, invokes `action` (which calls the
+    /// "rerun-failed-jobs" endpoint), then transitions to `.done` or `.failed`
+    /// based on the success flag before resetting to `.idle` after 1.5 s.
     private func startRerun() {
         guard phase == .idle else { return }
         phase = .loading

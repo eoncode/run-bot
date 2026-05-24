@@ -33,6 +33,7 @@ struct StatPill: View {
 /// macOS 26+: `.glassEffect(.regular, in: Capsule())`
 /// macOS < 26: `.background(.ultraThinMaterial, in: Capsule())`
 private struct StatPillBackground: ViewModifier {
+    /// Applies the OS-appropriate background to `content`.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             content
@@ -69,7 +70,9 @@ struct StatusBadge: View {
 /// macOS 26+: `.glassEffect` with a tinted color overlay.
 /// macOS < 26: `Capsule().strokeBorder(...)` (original behaviour).
 private struct StatusBadgeBackground: ViewModifier {
+    /// The tint color derived from the badge's status.
     let color: Color
+    /// Applies the OS-appropriate background to `content`.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             content
@@ -114,6 +117,7 @@ struct BranchTagPill: View { // periphery:ignore
 /// macOS 26+: `.glassEffect` with accent color tint overlay.
 /// macOS < 26: `Capsule().strokeBorder(...)` (original behaviour).
 private struct BranchTagPillBackground: ViewModifier {
+    /// Applies the OS-appropriate background to `content`.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             content
@@ -135,7 +139,9 @@ private struct BranchTagPillBackground: ViewModifier {
 /// Uses the Phase 2 rbSurface / rbSurfaceElevated tokens, which are near-zero on macOS 26+
 /// so the glass panel backdrop shows through correctly.
 struct CardRowModifier: ViewModifier {
+    /// When true uses `rbSurfaceElevated`; otherwise uses `rbSurface`.
     var elevated: Bool = false
+    /// Applies the appropriate surface fill to `content`.
     func body(content: Content) -> some View {
         content
             .background(
