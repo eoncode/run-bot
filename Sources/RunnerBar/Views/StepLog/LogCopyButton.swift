@@ -15,7 +15,14 @@ struct LogCopyButton: View {
     let isDisabled: Bool
 
     /// Tracks the outcome of the last copy attempt.
-    private enum CopyState { case idle, copied, failed }
+    private enum CopyState {
+        /// Button is ready and waiting for user interaction.
+        case idle
+        /// Log was successfully written to the clipboard.
+        case copied
+        /// The log could not be fetched or was empty.
+        case failed
+    }
     /// Current copy-state; drives label and colour.
     @State private var copyState: CopyState = .idle
 
@@ -38,6 +45,7 @@ struct LogCopyButton: View {
 
     // MARK: - Derived helpers
 
+    /// SF Symbol name for the current copy state.
     private var iconName: String {
         switch copyState {
         case .idle:   return "doc.on.doc"
@@ -46,6 +54,7 @@ struct LogCopyButton: View {
         }
     }
 
+    /// Button label text for the current copy state.
     private var label: String {
         switch copyState {
         case .idle:   return "Copy log"
@@ -54,6 +63,7 @@ struct LogCopyButton: View {
         }
     }
 
+    /// Foreground colour reflecting the current copy state and disabled flag.
     private var foregroundColor: Color {
         switch copyState {
         case .idle:   return isDisabled ? Color.rbTextTertiary : Color.rbTextSecondary
@@ -62,6 +72,7 @@ struct LogCopyButton: View {
         }
     }
 
+    /// Tooltip string shown on hover; varies by state and disabled flag.
     private var helpText: String {
         switch copyState {
         case .idle:   return isDisabled ? "Log not yet loaded" : "Copy log to clipboard"
