@@ -84,7 +84,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
             return (status == .completed || conclusion != nil) ? "--:--" : "00:00"
         }
         let end = completedAt ?? Date()
-        let secs = Int(end.timeIntervalSince(start))
+        // Clamp to ≥0 to guard against API clock skew (completedAt < startedAt).
+        let secs = max(0, Int(end.timeIntervalSince(start)))
         return String(format: "%02d:%02d", secs / 60, secs % 60)
     }
 
@@ -145,7 +146,8 @@ public struct JobStep: Identifiable, Equatable, Sendable {
             return (conclusion != nil) ? "--:--" : "00:00"
         }
         let end = completedAt ?? Date()
-        let secs = Int(end.timeIntervalSince(start))
+        // Clamp to ≥0 to guard against API clock skew (completedAt < startedAt).
+        let secs = max(0, Int(end.timeIntervalSince(start)))
         return String(format: "%02d:%02d", secs / 60, secs % 60)
     }
 
