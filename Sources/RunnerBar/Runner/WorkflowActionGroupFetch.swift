@@ -49,29 +49,14 @@ private struct RunPayload: Codable {
     let pullRequests: [PRRef]?
     /// Maps Swift property names to their snake_case JSON keys.
     enum CodingKeys: String, CodingKey {
-        /// Maps `id`.
-        case id
-        /// Maps `name`.
-        case name
-        /// Maps `status`.
-        case status
-        /// Maps `conclusion`.
-        case conclusion
-        /// Maps `headBranch` to `head_branch`.
+        case id, name, status, conclusion
         case headBranch   = "head_branch"
-        /// Maps `headSha` to `head_sha`.
         case headSha      = "head_sha"
-        /// Maps `displayTitle` to `display_title`.
         case displayTitle = "display_title"
-        /// Maps `createdAt` to `created_at`.
         case createdAt    = "created_at"
-        /// Maps `updatedAt` to `updated_at`.
         case updatedAt    = "updated_at"
-        /// Maps `htmlUrl` to `html_url`.
         case htmlUrl      = "html_url"
-        /// Maps `headCommit` to `head_commit`.
         case headCommit   = "head_commit"
-        /// Maps `pullRequests` to `pull_requests`.
         case pullRequests = "pull_requests"
     }
 }
@@ -101,9 +86,6 @@ private func prLabel(from run: RunPayload) -> String {
 }
 
 // MARK: - Fetch + Group
-// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
-// enriches each group with its flattened job list, and returns groups sorted:
-// in_progress first, then queued, then done — newest first.
 // swiftlint:disable:next function_body_length cyclomatic_complexity
 /// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
 /// enriches each group with its flattened job list, and returns groups sorted:
@@ -116,7 +98,6 @@ func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] =
     var runPayloads: [RunPayload] = []
     var seenIDs = Set<Int>()
 
-    // Phase 1: fetch in_progress and queued runs.
     for status in ["in_progress", "queued"] {
         let endpoint = "repos/\(scope)/actions/runs?status=\(status)&per_page=50"
         guard let data = ghAPI(endpoint),
@@ -127,11 +108,9 @@ func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] =
         }
     }
 
-    // Group by head_sha.
     var bySha: [String: [RunPayload]] = [:]
     for run in runPayloads { bySha[run.headSha, default: []].append(run) }
 
-    // Phase 2: merge recently completed runs into EXISTING groups only.
     if let data = ghAPI("repos/\(scope)/actions/runs?status=completed&per_page=100"),
        let resp = try? JSONDecoder().decode(ActionRunsResponse.self, from: data) {
         for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
@@ -199,37 +178,17 @@ func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] =
 }
 
 // MARK: - Private helpers
+
 /// Constructs an `ActiveJob` from a decoded `JobPayload`.
-/// ⚠️ Uses `step.number` (the API-supplied step sequence number), NOT `idx + 1`.
-/// GitHub step numbers can be non-contiguous (e.g. after retries or skipped steps);
-/// using the array index would cause `fetchStepLog(jobID:stepNumber:)` to fetch the wrong log.
+/// Delegates to the canonical `makeActiveJob(from:iso:isDimmed:)` factory in
+/// `ActiveJob.swift` (RunnerBarCore) — do NOT duplicate logic here.
+/// ⚠️ Uses `step.number` (API-supplied sequence number), NOT `idx + 1`.
+/// GitHub step numbers can be non-contiguous (e.g. after retries or skipped
+/// steps); using the array index would cause `fetchStepLog` to fetch the wrong log.
 func makeActiveJob(from jobPayload: JobPayload,
                    iso: ISO8601DateFormatter,
                    isDimmed: Bool = false) -> ActiveJob {
-    let steps: [JobStep] = (jobPayload.steps).map { step in
-        JobStep(
-            id:          step.number,
-            name:        step.name,
-            status:      step.status,
-            conclusion:  step.conclusion,
-            startedAt:   step.startedAt.flatMap { iso.date(from: $0) },
-            completedAt: step.completedAt.flatMap { iso.date(from: $0) },
-            number:      step.number
-        )
-    }
-    return ActiveJob(
-        id:          jobPayload.id,
-        name:        jobPayload.name,
-        htmlUrl:     jobPayload.htmlUrl,
-        status:      jobPayload.status,
-        conclusion:  jobPayload.conclusion,
-        isDimmed:    isDimmed,
-        runnerName:  jobPayload.runnerName,
-        scope:       nil,
-        startedAt:   jobPayload.startedAt.flatMap { iso.date(from: $0) },
-        completedAt: jobPayload.completedAt.flatMap { iso.date(from: $0) },
-        steps:       steps
-    )
+    RunnerBarCore.makeActiveJob(from: jobPayload, iso: iso, isDimmed: isDimmed)
 }
 
 /// Fetch and decode jobs for a single run ID.

@@ -136,9 +136,14 @@ public struct JobStep: Identifiable, Equatable, Sendable {
         self.number = number
     }
 
-    /// Human-readable elapsed duration. Returns `"00:00"` when `startedAt` is nil.
+    /// Human-readable elapsed duration.
+    /// - Returns `"--:--"` for completed steps where `startedAt` is nil (timing unavailable).
+    /// - Returns `"00:00"` for in-progress or queued steps with no timing yet.
     public var elapsed: String {
-        guard let start = startedAt else { return "00:00" }
+        guard let start = startedAt else {
+            // #781: completed steps with no timing data show dashes, not a fake zero.
+            return (conclusion != nil) ? "--:--" : "00:00"
+        }
         let end = completedAt ?? Date()
         let secs = Int(end.timeIntervalSince(start))
         return String(format: "%02d:%02d", secs / 60, secs % 60)
@@ -159,6 +164,9 @@ public struct JobStep: Identifiable, Equatable, Sendable {
 // MARK: - API payload (Decodable)
 
 /// Raw API payload decoded from `/actions/runs/{id}/jobs` responses.
+/// Uses a custom `init(from:)` so that a missing `steps` key decodes as `[]`
+/// rather than throwing — the GitHub API omits `steps` for jobs that have not
+/// yet started (e.g. queued jobs in a matrix).
 public struct JobPayload: Decodable {
     public let id: Int
     public let name: String
@@ -166,6 +174,7 @@ public struct JobPayload: Decodable {
     public let conclusion: JobConclusion?
     public let startedAt: String?
     public let completedAt: String?
+    public let createdAt: String?
     public let htmlUrl: String?
     public let runnerName: String?
     public let steps: [StepPayload]
@@ -174,8 +183,24 @@ public struct JobPayload: Decodable {
         case id, name, status, conclusion, steps
         case startedAt   = "started_at"
         case completedAt = "completed_at"
+        case createdAt   = "created_at"
         case htmlUrl     = "html_url"
         case runnerName  = "runner_name"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id          = try c.decode(Int.self,            forKey: .id)
+        name        = try c.decode(String.self,         forKey: .name)
+        status      = try c.decode(JobStatus.self,      forKey: .status)
+        conclusion  = try c.decodeIfPresent(JobConclusion.self, forKey: .conclusion)
+        startedAt   = try c.decodeIfPresent(String.self, forKey: .startedAt)
+        completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
+        createdAt   = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        htmlUrl     = try c.decodeIfPresent(String.self, forKey: .htmlUrl)
+        runnerName  = try c.decodeIfPresent(String.self, forKey: .runnerName)
+        // Default to [] when the key is absent (queued jobs that haven't started yet).
+        steps       = try c.decodeIfPresent([StepPayload].self, forKey: .steps) ?? []
     }
 }
 
@@ -204,10 +229,12 @@ public struct JobsResponse: Decodable {
 // MARK: - Factory
 
 /// Converts a raw `JobPayload` into a fully-typed `ActiveJob`.
+/// This is the single canonical factory used by both `WorkflowActionGroupFetch`
+/// and `GitHub.swift` — keep the two call sites in sync via this one function.
 public func makeActiveJob(
     from payload: JobPayload,
     iso: ISO8601DateFormatter,
-    isDimmed: Bool
+    isDimmed: Bool = false
 ) -> ActiveJob {
     let steps: [JobStep] = payload.steps.map { s in
         JobStep(
@@ -231,6 +258,7 @@ public func makeActiveJob(
         scope:       nil,
         startedAt:   payload.startedAt.flatMap { iso.date(from: $0) },
         completedAt: payload.completedAt.flatMap { iso.date(from: $0) },
+        createdAt:   payload.createdAt.flatMap { iso.date(from: $0) },
         steps:       steps
     )
 }

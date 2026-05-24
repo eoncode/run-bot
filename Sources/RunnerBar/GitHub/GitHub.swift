@@ -5,7 +5,6 @@ import RunnerBarCore
 
 // MARK: - URL helpers
 
-/// Performs the scopeFromHtmlUrl operation.
 func scopeFromHtmlUrl(_ urlString: String?) -> String? {
     guard let urlString,
           let url = URL(string: urlString),
@@ -15,7 +14,6 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
     return "\(components[1])/\(components[2])"
 }
 
-/// Performs the runIDFromHtmlUrl operation.
 func runIDFromHtmlUrl(_ url: String?) -> Int? {
     guard let url else { return nil }
     let parts = url.components(separatedBy: "/")
@@ -30,14 +28,9 @@ func runIDFromHtmlUrl(_ url: String?) -> Int? {
 // MARK: - Fetch all jobs from active runs
 
 /// Shared ISO-8601 date formatter.
-/// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
-/// keeping one file-level instance avoids repeated allocation on every fetch call.
 private let iso8601 = ISO8601DateFormatter()
 
-/// Performs the fetchActiveJobs operation.
 /// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) runners.
-/// `scope.apiPrefix` produces the correct `/repos/{owner}/{repo}` or `/orgs/{org}`
-/// prefix for all downstream API calls — no per-scope branching needed here.
 func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchActiveJobs › invalid scope: \(scopeString)")
@@ -64,9 +57,6 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     var jobs: [ActiveJob] = []
     var seenJobIDs = Set<Int>()
     for runID in runIDs {
-        // NOTE: No scope-type guard here — both .repo and .org are supported.
-        // scope.apiPrefix already returns the correct /repos/{owner}/{repo} or
-        // /orgs/{org} prefix. Filtering to .repo only was the #774 bug.
         guard let data = ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=100"),
               let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
         else { continue }
@@ -81,26 +71,19 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
 
 // MARK: - Codable helpers
 
-/// A value type representing WorkflowRunsResponse.
 private struct WorkflowRunsResponse: Codable {
-    /// The workflowRuns constant.
     let workflowRuns: [WorkflowRun]
-    /// JSON coding keys for `WorkflowRunsResponse`.
     enum CodingKeys: String, CodingKey {
-        /// Coding key mapping to the `workflowRuns` JSON field.
         case workflowRuns = "workflow_runs"
     }
 }
 
-/// A value type representing WorkflowRun.
 private struct WorkflowRun: Codable {
-    /// The `id` property.
     let id: Int
 }
 
 // MARK: - Runners
 
-/// Performs the fetchRunners operation.
 func fetchRunners(for scopeString: String) -> [Runner] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRunners › invalid scope: \(scopeString)")
@@ -120,15 +103,12 @@ func fetchRunners(for scopeString: String) -> [Runner] {
     return response.runners
 }
 
-/// A value type representing RunnersResponse.
 private struct RunnersResponse: Codable {
-    /// The `runners` property.
     let runners: [Runner]
 }
 
 // MARK: - User orgs and repos
 
-/// Performs the fetchUserOrgs operation.
 func fetchUserOrgs() -> [String] {
     guard let data = ghAPIPaginated("/user/orgs?per_page=100") else { return [] }
     struct Org: Decodable { let login: String }
@@ -136,7 +116,6 @@ func fetchUserOrgs() -> [String] {
     return orgs.map(\.login)
 }
 
-/// Performs the fetchUserRepos operation.
 func fetchUserRepos() -> [String] {
     guard let data = ghAPIPaginated("/user/repos?per_page=100&sort=updated") else { return [] }
     struct Repo: Decodable {
@@ -150,7 +129,7 @@ func fetchUserRepos() -> [String] {
 // MARK: - Step log
 
 // swiftlint:disable:next force_try missing_docs
-private let _ansiRegex = try! NSRegularExpression( // Compiled once; literal pattern never fails.
+private let _ansiRegex = try! NSRegularExpression(
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 
@@ -168,9 +147,6 @@ private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        // All four parameters are required by the URLSessionTaskDelegate protocol
-        // but the redirect is intentionally cancelled unconditionally — we only
-        // need the 302 Location header captured by the caller, not the redirect target.
         _ = session; _ = task; _ = response; _ = request
         completionHandler(nil)
     }
@@ -183,16 +159,7 @@ private let noRedirectSession = URLSession(
 )
 // swiftlint:enable missing_docs
 
-/// Fetches step logs for a given job via URLSession (token path) or gh CLI (fallback).
-///
-/// The GitHub `/actions/jobs/{id}/logs` endpoint returns a **302 redirect** to a
-/// pre-signed S3 URL. We handle this in two steps:
-/// 1. Issue a GET with redirects disabled to capture the `Location` header.
-/// 2. Fetch the raw log from the S3 URL without `Authorization` headers
-///    (pre-signed URLs reject extra auth headers with a 400 SignatureDoesNotMatch error).
-///
-/// Falls back to `fetchStepLogViaCLI` when no token is available OR when step 1
-/// returns no Location header (e.g. 401/404 from a bad/expired token).
+/// Fetches step logs via URLSession (token path) or gh CLI (fallback).
 func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)")
@@ -207,8 +174,7 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> Str
 
     let raw: String?
     if let token = githubToken() {
-        // Attempt URLSession path; fall back to CLI if step-1 yields no Location header
-        // (e.g. token is valid for auth but the job log is unavailable / 404).
+        // TODO: migrate sem1/sem2 to async/await as part of #777
         raw = fetchStepLogViaURLSession(endpoint: endpoint, token: token)
             ?? fetchStepLogViaCLI(endpoint: endpoint)
     } else {
@@ -238,13 +204,12 @@ private func fetchStepLogViaURLSession(endpoint: String, token: String) -> Strin
         return nil
     }
 
-    // Step 1: GET with redirects disabled — capture the Location header.
     var redirectURL: URL?
     var step1Request = URLRequest(url: url, timeoutInterval: 20)
     step1Request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     step1Request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     step1Request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-    let sem1 = DispatchSemaphore(value: 0)
+    let sem1 = DispatchSemaphore(value: 0) // TODO: #777 async/await
     noRedirectSession.dataTask(with: step1Request) { _, response, error in
         defer { sem1.signal() }
         if let error {
@@ -262,15 +227,11 @@ private func fetchStepLogViaURLSession(endpoint: String, token: String) -> Strin
     sem1.wait()
 
     guard let s3URL = redirectURL else {
-        // No Location header — likely 401/404. Return nil so caller can try CLI fallback.
         log("fetchStepLogViaURLSession › no Location header, returning nil for CLI fallback")
         return nil
     }
 
-    // Step 2: Fetch the raw log from the pre-signed S3 URL.
-    // Do NOT send Authorization header — pre-signed URLs use their own signature
-    // and reject extra auth headers with 400 SignatureDoesNotMatch.
-    let sem2 = DispatchSemaphore(value: 0)
+    let sem2 = DispatchSemaphore(value: 0) // TODO: #777 async/await
     var logData: Data?
     var plainRequest = URLRequest(url: s3URL, timeoutInterval: 30)
     plainRequest.setValue("text/plain", forHTTPHeaderField: "Accept")
@@ -292,7 +253,6 @@ private func fetchStepLogViaURLSession(endpoint: String, token: String) -> Strin
     return String(data: data, encoding: .utf8)
 }
 
-/// CLI fallback for token-less configurations.
 private func fetchStepLogViaCLI(endpoint: String) -> String? {
     let (data, _) = runGHProcess(
         arguments: ["api", endpoint, "--header", "Accept: application/vnd.github.v3.raw"],
@@ -302,7 +262,6 @@ private func fetchStepLogViaCLI(endpoint: String) -> String? {
     return String(data: data, encoding: .utf8)
 }
 
-/// Parses a raw log string into sections and returns the section for `stepNumber`.
 private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
     let cleaned = stripAnsi(raw)
     let lines = cleaned.components(separatedBy: "\n")
@@ -335,7 +294,6 @@ private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
     return section.isEmpty ? cleaned : section
 }
 
-/// Performs the stripAnsi operation.
 private func stripAnsi(_ input: String) -> String {
     _ansiRegex.stringByReplacingMatches(
         in: input,
