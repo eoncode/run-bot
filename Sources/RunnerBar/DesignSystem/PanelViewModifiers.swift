@@ -117,6 +117,48 @@ struct GlassSection: ViewModifier {
     }
 }
 
+// MARK: - GlassButton
+/// Liquid Glass interactive button modifier.
+/// On macOS 26+ (Swift 6.2+) wraps the content in a `GlassEffectContainer`
+/// and applies `.glassEffect(.regular.interactive())`; on older OSes returns
+/// the content unstyled (buttons already carry their own `.buttonStyle`).
+///
+/// Use `.glassButton()` on any tappable button-style view instead of calling
+/// `.glassEffect(.regular.interactive())` directly.
+struct GlassButton: ViewModifier {
+    /// Corner radius applied to the rounded rectangle shape. Defaults to
+    /// `RBRadius.small` (4 pt).
+    var cornerRadius: CGFloat
+
+    /// Creates a `GlassButton` modifier.
+    /// - Parameter cornerRadius: Corner radius of the glass shape. Defaults to `RBRadius.small`.
+    init(cornerRadius: CGFloat = RBRadius.small) {
+        self.cornerRadius = cornerRadius
+    }
+
+    /// Wraps the content in a Liquid Glass interactive container on macOS 26+;
+    /// passes through unstyled on older OSes.
+    func body(content: Content) -> some View {
+        #if swift(>=6.2)
+        if #available(macOS 26, *) {
+            AnyView(
+                GlassEffectContainer {
+                    content
+                        .glassEffect(
+                            .regular.interactive(),
+                            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        )
+                }
+            )
+        } else {
+            AnyView(content)
+        }
+        #else
+        AnyView(content)
+        #endif
+    }
+}
+
 // MARK: - View extensions
 /// Convenience modifiers for applying Liquid Glass effects to any `View`.
 extension View {
@@ -132,6 +174,13 @@ extension View {
     ///   Defaults to `RBRadius.card` (8 pt).
     func glassSection(cornerRadius: CGFloat = RBRadius.card) -> some View {
         modifier(GlassSection(cornerRadius: cornerRadius))
+    }
+
+    /// Applies the `GlassButton` modifier to this view.
+    /// - Parameter cornerRadius: Corner radius of the glass shape.
+    ///   Defaults to `RBRadius.small` (4 pt).
+    func glassButton(cornerRadius: CGFloat = RBRadius.small) -> some View {
+        modifier(GlassButton(cornerRadius: cornerRadius))
     }
 }
 
@@ -232,6 +281,18 @@ struct BranchTagPill: View { // periphery:ignore
         .padding()
         .glassSection()
         .padding()
+}
+
+#Preview("GlassButton") {
+    Button(action: {}) {
+        Text("Re-run")
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+    }
+    .buttonStyle(.plain)
+    .glassButton()
+    .padding()
 }
 
 #Preview("StatPill") {

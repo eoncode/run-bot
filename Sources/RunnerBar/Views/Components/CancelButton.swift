@@ -31,40 +31,6 @@ struct CancelButton: View {
     /// Renders the idle state: Liquid Glass button on Swift 6.2+ / macOS 26+,
     /// plain button on older SDKs.
     @ViewBuilder private var idleButton: some View {
-        #if swift(>=6.2)
-        if #available(macOS 26, *) {
-            GlassEffectContainer {
-                Button(action: startCancel) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "xmark.circle")
-                            .font(.caption)
-                        Text("Cancel")
-                            .font(.caption)
-                            .fixedSize()
-                    }
-                    .foregroundColor(isDisabled ? .secondary.opacity(0.4) : .secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-                .disabled(isDisabled)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous))
-            }
-        } else {
-            Button(action: startCancel) {
-                HStack(spacing: 4) {
-                    Image(systemName: "xmark.circle")
-                        .font(.caption)
-                    Text("Cancel")
-                        .font(.caption)
-                        .fixedSize()
-                }
-                .foregroundColor(isDisabled ? .secondary.opacity(0.4) : .secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(isDisabled)
-        }
-        #else
         Button(action: startCancel) {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.circle")
@@ -74,10 +40,12 @@ struct CancelButton: View {
                     .fixedSize()
             }
             .foregroundColor(isDisabled ? .secondary.opacity(0.4) : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
-        #endif
+        .glassButton(cornerRadius: RBRadius.small)
     }
 
     // MARK: - Actions

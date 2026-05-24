@@ -45,41 +45,6 @@ struct ReRunButton: View {
     /// Renders the idle state: Liquid Glass button on Swift 6.2+ / macOS 26+,
     /// plain button on older SDKs.
     @ViewBuilder private var idleButton: some View {
-        #if swift(>=6.2)
-        if #available(macOS 26, *) {
-            GlassEffectContainer {
-                Button(action: startRerun) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption)
-                        Text("Re-run")
-                            .font(.caption)
-                            .fixedSize()
-                    }
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(
-                    .regular.interactive(),
-                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
-                )
-            }
-        } else {
-            Button(action: startRerun) {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption)
-                    Text("Re-run")
-                        .font(.caption)
-                        .fixedSize()
-                }
-                .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        #else
         Button(action: startRerun) {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.clockwise")
@@ -89,9 +54,11 @@ struct ReRunButton: View {
                     .fixedSize()
             }
             .foregroundColor(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        #endif
+        .glassButton(cornerRadius: RBRadius.small)
     }
 
     // MARK: - Actions

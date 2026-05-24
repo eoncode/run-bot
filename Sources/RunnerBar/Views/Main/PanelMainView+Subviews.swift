@@ -187,32 +187,11 @@ struct ActionRowView: View {
     }
 
     /// Glass card background for the action row.
-    /// On Swift 6.2+ / macOS 26+ renders Liquid Glass; on older SDKs renders the
-    /// legacy `rbSurfaceElevated` fill + border overlay.
+    /// Routes through `.glassCard()` to honour the Phase 1 contract — nothing
+    /// outside `PanelViewModifiers` calls `.glassEffect()` directly on card containers.
     @ViewBuilder private var glassCardBackground: some View {
-        #if swift(>=6.2)
-        if #available(macOS 26, *) {
-            Color.clear
-                .glassEffect(
-                    .regular.interactive(),
-                    in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                )
-        } else {
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-        }
-        #else
-        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-            .fill(Color.rbSurfaceElevated)
-            .overlay(
-                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-            )
-        #endif
+        Color.clear
+            .glassCard(cornerRadius: RBRadius.card)
     }
 
     /// Resolves the effective display status for the row.
