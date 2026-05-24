@@ -1,5 +1,6 @@
 // CancelButton.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import SwiftUI
 
 // MARK: - CancelButton
