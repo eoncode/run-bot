@@ -92,6 +92,7 @@ struct PanelMainView: View {
             actionsSectionScrollable
         }
         .frame(minWidth: 280, maxWidth: 900, alignment: .top)
+        .glassCard(cornerRadius: cornerRadius)
         .onAppear {
             isAuthenticated = (githubToken() != nil)
             if panelVisibilityState.isOpen { systemStats.start() }
