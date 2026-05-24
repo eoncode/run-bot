@@ -108,6 +108,52 @@ extension View {
     }
 }
 
+// MARK: - CardRowModifier
+/// Applies Liquid Glass ultraThinMaterial background + subtle white stroke to a card row.
+private struct CardRowModifier: ViewModifier {
+    var cornerRadius: CGFloat = RBRadius.small
+    func body(content: Content) -> some View {
+        content
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            )
+    }
+}
+
+extension View {
+    func cardRow(cornerRadius: CGFloat = RBRadius.small) -> some View {
+        modifier(CardRowModifier(cornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - GlassPanelModifier
+/// Applies Liquid Glass regularMaterial background + subtle white stroke + shadow to a container.
+private struct GlassPanelModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                .regularMaterial,
+                in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 8)
+    }
+}
+
+extension View {
+    func glassPanel() -> some View {
+        modifier(GlassPanelModifier())
+    }
+}
+
 // MARK: - Previews
 #if DEBUG
 #Preview("StatPill") {

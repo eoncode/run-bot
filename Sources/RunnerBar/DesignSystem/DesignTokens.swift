@@ -231,6 +231,18 @@ enum RBFont {
     static let statValue: Font = .system(size: 10, weight: .regular, design: .monospaced)
 }
 
+// MARK: - Liquid Glass Materials
+// On macOS 26+ these resolve to true Liquid Glass.
+// On older OS versions they gracefully degrade to vibrancy materials.
+extension Material {
+    /// Primary panel/container background — regularMaterial for Liquid Glass.
+    static var rbGlassPanel: Material { .regularMaterial }
+    /// Row/card surface — ultraThinMaterial for Liquid Glass.
+    static var rbGlassRow: Material { .ultraThinMaterial }
+    /// Subtle badge/pill surface.
+    static var rbGlassSubtle: Material { .ultraThinMaterial }
+}
+
 // MARK: - DesignTokens namespace shim
 
 /// Backwards-compatibility namespace that delegates to the primary `RBFont`, `RBSpacing`,
