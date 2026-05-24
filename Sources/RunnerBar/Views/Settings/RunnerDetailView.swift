@@ -411,7 +411,7 @@ struct RunnerDetailView: View {
 
     /// Confirmation sheet presented before executing a destructive `DangerAction`.
     @ViewBuilder
-    private func dangerActionSheet(_ action: DangerAction) -> some View {
+    private func dangerActionSheet(_ action: DangerAction) -> some View { // periphery:ignore
         VStack(alignment: .leading, spacing: 16) {
             Text(action.title)
                 .font(.headline)
