@@ -4,6 +4,7 @@ import AppKit
 import SwiftUI
 
 // swiftlint:disable type_body_length
+// swiftlint:disable missing_docs
 // MARK: - AddRunnerSheet
 
 // MARK: - URI Constants
@@ -50,7 +51,6 @@ struct AddRunnerSheet: View {
         case addNew      = "Add new"
         /// Coding key for the `addExisting` field.
         case addExisting = "Add pre-existing"
-        /// The id property.
         var id: String { rawValue }
     }
 
@@ -65,7 +65,6 @@ struct AddRunnerSheet: View {
         case repo = "Repository"
         /// Coding key for the `org` field.
         case org  = "Organisation"
-        /// The id property.
         var id: String { rawValue }
     }
 
@@ -836,4 +835,5 @@ private func fetchRunnerDownloadURL() -> String? {
     log("fetchRunnerDownloadURL \u{203a} match=\(match?.name ?? "nil")")
     return match?.browserDownloadUrl
 }
+// swiftlint:enable missing_docs
 // swiftlint:enable type_body_length
