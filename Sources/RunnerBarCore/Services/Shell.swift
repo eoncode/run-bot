@@ -17,8 +17,7 @@ public enum Shell {
         /// The output constant.
         let output: String
         /// The exitCode constant.
-        // periphery:ignore
-        let exitCode: Int32
+        let exitCode: Int32 // periphery:ignore
     }
 
     /// Runs `command` in `/bin/zsh -c` and returns the trimmed stdout + exit code.

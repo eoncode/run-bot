@@ -41,8 +41,7 @@ private struct RunPayload: Codable {
     /// ISO-8601 timestamp when the run was created.
     let createdAt: String?
     /// ISO-8601 timestamp when the run was last updated.
-    // periphery:ignore
-    let updatedAt: String?
+    let updatedAt: String? // periphery:ignore
     /// URL to the run detail page on github.com.
     let htmlUrl: String?
     /// The head commit associated with this run.
