@@ -58,7 +58,7 @@ struct FailureHookCommandSheet: View {
             footerSection
         }
         .frame(width: 440)
-        .background(Color.rbSurfaceElevated)
+        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
