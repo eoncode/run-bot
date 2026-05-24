@@ -2,41 +2,9 @@
 // RunnerBar
 import SwiftUI
 
-// MARK: - macOS 26 glass helpers
-// These are @available *functions* (not ViewModifier structs) so that the Swift
-// compiler resolves the `.glassEffect` symbol only when building against the
-// macOS 26 SDK. An @available struct's body is still type-checked at compile
-// time on older SDKs, causing "value of type 'X' has no member 'glassEffect'".
-
-/// Applies `.glassEffect(.regular.interactive())` to `view` on macOS 26+.
-/// Returns an `AnyView` so callers can use it inside an `if #available` branch
-/// that returns `AnyView` on both sides.
-@available(macOS 26, *)
-private func applyGlassCard<V: View>(_ view: V, cornerRadius: CGFloat) -> AnyView {
-    AnyView(
-        view.glassEffect(
-            .regular.interactive(),
-            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        )
-    )
-}
-
-/// Applies `.glassEffect(.prominent)` to `view` on macOS 26+.
-/// Returns an `AnyView` so callers can use it inside an `if #available` branch
-/// that returns `AnyView` on both sides.
-@available(macOS 26, *)
-private func applyGlassSection<V: View>(_ view: V, cornerRadius: CGFloat) -> AnyView {
-    AnyView(
-        view.glassEffect(
-            .prominent,
-            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        )
-    )
-}
-
 // MARK: - GlassCard
 /// Centralised Liquid Glass card modifier.
-/// On macOS 26+ uses `.glassEffect(.regular.interactive())`;
+/// On macOS 26+ (Swift 6.2+) uses `.glassEffect(.regular.interactive())`;
 /// on older OSes falls back to `.ultraThinMaterial` + a subtle stroke overlay.
 ///
 /// All phases of the Liquid Glass adoption (Phase 3–7) must use `.glassCard()`
@@ -56,10 +24,16 @@ struct GlassCard: ViewModifier {
         self.cornerRadius = cornerRadius
     }
 
-    /// Applies Liquid Glass on macOS 26+ and a material fallback on older OSes.
+    /// Applies Liquid Glass on macOS 26+ (Swift 6.2+) and a material fallback on older OSes.
     func body(content: Content) -> some View {
+        #if swift(>=6.2)
         if #available(macOS 26, *) {
-            applyGlassCard(content, cornerRadius: cornerRadius)
+            AnyView(
+                content.glassEffect(
+                    .regular.interactive(),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+            )
         } else {
             AnyView(
                 content
@@ -73,12 +47,25 @@ struct GlassCard: ViewModifier {
                     )
             )
         }
+        #else
+        AnyView(
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
+                )
+        )
+        #endif
     }
 }
 
 // MARK: - GlassSection
 /// Prominent Liquid Glass modifier intended for section headers and containers.
-/// On macOS 26+ uses `.glassEffect(.prominent)`;
+/// On macOS 26+ (Swift 6.2+) uses `.glassEffect(.prominent)`;
 /// on older OSes falls back to `.ultraThinMaterial` + a heavier stroke overlay.
 struct GlassSection: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to
@@ -91,10 +78,16 @@ struct GlassSection: ViewModifier {
         self.cornerRadius = cornerRadius
     }
 
-    /// Applies prominent Liquid Glass on macOS 26+ and a material fallback on older OSes.
+    /// Applies prominent Liquid Glass on macOS 26+ (Swift 6.2+) and a material fallback on older OSes.
     func body(content: Content) -> some View {
+        #if swift(>=6.2)
         if #available(macOS 26, *) {
-            applyGlassSection(content, cornerRadius: cornerRadius)
+            AnyView(
+                content.glassEffect(
+                    .prominent,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+            )
         } else {
             AnyView(
                 content
@@ -108,6 +101,19 @@ struct GlassSection: ViewModifier {
                     )
             )
         }
+        #else
+        AnyView(
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
+                )
+        )
+        #endif
     }
 }
 

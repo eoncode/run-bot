@@ -187,11 +187,16 @@ struct ActionRowView: View {
     }
 
     /// Glass card background for the action row.
-    /// Routes to the macOS 26 glass implementation when available, otherwise
-    /// renders the legacy `rbSurfaceElevated` fill + border overlay.
+    /// On Swift 6.2+ / macOS 26+ renders Liquid Glass; on older SDKs renders the
+    /// legacy `rbSurfaceElevated` fill + border overlay.
     @ViewBuilder private var glassCardBackground: some View {
+        #if swift(>=6.2)
         if #available(macOS 26, *) {
-            glassCardView()
+            Color.clear
+                .glassEffect(
+                    .regular.interactive(),
+                    in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                )
         } else {
             RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
                 .fill(Color.rbSurfaceElevated)
@@ -200,20 +205,14 @@ struct ActionRowView: View {
                         .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
                 )
         }
-    }
-
-    /// Returns the macOS 26 glass-effect background.
-    /// Extracted to an `@available`-annotated function so the compiler resolves
-    /// `.glassEffect` only against the macOS 26+ SDK.
-    /// Uses `Color.clear` as the view receiver — `.glassEffect(_:in:)` is a `View` modifier,
-    /// not a `Shape` member.
-    @available(macOS 26, *)
-    private func glassCardView() -> some View {
-        Color.clear
-            .glassEffect(
-                .regular.interactive(),
-                in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+        #else
+        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+            .fill(Color.rbSurfaceElevated)
+            .overlay(
+                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
             )
+        #endif
     }
 
     /// Resolves the effective display status for the row.

@@ -53,10 +53,31 @@ struct ReRunFailedButton: View {
     }
 
     // MARK: - Idle button
-    /// Renders the idle state: glass button on macOS 26+, plain button on older OSes.
+    /// Renders the idle state: Liquid Glass button on Swift 6.2+ / macOS 26+,
+    /// plain button on older SDKs.
     @ViewBuilder private var idleButton: some View {
+        #if swift(>=6.2)
         if #available(macOS 26, *) {
-            idleButtonGlass()
+            GlassEffectContainer {
+                Button(action: startRerun) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.arrow.clockwise")
+                            .font(.caption)
+                        Text("Re-run failed")
+                            .font(.caption)
+                            .fixedSize()
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(
+                    .regular.interactive(),
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .help("Re-run only the failed and cancelled jobs in this workflow run")
+            }
         } else {
             Button(action: startRerun) {
                 HStack(spacing: 4) {
@@ -71,33 +92,20 @@ struct ReRunFailedButton: View {
             .buttonStyle(.plain)
             .help("Re-run only the failed and cancelled jobs in this workflow run")
         }
-    }
-
-    /// Returns the macOS 26 glass idle button wrapped in `GlassEffectContainer`.
-    /// Extracted to an `@available(macOS 26, *)` function so that `GlassEffectContainer`
-    /// and `.glassEffect` are only resolved against the macOS 26+ SDK at compile time.
-    @available(macOS 26, *)
-    private func idleButtonGlass() -> some View {
-        GlassEffectContainer {
-            Button(action: startRerun) {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.arrow.clockwise")
-                        .font(.caption)
-                    Text("Re-run failed")
-                        .font(.caption)
-                        .fixedSize()
-                }
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+        #else
+        Button(action: startRerun) {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.arrow.clockwise")
+                    .font(.caption)
+                Text("Re-run failed")
+                    .font(.caption)
+                    .fixedSize()
             }
-            .buttonStyle(.plain)
-            .glassEffect(
-                .regular.interactive(),
-                in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
-            )
-            .help("Re-run only the failed and cancelled jobs in this workflow run")
+            .foregroundColor(.secondary)
         }
+        .buttonStyle(.plain)
+        .help("Re-run only the failed and cancelled jobs in this workflow run")
+        #endif
     }
 
     // MARK: - Actions
