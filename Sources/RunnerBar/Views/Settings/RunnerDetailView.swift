@@ -528,12 +528,7 @@ struct RunnerDetailView: View {
     /// Rounded card container with a subtle border used to group related info or config rows.
     private func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) { content() }
-            .background(
-                RoundedRectangle(cornerRadius: RBRadius.small)
-                    .fill(Color.rbSurfaceElevated)
-                    .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-            )
+            .glassCard(cornerRadius: RBRadius.small)
             .padding(.horizontal, RBSpacing.md)
             .padding(.bottom, 8)
     }

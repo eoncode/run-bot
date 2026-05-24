@@ -498,12 +498,7 @@ extension ScopeDetailView {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.small)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
-                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-        )
+        .glassCard(cornerRadius: RBRadius.small)
         .padding(.horizontal, RBSpacing.md)
         .padding(.bottom, 8)
     }
