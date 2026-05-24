@@ -81,7 +81,7 @@ struct BranchTagPill: View {
 // MARK: - cardRow ViewModifier
 /// Applies a card-row background with rounded corners.
 /// Used by job/action row items inside list-style ScrollViews.
-private struct CardRowModifier: ViewModifier {
+private struct CardRowModifier: ViewModifier { // periphery:ignore
     /// Corner radius applied to the background rectangle.
     let cornerRadius: CGFloat
 
@@ -103,7 +103,7 @@ private struct CardRowModifier: ViewModifier {
 extension View {
     /// Wraps a row in a card-style rounded rectangle background.
     /// - Parameter cornerRadius: Corner radius — prefer `RBRadius` tokens.
-    func cardRow(cornerRadius: CGFloat) -> some View {
+    func cardRow(cornerRadius: CGFloat) -> some View { // periphery:ignore
         modifier(CardRowModifier(cornerRadius: cornerRadius))
     }
 }
