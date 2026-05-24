@@ -5,7 +5,7 @@ import Foundation
 
 // MARK: - AppPreferencesStore
 
-// swiftlint:disable:next missing_docs
+// swiftlint:disable missing_docs
 final class AppPreferencesStore: ObservableObject {
     /// Shared singleton instance.
     static let shared = AppPreferencesStore()
@@ -53,6 +53,7 @@ final class AppPreferencesStore: ObservableObject {
         }
     }
 }
+// swiftlint:enable missing_docs
 
 // MARK: - Comparable+clamped
 

@@ -12,6 +12,7 @@ import RunnerBarCore
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupStatusItem() more than once.
 
+// swiftlint:disable:next missing_docs
 /// Extension adding functionality to `AppDelegate`.
 extension AppDelegate {
 
