@@ -4,12 +4,11 @@ import ServiceManagement
 
 /// Manages the app's launch-at-login registration via `SMAppService`.
 enum LoginItem {
-    /// `true` when the app is registered to launch at login.
-    /// Checks the live `SMAppService` status — reflects changes made
-    /// outside the app (e.g. via System Settings > General > Login Items).
+    // swiftlint:disable missing_docs
     static var isEnabled: Bool {
         SMAppService.mainApp.status == .enabled
     }
+    // swiftlint:enable missing_docs
 
     /// Registers or unregisters launch-at-login based on `enabled`.
     /// Called by `PopoverMainView` from the two-argument `onChange(of:)` form,

@@ -40,24 +40,36 @@ import SwiftUI
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
 struct PanelMainView: View {
-    // swiftlint:disable missing_docs
+    /// The store property.
     @ObservedObject var store: RunnerViewModel
+    /// Called when user taps a step row in an inline job list. (#455)
     let onStepTap: (ActiveJob, JobStep) -> Void
+    /// The onSelectSettings constant.
     let onSelectSettings: () -> Void
+    /// The panelVisibilityState property.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    /// The isAuthenticated property.
     @State private var isAuthenticated = (githubToken() != nil)
+    /// The systemStats property.
     @StateObject private var systemStats = SystemStatsViewModel()
+    /// The visibleCount property.
     @State private var visibleCount: Int = 10
+    /// The displayTick property.
     @State private var displayTick: Int = 0
+    /// The displayTickTimer property.
     @State private var displayTickTimer: Timer?
-    // swiftlint:enable missing_docs
+    /// The screenScrollMaxHeight property.
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
+    /// True only when at least one local runner is actively busy AND there is
+    /// at least one in-progress workflow. Gates both the section header and
+    /// PanelLocalRunnerRow so the section never appears without an active run.
     private var hasBusyLocalRunners: Bool {
         store.localRunners.contains { $0.isBusy }
             && store.actions.contains { $0.groupStatus == .inProgress }
     }
+    /// Root body: stacks the header, optional rate-limit banner, local-runner section, and scrollable actions list.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelHeaderView(
@@ -95,12 +107,14 @@ struct PanelMainView: View {
         .onChange(of: store.actions) { _ in visibleCount = 10 }
     }
     // MARK: - Scrollable actions section (RULE 5)
+    /// Wraps `actionsSectionContent` in a `ScrollView` capped at `screenScrollMaxHeight`.
     private var actionsSectionScrollable: some View {
         ScrollView(.vertical, showsIndicators: true) {
             actionsSectionContent
         }
         .frame(maxHeight: screenScrollMaxHeight)
     }
+    /// Vertical stack of the Workflows section header, `ActionRowView` items, and the load-more button.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -122,6 +136,7 @@ struct PanelMainView: View {
         }
         .padding(.vertical, 4)
     }
+    /// Button that appends the next batch of up to 10 workflow rows; hidden when all rows are visible.
     @ViewBuilder private var loadMoreButton: some View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
@@ -137,17 +152,30 @@ struct PanelMainView: View {
         }
     }
     // MARK: - Display tick timer (RULE 9 — ungated, 1s)
+    /// Schedules a 1-second repeating timer that increments `displayTick`, driving elapsed-time labels.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
         displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             self.displayTick &+= 1
         }
     }
+    /// Invalidates and nils the display-tick timer.
     private func stopDisplayTickTimer() {
         displayTickTimer?.invalidate()
         displayTickTimer = nil
     }
     // MARK: - Rate limit banner (#778)
+    /// Warning strip shown below the header when GitHub's rate limit has been hit.
+    ///
+    /// Uses `store.rateLimitResetDate` + the 1-second `displayTick` to render
+    /// a live countdown ("resets in 42s", "resets in 3m 07s", etc.).
+    /// Falls back to the static "pausing polls" label when no reset date is
+    /// known (e.g. CLI code path that sets `ghIsRateLimited` without a
+    /// `X-RateLimit-Reset` header value).
+    ///
+    /// `displayTick` is referenced via `_ = displayTick` so SwiftUI re-evaluates
+    /// this computed property every second while the banner is visible — the
+    /// same mechanism used by elapsed-time labels in `ActionRowView`.
     private var rateLimitBanner: some View {
         // Capture tick to force a re-evaluation every second.
         _ = displayTick // swiftlint:disable:this redundant_discardable_let
@@ -159,24 +187,27 @@ struct PanelMainView: View {
             } else if remaining < 60 {
                 countdownLabel = "resets in \(Int(remaining))s"
             } else {
-                let m = Int(remaining) / 60
-                let s = Int(remaining) % 60
-                countdownLabel = String(format: "resets in %dm %02ds", m, s)
+                let mins = Int(remaining) / 60
+                let secs = Int(remaining) % 60
+                countdownLabel = String(format: "resets in %dm %02ds", mins, secs)
             }
         } else {
             countdownLabel = "pausing polls"
         }
         return HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 10))
-                .foregroundColor(.orange)
-            Text("Rate limited — \(countdownLabel)")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Spacer()
+                .foregroundColor(.yellow).font(.caption)
+            Text("GitHub rate limit reached — \(countdownLabel)")
+                .font(.caption).foregroundColor(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color.orange.opacity(0.08))
+        .padding(.horizontal, 12).padding(.vertical, 4)
+    }
+    // MARK: - Helpers
+    /// Opens the GitHub personal-access-token documentation page in the default browser.
+    private func signInWithGitHub() {
+        let urlString = "\(GitHubConstants.base)/en/authentication/"
+            + "keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+        guard let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
     }
 }
