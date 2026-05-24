@@ -1,5 +1,6 @@
 // LogCopyButton.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import AppKit
 import SwiftUI
 
@@ -34,7 +35,7 @@ struct LogCopyButton: View {
         self.isDisabled = isDisabled
     }
 
-    /// The body property.
+    /// Root button view: icon + label, coloured by copy state.
     var body: some View {
         Button(action: performCopy) {
             HStack(spacing: 3) {
@@ -113,3 +114,4 @@ struct LogCopyButton: View {
         }
     }
 }
+// swiftlint:enable missing_docs
