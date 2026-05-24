@@ -77,3 +77,32 @@ struct BranchTagPill: View { // periphery:ignore
         )
     }
 }
+
+// MARK: - Previews
+#if DEBUG
+#Preview("StatPill") {
+    HStack(spacing: 8) {
+        StatPill(label: "CPU", value: "3.6%")
+        StatPill(label: "MEM", value: "0.2%")
+    }
+    .padding()
+}
+
+#Preview("StatusBadge") {
+    VStack(spacing: 8) {
+        StatusBadge(status: .inProgress, text: "IN PROGRESS")
+        StatusBadge(status: .success, text: "SUCCESS")
+        StatusBadge(status: .failed, text: "FAILED")
+        StatusBadge(status: .queued, text: "QUEUED")
+    }
+    .padding()
+}
+
+#Preview("BranchTagPill") {
+    VStack(spacing: 8) {
+        BranchTagPill(name: "feat/redesign-phases-1-5")
+        BranchTagPill(name: "main")
+    }
+    .padding()
+}
+#endif
