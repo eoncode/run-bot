@@ -16,6 +16,8 @@ import SwiftUI
 // than 100 results, so repos with >100 branches are fully listed.
 // An empty result after a successful fetch is treated as a load error so
 // the user is not misled by a silent blank list.
+//
+// Phase 6: root container background → .ultraThinMaterial (Liquid Glass).
 
 /// A value type representing BranchSelectorSheet.
 struct BranchSelectorSheet: View {
@@ -53,7 +55,8 @@ struct BranchSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(Color.rbSurfaceElevated)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .onAppear { loadBranches() }
     }

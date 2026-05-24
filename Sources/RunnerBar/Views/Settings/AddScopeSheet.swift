@@ -24,6 +24,8 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 /// GitHub API) with a plain `TextField` fallback, and Cancel / Add buttons.
 ///
 /// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
+///
+/// Phase 6: root container background → .ultraThinMaterial (Liquid Glass).
 struct AddScopeSheet: View {
     /// The isPresented property.
     @Binding var isPresented: Bool
@@ -197,6 +199,9 @@ struct AddScopeSheet: View {
             .padding(.vertical, RBSpacing.sm)
         }
         .frame(width: 420)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .onAppear(perform: fetchScopeOptions)
     }
 

@@ -11,6 +11,8 @@ import SwiftUI
 //
 // Presented from ScopeDetailView when user taps the Command row.
 // Uses TextEditor (tall, monospaced) with variable pill buttons that insert at cursor.
+//
+// Phase 6: root container background → .ultraThinMaterial (Liquid Glass).
 
 /// Sheet for editing the shell command run by `FailureHookRunner` when a workflow fails.
 /// Provides a monospaced `TextEditor` and variable-insertion pill buttons.
@@ -58,7 +60,8 @@ struct FailureHookCommandSheet: View {
             footerSection
         }
         .frame(width: 440)
-        .background(Color.rbSurfaceElevated)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

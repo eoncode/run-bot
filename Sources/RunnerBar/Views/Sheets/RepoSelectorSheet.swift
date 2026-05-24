@@ -17,6 +17,8 @@ import SwiftUI
 //     onDismiss: { showSheet = false },
 //     onSelect: { selectedRepo = $0; showSheet = false }
 // )
+//
+// Phase 6: root container background → .ultraThinMaterial (Liquid Glass).
 
 /// A value type representing RepoSelectorSheet.
 struct RepoSelectorSheet: View {
@@ -50,7 +52,8 @@ struct RepoSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(Color.rbSurfaceElevated)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
