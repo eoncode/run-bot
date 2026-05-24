@@ -4,8 +4,8 @@ import RunnerBarCore
 import SwiftUI
 
 // MARK: - SystemStatsView
-/// Full-page system stats view shown in the settings panel. // periphery:ignore
-struct SystemStatsView: View {
+/// Full-page system stats view shown in the settings panel.
+struct SystemStatsView: View { // periphery:ignore
     /// The viewModel property.
     @StateObject private var viewModel = SystemStatsViewModel()
 
@@ -195,8 +195,8 @@ struct HeaderStatsBar: View {
 // MARK: - BlockBarView (kept for backward compat)
 // Renders a coloured block-bar and percentage label for a given metric.
 // Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
-/// A value type representing BlockBarView. // periphery:ignore
-struct BlockBarView: View {
+/// A value type representing BlockBarView.
+struct BlockBarView: View { // periphery:ignore
     /// The label constant.
     let label: String
     /// The pct constant.
