@@ -233,7 +233,6 @@ struct AddScopeSheet: View {
     }
 
     /// Persists `effectiveScope` to `ScopeStore`, triggers `onAdd`, and dismisses the sheet.
-    @MainActor
     private func confirmAdd() {
         let scope = effectiveScope
         guard !scope.isEmpty else { return }
