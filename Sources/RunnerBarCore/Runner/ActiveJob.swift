@@ -190,9 +190,9 @@ public struct JobPayload: Decodable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id          = try c.decode(Int.self,            forKey: .id)
-        name        = try c.decode(String.self,         forKey: .name)
-        status      = try c.decode(JobStatus.self,      forKey: .status)
+        id          = try c.decode(Int.self, forKey: .id)
+        name        = try c.decode(String.self, forKey: .name)
+        status      = try c.decode(JobStatus.self, forKey: .status)
         conclusion  = try c.decodeIfPresent(JobConclusion.self, forKey: .conclusion)
         startedAt   = try c.decodeIfPresent(String.self, forKey: .startedAt)
         completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)

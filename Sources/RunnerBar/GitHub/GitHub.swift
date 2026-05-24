@@ -81,9 +81,9 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
 private struct WorkflowRunsResponse: Codable {
     /// The list of workflow runs returned by the API.
     let workflowRuns: [WorkflowRun]
-    /// Coding keys mapping snake_case API fields to camelCase Swift properties.
+    /// Maps the snake_case API key to the camelCase Swift property.
     enum CodingKeys: String, CodingKey {
-        /// Maps `workflow_runs` JSON key to `workflowRuns`.
+        /// The workflowRuns coding key.
         case workflowRuns = "workflow_runs"
     }
 }
@@ -145,19 +145,20 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Step log
 
-// swiftlint:disable force_try missing_docs
-private let _ansiRegex = try! NSRegularExpression( // swiftlint:enable missing_docs
+// swiftlint:disable:next force_try
+/// Compiled regular expression for stripping ANSI escape sequences from log output.
+private let _ansiRegex = try! NSRegularExpression(
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
-// swiftlint:enable force_try
 
 // URLSession configured to NOT follow redirects.
 // Used for the first leg of fetchStepLog so we can capture the pre-signed S3
 // Location URL from the GitHub 302 response before fetching the log body.
 // Lifetime: module-level singleton — allocated once at app start, shared for
 // the process lifetime. URLSession is thread-safe and designed for reuse.
-/// URLSession delegate that prevents automatic redirect following.
-/// Used to capture the pre-signed S3 `Location` URL from GitHub's 302 response.
+/// `URLSessionTaskDelegate` that prevents automatic redirect following.
+/// Captures the `Location` header from GitHub's 302 response so the caller
+/// can fetch the pre-signed S3 URL directly.
 private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     /// Intercepts redirect responses and calls the completion handler with `nil`
     /// to prevent URLSession from following the redirect automatically.
