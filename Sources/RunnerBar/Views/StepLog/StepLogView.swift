@@ -37,8 +37,7 @@ import SwiftUI
 //          meta badge backgrounds use Color.rbSurfaceElevated;
 //          log area uses Color.rbSurfaceElevated background;
 //          all .secondary foreground replaced with Color.rbTextSecondary.
-// Phase 7: meta badge backgrounds → .glassCard(cornerRadius: RBRadius.small);
-//          log text area background → .glassCard(cornerRadius: 0).
+// Phase 7: meta badge backgrounds → .glassCard(cornerRadius: RBRadius.small).
 /// Shows the raw log text for a single `JobStep`.
 ///
 /// Placed by `AppDelegate.navigate()` (rootView swap). Fits the fixed popover frame;
@@ -194,7 +193,6 @@ struct StepLogView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
-                        .glassCard(cornerRadius: 0)
                 } else {
                     Text("Log not available")
                         .font(.caption).foregroundColor(Color.rbTextSecondary)
