@@ -109,7 +109,8 @@ private extension NSBezierPath {
 /// Custom `NSView` that renders the HUD panel chrome: vibrancy background, rounded corners, and the arrow pointer.
 ///
 /// On macOS 26+, `NSGlassEffectView` is used as the backdrop instead of `NSVisualEffectView`.
-/// The mask contract (CAShapeLayer applied via `updateFxMask`) is identical for both paths.
+/// Instantiated reflectively via `NSClassFromString` so the macOS < 26 SDK does not need to
+/// resolve the symbol at compile time. The mask contract (CAShapeLayer via `updateFxMask`) is identical.
 final class PanelChromeView: NSView {
     /// Panel-local X of arrow tip centre.
     /// Formula: button.window!.frame.midX - panel.frame.minX
@@ -133,7 +134,9 @@ final class PanelChromeView: NSView {
         return view
     }()
 
-    /// The backdrop view used on macOS 26+. Typed as `NSView` to compile on macOS < 26.
+    /// The backdrop view used on macOS 26+.
+    /// Typed as `NSView?` and instantiated reflectively so the macOS < 26 SDK
+    /// does not need to resolve `NSGlassEffectView` at compile time.
     private var glassView: NSView?
 
     override init(frame: NSRect) {
@@ -146,10 +149,17 @@ final class PanelChromeView: NSView {
         layer?.backgroundColor = CGColor(gray: 1, alpha: 0.001)
 
         if #available(macOS 26, *) {
-            let gv = NSGlassEffectView()
-            gv.wantsLayer = true
-            addSubview(gv)
-            glassView = gv
+            // Reflective instantiation: avoids compile-time NSGlassEffectView symbol
+            // resolution on macOS < 26 SDKs used in CI.
+            if let cls = NSClassFromString("NSGlassEffectView") as? NSView.Type {
+                let gv = cls.init(frame: .zero)
+                gv.wantsLayer = true
+                addSubview(gv)
+                glassView = gv
+            } else {
+                // Fallback: NSGlassEffectView unavailable at runtime despite OS version.
+                addSubview(vibrancyView)
+            }
         } else {
             addSubview(vibrancyView)
         }
@@ -165,8 +175,8 @@ final class PanelChromeView: NSView {
 
     override func layout() {
         super.layout()
-        if #available(macOS 26, *) {
-            glassView?.frame = bounds
+        if #available(macOS 26, *), let gv = glassView {
+            gv.frame = bounds
         } else {
             vibrancyView.frame = bounds
         }
@@ -188,8 +198,8 @@ final class PanelChromeView: NSView {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let maskLayer = CAShapeLayer()
         maskLayer.path = chromePath(in: bounds).compatCGPath
-        if #available(macOS 26, *) {
-            glassView?.layer?.mask = maskLayer
+        if #available(macOS 26, *), let gv = glassView {
+            gv.layer?.mask = maskLayer
         } else {
             vibrancyView.layer?.mask = maskLayer
         }

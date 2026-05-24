@@ -187,10 +187,11 @@ struct ActionRowView: View {
     }
 
     /// Glass card background for the action row, with status colour stripe overlay.
+    /// Routes to the macOS 26-specific implementation when available, otherwise
+    /// renders the legacy `rbSurfaceElevated` fill + border overlay.
     @ViewBuilder private var glassCardBackground: some View {
         if #available(macOS 26, *) {
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+            glassCardView()
         } else {
             RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
                 .fill(Color.rbSurfaceElevated)
@@ -199,6 +200,18 @@ struct ActionRowView: View {
                         .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
                 )
         }
+    }
+
+    /// Returns the macOS 26 glass-effect background shape.
+    /// Extracted to an `@available`-annotated function so the compiler resolves
+    /// `.glassEffect` only against the macOS 26+ SDK.
+    @available(macOS 26, *)
+    private func glassCardView() -> some View {
+        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+            .glassEffect(
+                .regular.interactive(),
+                in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+            )
     }
 
     /// Resolves the effective display status, preferring the overridden `expandState` when set.

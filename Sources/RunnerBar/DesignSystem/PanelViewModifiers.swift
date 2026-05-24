@@ -2,6 +2,42 @@
 // RunnerBar
 import SwiftUI
 
+// MARK: - GlassCard macOS 26 core (compile-time availability guard)
+
+/// Internal macOS 26-only modifier that calls `.glassEffect(.regular.interactive())`.
+/// Only referenced through `GlassCard.body` behind a runtime `#available` check.
+@available(macOS 26, *)
+private struct GlassCardMacOS26: ViewModifier {
+    /// Corner radius applied to the rounded rectangle shape.
+    var cornerRadius: CGFloat
+    /// Applies `.glassEffect(.regular.interactive())` on macOS 26+.
+    func body(content: Content) -> some View {
+        content
+            .glassEffect(
+                .regular.interactive(),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+    }
+}
+
+// MARK: - GlassSection macOS 26 core (compile-time availability guard)
+
+/// Internal macOS 26-only modifier that calls `.glassEffect(.prominent)`.
+/// Only referenced through `GlassSection.body` behind a runtime `#available` check.
+@available(macOS 26, *)
+private struct GlassSectionMacOS26: ViewModifier {
+    /// Corner radius applied to the rounded rectangle shape.
+    var cornerRadius: CGFloat
+    /// Applies `.glassEffect(.prominent)` on macOS 26+.
+    func body(content: Content) -> some View {
+        content
+            .glassEffect(
+                .prominent,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+    }
+}
+
 // MARK: - GlassCard
 /// Centralised Liquid Glass card modifier.
 /// On macOS 26+ uses `.glassEffect(.regular.interactive())`;
@@ -15,27 +51,25 @@ import SwiftUI
 /// pill, not a card container.
 struct GlassCard: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to
-    /// `DesignTokens.Radius.card` (10 pt).
-    var cornerRadius: CGFloat = DesignTokens.Radius.card
+    /// `RBRadius.card` (8 pt).
+    var cornerRadius: CGFloat = RBRadius.card
 
     /// Applies Liquid Glass on macOS 26+ and a material fallback on older OSes.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            content
-                .glassEffect(
-                    .regular.interactive(),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
+            AnyView(content.modifier(GlassCardMacOS26(cornerRadius: cornerRadius)))
         } else {
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
-                )
+            AnyView(
+                content
+                    .background(
+                        .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
+                    )
+            )
         }
     }
 }
@@ -46,27 +80,25 @@ struct GlassCard: ViewModifier {
 /// on older OSes falls back to `.ultraThinMaterial` + a heavier stroke overlay.
 struct GlassSection: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to
-    /// `DesignTokens.Radius.card` (10 pt).
-    var cornerRadius: CGFloat = DesignTokens.Radius.card
+    /// `RBRadius.card` (8 pt).
+    var cornerRadius: CGFloat = RBRadius.card
 
     /// Applies prominent Liquid Glass on macOS 26+ and a material fallback on older OSes.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            content
-                .glassEffect(
-                    .prominent,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
+            AnyView(content.modifier(GlassSectionMacOS26(cornerRadius: cornerRadius)))
         } else {
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-                )
+            AnyView(
+                content
+                    .background(
+                        .ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
+                    )
+            )
         }
     }
 }
@@ -75,15 +107,15 @@ struct GlassSection: ViewModifier {
 extension View {
     /// Applies the `GlassCard` modifier to this view.
     /// - Parameter cornerRadius: Corner radius of the glass shape.
-    ///   Defaults to `DesignTokens.Radius.card` (10 pt).
-    func glassCard(cornerRadius: CGFloat = DesignTokens.Radius.card) -> some View {
+    ///   Defaults to `RBRadius.card` (8 pt).
+    func glassCard(cornerRadius: CGFloat = RBRadius.card) -> some View {
         modifier(GlassCard(cornerRadius: cornerRadius))
     }
 
     /// Applies the `GlassSection` modifier to this view.
     /// - Parameter cornerRadius: Corner radius of the glass shape.
-    ///   Defaults to `DesignTokens.Radius.card` (10 pt).
-    func glassSection(cornerRadius: CGFloat = DesignTokens.Radius.card) -> some View {
+    ///   Defaults to `RBRadius.card` (8 pt).
+    func glassSection(cornerRadius: CGFloat = RBRadius.card) -> some View {
         modifier(GlassSection(cornerRadius: cornerRadius))
     }
 }

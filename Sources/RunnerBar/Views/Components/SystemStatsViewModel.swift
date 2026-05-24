@@ -33,11 +33,11 @@ struct RingBuffer {
 final class SystemStatsViewModel: ObservableObject {
     /// Latest sampled snapshot, ready for display.
     @Published private(set) var stats: SystemStats = .zero
-    /// Rolling 60-sample history for sparkline charts.
+    /// Rolling 60-sample history for CPU sparkline charts.
     @Published private(set) var cpuHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Documentation.
+    /// Rolling 60-sample history for memory-usage sparkline charts.
     @Published private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Documentation.
+    /// Rolling 60-sample history for disk-usage sparkline charts.
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
 
     /// The timer property.
