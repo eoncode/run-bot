@@ -160,8 +160,9 @@ final class RunnerModelDisplayStatusTests: XCTestCase {
         XCTAssertEqual(makeRunner(isRunning: true).displayStatus, "running")
     }
 
+    // #773: displayStatus must return "busy" when isBusy is true (dead-branch fix).
     func testDisplayStatusBusy() {
-        XCTAssertEqual(makeRunner(isRunning: true, isBusy: true).displayStatus, "running")
+        XCTAssertEqual(makeRunner(isRunning: true, isBusy: true).displayStatus, "busy")
     }
 
     func testDisplayStatusOnline() {
