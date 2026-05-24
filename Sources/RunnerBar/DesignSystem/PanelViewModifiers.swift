@@ -78,86 +78,49 @@ struct BranchTagPill: View { // periphery:ignore
     }
 }
 
-// MARK: - GlassCard
-/// Central ViewModifier for Liquid Glass card surfaces.
-///
-/// On macOS 26+ applies `.glassEffect(.regular.interactive())`.
-/// On older OSes falls back to `.ultraThinMaterial` + a subtle white stroke overlay.
-///
-/// ⚠️ No other file should call `.glassEffect()` or `.ultraThinMaterial`
-/// directly on card/section containers — always use `.glassCard()` or `.glassSection()`.
-///
-/// - Note: `StatPill` is intentionally excluded — it is a Capsule-shaped inline
-///   metric pill, not a card container, and retains its own `.ultraThinMaterial` capsule.
-struct GlassCard: ViewModifier {
-    /// Corner radius matching `DesignTokens` card tokens (default: 10 pt).
-    var cornerRadius: CGFloat = 10
-
+// MARK: - CardRowModifier
+/// Applies Liquid Glass ultraThinMaterial background + subtle white stroke to a card row.
+private struct CardRowModifier: ViewModifier {
+    var cornerRadius: CGFloat = RBRadius.small
     func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content
-                .glassEffect(
-                    .regular.interactive(),
-                    in: RoundedRectangle(cornerRadius: cornerRadius)
-                )
-        } else {
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
-                )
-        }
+        content
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            )
     }
 }
 
 extension View {
-    /// Applies the `GlassCard` modifier with an optional corner radius override.
-    ///
-    /// Use this on any card/container surface. Default radius is 10 pt;
-    /// pass `cornerRadius: 8` for tighter row-level containers.
-    func glassCard(cornerRadius: CGFloat = 10) -> some View {
-        modifier(GlassCard(cornerRadius: cornerRadius))
+    func cardRow(cornerRadius: CGFloat = RBRadius.small) -> some View {
+        modifier(CardRowModifier(cornerRadius: cornerRadius))
     }
 }
 
-// MARK: - GlassSection
-/// Prominent Liquid Glass modifier for section headers and elevated containers.
-///
-/// On macOS 26+ applies `.glassEffect(.prominent)`.
-/// On older OSes falls back to `.thinMaterial` + a subtle white stroke overlay.
-struct GlassSection: ViewModifier {
-    /// Corner radius matching `DesignTokens` section tokens (default: 10 pt).
-    var cornerRadius: CGFloat = 10
-
+// MARK: - GlassPanelModifier
+/// Applies Liquid Glass regularMaterial background + subtle white stroke + shadow to a container.
+private struct GlassPanelModifier: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content
-                .glassEffect(
-                    .prominent,
-                    in: RoundedRectangle(cornerRadius: cornerRadius)
-                )
-        } else {
-            content
-                .background(
-                    .thinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .strokeBorder(.white.opacity(0.2), lineWidth: 0.5)
-                )
-        }
+        content
+            .background(
+                .regularMaterial,
+                in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 8)
     }
 }
 
 extension View {
-    /// Applies the `GlassSection` modifier for section headers and elevated containers.
-    func glassSection(cornerRadius: CGFloat = 10) -> some View {
-        modifier(GlassSection(cornerRadius: cornerRadius))
+    func glassPanel() -> some View {
+        modifier(GlassPanelModifier())
     }
 }
 
@@ -187,26 +150,5 @@ extension View {
         BranchTagPill(name: "main")
     }
     .padding()
-}
-
-#Preview("GlassCard") {
-    VStack(spacing: 12) {
-        Text("GlassCard (default r=10)")
-            .padding()
-            .glassCard()
-        Text("GlassCard (r=8, row variant)")
-            .padding()
-            .glassCard(cornerRadius: 8)
-    }
-    .padding()
-    .frame(width: 300)
-}
-
-#Preview("GlassSection") {
-    Text("GlassSection header")
-        .padding()
-        .glassSection()
-        .padding()
-        .frame(width: 300)
 }
 #endif
