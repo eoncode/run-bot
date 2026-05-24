@@ -52,9 +52,9 @@ struct RepoSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.sheet))
+        .overlay(RoundedRectangle(cornerRadius: RBRadius.sheet).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: RBRadius.sheet))
     }
 }
 
@@ -83,7 +83,7 @@ extension RepoSelectorSheet {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundColor(Color.rbTextTertiary)
-            TextField("Search \(label.lowercased())s...", text: $searchText)
+            TextField("Search \(label.lowercased())s\u{2026}", text: $searchText)
                 .font(.system(size: 12))
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {

@@ -55,9 +55,9 @@ struct BranchSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.sheet))
+        .overlay(RoundedRectangle(cornerRadius: RBRadius.sheet).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: RBRadius.sheet))
         .onAppear { loadBranches() }
     }
 }
@@ -87,7 +87,7 @@ extension BranchSelectorSheet {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundColor(Color.rbTextTertiary)
-            TextField("Search branches…", text: $searchText)
+            TextField("Search branches\u{2026}", text: $searchText)
                 .font(.system(size: 12))
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {
@@ -163,7 +163,7 @@ extension BranchSelectorSheet {
     /// Performs the branchRow operation.
     func branchRow(_ branch: String) -> some View {
         Button(action: {
-            log("BranchSelectorSheet › selected branch='\(branch)' for scope='\(scope)'")
+            log("BranchSelectorSheet \u{203a} selected branch='\(branch)' for scope='\(scope)'")
             onSelect(branch)
             onDismiss()
         }) {
@@ -189,7 +189,7 @@ extension BranchSelectorSheet {
     var footerSection: some View {
         HStack {
             Button(action: {
-                log("BranchSelectorSheet › cleared branch filter for scope='\(scope)'")
+                log("BranchSelectorSheet \u{203a} cleared branch filter for scope='\(scope)'")
                 onSelect(nil)
                 onDismiss()
             }) {
@@ -223,16 +223,16 @@ extension BranchSelectorSheet {
 extension BranchSelectorSheet {
     /// Performs the loadBranches operation.
     func loadBranches() {
-        log("BranchSelectorSheet › loadBranches START scope='\(scope)'")
+        log("BranchSelectorSheet \u{203a} loadBranches START scope='\(scope)'")
         DispatchQueue.global(qos: .userInitiated).async {
             let names = fetchBranchNames(scope: scope)
             DispatchQueue.main.async {
                 if let names, !names.isEmpty {
-                    log("BranchSelectorSheet › loadBranches — loaded \(names.count) branches")
+                    log("BranchSelectorSheet \u{203a} loadBranches \u{2014} loaded \(names.count) branches")
                     branches = names
                     loadError = false
                 } else {
-                    log("BranchSelectorSheet › loadBranches — fetch failed or returned empty")
+                    log("BranchSelectorSheet \u{203a} loadBranches \u{2014} fetch failed or returned empty")
                     loadError = true
                 }
                 isLoading = false
@@ -249,15 +249,15 @@ extension BranchSelectorSheet {
         var page = 1
         while true {
             guard let data = ghAPI("repos/\(scope)/branches?per_page=100&page=\(page)") else {
-                log("BranchSelectorSheet › fetchBranchNames — ghAPI returned nil scope='\(scope)' page=\(page)")
+                log("BranchSelectorSheet \u{203a} fetchBranchNames \u{2014} ghAPI returned nil scope='\(scope)' page=\(page)")
                 return allNames.isEmpty ? nil : allNames.sorted()
             }
             guard let items = try? JSONDecoder().decode([BranchItem].self, from: data) else {
-                log("BranchSelectorSheet › fetchBranchNames — JSON decode failed scope='\(scope)' page=\(page) dataBytes=\(data.count)")
+                log("BranchSelectorSheet \u{203a} fetchBranchNames \u{2014} JSON decode failed scope='\(scope)' page=\(page) dataBytes=\(data.count)")
                 return allNames.isEmpty ? nil : allNames.sorted()
             }
             allNames.append(contentsOf: items.map(\.name))
-            log("BranchSelectorSheet › fetchBranchNames — page=\(page) fetched=\(items.count) total=\(allNames.count)")
+            log("BranchSelectorSheet \u{203a} fetchBranchNames \u{2014} page=\(page) fetched=\(items.count) total=\(allNames.count)")
             if items.count < 100 { break }
             page += 1
         }

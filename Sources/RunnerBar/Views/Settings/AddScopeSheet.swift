@@ -199,9 +199,9 @@ struct AddScopeSheet: View {
             .padding(.vertical, RBSpacing.sm)
         }
         .frame(width: 420)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.sheet))
+        .overlay(RoundedRectangle(cornerRadius: RBRadius.sheet).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: RBRadius.sheet))
         .onAppear(perform: fetchScopeOptions)
     }
 

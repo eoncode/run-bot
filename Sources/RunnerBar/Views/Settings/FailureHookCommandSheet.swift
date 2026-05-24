@@ -39,9 +39,9 @@ struct FailureHookCommandSheet: View {
         self.scope = scope
         self.onDismiss = onDismiss
         let saved = ScopePreferencesStore.failureHookCommand(for: scope) ?? ""
-        log("FailureHookCommandSheet › init — scope=\(scope) savedCommand='\(saved)' isEmpty=\(saved.isEmpty)")
+        log("FailureHookCommandSheet \u{203a} init \u{2014} scope=\(scope) savedCommand='\(saved)' isEmpty=\(saved.isEmpty)")
         _commandText = State(initialValue: saved.isEmpty ? Self.exampleCommand : saved)
-        log("FailureHookCommandSheet › init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
+        log("FailureHookCommandSheet \u{203a} init \u{2014} commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
     }
 
     /// The variables constant.
@@ -60,9 +60,9 @@ struct FailureHookCommandSheet: View {
             footerSection
         }
         .frame(width: 440)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.sheet))
+        .overlay(RoundedRectangle(cornerRadius: RBRadius.sheet).strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: RBRadius.sheet))
     }
 }
 
@@ -73,7 +73,7 @@ extension FailureHookCommandSheet {
         VStack(alignment: .leading, spacing: 3) {
             Text("Failure Hook Command")
                 .font(.system(size: 13, weight: .semibold))
-            Text("Called in your default shell when a run in this scope fails. Use '$FAILURE_LOG' to inline the log text — all tokens are resolved before the shell runs the command.")
+            Text("Called in your default shell when a run in this scope fails. Use '$FAILURE_LOG' to inline the log text \u{2014} all tokens are resolved before the shell runs the command.")
                 .font(.caption)
                 .foregroundColor(Color.rbTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -171,9 +171,9 @@ extension FailureHookCommandSheet {
 
 extension FailureHookCommandSheet {
     func save() {
-        log("FailureHookCommandSheet › save — scope=\(scope) commandText='\(commandText.prefix(200))'")
+        log("FailureHookCommandSheet \u{203a} save \u{2014} scope=\(scope) commandText='\(commandText.prefix(200))'")
         ScopePreferencesStore.setFailureHookCommand(commandText, for: scope)
-        log("FailureHookCommandSheet › save — done, dismissing")
+        log("FailureHookCommandSheet \u{203a} save \u{2014} done, dismissing")
         onDismiss()
     }
 
@@ -182,7 +182,7 @@ extension FailureHookCommandSheet {
         let resolved = commandText
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
             .replacingOccurrences(of: "$SCOPE", with: scope)
-        log("FailureHookCommandSheet › testCommand — scope=\(scope) localPath='\(localPath)' resolved='\(resolved.prefix(200))'")
+        log("FailureHookCommandSheet \u{203a} testCommand \u{2014} scope=\(scope) localPath='\(localPath)' resolved='\(resolved.prefix(200))'")
         TerminalLauncher.open(command: resolved)
     }
 

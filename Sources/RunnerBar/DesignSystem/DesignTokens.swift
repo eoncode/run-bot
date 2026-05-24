@@ -184,6 +184,8 @@ enum RBRadius {
     static let card: CGFloat = 8
     /// 5 pt — small card or row corner radius.
     static let small: CGFloat = 5
+    /// 10 pt — modal sheet container corner radius.
+    static let sheet: CGFloat = 10
 }
 
 // MARK: - Typography Tokens
