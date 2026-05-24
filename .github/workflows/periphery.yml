@@ -15,8 +15,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Periphery
-        run: brew install peripheryapp/periphery/periphery
+      - name: Install Periphery v3
+        run: |
+          brew tap peripheryapp/periphery
+          brew install peripheryapp/periphery/periphery@3
+          brew link --overwrite peripheryapp/periphery/periphery@3
 
       - name: Run Periphery scan
-        run: periphery scan
+        run: periphery scan --disable-update-check
