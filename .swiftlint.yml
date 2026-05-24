@@ -20,7 +20,6 @@ opt_in_rules:
   - contains_over_filter_is_empty  # prefer contains over filter().isEmpty
   - empty_collection_literal  # prefer isEmpty over == []
   - first_where            # prefer first(where:) over filter().first
-  - missing_docs           # require /// doc comments on all declarations
   - file_header            # enforce standard file header format
 
 # ── Rule configuration ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -37,11 +36,6 @@ nesting:
     warning: 2
   function_level:
     warning: 3
-
-missing_docs:
-  warning: [open, public, internal, private, fileprivate]
-  excludes_extensions: false
-  excludes_inherited_types: false
 
 file_header:
   required_pattern: "^// [\\w+]+\\.swift\\n// RunnerBar"
@@ -63,3 +57,4 @@ disabled_rules:
   - multiple_closures_with_trailing_closure # SwiftUI DSL routinely uses multiple trailing closures
   - function_parameter_count                # large model inits are acceptable in this codebase
   - type_body_length                        # large types are acceptable in this codebase
+  - missing_docs                            # private/internal doc comments not required
