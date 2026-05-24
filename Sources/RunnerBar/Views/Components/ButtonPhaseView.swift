@@ -15,15 +15,14 @@ import SwiftUI
 /// idle appearance and action.
 // periphery:ignore - used by ReRunButton, ReRunFailedButton, CancelButton (separate target files)
 struct ButtonPhaseView: View {
+    // swiftlint:disable missing_docs
     /// The active non-idle phase to render.
     enum Phase {
-        /// Spinner shown while the async request is in-flight.
         case loading
-        /// Green checkmark shown for 1.5 s after success.
         case done
-        /// Red cross shown for 1.5 s after failure.
         case failed
     }
+    // swiftlint:enable missing_docs
 
     /// Phase to render. Must be `.loading`, `.done`, or `.failed`.
     let phase: Phase

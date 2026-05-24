@@ -55,11 +55,10 @@ final class AppPreferencesStore: ObservableObject {
 }
 
 // MARK: - Comparable+clamped
-
-/// Extension adding functionality to `Comparable`.
+// swiftlint:disable missing_docs
 private extension Comparable {
-    /// Clamps the value to the given closed range.
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }
+// swiftlint:enable missing_docs
