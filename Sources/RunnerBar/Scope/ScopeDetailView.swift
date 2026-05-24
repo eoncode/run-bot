@@ -30,6 +30,8 @@ struct ScopeDetailView: View {
 
     /// The scopeStore property.
     @ObservedObject private var scopeStore = ScopeStore.shared
+    /// View model used by BranchSelectorSheet to fetch branches.
+    @StateObject private var branchVM = RunnerViewModel()
     /// The showHookSheet property.
     @State private var showHookSheet = false
     /// The showBranchSheet property.
@@ -96,8 +98,8 @@ struct ScopeDetailView: View {
         }
         .sheet(isPresented: $showBranchSheet) {
             BranchSelectorSheet(
-                scope: scope,
-                onDismiss: { showBranchSheet = false },
+                repo: scope,
+                store: branchVM,
                 onSelect: { chosen in
                     hookBranch = chosen
                     ScopePreferencesStore.setFailureHookBranch(chosen, for: scope)

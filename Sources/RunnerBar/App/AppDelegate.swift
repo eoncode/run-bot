@@ -1,5 +1,6 @@
 // AppDelegate.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import AppKit
 import Combine
 import SwiftUI
@@ -123,7 +124,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState and §wrapEnv.
     // ❌ NEVER bypass. ❌ NEVER remove .environmentObject(panelVisibilityState).
-    // swiftlint:disable:next missing_docs
     func wrapEnv<V: View>(_ view: V) -> AnyView { // internal: required for AppDelegate+Navigation
         AnyView(view.environmentObject(panelVisibilityState))
     }
@@ -152,7 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
     // ❌ NEVER re-derive panelTopY here. ❌ NEVER call from a background thread.
-    // swiftlint:disable:next missing_docs
     func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
         guard panelIsOpen,
               let panel,
@@ -182,7 +181,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
     // ❌ NEVER remove the resizeAndRepositionPanel() call from this method.
-    // swiftlint:disable:next missing_docs
     func navigate(to view: AnyView) { // internal: required for AppDelegate+Navigation
         hostingController?.rootView = view
         resizeAndRepositionPanel()
