@@ -53,7 +53,7 @@ struct SystemStatsView: View { // periphery:ignore
 ///        9pt label  40x14pt sparkline  10pt mono value
 ///
 /// Do NOT restore the VStack layout -- it makes the header ~70pt tall.
-struct SparklineMetricView: View { // periphery:ignore
+struct SparklineMetricView: View {
     /// The label constant.
     let label: String
     /// The value constant.
@@ -100,7 +100,7 @@ struct SparklineMetricView: View { // periphery:ignore
 ///   else         → rbSuccess (green)
 ///
 /// Always renders at its intrinsic size -- never truncates.
-struct DiskPillBadge: View { // periphery:ignore
+struct DiskPillBadge: View {
     // Percentage of disk space that is FREE (0-100).
     /// The freePct constant.
     let freePct: Double
@@ -137,7 +137,7 @@ struct DiskPillBadge: View { // periphery:ignore
 // Accepts an existing SystemStatsViewModel so it shares the sampler
 // already running in PopoverMainView -- no second timer is created.
 /// A value type representing HeaderStatsBar.
-struct HeaderStatsBar: View { // periphery:ignore
+struct HeaderStatsBar: View {
     /// The statsVM property.
     @ObservedObject var statsVM: SystemStatsViewModel
 
