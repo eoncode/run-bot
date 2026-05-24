@@ -255,7 +255,7 @@ struct AddRunnerSheet: View {
             Spacer()
             Button("Cancel") { isPresented = false }.keyboardShortcut(.cancelAction)
             // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: register) {
+            Button(action: { Task { await register() } }) {
                 if isRegistering {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
@@ -580,10 +580,10 @@ struct AddRunnerSheet: View {
     /// populates `repos`/`orgs`, then sets `isLoadingScopes = false` on the main thread.
     private func loadScopes() {
         isLoadingScopes = true
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task.detached(priority: .userInitiated) {
             let fetchedRepos = fetchUserRepos()
             let fetchedOrgs  = fetchUserOrgs()
-            DispatchQueue.main.async {
+            await MainActor.run {
                 repos = fetchedRepos
                 orgs  = fetchedOrgs
                 if let first = fetchedRepos.first { selectedRepo = first }
@@ -593,17 +593,18 @@ struct AddRunnerSheet: View {
         }
     }
 
-    /// Updates `registrationStep` on the main thread for display in the progress UI.
+    /// Updates `registrationStep` on the main actor for display in the progress UI.
+    @MainActor
     private func setStep(_ msg: String) {
-        DispatchQueue.main.async { registrationStep = msg }
+        registrationStep = msg
     }
 
     // MARK: - Register (Add new)
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     /// Downloads, unpacks, and configures a new runner, then writes the LaunchAgent plist and dismisses.
-    /// Runs entirely on a background thread; updates `registrationStep` via `setStep(_:)`.
-    private func register() {
+    /// Offloads blocking work to a detached Task; updates `registrationStep` via `await setStep(_:)`.
+    private func register() async {
         guard canRegister else { return }
         errorMessage = nil
         registrationStep = ""
@@ -613,12 +614,12 @@ struct AddRunnerSheet: View {
         let labels = labelsText.trimmingCharacters(in: .whitespaces)
         let dir    = installDir.trimmingCharacters(in: .whitespaces)
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        await Task.detached(priority: .userInitiated) {
             let homeDir     = FileManager.default.homeDirectoryForCurrentUser
                 .resolvingSymlinksInPath().path
             let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
             guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "Install directory must be inside your home folder (~/…)."
                 }
@@ -627,7 +628,7 @@ struct AddRunnerSheet: View {
 
             let runnerFile = URL(fileURLWithPath: dir).appendingPathComponent(".runner").path
             if FileManager.default.fileExists(atPath: runnerFile) {
-                DispatchQueue.main.async { isRegistering = false }
+                await MainActor.run { isRegistering = false }
                 return
             }
 
@@ -635,7 +636,7 @@ struct AddRunnerSheet: View {
                 try FileManager.default.createDirectory(atPath: dir,
                                                         withIntermediateDirectories: true)
             } catch {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "Failed to create directory: \(error.localizedDescription)"
                 }
@@ -645,9 +646,9 @@ struct AddRunnerSheet: View {
             let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
             if !FileManager.default.fileExists(atPath: configPath) {
-                setStep("Downloading runner package…")
+                await setStep("Downloading runner package…")
                 guard let downloadURL = fetchRunnerDownloadURL() else {
-                    DispatchQueue.main.async {
+                    await MainActor.run {
                         isRegistering = false
                         errorMessage  = "Could not determine runner download URL. Check your internet connection."
                     }
@@ -657,49 +658,49 @@ struct AddRunnerSheet: View {
                     .appendingPathComponent("actions-runner.tar.gz").path
                 guard runSimpleProcess("/usr/bin/curl",
                                       args: ["-sL", downloadURL, "-o", tarPath]) == 0 else {
-                    DispatchQueue.main.async { isRegistering = false; errorMessage = "Download failed." }
+                    await MainActor.run { isRegistering = false; errorMessage = "Download failed." }
                     return
                 }
-                setStep("Unpacking runner package…")
+                await setStep("Unpacking runner package…")
                 let tarExit = runSimpleProcess("/usr/bin/tar", args: ["xzf", tarPath, "-C", dir])
                 try? FileManager.default.removeItem(atPath: tarPath)
                 guard tarExit == 0 else {
-                    DispatchQueue.main.async { isRegistering = false; errorMessage = "Unpack failed." }
+                    await MainActor.run { isRegistering = false; errorMessage = "Unpack failed." }
                     return
                 }
             }
 
-            setStep("Fetching registration token…")
+            await setStep("Fetching registration token…")
             guard let token = fetchRegistrationToken(scope: scope) else {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "Failed to fetch registration token. Ensure `gh auth login` has been run or GH_TOKEN is set."
                 }
                 return
             }
 
-            setStep("Configuring runner…")
+            await setStep("Configuring runner…")
             let ghURL      = "\(GitHubURIs.base)\(scope)"
             let configExit = runRegistrationCommand(dir: dir, ghURL: ghURL,
                                                     token: token, name: name, labels: labels)
             guard configExit == 0 else {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "config.sh failed (exit \(configExit)). Check the token is valid and the runner name is unique."
                 }
                 return
             }
 
-            setStep("Registering service…")
+            await setStep("Registering service…")
             writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
 
-            DispatchQueue.main.async {
+            await MainActor.run {
                 isRegistering    = false
                 registrationStep = ""
                 isPresented      = false
                 onComplete()
             }
-        }
+        }.value
     }
 
     // MARK: - Plist writer (shared by both modes)
@@ -734,7 +735,7 @@ struct AddRunnerSheet: View {
 
     /// Invokes `config.sh` with the GitHub URL, registration token, runner name and labels.
     /// Returns the process exit code; non-zero indicates a configuration failure.
-    private func runRegistrationCommand(
+    nonisolated private func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) -> Int32 {
         let configURL = URL(fileURLWithPath: dir).appendingPathComponent("config.sh")
