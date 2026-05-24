@@ -49,8 +49,7 @@ struct RepoSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(Color.rbSurfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassPanel()
     }
 }
 
@@ -93,7 +92,7 @@ extension RepoSelectorSheet {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.rbSurface)
+        .background(.ultraThinMaterial)
         .overlay(
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
@@ -178,12 +177,7 @@ extension RepoSelectorSheet {
                 .font(.system(size: 12))
                 .foregroundColor(Color.rbTextSecondary)
                 .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.rbSurfaceElevated)
-                        .overlay(RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-                )
+                .cardRow(cornerRadius: 6)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)

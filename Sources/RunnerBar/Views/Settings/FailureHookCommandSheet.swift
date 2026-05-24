@@ -58,8 +58,7 @@ struct FailureHookCommandSheet: View {
             footerSection
         }
         .frame(width: 440)
-        .background(Color.rbSurfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassPanel()
     }
 }
 
@@ -84,7 +83,7 @@ extension FailureHookCommandSheet {
         TextEditor(text: $commandText)
             .font(.system(size: 11, design: .monospaced))
             .scrollContentBackground(.hidden)
-            .background(Color.rbSurface)
+            .background(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
@@ -108,7 +107,7 @@ extension FailureHookCommandSheet {
                             .padding(.vertical, 3)
                             .background(
                                 RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.rbSurfaceElevated)
+                                    .fill(Color.clear)
                                     .overlay(RoundedRectangle(cornerRadius: 4)
                                         .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
                             )
@@ -131,7 +130,7 @@ extension FailureHookCommandSheet {
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.rbSurfaceElevated)
+                        .fill(Color.clear)
                         .overlay(RoundedRectangle(cornerRadius: 6)
                             .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
                 )
@@ -145,7 +144,7 @@ extension FailureHookCommandSheet {
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.rbSurfaceElevated)
+                        .fill(Color.clear)
                         .overlay(RoundedRectangle(cornerRadius: 6)
                             .strokeBorder(Color.rbAccent.opacity(0.4), lineWidth: 0.5))
                 )

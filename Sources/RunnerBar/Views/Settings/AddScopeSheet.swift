@@ -122,7 +122,7 @@ struct AddScopeSheet: View {
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
-                                .background(Color.rbSurface)
+                                .background(.ultraThinMaterial)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 6)
                                         .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)

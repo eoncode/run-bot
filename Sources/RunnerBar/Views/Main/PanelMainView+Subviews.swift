@@ -113,14 +113,7 @@ struct PanelLocalRunnerRow: View {
             }
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xs + 2)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-        )
+        .cardRow(cornerRadius: RBRadius.card)
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xxs)
     }
 }
@@ -153,7 +146,7 @@ struct ActionRowView: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
+                .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
                         .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
@@ -166,6 +159,7 @@ struct ActionRowView: View {
                     alignment: .leading
                 )
         )
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .workflowContextMenu(group: group)
