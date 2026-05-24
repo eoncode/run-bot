@@ -4,6 +4,7 @@
 import RunnerBarCore
 import SwiftUI
 // MARK: - PieProgressDot
+// periphery:ignore
 /// Small animated pie/radial fill indicator used on action and job rows.
 /// Sized to match the existing 8 pt dot footprint so layout is unchanged.
 ///
@@ -24,7 +25,6 @@ import SwiftUI
 ///
 /// ❌ NEVER change onChange to two-argument form — macOS 13 only supports single-value.
 /// ❌ NEVER set displayProgress directly without withAnimation — breaks interpolation.
-// periphery:ignore
 struct PieProgressDot: View {
     /// Radial fill fraction (0.0–1.0). Nil renders a spinning indeterminate arc.
     let progress: Double?

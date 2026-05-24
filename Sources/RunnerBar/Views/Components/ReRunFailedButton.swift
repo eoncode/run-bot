@@ -3,6 +3,7 @@
 import SwiftUI
 
 // MARK: - ReRunFailedButton
+// periphery:ignore
 /// Top-bar "Re-run failed jobs" button.
 /// Mirrors ReRunButton's phase-machine pattern but calls the
 /// GitHub "rerun-failed-jobs" endpoint instead of the full rerun endpoint.
@@ -12,7 +13,6 @@ import SwiftUI
 /// idle (exclamationmark.arrow.clockwise + "Re-run failed") →
 /// loading (spinner + "Running…") →
 /// done (✓ + "Done", 1.5 s) OR failed (✗ + "Failed", 1.5 s) → idle
-// periphery:ignore
 struct ReRunFailedButton: View {
     /// Called on tap. Must call completion(success: Bool) from any thread.
     let action: (@escaping (Bool) -> Void) -> Void
