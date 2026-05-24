@@ -12,6 +12,7 @@ struct LogCopyButton: View {
     /// The closure receives a completion that must be called with the optional log text.
     let fetch: (@escaping (String?) -> Void) -> Void
     /// When `true` the button is greyed-out and ignores taps.
+    /// Defaults to `false` so callers that omit this parameter get the enabled state.
     let isDisabled: Bool
 
     /// Tracks the outcome of the last copy attempt.
@@ -25,6 +26,13 @@ struct LogCopyButton: View {
     }
     /// Current copy-state; drives label and colour.
     @State private var copyState: CopyState = .idle
+
+    /// Creates a new instance.
+    init(fetch: @escaping (@escaping (String?) -> Void) -> Void,
+         isDisabled: Bool = false) {
+        self.fetch = fetch
+        self.isDisabled = isDisabled
+    }
 
     /// The body property.
     var body: some View {
@@ -77,7 +85,7 @@ struct LogCopyButton: View {
         switch copyState {
         case .idle:   return isDisabled ? "Log not yet loaded" : "Copy log to clipboard"
         case .copied: return "Copied to clipboard"
-        case .failed: return "Log not available — try again once the log has loaded"
+        case .failed: return "Log not available \u{2014} try again once the log has loaded"
         }
     }
 

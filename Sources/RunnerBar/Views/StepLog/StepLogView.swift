@@ -280,7 +280,7 @@ extension StepLogView {
     /// Formatted end time, or "--" if unavailable.
     var endLabel: String {
         guard let dateValue = step.completedAt else {
-            return step.status == "in_progress" ? "running..." : "--"
+            return step.status == "in_progress" ? "running\u{2026}" : "--"
         }
         return Self.timeFmt.string(from: dateValue)
     }
