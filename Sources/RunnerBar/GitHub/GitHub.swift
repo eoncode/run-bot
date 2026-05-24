@@ -145,8 +145,8 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Step log
 
-/// Compiled regular expression for stripping ANSI escape sequences from log output.
 // swiftlint:disable:next force_try
+/// Compiled regular expression for stripping ANSI escape sequences from log output.
 private let _ansiRegex = try! NSRegularExpression( // swiftlint:disable:this force_try
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
