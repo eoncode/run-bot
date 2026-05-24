@@ -181,7 +181,6 @@ struct RunnerLifecycleService {
 
     // MARK: - Corrupt install detection
 
-    /// Performs the isCorruptInstall operation.
     private func isCorruptInstall(output: String) -> Bool {
         let lower = output.lowercased()
         let result = lower.contains("must run from runner root") || lower.contains("install is corrupt")
@@ -191,7 +190,6 @@ struct RunnerLifecycleService {
 
     // MARK: - LaunchAgent plist cleanup
 
-    /// Performs the deleteLaunchAgentPlist operation.
     private func deleteLaunchAgentPlist(for runnerName: String) {
         let laDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -208,7 +206,6 @@ struct RunnerLifecycleService {
 
     // MARK: - Scope helper
 
-    /// Performs the scopeFromGitHubUrl operation.
     private func scopeFromGitHubUrl(_ urlString: String) -> String {
         guard let url = URL(string: urlString) else { return urlString }
         let parts = url.pathComponents.filter { $0 != "/" }
@@ -219,8 +216,6 @@ struct RunnerLifecycleService {
 
     // MARK: - Script runner
 
-    // Thin wrapper around `ProcessRunner.run` for shell scripts relative to a working directory.
-    /// Performs the runScriptWithOutput operation.
     private func runScriptWithOutput(
         executableName: String,
         arguments: [String],
@@ -250,7 +245,8 @@ struct RunnerLifecycleService {
 
     // MARK: - Update config
 
-    /// Performs the updateConfig operation.
+    // periphery:ignore - design system API; called from RunnerDetailView config save flow
+    /// Writes updated labels and workFolder into the runner's `.runner` JSON.
     @discardableResult
     func updateConfig(runner: RunnerModel, labels: [String], workFolder: String) -> Bool {
         guard let path = runner.installPath else { return false }

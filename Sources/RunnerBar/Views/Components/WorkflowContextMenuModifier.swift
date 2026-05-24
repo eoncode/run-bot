@@ -16,13 +16,6 @@ private func copyToPasteboard(_ text: String) {
 
 // MARK: - WorkflowContextMenuModifier
 // Adds a right-click context menu to an ActionRowView (workflow level).
-// Actions mirror those in ActionDetailView's header bar:
-//   re-run failed (concluded only)
-//   re-run all (concluded only)
-//   cancel (in_progress only)
-//   copy log (always)
-//   show workflow file on GitHub (always, opens first run's html_url)
-//   show GitHub SHA (always, opens commit)
 private struct WorkflowContextMenuModifier: ViewModifier {
     let group: WorkflowActionGroup
 
@@ -35,7 +28,6 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         let isConcluded = group.groupStatus == .completed
         let isLive      = group.groupStatus == .inProgress
 
-        // Re-run failed
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -47,7 +39,6 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         }
         .disabled(!isConcluded)
 
-        // Re-run all
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -59,7 +50,6 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         }
         .disabled(!isConcluded)
 
-        // Cancel
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -73,7 +63,6 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 
         Divider()
 
-        // Copy log
         Button {
             let g = group
             DispatchQueue.global(qos: .userInitiated).async {
@@ -86,7 +75,6 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 
         Divider()
 
-        // Show workflow file on GitHub
         Button {
             guard let htmlUrl = group.runs.first?.htmlUrl,
                   let runUrl  = URL(string: htmlUrl) else { return }
@@ -96,7 +84,6 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         }
         .disabled(group.runs.first?.htmlUrl == nil)
 
-        // Show GitHub SHA
         Button {
             let sha  = group.headSha
             let repo = group.repo
@@ -109,8 +96,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 }
 
 // MARK: - JobContextMenuModifier
-// Adds a right-click context menu to a JobRowCard (job level).
 private struct JobContextMenuModifier: ViewModifier {
+    // periphery:ignore - job properties used inside menuItems; Periphery cannot trace @ViewBuilder closures
     let job: ActiveJob
     let group: WorkflowActionGroup
 
@@ -123,7 +110,6 @@ private struct JobContextMenuModifier: ViewModifier {
         let isConcluded = job.conclusion != nil
         let isLive      = job.status == "in_progress"
 
-        // Re-run failed
         Button {
             let scope = group.repo
             let jobID = job.id
@@ -135,7 +121,6 @@ private struct JobContextMenuModifier: ViewModifier {
         }
         .disabled(!isConcluded)
 
-        // Cancel — ActiveJob has no runId; cancel all runs in the parent group
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -149,7 +134,6 @@ private struct JobContextMenuModifier: ViewModifier {
 
         Divider()
 
-        // Copy log
         Button {
             let j = job
             let scope = group.repo
@@ -163,7 +147,6 @@ private struct JobContextMenuModifier: ViewModifier {
 
         Divider()
 
-        // Show job on GitHub
         Button {
             guard let htmlUrl = job.htmlUrl,
                   let url = URL(string: htmlUrl) else { return }

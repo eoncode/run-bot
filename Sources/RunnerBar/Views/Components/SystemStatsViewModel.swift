@@ -10,6 +10,7 @@ import RunnerBarCore
 struct RingBuffer {
     /// The storage property.
     private var storage: [Double]
+    // periphery:ignore - used in init and append; Periphery cannot trace struct members via mutating func
     /// The capacity constant.
     private let capacity: Int
 
@@ -80,8 +81,6 @@ final class SystemStatsViewModel: ObservableObject {
     }
 
     // MARK: Sampling
-    /// Collects CPU, memory, and disk snapshots off the main thread, then publishes
-    /// the new ``stats`` and updated history ring-buffers on the main actor.
     private func sample() {
         let cpu = sampleCPU()
         let mem = sampleMemory()
@@ -112,10 +111,6 @@ final class SystemStatsViewModel: ObservableObject {
 
     // MARK: CPU (Mach host_processor_info)
     // swiftlint:disable:next function_body_length
-    /// Reads per-core tick counts via `host_processor_info` and returns the
-    /// aggregate CPU utilisation as a percentage (0–100).
-    /// Diffs against the previous sample stored in `prevCPUInfo`; returns `0` on the first call.
-    /// - Returns: CPU usage percentage, or `0` if the kernel call fails.
     private func sampleCPU() -> Double {
         var numCPUsU: natural_t = 0
         var cpuInfo: processor_info_array_t?
@@ -151,8 +146,6 @@ final class SystemStatsViewModel: ObservableObject {
         return totalUsed / totalAll * 100
     }
 
-    /// Deallocates the Mach `processor_info_array_t` buffer stored in `prevCPUInfo`
-    /// using `vm_deallocate`, then nils the pointer. Safe to call when `prevCPUInfo` is `nil`.
     private func deallocPrevCPUInfo() {
         guard let prev = prevCPUInfo else { return }
         let infoSize  = vm_size_t(MemoryLayout<integer_t>.size)
@@ -161,9 +154,6 @@ final class SystemStatsViewModel: ObservableObject {
         prevCPUInfo = nil
     }
 
-    // MARK: Memory (vm_statistics64)
-    /// Queries `host_statistics64` for `HOST_VM_INFO64` and converts page counts to gigabytes.
-    /// - Returns: `(used, total)` in GB; `used` counts active + wired + compressor pages.
     private func sampleMemory() -> (used: Double, total: Double) {
         var vmStats = vm_statistics64()
         var count = mach_msg_type_number_t(
@@ -187,9 +177,6 @@ final class SystemStatsViewModel: ObservableObject {
         return (usedGB, totalGB)
     }
 
-    // MARK: Disk (FileManager)
-    /// Reads total and free bytes for the root volume via `FileManager` and returns used/total in GB.
-    /// - Returns: `(used, total)` in GB, or `(0, 0)` if the file-system query fails.
     private func sampleDisk() -> (used: Double, total: Double) {
         guard
             let attrs = try? FileManager.default.attributesOfFileSystem(forPath: Self.rootVolumePath),

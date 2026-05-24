@@ -13,6 +13,7 @@ import SwiftUI
 ///
 /// The `.idle` state is intentionally excluded; each button owns its own
 /// idle appearance and action.
+// periphery:ignore - used by ReRunButton, ReRunFailedButton, CancelButton (separate target files)
 struct ButtonPhaseView: View {
     /// The active non-idle phase to render.
     enum Phase {
