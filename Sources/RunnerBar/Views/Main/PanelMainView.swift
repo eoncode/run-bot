@@ -92,7 +92,7 @@ struct PanelMainView: View {
             actionsSectionScrollable
         }
         .frame(minWidth: 280, maxWidth: 900, alignment: .top)
-        .glassCard(cornerRadius: cornerRadius)
+        .glassCard()
         .onAppear {
             isAuthenticated = (githubToken() != nil)
             if panelVisibilityState.isOpen { systemStats.start() }
@@ -144,7 +144,7 @@ struct PanelMainView: View {
             Button(
                 action: { visibleCount += nextBatch },
                 label: {
-                    Text("Load \(nextBatch) more workflows…")
+                    Text("Load \(nextBatch) more workflows\u2026")
                         .font(.caption).foregroundColor(.secondary)
                 }
             )
@@ -184,7 +184,7 @@ struct PanelMainView: View {
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
             if remaining < 1 {
-                countdownLabel = "resuming…"
+                countdownLabel = "resuming\u2026"
             } else if remaining < 60 {
                 countdownLabel = "resets in \(Int(remaining))s"
             } else {
@@ -198,7 +198,7 @@ struct PanelMainView: View {
         return HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.yellow).font(.caption)
-            Text("GitHub rate limit reached — \(countdownLabel)")
+            Text("GitHub rate limit reached \u2014 \(countdownLabel)")
                 .font(.caption).foregroundColor(.secondary)
         }
         .padding(.horizontal, 12).padding(.vertical, 4)
