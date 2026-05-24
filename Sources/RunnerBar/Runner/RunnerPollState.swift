@@ -13,7 +13,7 @@ import RunnerBarCore
 /// keeping one file-level instance avoids repeated allocation on every poll cycle.
 private let iso8601 = ISO8601DateFormatter()
 
-// swiftlint:disable:next missing_docs
+/// Extension on `RunnerStore` providing poll-result building, step backfill, and group helpers.
 extension RunnerStore {
 
     /// Builds a `JobPollResult` by fetching active jobs for all configured scopes.

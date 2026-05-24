@@ -1,6 +1,5 @@
 // AppDelegate.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import AppKit
 import Combine
 import SwiftUI
@@ -55,66 +54,67 @@ import SwiftUI
 // ⚠️ @MainActor isolation — see ARCHITECTURE.md §@MainActor isolation.
 // ❌ NEVER remove @MainActor from this class declaration.
 // ❌ NEVER remove `nonisolated` from enrichStepsIfNeeded.
-/// Manages AppDelegate state and behaviour.
+/// Coordinates the app lifecycle, NSPanel management, and status-bar icon for RunnerBar.
 @MainActor
+// swiftlint:disable:next missing_docs
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // NOTE: The properties and methods below are `internal` (not `private`) because
     // Swift `private` does not cross file boundaries. AppDelegate+Navigation.swift
     // requires read/write access to all of them. Do not widen beyond `internal`.
 
-    /// The statusItem property.
-    var statusItem: NSStatusItem?           // internal: required for AppDelegate+Navigation
-    /// The panel property.
-    var panel: KeyablePanel?               // internal: required for AppDelegate+Navigation
-    /// The chrome property.
-    var chrome: PanelChromeView?           // internal: required for AppDelegate+Navigation
-    /// The hostingController property.
-    var hostingController: NSHostingController<AnyView>? // internal: required for AppDelegate+Navigation
-    /// The observable constant.
-    let observable = RunnerViewModel()      // internal: required for AppDelegate+Navigation
-    /// The savedNavState property.
-    var savedNavState: NavState?           // internal: required for AppDelegate+Navigation
-    /// The panelIsOpen property.
-    var panelIsOpen = false                // internal: required for AppDelegate+Navigation
+    /// The status-bar item showing the RunnerBar icon.
+    var statusItem: NSStatusItem?
+    /// The floating panel displayed below the status-bar icon.
+    var panel: KeyablePanel?
+    /// The arrow-chrome overlay view rendered above the panel.
+    var chrome: PanelChromeView?
+    /// The hosting controller managing the SwiftUI content inside the panel.
+    var hostingController: NSHostingController<AnyView>?
+    /// The view-model driving the panel's SwiftUI content.
+    let observable = RunnerViewModel()
+    /// The last navigation state, restored when the panel re-opens.
+    var savedNavState: NavState?
+    /// Whether the panel is currently visible on screen.
+    var panelIsOpen = false
 
-    /// The eventMonitor property.
-    var eventMonitor: Any?                 // internal: required for AppDelegate+Navigation
-    /// The sizeObservation property.
+    /// The global mouse-event monitor used to dismiss the panel on outside clicks.
+    var eventMonitor: Any?
+    /// KVO observation for the hosting controller's preferredContentSize.
     var sizeObservation: NSKeyValueObservation?
-    /// The workspaceObserver property.
+    /// Observer for workspace app-switch notifications used to auto-dismiss the panel.
     var workspaceObserver: Any?
-    /// The cancellables property.
+    /// Combine cancellables for preference and scope-change subscriptions.
     var cancellables = Set<AnyCancellable>()
 
     /// Top anchor (screen coords) captured once in openPanel().
     /// ❌ NEVER re-derive inside resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
-    var panelTopY: CGFloat?                // internal: required for AppDelegate+Navigation
+    var panelTopY: CGFloat?
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
     // ❌ NEVER remove. ❌ NEVER remove from wrapEnv(). ❌ NEVER pass as plain Bool to PanelMainView.
-    /// The panelVisibilityState constant.
-    let panelVisibilityState = PanelVisibilityState() // internal: required for AppDelegate+Navigation
+    /// Observable state object tracking panel open/closed state and the one-shot height callback.
+    let panelVisibilityState = PanelVisibilityState()
 
     /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
     static let minWidth: CGFloat = 280
 
-    /// The screen the status item lives on.
-    var statusItemScreen: NSScreen {       // internal: required for AppDelegate+Navigation
+    /// The screen on which the status-bar item currently lives.
+    var statusItemScreen: NSScreen {
         statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
-    /// The maxWidth property.
-    var maxWidth: CGFloat {                // internal: required for AppDelegate+Navigation
+    /// Maximum panel width: 90% of the status-item screen's visible width, capped at 900 pt.
+    var maxWidth: CGFloat {
         let screenMax = statusItemScreen.visibleFrame.width * 0.9
         return min(900, screenMax)
     }
 
-    /// The maxHeight property.
-    var maxHeight: CGFloat {               // internal: required for AppDelegate+Navigation
+    /// Maximum panel height: 85% of the status-item screen's visible height.
+    var maxHeight: CGFloat {
         statusItemScreen.visibleFrame.height * 0.85
     }
 
-    /// The gap constant.
+    /// Vertical gap between the status-bar button bottom edge and the panel top.
     static let gap: CGFloat = 2
 
     /// Initial panel width used before SwiftUI has measured content.
@@ -124,13 +124,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState and §wrapEnv.
     // ❌ NEVER bypass. ❌ NEVER remove .environmentObject(panelVisibilityState).
-    func wrapEnv<V: View>(_ view: V) -> AnyView { // internal: required for AppDelegate+Navigation
+    /// Wraps `view` in an `AnyView` with all required environment objects injected.
+    func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(panelVisibilityState))
     }
 
     // MARK: - App lifecycle
 
-    /// Performs the applicationDidFinishLaunching operation.
+    /// Performs initial app setup: status item, panel, and runner store.
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         setupPanel()
@@ -141,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Handles the runnerbar://oauth/callback?code=... redirect from GitHub.
     // Searches the full urls array — see ARCHITECTURE.md §OAuth URL handling.
 
-    /// Performs the application operation.
+    /// Handles OAuth callback URLs from the `runnerbar://oauth/callback` scheme.
     func application(_ _: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: { $0.scheme == "runnerbar" && $0.host == "oauth" })
         else { return }
@@ -152,7 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
     // ❌ NEVER re-derive panelTopY here. ❌ NEVER call from a background thread.
-    func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
+    /// Resizes and repositions the panel to fit new SwiftUI content dimensions.
+    func resizeAndRepositionPanel() {
         guard panelIsOpen,
               let panel,
               let chrome,
@@ -181,7 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
     // ❌ NEVER remove the resizeAndRepositionPanel() call from this method.
-    func navigate(to view: AnyView) { // internal: required for AppDelegate+Navigation
+    /// Replaces the panel's root SwiftUI view and immediately resizes to fit.
+    func navigate(to view: AnyView) {
         hostingController?.rootView = view
         resizeAndRepositionPanel()
     }
@@ -190,15 +193,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // See KeyablePanel.swift for the full explanation.
     // ❌ NEVER call this for views that have no text input (main, step log).
-    /// Performs the makeKeyForTextInput operation.
-    func makeKeyForTextInput() { // internal: required for AppDelegate+Navigation
+    /// Promotes the panel to key-window status so text fields can receive input.
+    func makeKeyForTextInput() {
         panel?.wantsKey = true
         panel?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Dismiss
 
-    /// Performs the closePanel operation.
+    /// Hides the panel, resets all open-state flags, removes event monitors, and restores the main view.
     func closePanel() {
         guard panelIsOpen else { return }
         panel?.wantsKey = false
@@ -218,12 +221,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Performs the removeEventMonitor operation.
+    /// Removes the global mouse-event monitor if one is active.
     func removeEventMonitor() {
         if let monitor = eventMonitor { NSEvent.removeMonitor(monitor); eventMonitor = nil }
     }
 
-    /// Performs the removeWorkspaceObserver operation.
+    /// Removes the workspace app-switch notification observer if one is active.
     func removeWorkspaceObserver() {
         if let opt = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(opt)
@@ -235,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // internal (not private) so AppDelegate+StatusItem.swift can reference
     // it via #selector(togglePanel) from a separate file.
-    /// Performs the togglePanel operation.
+    /// Toggles the panel open or closed.
     @objc func togglePanel() {
         if panelIsOpen {
             closePanel()
@@ -246,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Open
 
-    /// Performs the openPanel operation.
+    /// Opens the panel below the status-bar icon, restoring any saved navigation state.
     func openPanel() {
         guard let button = statusItem?.button,
               let statusItemRect = button.window?.frame,

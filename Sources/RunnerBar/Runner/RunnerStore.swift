@@ -7,30 +7,29 @@ import RunnerBarCore
 
 // MARK: - RunnerStore
 
-// swiftlint:disable:next type_body_length
-/// Manages RunnerStore state and behaviour.
+/// Central store owning all runner, job, and workflow-action-group state for RunnerBar.
 @MainActor
 final class RunnerStore {
-    /// The shared constant.
+    /// The shared singleton instance.
     static let shared = RunnerStore()
 
-    /// Documentation.
+    /// The current list of runners fetched from GitHub.
     private(set) var runners: [Runner] = []
-    /// Documentation.
+    /// The current list of active jobs across all configured scopes.
     private(set) var jobs: [ActiveJob] = []
-    /// Documentation.
+    /// The current list of workflow action groups across all configured scopes.
     private(set) var actions: [WorkflowActionGroup] = []
 
-    /// The prevLiveJobs property.
+    /// Snapshot of live jobs from the previous poll cycle, used for delta detection.
     private var prevLiveJobs: [Int: ActiveJob] = [:]
-    /// The completedCache property.
+    /// Cache of completed jobs retained to backfill step data after a job finishes.
     private var completedCache: [Int: ActiveJob] = [:]
-    /// The prevLiveGroups property.
+    /// Snapshot of live action groups from the previous poll cycle.
     private var prevLiveGroups: [String: WorkflowActionGroup] = [:]
-    /// The actionGroupCache property.
+    /// Cache of action groups retained across cycles to avoid re-fetching stable groups.
     private var actionGroupCache: [String: WorkflowActionGroup] = [:]
 
-    /// Documentation.
+    /// Whether the last GitHub API request was rate-limited.
     private(set) var isRateLimited = false
 
     /// The exact moment the current rate-limit window expires.
@@ -42,17 +41,17 @@ final class RunnerStore {
     /// `rateLimitBanner` in `PanelMainView`.
     private(set) var rateLimitResetDate: Date?
 
-    /// The timer property.
+    /// The repeating poll timer; invalidated and rescheduled after every fetch.
     private var timer: Timer?
-    /// The intervalCancellable property.
+    /// Cancellable for the polling-interval preference change subscription.
     private var intervalCancellable: AnyCancellable?
-    /// The scopeCancellable property.
+    /// Cancellable for the scope-store change subscription.
     private var scopeCancellable: AnyCancellable?
 
     /// Emits whenever a fetch cycle completes and the store's state has been updated.
     let didUpdate = PassthroughSubject<Void, Never>()
 
-    /// The aggregateStatus property.
+    /// The current aggregate online/offline status across all runners.
     var aggregateStatus: AggregateStatus {
         guard !runners.isEmpty else { return .allOffline }
         let onlineCount = runners.filter { $0.status == "online" }.count
@@ -79,7 +78,7 @@ final class RunnerStore {
             }
     }
 
-    /// Performs the start operation.
+    /// Invalidates any pending timer and immediately triggers a full fetch cycle.
     func start() {
         let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › start — activeScopes=\(scopes)")
@@ -91,7 +90,7 @@ final class RunnerStore {
         fetch()
     }
 
-    /// Performs the scheduleTimer operation.
+    /// Schedules the next poll timer, using a shorter interval when active jobs exist.
     private func scheduleTimer(liveActions: [WorkflowActionGroup]? = nil) {
         timer?.invalidate()
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
@@ -114,7 +113,7 @@ final class RunnerStore {
         }
     }
 
-    /// Performs the fetch operation.
+    /// Dispatches a background fetch of runners, jobs, and action groups, then applies the results on the main actor.
     func fetch() {
         let scopesSnapshot = ScopeStore.shared.activeScopes
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
@@ -204,16 +203,13 @@ final class RunnerStore {
         actionGroupCache = groupResult.newGroupCache
         prevLiveGroups = groupResult.newPrevLiveGroups
         isRateLimited = ghIsRateLimited
-        // Mirror the reset date so the UI can show an accurate countdown.
-        // ghRateLimitResetDate is nil when no rate-limit is active, which
-        // correctly clears the countdown when polls resume normally.
         rateLimitResetDate = ghRateLimitResetDate
         log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) isRateLimited=\(ghIsRateLimited) rateLimitResetDate=\(String(describing: rateLimitResetDate))")
         didUpdate.send()
         scheduleTimer(liveActions: groupResult.newPrevLiveGroups.map { $0.value })
     }
 
-    /// Performs the fetchAndEnrichRunners operation.
+    /// Fetches runners from the GitHub API for each active scope and enriches them with local metrics.
     nonisolated func fetchAndEnrichRunners(
         scopes: [String],
         installPathByName: [String: String],

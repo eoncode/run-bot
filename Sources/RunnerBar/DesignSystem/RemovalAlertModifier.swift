@@ -7,6 +7,7 @@ import SwiftUI
 /// `ViewModifier` that encapsulates the runner-removal confirmation alert.
 /// Extracted from `SettingsView.body` to satisfy `function_body_length`
 /// and `file_length` limits.
+// swiftlint:disable:next missing_docs
 struct RemovalAlertModifier: ViewModifier {
     /// The alert title string.
     let title: String
