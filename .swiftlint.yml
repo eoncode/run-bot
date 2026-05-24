@@ -63,4 +63,3 @@ disabled_rules:
   - multiple_closures_with_trailing_closure # SwiftUI DSL routinely uses multiple trailing closures
   - function_parameter_count                # large model inits are acceptable in this codebase
   - type_body_length                        # large types are acceptable in this codebase
-  - blanket_disable_command                 # file-level missing_docs suppression is intentional in new files

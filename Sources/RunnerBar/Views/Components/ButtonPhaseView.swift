@@ -1,6 +1,5 @@
 // ButtonPhaseView.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import SwiftUI
 
 // MARK: - ButtonPhaseView
@@ -20,11 +19,18 @@ import SwiftUI
 struct ButtonPhaseView: View {
     /// The active non-idle phase to render.
     enum Phase {
-        case loading, done, failed
+        /// Spinner shown while the async request is in-flight.
+        case loading
+        /// Green checkmark shown for 1.5 s after success.
+        case done
+        /// Red cross shown for 1.5 s after failure.
+        case failed
     }
 
+    /// The phase to render. Must be `.loading`, `.done`, or `.failed`.
     let phase: Phase
 
+    /// Renders the appropriate icon+label HStack for the current phase.
     var body: some View {
         switch phase {
         case .loading:

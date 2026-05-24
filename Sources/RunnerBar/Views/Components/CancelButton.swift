@@ -1,6 +1,5 @@
 // CancelButton.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import SwiftUI
 
 // MARK: - CancelButton
@@ -14,9 +13,11 @@ struct CancelButton: View {
     /// When true the button is rendered at reduced opacity and cannot be tapped.
     var isDisabled: Bool = false
 
+    /// Current phase of the button lifecycle; `nil` means idle.
     @State private var phase: ButtonPhaseView.Phase?
 
     // MARK: - Body
+    /// Renders the idle cancel button or delegates to `ButtonPhaseView` for active states.
     var body: some View {
         Group {
             if let phase {
@@ -58,6 +59,8 @@ struct CancelButton: View {
     }
 
     // MARK: - Actions
+    /// Transitions the button to `.loading`, invokes `action`, then transitions
+    /// to `.done` or `.failed` before resetting to `nil` (idle) after 1.5 s.
     private func startCancel() {
         guard phase == nil else { return }
         phase = .loading

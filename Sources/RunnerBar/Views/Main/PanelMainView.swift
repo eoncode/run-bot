@@ -1,6 +1,5 @@
 // PanelMainView.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import RunnerBarCore
 import SwiftUI
 // REGRESSION GUARD — DO NOT REMOVE - see regression history (ref #52 #54 #57 #375 #376 #377)
@@ -41,25 +40,25 @@ import SwiftUI
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
 struct PanelMainView: View {
-    /// The store property.
+    /// The backing runner view-model driving the workflow list.
     @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row in an inline job list. (#455)
     let onStepTap: (ActiveJob, JobStep) -> Void
-    /// The onSelectSettings constant.
+    /// Called when the user taps the settings gear button.
     let onSelectSettings: () -> Void
-    /// The panelVisibilityState property.
+    /// Tracks whether the panel is currently visible; used to gate stats sampling.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
-    /// The isAuthenticated property.
+    /// Whether a GitHub personal-access token is present in the environment.
     @State private var isAuthenticated = (githubToken() != nil)
-    /// The systemStats property.
+    /// View-model providing CPU / memory / disk samples for the header stats bar.
     @StateObject private var systemStats = SystemStatsViewModel()
-    /// The visibleCount property.
+    /// Number of workflow rows currently shown before the "Load more" button.
     @State private var visibleCount: Int = 10
-    /// The displayTick property.
+    /// Incremented every second by `displayTickTimer`; drives elapsed-time label redraws.
     @State private var displayTick: Int = 0
-    /// The displayTickTimer property.
+    /// The 1-second repeating timer that increments `displayTick`.
     @State private var displayTickTimer: Timer?
-    /// The screenScrollMaxHeight property.
+    /// Maximum height for the scrollable actions section (80% of visible screen height).
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
@@ -158,7 +157,7 @@ struct PanelMainView: View {
             Button(
                 action: { visibleCount += nextBatch },
                 label: {
-                    Text("Load \(nextBatch) more workflows…")
+                    Text("Load \(nextBatch) more workflows\u{2026}")
                         .font(.caption).foregroundColor(.secondary)
                 }
             )
@@ -198,7 +197,7 @@ struct PanelMainView: View {
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
             if remaining < 1 {
-                countdownLabel = "resuming…"
+                countdownLabel = "resuming\u{2026}"
             } else if remaining < 60 {
                 countdownLabel = "resets in \(Int(remaining))s"
             } else {

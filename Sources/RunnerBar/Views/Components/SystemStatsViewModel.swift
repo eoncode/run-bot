@@ -1,6 +1,5 @@
 // SystemStatsViewModel.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import Combine
 import Darwin
 import Foundation
@@ -9,10 +8,13 @@ import RunnerBarCore
 // MARK: - RingBuffer
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {
-    /// The storage property.
+    /// The underlying storage array; element at index 0 is oldest.
     private var storage: [Double]
 
-    /// Creates a new instance.
+    /// Creates a new `RingBuffer` pre-filled with `fill`.
+    /// - Parameters:
+    ///   - capacity: Maximum number of elements retained.
+    ///   - fill: Initial value for all slots (default `0`).
     init(capacity: Int, fill: Double = 0) {
         self.storage = Array(repeating: fill, count: capacity)
     }
@@ -36,21 +38,21 @@ final class SystemStatsViewModel: ObservableObject {
     @Published private(set) var stats: SystemStats = .zero
     /// Rolling 60-sample history for sparkline charts.
     @Published private(set) var cpuHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Documentation.
+    /// Rolling 60-sample memory-usage history (percentage, 0–100).
     @Published private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Documentation.
+    /// Rolling 60-sample disk-usage history (percentage, 0–100).
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
 
-    /// The timer property.
+    /// The repeating 2-second sampling timer; `nil` when stopped.
     private var timer: Timer?
-    /// The prevCPUInfo property.
+    /// Mach processor-info array from the previous sample, used to diff CPU ticks.
     private var prevCPUInfo: processor_info_array_t?
-    /// The prevNumCPUInfo property.
+    /// Number of integers in `prevCPUInfo`.
     private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
-    /// Creates a new instance.
+    /// Creates a new `SystemStatsViewModel`.
     init() {
         // No custom initialisation needed; all properties have defaults.
     }

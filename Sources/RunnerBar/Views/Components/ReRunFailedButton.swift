@@ -1,6 +1,5 @@
 // ReRunFailedButton.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import SwiftUI
 
 // MARK: - ReRunFailedButton
@@ -21,6 +20,7 @@ struct ReRunFailedButton: View {
     /// When true the button is completely hidden and takes no layout space.
     var isDisabled: Bool = false
 
+    /// Current phase of the button lifecycle.
     @State private var phase: Phase = .idle
 
     // MARK: - Phase

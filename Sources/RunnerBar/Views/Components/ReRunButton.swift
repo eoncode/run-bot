@@ -15,11 +15,21 @@ struct ReRunButton: View {
     /// When true the button is completely hidden and takes no layout space.
     var isDisabled: Bool = false
 
+    /// Current phase of the button lifecycle.
     @State private var phase: Phase = .idle
 
     // MARK: - Phase
     /// Visual states of the re-run button lifecycle.
-    enum Phase { case idle, loading, done, failed }
+    enum Phase {
+        /// Normal tappable state.
+        case idle
+        /// Spinner shown while the re-run request is in-flight.
+        case loading
+        /// Green checkmark shown for 1.5 s after success.
+        case done
+        /// Red cross shown for 1.5 s after failure.
+        case failed
+    }
 
     // MARK: - Body
     /// Renders idle button or delegates to `ButtonPhaseView` for active states.

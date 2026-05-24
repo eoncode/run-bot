@@ -1,6 +1,5 @@
 // ProcessRunner.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - ProcessRunner
@@ -11,11 +10,11 @@ import Foundation
 /// Both `runGHProcess` (GitHubCLITransport) and `runScriptWithOutput`
 /// (RunnerLifecycleService) are thin wrappers around this type.
 enum ProcessRunner {
-    /// A value type representing Result.
+    /// Encapsulates the exit code and captured stdout from a subprocess run.
     struct Result {
-        /// The data constant.
+        /// The raw stdout data collected from the process, or `nil` if the process produced no output.
         let data: Data?
-        /// The exitCode constant.
+        /// The process exit code; `Int32.max` indicates a launch failure.
         let exitCode: Int32
         /// Convenience: decoded UTF-8 string of `data`, or empty string.
         var output: String { data.flatMap { String(data: $0, encoding: .utf8) } ?? "" }
