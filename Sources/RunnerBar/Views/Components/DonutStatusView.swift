@@ -34,8 +34,6 @@ struct DonutStatusView: View {
 
     /// The strokeWidth property.
     private var strokeWidth: CGFloat { size * 0.11 }
-    /// The innerSize property.
-    private var innerSize: CGFloat { size * 0.82 }
 
     /// The body property.
     var body: some View {

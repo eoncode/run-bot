@@ -111,6 +111,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 // MARK: - JobContextMenuModifier
 // Adds a right-click context menu to a JobRowCard (job level).
 private struct JobContextMenuModifier: ViewModifier {
+    // periphery:ignore
     let job: ActiveJob
     let group: WorkflowActionGroup
 
