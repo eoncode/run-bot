@@ -51,6 +51,15 @@ import AppKit
 //
 // 5. NSBezierPath.cgPath is macOS 14+. Use .compatCGPath (extension below).
 //
+// NSGLASS COMPOSITOR WARM-UP (fix #891):
+// On cold open, NSGlassEffectView is added to the window before orderFront.
+// The CABackdropLayer sampler fires against an empty/grey buffer and renders flat.
+// Fix: viewDidMoveToWindow() defers one run-loop tick after the window is live,
+// then calls fxView.needsDisplay=true + updateFxMask() so the compositor gets
+// a valid desktop sample on the very first frame.
+// ❌ NEVER remove viewDidMoveToWindow() — regression is immediate grey on cold open.
+// ❌ NEVER remove the DispatchQueue.main.async defer — synchronous call fires too early.
+//
 // ❌ NEVER remove this file. Regression is major major major.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 
@@ -166,6 +175,33 @@ final class PanelChromeView: NSView {
 
     /// Not implemented — this view is only created programmatically.
     required init?(coder _: NSCoder) { fatalError() }
+
+    // MARK: - Glass compositor warm-up (fix #891)
+    //
+    // On cold open, NSGlassEffectView is attached to the window BEFORE orderFront.
+    // The CABackdropLayer sampler fires against an empty/grey buffer — no real desktop
+    // content yet — and renders flat grey. It never self-corrects unless something
+    // triggers a layout pass (which navigate() accidentally did via rootView swap).
+    //
+    // Fix: once the view is attached to a real window (viewDidMoveToWindow), defer
+    // one run-loop tick so the window is fully on-screen, then invalidate fxView and
+    // call updateFxMask(). This gives the CABackdropLayer a valid composition pass
+    // against live desktop pixels on the very first visible frame.
+    //
+    // ❌ NEVER remove this override — cold-open grey regression is immediate.
+    // ❌ NEVER make the call synchronous — it fires before the window is on-screen.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        if #available(macOS 26, *) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.fxView.needsDisplay = true
+                self.fxView.layer?.setNeedsDisplay()
+                self.updateFxMask()
+            }
+        }
+    }
 
     /// The rectangle occupied by the panel body (excluding the arrow tip area).
     var contentRect: NSRect {
