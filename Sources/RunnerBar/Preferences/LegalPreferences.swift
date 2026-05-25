@@ -23,7 +23,8 @@ final class LegalPreferences: ObservableObject {
         didSet { UserDefaults.standard.set(analyticsEnabled, forKey: Key.analyticsEnabled) }
     }
 
-    /// Private initialiser — use `shared`.
+    /// Creates the shared legal preferences store.
+    /// Use `LegalPreferences.shared` instead of constructing additional instances.
     private init() {
         // Explicit nil-check: treat absent key as false (opt-in, never assume consent).
         if UserDefaults.standard.object(forKey: Key.analyticsEnabled) == nil {

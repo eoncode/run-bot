@@ -60,6 +60,7 @@ enum RBFont {
 
 // MARK: - Adaptive Color helper
 
+/// Adaptive color helpers for building RunnerBar semantic colors.
 extension Color {
     /// Returns a color that switches between `light` and `dark` based on the current
     /// colour scheme by embedding both variants into an `NSColor`.
@@ -77,6 +78,7 @@ extension Color {
 
 // MARK: - Surface & Border tokens
 
+/// Semantic surface, border, text, and status color tokens used throughout RunnerBar.
 extension Color {
     // Design token notes:
     //
