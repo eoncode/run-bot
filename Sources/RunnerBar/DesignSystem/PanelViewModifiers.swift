@@ -14,14 +14,18 @@ import SwiftUI
 /// ❌ Do NOT convert `StatPill` to `GlassCard` — it is a capsule-shaped inline
 /// pill, not a card container.
 struct GlassCard: ViewModifier {
-    /// Corner radius applied to the rounded rectangle shape. Defaults to
-    /// `RBRadius.card` (8 pt).
+    /// Corner radius applied to the rounded rectangle shape. Defaults to `RBRadius.card` (8 pt).
     var cornerRadius: CGFloat
+    /// Opacity of the fallback stroke border. Defaults to 0.15 (card); use 0.25 for sections.
+    var strokeOpacity: Double
 
     /// Creates a `GlassCard` modifier.
-    /// - Parameter cornerRadius: Corner radius of the glass shape. Defaults to `RBRadius.card`.
-    init(cornerRadius: CGFloat = RBRadius.card) {
+    /// - Parameters:
+    ///   - cornerRadius: Corner radius of the glass shape. Defaults to `RBRadius.card`.
+    ///   - strokeOpacity: Stroke opacity used in the material fallback. Defaults to `0.15`.
+    init(cornerRadius: CGFloat = RBRadius.card, strokeOpacity: Double = 0.15) {
         self.cornerRadius = cornerRadius
+        self.strokeOpacity = strokeOpacity
     }
 
     /// Applies Liquid Glass on macOS 26+ (Swift 6.2+) and a material fallback on older OSes.
@@ -35,41 +39,33 @@ struct GlassCard: ViewModifier {
                 )
             )
         } else {
-            AnyView(
-                content
-                    .background(
-                        .ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
-                    )
-            )
+            AnyView(materialFallback(content: content))
         }
         #else
-        AnyView(
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
-                )
-        )
+        AnyView(materialFallback(content: content))
         #endif
+    }
+
+    /// Returns the `.ultraThinMaterial` + stroke fallback view used on macOS < 26.
+    private func materialFallback(content: Content) -> some View {
+        content
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(.white.opacity(strokeOpacity), lineWidth: 0.5)
+            )
     }
 }
 
 // MARK: - GlassSection
 /// Prominent Liquid Glass modifier intended for section headers and containers.
-/// On macOS 26+ (Swift 6.2+) uses `.glassEffect(.regular.interactive())`;
-/// on older OSes falls back to `.ultraThinMaterial` + a heavier stroke overlay.
+/// Delegates to `GlassCard` with a stronger stroke opacity (0.25) to distinguish
+/// section containers from regular cards.
 struct GlassSection: ViewModifier {
-    /// Corner radius applied to the rounded rectangle shape. Defaults to
-    /// `RBRadius.card` (8 pt).
+    /// Corner radius applied to the rounded rectangle shape. Defaults to `RBRadius.card` (8 pt).
     var cornerRadius: CGFloat
 
     /// Creates a `GlassSection` modifier.
@@ -78,42 +74,9 @@ struct GlassSection: ViewModifier {
         self.cornerRadius = cornerRadius
     }
 
-    /// Applies interactive Liquid Glass on macOS 26+ (Swift 6.2+) and a material fallback on older OSes.
+    /// Applies interactive Liquid Glass on macOS 26+ and a material fallback on older OSes.
     func body(content: Content) -> some View {
-        #if swift(>=6.2)
-        if #available(macOS 26, *) {
-            AnyView(
-                content.glassEffect(
-                    .regular.interactive(),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-            )
-        } else {
-            AnyView(
-                content
-                    .background(
-                        .ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-                    )
-            )
-        }
-        #else
-        AnyView(
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-                )
-        )
-        #endif
+        content.modifier(GlassCard(cornerRadius: cornerRadius, strokeOpacity: 0.25))
     }
 }
 
