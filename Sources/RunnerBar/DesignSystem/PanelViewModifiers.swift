@@ -1,6 +1,46 @@
 // PanelViewModifiers.swift
 // RunnerBar
+//
+// COEXISTENCE CONTRACT: CardRowModifier vs GlassCard/GlassSection
+// ─────────────────────────────────────────────────────────────────
+//  CardRowModifier  — flat semi-transparent fill for SCROLLABLE list rows
+//                    (Apple HIG: ❌ NEVER glass on scrollable content)
+//  GlassCard        — Liquid Glass for NON-SCROLLABLE floating card containers
+//  GlassSection     — stronger Liquid Glass for section headers/containers
+//
+// These two idioms serve different layout contexts and must coexist.
+// ❌ NEVER replace CardRowModifier with GlassCard on list rows.
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 import SwiftUI
+
+// MARK: - CardRowModifier
+
+/// Flat semi-transparent card background for rows inside scrollable lists.
+///
+/// Apple HIG prohibits `.glassEffect` on scrollable list content — use this
+/// modifier for list rows and `GlassCard` for floating non-scrollable containers.
+///
+/// ❌ NEVER apply `.glassEffect` here.
+/// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+struct CardRowModifier: ViewModifier {
+    /// When `true`, uses `rbSurfaceElevated` fill; otherwise uses `rbSurface`.
+    var elevated: Bool
+
+    /// Creates a `CardRowModifier`.
+    /// - Parameter elevated: Use elevated surface colour. Defaults to `false`.
+    init(elevated: Bool = false) {
+        self.elevated = elevated
+    }
+
+    /// Applies a semi-transparent rounded rectangle fill.
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    .fill(elevated ? Color.rbSurfaceElevated : Color.rbSurface)
+            )
+    }
+}
 
 // MARK: - GlassCard
 /// Centralised Liquid Glass card modifier.
@@ -114,9 +154,71 @@ struct GlassButton: ViewModifier {
     }
 }
 
+// MARK: - Pill background modifiers (private)
+
+/// Background modifier for `StatPill`.
+/// macOS 26+: `.glassEffect(.regular, in: Capsule())`.
+/// macOS < 26: `.background(.ultraThinMaterial, in: Capsule())` (unchanged).
+private struct StatPillBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+}
+
+/// Background modifier for `StatusBadge`.
+/// macOS 26+: tinted fill + `.glassEffect(.regular, in: Capsule())`.
+/// macOS < 26: `Capsule().strokeBorder(color.opacity(0.5))` (unchanged).
+private struct StatusBadgeBackground: ViewModifier {
+    let color: Color
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .background(color.opacity(0.15), in: Capsule())
+                .glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(
+                    Capsule()
+                        .strokeBorder(color.opacity(0.5), lineWidth: 1)
+                )
+        }
+    }
+}
+
+/// Background modifier for `BranchTagPill`.
+/// macOS 26+: accent tinted fill + `.glassEffect(.regular, in: Capsule())`.
+/// macOS < 26: `Capsule().strokeBorder(rbAccent.opacity(0.4))` (unchanged).
+private struct BranchTagPillBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .background(Color.rbAccent.opacity(0.12), in: Capsule())
+                .glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(
+                    Capsule()
+                        .strokeBorder(Color.rbAccent.opacity(0.4), lineWidth: 1)
+                )
+        }
+    }
+}
+
 // MARK: - View extensions
 /// Convenience modifiers for applying Liquid Glass effects to any `View`.
 extension View {
+    /// Applies the `CardRowModifier` to this view.
+    /// - Parameter elevated: Use elevated surface colour. Defaults to `false`.
+    func cardRow(elevated: Bool = false) -> some View {
+        modifier(CardRowModifier(elevated: elevated))
+    }
+
     /// Applies the `GlassCard` modifier to this view.
     /// - Parameter cornerRadius: Corner radius of the glass shape.
     ///   Defaults to `RBRadius.card` (8 pt).
@@ -140,8 +242,12 @@ extension View {
 }
 
 // MARK: - StatPill
-/// Compact ultraThinMaterial pill showing a label + value (e.g. "CPU 3.2%").
+/// Compact glass pill showing a label + value (e.g. "CPU 3.2%").
 /// Used in PanelLocalRunnerRow to surface per-runner CPU / MEM metrics.
+///
+/// macOS 26+: `.glassEffect(.regular, in: Capsule())` via `StatPillBackground`.
+/// macOS < 26: `.background(.ultraThinMaterial, in: Capsule())` (unchanged).
+///
 /// ❌ Do NOT convert to GlassCard — this is a capsule-shaped inline pill,
 /// not a card container.
 struct StatPill: View {
@@ -150,7 +256,7 @@ struct StatPill: View {
     /// The formatted metric value (e.g. "3.6%").
     let value: String
 
-    /// Lays out the label and value side-by-side inside a material capsule.
+    /// Lays out the label and value side-by-side inside a glass/material capsule.
     var body: some View {
         HStack(spacing: 3) {
             Text(label)
@@ -163,41 +269,44 @@ struct StatPill: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(.ultraThinMaterial, in: Capsule())
+        .modifier(StatPillBackground())
     }
 }
 
 // MARK: - StatusBadge
-/// Capsule-stroked badge used in action-row trailing area.
-/// Renders a colour-matched border and label for a given `RBStatus`.
+/// Capsule badge used in action-row trailing area.
+///
+/// macOS 26+: tinted fill + `.glassEffect(.regular, in: Capsule())` via
+/// `StatusBadgeBackground`.
+/// macOS < 26: colour-matched `Capsule().strokeBorder` (unchanged).
 struct StatusBadge: View {
     /// The status that drives the badge colour.
     let status: RBStatus
     /// The text displayed inside the badge.
     let text: String
 
-    /// Renders the status text inside a colour-matched capsule stroke.
+    /// Renders the status text inside an OS-appropriate capsule background.
     var body: some View {
         Text(text)
             .font(.system(size: 9, weight: .semibold))
             .foregroundColor(status.color)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .strokeBorder(status.color.opacity(0.5), lineWidth: 1)
-            )
+            .modifier(StatusBadgeBackground(color: status.color))
     }
 }
 
 // MARK: - BranchTagPill
 /// Inline pill displaying a git branch or tag name.
-/// Uses a blue-tinted stroke capsule consistent with the Phase 5 design language.
+///
+/// macOS 26+: accent-tinted fill + `.glassEffect(.regular, in: Capsule())` via
+/// `BranchTagPillBackground`.
+/// macOS < 26: blue-tinted `Capsule().strokeBorder` (unchanged).
 struct BranchTagPill: View { // periphery:ignore
     /// The branch or tag name to display.
     let name: String
 
-    /// Renders the branch icon and name inside a tinted capsule stroke.
+    /// Renders the branch icon and name inside an OS-appropriate capsule background.
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: "arrow.triangle.branch")
@@ -210,15 +319,24 @@ struct BranchTagPill: View { // periphery:ignore
         .foregroundColor(Color.rbAccent)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(
-            Capsule()
-                .strokeBorder(Color.rbAccent.opacity(0.4), lineWidth: 1)
-        )
+        .modifier(BranchTagPillBackground())
     }
 }
 
 // MARK: - Previews
 #if DEBUG
+#Preview("CardRow") {
+    VStack(spacing: 8) {
+        Text("Normal row")
+            .padding()
+            .cardRow()
+        Text("Elevated row")
+            .padding()
+            .cardRow(elevated: true)
+    }
+    .padding()
+}
+
 #Preview("GlassCard") {
     VStack(spacing: 12) {
         Text("Glass Card")
