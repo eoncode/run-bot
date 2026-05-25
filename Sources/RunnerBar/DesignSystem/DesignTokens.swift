@@ -17,6 +17,11 @@ enum RBSpacing {
     static let lg: CGFloat  = 16
     /// Extra-large spacing (24 pt).
     static let xl: CGFloat  = 24
+    // MARK: - Backwards-compat aliases
+    /// Backwards-compat alias — hairline gap (2 pt). Prefer xs for new code.
+    static let xxs: CGFloat = 2
+    /// Backwards-compat alias — 8 pt gap. Prefer sm for new code.
+    static let label: CGFloat = 8
 }
 
 // MARK: - Radius
@@ -36,6 +41,21 @@ enum RBFont {
     /// Section-header font: caption weight semibold, uppercased.
     static let sectionHeader: Font = .system(size: 10, weight: .semibold)
         .uppercaseSmallCaps()
+    // MARK: - Backwards-compat aliases
+    /// Backwards-compat — caption-sized monospaced font.
+    static let mono: Font = .system(.caption, design: .monospaced)
+    /// Backwards-compat — 11 pt regular monospaced.
+    static let monoSmall: Font = .system(size: 11, weight: .regular, design: .monospaced)
+    /// Backwards-compat — 13 pt medium label font.
+    static let label: Font = .system(size: 13, weight: .medium)
+    /// Backwards-compat — section key / section header labels.
+    static let sectionKey: Font = .system(size: 12.5, weight: .regular)
+    /// Backwards-compat — 9 pt semibold uppercase caption badge.
+    static let sectionCaption: Font = .system(size: 9, weight: .semibold)
+    /// Backwards-compat — 9 pt semibold monospaced stat label.
+    static let statLabel: Font = .system(size: 9, weight: .semibold, design: .monospaced)
+    /// Backwards-compat — 10 pt regular monospaced stat value.
+    static let statValue: Font = .system(size: 10, weight: .regular, design: .monospaced)
 }
 
 // MARK: - Adaptive Color helper
@@ -171,6 +191,15 @@ extension Color {
                                           dark:  Color(red: 1.00, green: 0.75, blue: 0.20))
     /// Orange tint overlay — subtle amber fill for warning backgrounds.
     public static let rbOrangeTint = rbWarning.opacity(0.08)
+    // MARK: - Backwards-compat tint aliases
+    /// Backwards-compat — low-opacity amber tint for warning/queued row backgrounds.
+    public static let rbYellowTint = rbWarning.opacity(0.08)
+    /// Backwards-compat — low-opacity blue tint for in-progress row backgrounds.
+    public static let rbBlueTint   = rbBlue.opacity(0.08)
+    /// Backwards-compat — low-opacity green tint for success row backgrounds.
+    public static let rbGreenTint  = rbSuccess.opacity(0.08)
+    /// Backwards-compat — low-opacity red tint for failed/danger row backgrounds.
+    public static let rbRedTint    = rbDanger.opacity(0.08)
 }
 
 // MARK: - Shadow Tokens
@@ -226,6 +255,49 @@ enum RBStatus: String, Equatable {
         case .failed:     return "xmark.circle.fill"
         case .queued:     return "clock.fill"
         case .unknown:    return "questionmark.circle"
+        }
+    }
+
+    // MARK: - Backwards-compat aliases
+    /// Backwards-compat — `sfSymbol` is an alias for `symbol`. Prefer `symbol` in new code.
+    public var sfSymbol: String { symbol }
+
+    /// Backwards-compat — low-opacity row-background tint colour for this status.
+    public var tint: Color {
+        switch self {
+        case .inProgress: return .rbBlueTint
+        case .success:    return .rbGreenTint
+        case .failed:     return .rbRedTint
+        case .queued:     return .rbYellowTint
+        default:          return .clear
+        }
+    }
+}
+
+// MARK: - DesignTokens namespace shim
+
+/// Backwards-compatibility namespace. Prefer the `RB*` types directly in new code.
+enum DesignTokens {
+    /// Font aliases forwarded from `RBFont`.
+    enum Fonts {
+        /// Monospaced label font — alias for `RBFont.monoSmall`.
+        static let monoLabel: Font = RBFont.monoSmall
+        /// Caption monospaced font — alias for `RBFont.mono`.
+        static let mono: Font = RBFont.mono
+    }
+    /// Spacing aliases forwarded from `RBSpacing`.
+    enum Spacing {
+        /// Horizontal row padding — alias for `RBSpacing.md`.
+        static let rowHPad: CGFloat = RBSpacing.md
+    }
+    /// Color helpers forwarded from the `Color` token extensions.
+    enum Colors {
+        /// Returns a traffic-light color based on a usage percentage (0–100).
+        /// - Green below 60 %, amber 60–85 %, red above 85 %.
+        static func usage(pct: Double) -> Color {
+            if pct < 60 { return .rbSuccess }
+            if pct < 85 { return .rbWarning }
+            return .rbDanger
         }
     }
 }
