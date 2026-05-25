@@ -1,5 +1,6 @@
 // RunnerDetailView.swift
 // RunnerBar
+// swiftlint:disable file_header
 import AppKit
 import RunnerBarCore
 import SwiftUI

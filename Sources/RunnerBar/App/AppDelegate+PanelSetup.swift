@@ -1,5 +1,6 @@
 // AppDelegate+PanelSetup.swift
 // RunnerBar
+// swiftlint:disable missing_docs
 import AppKit
 import Combine
 import SwiftUI
