@@ -41,8 +41,7 @@ import SwiftUI
 //
 // PANELVISIBILITYSTATE:
 // panelVisibilityState.isOpen mirrors panelIsOpen. Injected via wrapEnv().
-// ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
-// ❌ NEVER pass as a plain Bool prop to PanelMainView.
+// ❌ NEVER remove. ❌ NEVER remove from wrapEnv(). ❌ NEVER pass as plain Bool to PanelMainView.
 // See ARCHITECTURE.md §panelVisibilityState.
 
 // NOTE: KeyablePanel is defined in KeyablePanel.swift (internal access level).
@@ -273,6 +272,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         chrome?.arrowX = statusItemRect.midX - posX
         panel.orderFront(nil)
+
+        // MARK: Glass re-sample after orderFront
+        //
+        // NSGlassEffectView’s CABackdropLayer samples lazily. On the first
+        // orderFront call the window compositor has not yet produced a frame
+        // with live desktop content, so the sampler returns a grey placeholder.
+        //
+        // One run-loop tick after orderFront the display link has composited
+        // the first real frame. Forcing needsDisplay + needsLayout on chrome
+        // at that point gives the backdrop sampler live pixels and produces
+        // the correct dark Liquid Glass appearance on cold open.
+        //
+        // ❌ NEVER remove this block — cold-open glass goes grey without it.
+        // ❌ NEVER move this into viewDidMoveToWindow — the chrome view is
+        //   added to the window at init time (before orderFront), so
+        //   viewDidMoveToWindow fires while the window is still off-screen.
+        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+        if #available(macOS 26, *) {
+            DispatchQueue.main.async { [weak self] in
+                self?.chrome?.needsLayout = true
+                self?.chrome?.needsDisplay = true
+            }
+        }
+
         resizeAndRepositionPanel()
 
         if let saved = savedNavState, let restored = validatedView(for: saved) {
