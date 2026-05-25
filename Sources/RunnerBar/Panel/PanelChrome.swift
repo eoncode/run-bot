@@ -54,11 +54,15 @@ import AppKit
 // 6. ❌ NEVER use @available on a stored property — Swift does not allow it.
 //    fxView is typed as NSView and initialised conditionally in init().
 //
-// 7. viewDidMoveToWindow defers fxView redisplay one runloop tick after the
-//    panel lands on screen. NSGlassEffectView composites its first frame before
-//    the window becomes key, producing a grey cold-open even when appearance is
-//    pinned to .darkAqua. The deferred needsDisplay + layer setNeedsDisplay forces
-//    a re-sample once the compositor has a real frame, eliminating the grey flash.
+// 7. Cold-open backdrop reseat (macOS 26+ only):
+//    NSGlassEffectView composites its first frame before the window is actually key
+//    and composited at full depth. needsDisplay / setNeedsDisplay do NOT force the
+//    CABackdropLayer to resample — only removing and re-inserting the view into the
+//    hierarchy forces a fresh compositor evaluation.
+//    viewDidMoveToWindow fires once when the view joins a window; a deferred
+//    removeFromSuperview + re-insert on the next runloop tick forces a clean resample
+//    once the window is fully on screen, matching the dark glass seen after navigation.
+//    The re-insert restores fxView at index 0 (behind all content subviews).
 //    Guarded by #available(macOS 26, *) — NSVisualEffectView path is unaffected.
 //    ❌ NEVER remove viewDidMoveToWindow — grey cold-open regression (#892).
 //    If you are an agent or human, DO NOT REMOVE THIS COMMENT.
@@ -152,17 +156,19 @@ final class PanelChromeView: NSView {
 
     required init?(coder _: NSCoder) { fatalError() }
 
-    // MARK: - Cold-open glass fix
+    // MARK: - Cold-open glass fix (#892)
     //
-    // NSGlassEffectView composites its first frame before the window is key,
-    // producing a grey appearance even when the panel's appearance is pinned to
-    // .darkAqua. A deferred needsDisplay + layer setNeedsDisplay forces the
-    // CABackdropLayer to re-sample one runloop tick after the panel lands on
-    // screen, giving the compositor a real frame to work with.
+    // NSGlassEffectView composites its first frame before the window is key and
+    // fully on screen, producing a grey appearance even with appearance=.darkAqua.
+    // needsDisplay / setNeedsDisplay do NOT force the CABackdropLayer to resample.
     //
-    // This fires only when moving INTO a window (window != nil guard).
-    // On macOS 25 and earlier, NSVisualEffectView handles this correctly on its
-    // own, so the call is guarded by #available(macOS 26, *).
+    // The only reliable trigger is to remove fxView from the hierarchy and re-insert
+    // it one runloop tick later, forcing the compositor to build a fresh glass layer
+    // from the now-visible window content.
+    //
+    // Re-insert at index 0 so fxView stays behind all content subviews.
+    // guard window != nil — fires only when moving INTO a window, not on removal.
+    // #available(macOS 26, *) — NSVisualEffectView path handles this correctly on its own.
     //
     // ❌ NEVER remove this override — grey cold-open regression (#892).
     // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
@@ -171,9 +177,11 @@ final class PanelChromeView: NSView {
         guard window != nil else { return }
         if #available(macOS 26, *) {
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.fxView.needsDisplay = true
-                self.fxView.layer?.setNeedsDisplay()
+                guard let self, self.window != nil else { return }
+                self.fxView.removeFromSuperview()
+                self.addSubview(self.fxView, positioned: .below, relativeTo: self.subviews.first)
+                self.fxView.frame = self.bounds
+                self.updateFxMask()
             }
         }
     }
