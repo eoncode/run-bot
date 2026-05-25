@@ -4,7 +4,7 @@ options:
   createIntermediateGroups: true
 
 packages:
-  RunnerBarCore:
+  RunnerBar:
     path: .
 
 targets:
@@ -17,7 +17,7 @@ targets:
     resources:
       - Resources
     dependencies:
-      - package: RunnerBarCore
+      - package: RunnerBar
         product: RunnerBarCore
     settings:
       base:
