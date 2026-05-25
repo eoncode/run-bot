@@ -44,6 +44,16 @@ import SwiftUI
 // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
 // ❌ NEVER pass as a plain Bool prop to PanelMainView.
 // See ARCHITECTURE.md §panelVisibilityState.
+//
+// NSGLASS COMPOSITOR WARM-UP (fix #891):
+// After panel.orderFront, we immediately reassign hostingController.rootView
+// to itself. This forces SwiftUI to remount the view tree, which reconnects
+// NSGlassEffectView to the live window compositor so it samples real desktop
+// content on the very first frame. Without this, NSGlassEffectView renders
+// grey on cold open because it was added to the window before orderFront.
+// navigate() has always done this implicitly (rootView swap) which is why
+// Settings→Main always looked correct.
+// ❌ NEVER remove the rootView reassignment in openPanel().
 
 // NOTE: KeyablePanel is defined in KeyablePanel.swift (internal access level).
 // It must NOT be private or fileprivate — AppDelegate+Navigation.swift accesses
@@ -273,6 +283,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         chrome?.arrowX = statusItemRect.midX - posX
         panel.orderFront(nil)
+
+        // fix(#891): Force a rootView remount after orderFront so NSGlassEffectView
+        // connects to the live window compositor and samples real desktop content
+        // on the very first frame. Without this it renders grey on cold open.
+        // navigate() has always done this implicitly — this makes openPanel() consistent.
+        // ❌ NEVER remove this line.
+        if let hc = hostingController { hc.rootView = hc.rootView }
+
         resizeAndRepositionPanel()
 
         if let saved = savedNavState, let restored = validatedView(for: saved) {
