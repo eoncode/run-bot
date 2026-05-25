@@ -6,6 +6,61 @@ import RunnerBarCore
 import ServiceManagement
 import SwiftUI
 
+// MARK: - SettingsRowBackground
+
+/// Card background for settings list rows (`localRunnerRow`, `scopeRow`).
+///
+/// macOS 26+: `.glassEffect(.regular, in: RoundedRectangle(cornerRadius: RBRadius.small))`
+/// + `rbBorderSubtle` strokeBorder overlay (0.5 pt).
+/// macOS < 26: `.glassCard(cornerRadius: RBRadius.small)` (unchanged).
+private struct SettingsRowBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+        } else {
+            content
+                .glassCard(cornerRadius: RBRadius.small)
+        }
+    }
+}
+
+// MARK: - ScopeTypeTagBackground
+
+/// Background modifier for the inline “Repo” / “Org” type-tag capsule in `scopeRow`.
+///
+/// macOS 26+: `rbSurface` near-zero fill + `.glassEffect(.regular, in: Capsule())`
+/// + `rbBorderSubtle` strokeBorder overlay (0.5 pt).
+/// macOS < 26: `Capsule().fill(rbSurfaceElevated)` + `rbBorderSubtle` strokeBorder (unchanged).
+private struct ScopeTypeTagBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .background(Color.rbSurface, in: Capsule())
+                .glassEffect(.regular, in: Capsule())
+                .overlay(
+                    Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+        } else {
+            content
+                .background(Capsule().fill(Color.rbSurfaceElevated))
+                .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+        }
+    }
+}
+
+private extension View {
+    func settingsRow() -> some View { modifier(SettingsRowBackground()) }
+    func scopeTypeTag() -> some View { modifier(ScopeTypeTagBackground()) }
+}
+
 // MARK: - SettingsView
 // Settings view — complete implementation for all phases 1-6.
 //
@@ -240,7 +295,7 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
-        .glassCard(cornerRadius: RBRadius.small)
+        .settingsRow()
         .padding(.horizontal, RBSpacing.xs)
     }
 
@@ -385,8 +440,7 @@ struct SettingsView: View {
                     .foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.rbSurfaceElevated))
-                    .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+                    .scopeTypeTag()
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(displayName)
@@ -440,7 +494,7 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, 5)
-        .glassCard(cornerRadius: RBRadius.small)
+        .settingsRow()
         .padding(.horizontal, RBSpacing.xs)
         .opacity(entry.isEnabled ? 1.0 : 0.5)
     }
