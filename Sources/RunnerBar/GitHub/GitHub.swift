@@ -135,10 +135,9 @@ func fetchUserRepos() -> [String] {
 
 // MARK: - Step log
 
-// swiftlint:disable:next force_try
 /// Compiled regular expression for stripping ANSI escape sequences from log output.
 /// Safety: NSRegularExpression is immutable after initialisation — concurrent reads are safe.
-nonisolated(unsafe) private let _ansiRegex = try! NSRegularExpression( // swiftlint:disable:this force_try
+nonisolated(unsafe) private let ansiRegex: NSRegularExpression? = try? NSRegularExpression(
     pattern: "\u{001B}\\[[0-9;]*[A-Za-z]"
 )
 
@@ -317,7 +316,8 @@ private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
 
 /// Strips ANSI escape codes from a raw log string.
 private func stripAnsi(_ input: String) -> String {
-    _ansiRegex.stringByReplacingMatches(
+    guard let ansiRegex else { return input }
+    return ansiRegex.stringByReplacingMatches(
         in: input,
         range: NSRange(input.startIndex..., in: input),
         withTemplate: ""

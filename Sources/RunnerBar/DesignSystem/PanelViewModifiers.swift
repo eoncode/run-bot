@@ -284,7 +284,7 @@ struct BranchTagPill: View { // periphery:ignore
 }
 
 #Preview("GlassButton") {
-    Button(action: {}) {
+    Button(action: { /* preview stub — no action needed */ }) {
         Text("Re-run")
             .font(.caption)
             .padding(.horizontal, 8)
