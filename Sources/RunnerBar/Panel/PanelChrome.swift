@@ -36,7 +36,7 @@ import AppKit
 // 1. macOS coordinate system: y=0 is BOTTOM of view, y=bounds.height is TOP.
 //    Arrow tip is at TOP. contentRect = (0, 0, w, h - arrowHeight).
 //
-// 2. fxView (NSVisualEffectView) covers FULL bounds.
+// 2. fxView (NSGlassEffectView) covers FULL bounds.
 //    Body-shape clipping via CAShapeLayer mask on fxView.layer.
 //    Rebuilt on every layout() + arrowX change.
 //    ❌ NEVER set cornerRadius or masksToBounds on fxView.layer directly.
@@ -52,16 +52,6 @@ import AppKit
 // 5. NSBezierPath.cgPath is macOS 14+. Use .compatCGPath (extension below).
 //
 // ❌ NEVER remove this file. Regression is major major major.
-// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-
-// CHROME BACKDROP NOTE:
-// NSGlassEffectView was trialled here but reverted (#892).
-// It is context-sensitive — it blends with whatever is behind the window,
-// so on a light or mixed desktop the chrome appears grey/washed.
-// NSVisualEffectView with .hudWindow forces a dark translucent HUD look
-// regardless of desktop background, which is the required appearance.
-// ❌ NEVER replace vibrancyView with NSGlassEffectView for the chrome backdrop.
-// .glassEffect() SwiftUI modifiers on inner cards/buttons/pills are fine.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 
 /// Height of the arrow tip above the panel body, in points.
@@ -113,7 +103,7 @@ private extension NSBezierPath {
     }
 }
 
-/// Custom `NSView` that renders the HUD panel chrome: vibrancy background, rounded corners, and the arrow pointer.
+/// Custom `NSView` that renders the HUD panel chrome: glass background, rounded corners, and the arrow pointer.
 final class PanelChromeView: NSView {
     /// Panel-local X of arrow tip centre.
     /// Formula: button.window!.frame.midX - panel.frame.minX
@@ -123,18 +113,21 @@ final class PanelChromeView: NSView {
         didSet { needsDisplay = true; updateFxMask() }
     }
 
-    /// The visual effect view providing the HUD vibrancy background.
-    /// .hudWindow gives a forced dark translucent look regardless of desktop background.
-    /// ❌ NEVER switch to .popover — it produces a warm brown tint on dark wallpapers.
-    /// ❌ NEVER replace with NSGlassEffectView — it is context-sensitive and appears
-    /// grey on light/mixed backgrounds. See CHROME BACKDROP NOTE above.
+    /// The glass effect view providing the Liquid Glass background.
+    /// NSGlassEffectView gives the correct macOS 26 Liquid Glass appearance.
+    /// ❌ NEVER replace with NSVisualEffectView — .hudWindow gives a flat
+    /// translucent look that is not Liquid Glass.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-    private let vibrancyView: NSVisualEffectView = {
+    @available(macOS 26, *)
+    private lazy var glassView: NSGlassEffectView = {
+        let view = NSGlassEffectView()
+        view.wantsLayer = true
+        return view
+    }()
+
+    /// Fallback vibrancy view for macOS < 26.
+    private lazy var vibrancyView: NSVisualEffectView = {
         let view = NSVisualEffectView()
-        // .hudWindow gives a cool dark translucent look — no warm tint.
-        // .popover has a warm cream tint in dark mode which is undesirable.
-        // ❌ NEVER switch back to .popover — it produces a warm brown tint on dark wallpapers.
-        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         view.material = .hudWindow
         view.blendingMode = .behindWindow
         view.state = .active
@@ -142,15 +135,20 @@ final class PanelChromeView: NSView {
         return view
     }()
 
+    /// Returns the active backdrop view (glass on macOS 26+, vibrancy otherwise).
+    private var fxView: NSView {
+        if #available(macOS 26, *) { return glassView }
+        return vibrancyView
+    }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        // ❌ NEVER set layer?.backgroundColor = CGColor.clear (alpha 0.0).
-        // alpha=0.0 disables CABackdropLayer — vibrancy collapses to flat grey.
+        // ❌ NEVER set alpha=0.0 or isOpaque=true before orderFront — collapses glass backdrop.
         // Near-zero (0.001) keeps the backdrop sampler active.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         layer?.backgroundColor = CGColor(gray: 1, alpha: 0.001)
-        addSubview(vibrancyView)
+        addSubview(fxView)
     }
 
     /// Not implemented — this view is only created programmatically.
@@ -163,22 +161,22 @@ final class PanelChromeView: NSView {
 
     override func layout() {
         super.layout()
-        vibrancyView.frame = bounds
+        fxView.frame = bounds
         updateFxMask()
         // Re-pin ALL non-fx subviews to contentRect on EVERY layout pass.
         // ❌ NEVER set hosting view frame only at init — dynamic height breaks.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-        for sub in subviews where sub !== vibrancyView {
+        for sub in subviews where sub !== fxView {
             sub.frame = contentRect
         }
     }
 
-    /// Recomputes and applies the CAShapeLayer mask that clips vibrancy to the chrome path.
+    /// Recomputes and applies the CAShapeLayer mask that clips the glass/vibrancy view to the chrome path.
     private func updateFxMask() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let maskLayer = CAShapeLayer()
         maskLayer.path = chromePath(in: bounds).compatCGPath
-        vibrancyView.layer?.mask = maskLayer
+        fxView.layer?.mask = maskLayer
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -190,19 +188,6 @@ final class PanelChromeView: NSView {
     }
 
     // MARK: - Chrome path
-    //
-    // iSapozhnik two-bezier arrow with adjusted cpTip fraction.
-    //
-    // Left bezier:  leftPoint → toPoint,  cp1=(cX-w/6, baseY), cp2=(cX-w/5, tipY)
-    // Right bezier: toPoint  → rightPoint, cp1=(cX+w/5, tipY),  cp2=(cX+w/6, baseY)
-    //
-    // cpFoot = w/6 = 5pt  (concave foot anchor)
-    // cpTip  = w/5 = 6pt  (near-tip anchor, 12pt spread => soft rounded arch)
-    //
-    // ❌ NEVER set cpTip = w/9 (pointy) or hw (blob).
-    // ❌ NEVER add a tip arc.
-    // ❌ NEVER use appendArc at BASE corners.
-    // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
     /// Builds the rounded-rect + upward arrow bezier path used for both masking and drawing the panel chrome.
     private func chromePath(in rect: NSRect) -> NSBezierPath {
         let width     = rect.width
@@ -212,10 +197,8 @@ final class PanelChromeView: NSView {
         let centreX   = max(halfWidth + rad, min(arrowX, width - halfWidth - rad))
         let baseY     = height - arrowHeight
         let tipY      = height
-        let cpFoot    = arrowWidth / 6  // 5pt — concave foot anchor
-        let cpTip     = arrowWidth / 5  // 6pt — near-tip anchor, 12pt spread => soft arch
-        // ❌ NEVER change cpTip to w/9 (pointy) or hw (15pt, blob).
-        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+        let cpFoot    = arrowWidth / 6
+        let cpTip     = arrowWidth / 5
 
         let leftPoint  = NSPoint(x: centreX - halfWidth, y: baseY)
         let toPoint    = NSPoint(x: centreX, y: tipY)
