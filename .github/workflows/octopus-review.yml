@@ -11,4 +11,4 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: octopusreview/action@v1
+      - uses: octopusreview/action@3d87bfd1e986e9bc019bd7c88f0302cd6918fdce # v1
