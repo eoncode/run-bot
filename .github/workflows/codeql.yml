@@ -24,7 +24,11 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: swift
-          build-mode: none
+          build-mode: manual
+
+      - name: Build (allow macOS 26 SDK errors)
+        continue-on-error: true
+        run: swift build 2>&1 || true
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
