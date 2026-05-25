@@ -11,7 +11,7 @@ import RunnerBarCore
 /// Shared ISO-8601 date formatter for this file.
 /// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
 /// keeping one file-level instance avoids repeated allocation on every poll cycle.
-private let iso8601 = ISO8601DateFormatter()
+nonisolated(unsafe) private let iso8601 = ISO8601DateFormatter()
 
 /// Extension adding functionality to `RunnerStore`.
 extension RunnerStore {

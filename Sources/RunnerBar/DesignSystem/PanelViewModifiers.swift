@@ -65,7 +65,7 @@ struct GlassCard: ViewModifier {
 
 // MARK: - GlassSection
 /// Prominent Liquid Glass modifier intended for section headers and containers.
-/// On macOS 26+ (Swift 6.2+) uses `.glassEffect(.prominent)`;
+/// On macOS 26+ (Swift 6.2+) uses `.glassEffect(.regular.interactive())`;
 /// on older OSes falls back to `.ultraThinMaterial` + a heavier stroke overlay.
 struct GlassSection: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to
@@ -78,13 +78,13 @@ struct GlassSection: ViewModifier {
         self.cornerRadius = cornerRadius
     }
 
-    /// Applies prominent Liquid Glass on macOS 26+ (Swift 6.2+) and a material fallback on older OSes.
+    /// Applies interactive Liquid Glass on macOS 26+ (Swift 6.2+) and a material fallback on older OSes.
     func body(content: Content) -> some View {
         #if swift(>=6.2)
         if #available(macOS 26, *) {
             AnyView(
                 content.glassEffect(
-                    .prominent,
+                    .regular.interactive(),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
             )
