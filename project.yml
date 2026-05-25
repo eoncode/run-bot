@@ -37,10 +37,13 @@ targets:
       - Tests/RunnerBarUITests
     dependencies:
       - target: RunnerBar
+      - package: RunnerBarCore
+        product: RunnerBarCore
     settings:
       base:
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: YES
+        GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.runner-bar.uitests
 
 schemes:
