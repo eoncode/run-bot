@@ -36,7 +36,7 @@ import AppKit
 // 1. macOS coordinate system: y=0 is BOTTOM of view, y=bounds.height is TOP.
 //    Arrow tip is at TOP. contentRect = (0, 0, w, h - arrowHeight).
 //
-// 2. fxView (NSGlassEffectView) covers FULL bounds.
+// 2. fxView (NSGlassEffectView on macOS 26+, NSVisualEffectView otherwise) covers FULL bounds.
 //    Body-shape clipping via CAShapeLayer mask on fxView.layer.
 //    Rebuilt on every layout() + arrowX change.
 //    ❌ NEVER set cornerRadius or masksToBounds on fxView.layer directly.
@@ -51,22 +51,23 @@ import AppKit
 //
 // 5. NSBezierPath.cgPath is macOS 14+. Use .compatCGPath (extension below).
 //
+// 6. ❌ NEVER use @available on a stored property — Swift does not allow it.
+//    fxView is typed as NSView and initialised conditionally in init().
+//
 // ❌ NEVER remove this file. Regression is major major major.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 
 /// Height of the arrow tip above the panel body, in points.
-let arrowHeight: CGFloat = 9  // shallower = flatter arch, matches original NSPopover
+let arrowHeight: CGFloat = 9
 /// Width of the arrow base, in points.
-let arrowWidth: CGFloat = 30  // wider base, matches original NSPopover
+let arrowWidth: CGFloat = 30
 /// Corner radius of the panel body, matching native NSPopover.
-let cornerRadius: CGFloat = 10  // matches NSPopover body corner
+let cornerRadius: CGFloat = 10
 
 // MARK: - NSBezierPath → CGPath (macOS 13 compatible)
 // ❌ NEVER replace with .cgPath — requires macOS 14+.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-/// macOS 13-compatible `CGPath` conversion for `NSBezierPath`.
 private extension NSBezierPath {
-    /// Converts this `NSBezierPath` to a `CGPath` without using `.cgPath` (macOS 14+).
     var compatCGPath: CGPath {
         let path = CGMutablePath()
         var pts = [NSPoint](repeating: .zero, count: 3)
@@ -103,7 +104,7 @@ private extension NSBezierPath {
     }
 }
 
-/// Custom `NSView` that renders the HUD panel chrome: glass background, rounded corners, and the arrow pointer.
+/// Custom `NSView` rendering the panel chrome: Liquid Glass background, rounded corners, and arrow pointer.
 final class PanelChromeView: NSView {
     /// Panel-local X of arrow tip centre.
     /// Formula: button.window!.frame.midX - panel.frame.minX
@@ -113,48 +114,35 @@ final class PanelChromeView: NSView {
         didSet { needsDisplay = true; updateFxMask() }
     }
 
-    /// The glass effect view providing the Liquid Glass background.
-    /// NSGlassEffectView gives the correct macOS 26 Liquid Glass appearance.
-    /// ❌ NEVER replace with NSVisualEffectView — .hudWindow gives a flat
-    /// translucent look that is not Liquid Glass.
+    /// Backdrop view: NSGlassEffectView on macOS 26+, NSVisualEffectView on earlier.
+    /// Typed as NSView because @available is not allowed on stored properties in Swift.
+    /// ❌ NEVER re-declare with @available — compile error.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-    @available(macOS 26, *)
-    private lazy var glassView: NSGlassEffectView = {
-        let view = NSGlassEffectView()
-        view.wantsLayer = true
-        return view
-    }()
-
-    /// Fallback vibrancy view for macOS < 26.
-    private lazy var vibrancyView: NSVisualEffectView = {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.wantsLayer = true
-        return view
-    }()
-
-    /// Returns the active backdrop view (glass on macOS 26+, vibrancy otherwise).
-    private var fxView: NSView {
-        if #available(macOS 26, *) { return glassView }
-        return vibrancyView
-    }
+    private let fxView: NSView
 
     override init(frame: NSRect) {
+        if #available(macOS 26, *) {
+            let glass = NSGlassEffectView()
+            glass.wantsLayer = true
+            fxView = glass
+        } else {
+            let vibrancy = NSVisualEffectView()
+            vibrancy.material = .hudWindow
+            vibrancy.blendingMode = .behindWindow
+            vibrancy.state = .active
+            vibrancy.wantsLayer = true
+            fxView = vibrancy
+        }
         super.init(frame: frame)
         wantsLayer = true
-        // ❌ NEVER set alpha=0.0 or isOpaque=true before orderFront — collapses glass backdrop.
-        // Near-zero (0.001) keeps the backdrop sampler active.
+        // ❌ NEVER set alpha=0.0 — collapses CABackdropLayer / glass sampler.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         layer?.backgroundColor = CGColor(gray: 1, alpha: 0.001)
         addSubview(fxView)
     }
 
-    /// Not implemented — this view is only created programmatically.
     required init?(coder _: NSCoder) { fatalError() }
 
-    /// The rectangle occupied by the panel body (excluding the arrow tip area).
     var contentRect: NSRect {
         NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - arrowHeight))
     }
@@ -163,15 +151,14 @@ final class PanelChromeView: NSView {
         super.layout()
         fxView.frame = bounds
         updateFxMask()
-        // Re-pin ALL non-fx subviews to contentRect on EVERY layout pass.
-        // ❌ NEVER set hosting view frame only at init — dynamic height breaks.
+        // Re-pin ALL non-fx subviews on EVERY layout pass.
+        // ❌ NEVER set hosting view frame only at init.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         for sub in subviews where sub !== fxView {
             sub.frame = contentRect
         }
     }
 
-    /// Recomputes and applies the CAShapeLayer mask that clips the glass/vibrancy view to the chrome path.
     private func updateFxMask() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let maskLayer = CAShapeLayer()
@@ -188,7 +175,6 @@ final class PanelChromeView: NSView {
     }
 
     // MARK: - Chrome path
-    /// Builds the rounded-rect + upward arrow bezier path used for both masking and drawing the panel chrome.
     private func chromePath(in rect: NSRect) -> NSBezierPath {
         let width     = rect.width
         let height    = rect.height
