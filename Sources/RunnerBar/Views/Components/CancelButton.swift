@@ -22,7 +22,6 @@ struct CancelButton: View {
         }
     }
 
-    // MARK: - Idle button
     /// The idle-state button; uses `.glassEffect` on macOS 26+, plain style on earlier OS.
     @ViewBuilder private var idleButton: some View {
         if #available(macOS 26, *) {

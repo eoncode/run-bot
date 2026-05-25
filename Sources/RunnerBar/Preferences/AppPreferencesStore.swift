@@ -56,7 +56,6 @@ final class AppPreferencesStore: ObservableObject {
 
 // MARK: - Comparable+clamped
 
-/// Extension adding clamping to `Comparable`.
 private extension Comparable {
     /// Clamps `self` to `range`, returning `range.lowerBound` if below or `range.upperBound` if above.
     func clamped(to range: ClosedRange<Self>) -> Self {
