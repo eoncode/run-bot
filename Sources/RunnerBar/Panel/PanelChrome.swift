@@ -54,6 +54,15 @@ import AppKit
 // 6. ❌ NEVER use @available on a stored property — Swift does not allow it.
 //    fxView is typed as NSView and initialised conditionally in init().
 //
+// 7. viewDidMoveToWindow defers fxView redisplay one runloop tick after the
+//    panel lands on screen. NSGlassEffectView composites its first frame before
+//    the window becomes key, producing a grey cold-open even when appearance is
+//    pinned to .darkAqua. The deferred needsDisplay + layer setNeedsDisplay forces
+//    a re-sample once the compositor has a real frame, eliminating the grey flash.
+//    Guarded by #available(macOS 26, *) — NSVisualEffectView path is unaffected.
+//    ❌ NEVER remove viewDidMoveToWindow — grey cold-open regression (#892).
+//    If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+//
 // ❌ NEVER remove this file. Regression is major major major.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 
@@ -142,6 +151,32 @@ final class PanelChromeView: NSView {
     }
 
     required init?(coder _: NSCoder) { fatalError() }
+
+    // MARK: - Cold-open glass fix
+    //
+    // NSGlassEffectView composites its first frame before the window is key,
+    // producing a grey appearance even when the panel's appearance is pinned to
+    // .darkAqua. A deferred needsDisplay + layer setNeedsDisplay forces the
+    // CABackdropLayer to re-sample one runloop tick after the panel lands on
+    // screen, giving the compositor a real frame to work with.
+    //
+    // This fires only when moving INTO a window (window != nil guard).
+    // On macOS 25 and earlier, NSVisualEffectView handles this correctly on its
+    // own, so the call is guarded by #available(macOS 26, *).
+    //
+    // ❌ NEVER remove this override — grey cold-open regression (#892).
+    // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        if #available(macOS 26, *) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.fxView.needsDisplay = true
+                self.fxView.layer?.setNeedsDisplay()
+            }
+        }
+    }
 
     var contentRect: NSRect {
         NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - arrowHeight))
