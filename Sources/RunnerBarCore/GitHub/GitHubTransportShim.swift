@@ -11,13 +11,14 @@
 //   • The app target wires the real GitHubURLSessionTransport at launch.
 //
 import Foundation
+import os
 
 // MARK: - Transport protocol
 
 /// A synchronous GitHub API fetch that returns raw JSON `Data` for a given
 /// REST endpoint path (no leading `https://api.github.com`).
 /// Returns `nil` on network error, rate-limit, or missing auth token.
-public typealias GHAPITransport = (_ endpoint: String) -> Data?
+public typealias GHAPITransport = @Sendable (_ endpoint: String) -> Data?
 
 // MARK: - Module-level state
 
@@ -26,14 +27,13 @@ public typealias GHAPITransport = (_ endpoint: String) -> Data?
 /// returns `nil` so RunnerBarCore builds cleanly in unit-test targets that
 /// don't wire up a real transport.
 ///
-/// `nonisolated(unsafe)` opts out of Swift 6 global-actor isolation checks;
-/// callers must ensure writes happen before any concurrent reads (i.e. at app
-/// launch before background fetch timers start).
-nonisolated(unsafe) private var _transport: GHAPITransport = { _ in nil }
+/// Safety: protected by transportLock.
+private let transportLock = OSAllocatedUnfairLock<GHAPITransport>(initialState: { _ in nil })
 
 /// Closure that reports the current rate-limit state.  Set alongside
 /// `_transport` by `configureGHAPI(_:isRateLimited:)`.
-nonisolated(unsafe) private var _isRateLimited: () -> Bool = { false }
+/// Safety: protected by rateLimitLock.
+private let rateLimitLock = OSAllocatedUnfairLock<@Sendable () -> Bool>(initialState: { false })
 
 // MARK: - Configuration
 
@@ -47,10 +47,10 @@ nonisolated(unsafe) private var _isRateLimited: () -> Bool = { false }
 ///     rate-limited and calls should be skipped.
 public func configureGHAPI(
     _ transport: @escaping GHAPITransport,
-    isRateLimited: @escaping () -> Bool
+    isRateLimited: @escaping @Sendable () -> Bool
 ) {
-    _transport      = transport
-    _isRateLimited  = isRateLimited
+    transportLock.withLock { $0 = transport }
+    rateLimitLock.withLock { $0 = isRateLimited }
 }
 
 // MARK: - Module-level symbols consumed by RunnerBarCore files
@@ -61,12 +61,12 @@ public func configureGHAPI(
 /// that `WorkflowActionGroupFetch` and `RunnerStatusEnricher` compile without
 /// modification.
 func ghAPI(_ endpoint: String) -> Data? {
-    _transport(endpoint)
+    transportLock.withLock { $0(endpoint) }
 }
 
 /// Returns `true` when the GitHub API is currently rate-limiting this client.
 ///
 /// Matches the global `ghIsRateLimited` var in `GitHubURLSessionTransport.swift`.
 var ghIsRateLimited: Bool {
-    _isRateLimited()
+    rateLimitLock.withLock { $0() }
 }

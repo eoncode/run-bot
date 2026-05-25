@@ -9,7 +9,7 @@ import Foundation
 /// `scope` is either `"owner/repo"` (repository) or `"myorg"` (organisation).
 /// `isEnabled` controls whether `RunnerStore` polls this scope; disabled scopes
 /// are retained in the list but silently skipped during fetch.
-public struct ScopeEntry: Identifiable, Codable, Equatable {
+public struct ScopeEntry: Identifiable, Codable, Equatable, Hashable {
     /// The id constant.
     public let id: UUID
     /// The scope property.

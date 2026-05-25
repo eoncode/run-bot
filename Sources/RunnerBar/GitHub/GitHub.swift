@@ -20,10 +20,11 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
 // MARK: - Fetch all jobs from active runs
 
 /// Shared ISO-8601 date formatter.
-/// Safety: ISO8601DateFormatter is a reference type. This instance is created once
-/// at module load time and only ever read (never mutated) after that, so concurrent
-/// access is safe despite the `nonisolated(unsafe)` annotation.
-nonisolated(unsafe) private let iso8601 = ISO8601DateFormatter()
+/// Safety: protected by iso8601Lock.
+private struct SendableFormatter: @unchecked Sendable {
+    let iso = ISO8601DateFormatter()
+}
+private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
 
 /// Fetches all active (in-progress and queued) jobs for a given scope.
 /// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) runners.
@@ -59,7 +60,9 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
         else { continue }
         for payload in resp.jobs {
             guard seenJobIDs.insert(payload.id).inserted else { continue }
-            jobs.append(makeActiveJob(from: payload, iso: iso8601, isDimmed: false))
+            jobs.append(iso8601Lock.withLock { wrapper in
+                makeActiveJob(from: payload, iso: wrapper.iso, isDimmed: false)
+            })
         }
     }
     log("fetchActiveJobs › \(jobs.count) job(s) for \(scopeString)")

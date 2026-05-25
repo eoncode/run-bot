@@ -1,7 +1,8 @@
 // AppDelegate+Navigation.swift
 // RunnerBar
-import RunnerBarCore
 import SwiftUI
+import os
+import RunnerBarCore
 
 // MARK: - Navigation & view factories
 //
@@ -12,9 +13,11 @@ import SwiftUI
 /// Shared ISO-8601 date formatter for this file.
 /// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
 /// keeping one file-level instance avoids repeated allocation on every step enrichment call.
-/// Safety: this formatter is only ever read (passed to makeActiveJob) — never mutated
-/// after module load — so concurrent access from nonisolated contexts is safe.
-nonisolated(unsafe) private let iso8601 = ISO8601DateFormatter()
+/// Safety: protected by iso8601Lock.
+private struct SendableFormatter: @unchecked Sendable {
+    let iso = ISO8601DateFormatter()
+}
+private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
 
 /// Extension adding functionality to `AppDelegate`.
 extension AppDelegate {
@@ -33,7 +36,9 @@ extension AppDelegate {
               let data = ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
               let fresh = try? JSONDecoder().decode(JobPayload.self, from: data)
         else { return job }
-        return makeActiveJob(from: fresh, iso: iso8601, isDimmed: job.isDimmed)
+        return iso8601Lock.withLock { wrapper in
+            makeActiveJob(from: fresh, iso: wrapper.iso, isDimmed: job.isDimmed)
+        }
     }
 
     // MARK: - View factories

@@ -2,13 +2,18 @@
 // RunnerBarCore
 // swiftlint:disable missing_docs
 import Foundation
+import os
 
 // MARK: - Codable helpers (private to this file)
 
 /// Shared ISO-8601 date formatter for this file.
 /// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
 /// keeping one instance avoids repeated allocation on every fetch cycle.
-nonisolated(unsafe) private let iso8601 = ISO8601DateFormatter()
+/// Safety: protected by iso8601Lock.
+private struct SendableFormatter: @unchecked Sendable {
+    let iso = ISO8601DateFormatter()
+}
+private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
 
 /// Top-level response envelope for the GitHub Actions workflow runs list endpoint.
 private struct ActionRunsResponse: Codable {
@@ -164,7 +169,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
             jobs: allJobs,
             firstJobStartedAt: starts.min(),
             lastJobCompletedAt: ends.max(),
-            createdAt: rep.createdAt.flatMap { iso8601.date(from: $0) }
+            createdAt: rep.createdAt.flatMap { dateStr in iso8601Lock.withLock { $0.iso.date(from: dateStr) } }
         )
     }
     groups.sort { leftGroup, rightGroup in
@@ -187,7 +192,9 @@ private func fetchJobsForRun(_ runID: Int, scope: String) -> [ActiveJob] {
     guard let data = ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=100"),
           let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
     else { return [] }
-    let initial = resp.jobs.map { makeActiveJob(from: $0, iso: iso8601) }
+    let initial = iso8601Lock.withLock { wrapper in
+        resp.jobs.map { makeActiveJob(from: $0, iso: wrapper.iso) }
+    }
     var result = initial
     var refreshCount = 0
     for idx in result.indices {
@@ -198,7 +205,9 @@ private func fetchJobsForRun(_ runID: Int, scope: String) -> [ActiveJob] {
         guard let freshData = ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
               let fresh = try? JSONDecoder().decode(JobPayload.self, from: freshData)
         else { continue }
-        let freshJob = makeActiveJob(from: fresh, iso: iso8601)
+        let freshJob = iso8601Lock.withLock { wrapper in
+            makeActiveJob(from: fresh, iso: wrapper.iso)
+        }
         if fresh.conclusion != nil { result[idx] = freshJob; continue }
         let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
         if betterSteps {

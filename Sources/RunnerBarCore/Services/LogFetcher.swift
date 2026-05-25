@@ -1,26 +1,18 @@
 // LogFetcher.swift
 // RunnerBarCore
 import Foundation
+import os
 
 // MARK: - Filesystem path constants
 /// The unzipBinaryPath constant.
 private let unzipBinaryPath = "/usr/bin/unzip"
-
-/// Returns the path to the `gh` CLI binary, or nil if not found.
-/// Private to this file — mirrors the internal version in GitHubCLITransport.swift.
-private func ghBinaryPath() -> String? {
-    let candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
-    return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
-}
-
-// MARK: - Raw binary/text fetch via gh CLI
 
 /// Calls `gh api` with `Accept: application/vnd.github.v3.raw` so log endpoints
 /// return the raw redirected body (plain text for jobs, ZIP bytes for runs)
 /// instead of the default JSON wrapper. Mirrors the pattern used by
 /// `fetchStepLog` in GitHub.swift but returns raw `Data` for binary support.
 private func ghRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
-    guard let ghPath = ghBinaryPath() else { log("ghRaw › gh not found"); return nil }
+    guard let ghPath = GHBinaryLocator.ghBinaryPath() else { log("ghRaw › gh not found"); return nil }
     let task = Process()
     let pipe = Pipe()
     task.executableURL = URL(fileURLWithPath: ghPath)
@@ -71,8 +63,7 @@ public func fetchActionLogs(group: WorkflowActionGroup) -> String? {
     guard scope.contains("/") else { return nil }
     let runIDs = group.runs.map { $0.id }
     guard !runIDs.isEmpty else { return nil }
-    var parts: [(name: String, text: String)] = []
-    let lock = NSLock()
+    let parts = OSAllocatedUnfairLock<[(name: String, text: String)]>(initialState: [])
     let dispatchGroup = DispatchGroup()
     for runID in runIDs {
         dispatchGroup.enter()
@@ -80,12 +71,13 @@ public func fetchActionLogs(group: WorkflowActionGroup) -> String? {
             defer { dispatchGroup.leave() }
             guard let data = ghRaw("repos/\(scope)/actions/runs/\(runID)/logs") else { return }
             let extracted = unzipLogs(data)
-            lock.lock(); parts.append(contentsOf: extracted); lock.unlock()
+            parts.withLock { $0.append(contentsOf: extracted) }
         }
     }
     dispatchGroup.wait()
-    guard !parts.isEmpty else { return nil }
-    return parts
+    let finalParts = parts.withLock { $0 }
+    guard !finalParts.isEmpty else { return nil }
+    return finalParts
         .sorted { $0.name < $1.name }
         .map { "=== \($0.name) ===\n\($0.text)" }
         .joined(separator: "\n\n")
