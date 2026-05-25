@@ -272,33 +272,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         chrome?.arrowX = statusItemRect.midX - posX
 
-        // MARK: rootView flush for glass compositor (#850 / #893)
+        // MARK: Key-window glass (#850)
         //
-        // NSGlassEffectView samples both the desktop AND the window’s own SwiftUI
-        // layer stack. On first open the NSHostingController has not flushed its
-        // initial render into the compositor, so glass sees a thin/grey stack.
+        // NSGlassEffectView on macOS 26 has two distinct rendering variants:
+        //   • background-window variant — grey/light glass
+        //   • key-window variant        — dark Liquid Glass
         //
-        // Replacing rootView forces NSHostingController to perform a full layout +
-        // compositor flush — exactly what happens on Settings→Main navigation, which
-        // is why that round-trip produces the correct dark glass.
+        // The .appearance = .darkAqua pin controls colour scheme only, NOT which
+        // glass variant is used. The variant is controlled entirely by key-window state.
         //
-        // We only do this when no saved nav state would override it (i.e. we are
-        // about to show mainView, not a restored Settings/StepLog screen).
-        // NavState has associated values so is not Equatable — use if-case pattern.
+        // orderFront(nil) puts the panel on screen but never makes it key.
+        // wantsKey = true only signals willingness — it does NOT call becomeKey.
+        // So on cold open the panel sat in background-window mode → grey glass.
+        // On the first user tap AppKit called makeKeyAndOrderFront internally →
+        // panel became key → dark glass. That is why every open *after* the first
+        // one looked correct.
         //
-        // ❌ NEVER remove this block — main panel shows grey on cold open without it.
-        // ❌ NEVER replace with == comparison — NavState is not Equatable.
+        // makeKeyAndOrderFront(nil) makes the panel key on the very first compositor
+        // frame, so dark glass renders immediately from cold open.
+        //
+        // Safety: .nonactivatingPanel style mask on KeyablePanel ensures the app
+        // never activates — no Dock bounce, no menu bar switch, no stolen keyboard
+        // focus from whatever the user was typing. Native macOS popovers and menus
+        // do exactly the same thing.
+        //
+        // ❌ NEVER revert to orderFront(nil) — cold-open glass goes grey without this.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-        let showingMain: Bool
-        switch savedNavState {
-        case .none, .some(.main): showingMain = true
-        default: showingMain = false
-        }
-        if showingMain {
-            hostingController?.rootView = mainView()
-        }
+        panel.wantsKey = true
+        panel.makeKeyAndOrderFront(nil)
 
-        panel.orderFront(nil)
         resizeAndRepositionPanel()
 
         if let saved = savedNavState, let restored = validatedView(for: saved) {
