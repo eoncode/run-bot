@@ -47,6 +47,20 @@ jobs:
           fi
           xcodebuild -version
 
+      - name: Verify runner has a GUI session
+        run: |
+          if ls ~/Library/LaunchAgents/com.github.runner.*.plist &>/dev/null; then
+            echo "Runner is a user launch agent (GUI session available)."
+          elif ls /Library/LaunchDaemons/com.github.runner.*.plist &>/dev/null; then
+            echo "ERROR: Runner is a system daemon and has no GUI session."
+            echo "Reinstall as a user launch agent:"
+            echo "  sudo ./svc.sh uninstall"
+            echo "  ./svc.sh install && ./svc.sh start"
+            exit 1
+          else
+            echo "WARNING: Could not detect runner service type. Proceeding."
+          fi
+
       # --- Build --------------------------------------------------------------
 
       - name: Generate ephemeral Xcode project
