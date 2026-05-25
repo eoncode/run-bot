@@ -1,9 +1,72 @@
 // PanelMainView+Subviews.swift
 // RunnerBar
+//
+// Phase 8 — Liquid Glass card surfaces
+// ActionRowView:        macOS 26+: ActionRowBackground (.glassEffect + status bar overlay)
+//                       macOS < 26: original rbSurfaceElevated fill + strokeBorder (unchanged)
+// PanelLocalRunnerRow:  macOS 26+: GlassEffectContainer wrapping runner cards
+//                       macOS < 26: plain ForEach, runnerCard uses .glassCard (unchanged)
+//
+// ❌ NEVER wrap ActionRowView items in GlassEffectContainer — see RULE 10 in PanelMainView.swift.
 // swiftlint:disable colon opening_brace
 
 import RunnerBarCore
 import SwiftUI
+
+// MARK: - ActionRowBackground
+
+/// Card background for `ActionRowView`.
+///
+/// - macOS 26+: `.glassEffect(.regular, in: RoundedRectangle)` with a `rbBorderSubtle`
+///   strokeBorder overlay and a leading status-colour bar overlay.
+/// - macOS < 26: `RoundedRectangle.fill(rbSurfaceElevated)` + strokeBorder + status bar
+///   (behaviour is identical to the previous implementation).
+///
+/// Each `ActionRowView` gets its own independent glass surface via this modifier.
+/// ❌ NEVER move the status bar into a separate overlay after `clipShape` — it will be clipped out.
+/// ❌ NEVER nest inside `GlassEffectContainer` — see RULE 10 in PanelMainView.swift.
+private struct ActionRowBackground: ViewModifier {
+    let status: RBStatus
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+                .overlay(
+                    Rectangle()
+                        .fill(status.color)
+                        .frame(width: 4)
+                        .frame(maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+                )
+        } else {
+            content
+                .background(
+                    ZStack {
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .fill(Color.rbSurfaceElevated)
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                        Rectangle()
+                            .fill(status.color)
+                            .frame(width: 4)
+                            .frame(maxHeight: .infinity)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+                )
+        }
+    }
+}
+
 // MARK: - SectionHeaderLabel
 /// Uppercase small-caps label used as a section divider inside the panel.
 /// Displays a title string in the muted secondary style.
@@ -77,8 +140,12 @@ private struct RunnerTypeIcon: View {
 }
 
 // MARK: - PanelLocalRunnerRow
-/// Row displaying a single local self-hosted runner: name, status badge, and
-/// CPU/memory stats. Only shown when `showLocalRunnerSection` is true.
+/// Row displaying a set of busy local self-hosted runners: name, status badge, and
+/// CPU/memory stats. Only rendered when there are busy runners.
+///
+/// macOS 26+: runner cards are wrapped in `GlassEffectContainer` so they share a
+/// single Liquid Glass compositor layer.
+/// macOS < 26: plain `ForEach` — each card uses `.glassCard(cornerRadius:)` (unchanged).
 struct PanelLocalRunnerRow: View {
     /// The runners constant.
     let runners: [RunnerModel]
@@ -87,9 +154,16 @@ struct PanelLocalRunnerRow: View {
         let busy = runners.filter { $0.isBusy }
         if !busy.isEmpty { runnerList(busy) }
     }
-    /// Renders a vertical stack of `runnerCard` views for each busy local runner.
+    /// Renders a vertical stack of runner card views for each busy local runner.
+    /// On macOS 26+ cards are wrapped in `GlassEffectContainer`.
     @ViewBuilder private func runnerList(_ busy: [RunnerModel]) -> some View {
-        ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
+        if #available(macOS 26, *) {
+            GlassEffectContainer {
+                ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
+            }
+        } else {
+            ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
+        }
         if busy.count > 3 {
             Text("+ \(busy.count - 3) more…")
                 .font(.caption2).foregroundColor(.secondary)
@@ -97,9 +171,12 @@ struct PanelLocalRunnerRow: View {
         }
         Divider()
     }
-    /// Compact card showing a single runner's name, status badge, and CPU/memory stats.
+    /// Compact card showing a single runner’s name, status badge, and CPU/memory stats.
+    ///
+    /// macOS 26+: `.glassEffect(.regular, in: RoundedRectangle)` + `rbBorderSubtle` strokeBorder.
+    /// macOS < 26: `.glassCard(cornerRadius:)` (unchanged).
     private func runnerCard(_ runner: RunnerModel) -> some View {
-        HStack(spacing: 8) {
+        let cardContent = HStack(spacing: 8) {
             Circle().fill(Color.rbWarning).frame(width: 7, height: 7)
             Text(runner.runnerName)
                 .font(RBFont.label)
@@ -113,7 +190,23 @@ struct PanelLocalRunnerRow: View {
             }
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xs + 2)
-        .glassCard(cornerRadius: RBRadius.card)
+
+        return Group {
+            if #available(macOS 26, *) {
+                cardContent
+                    .glassEffect(
+                        .regular,
+                        in: RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
+                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                    )
+            } else {
+                cardContent
+                    .glassCard(cornerRadius: RBRadius.card)
+            }
+        }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xxs)
     }
 }
@@ -121,6 +214,13 @@ struct PanelLocalRunnerRow: View {
 // MARK: - ActionRowView
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.
+///
+/// macOS 26+: card background provided by `ActionRowBackground` using `.glassEffect`
+/// with a leading status-colour bar overlay.
+/// macOS < 26: `ActionRowBackground` falls back to the original `rbSurfaceElevated`
+/// fill + strokeBorder (behaviour unchanged).
+///
+/// ❌ NEVER wrap in `GlassEffectContainer` — see RULE 10 in PanelMainView.swift.
 struct ActionRowView: View {
     /// The group constant.
     let group: WorkflowActionGroup
@@ -144,17 +244,7 @@ struct ActionRowView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .background(
-            ZStack {
-                glassCardBackground
-                Rectangle()
-                    .fill(rowStatus.color)
-                    .frame(width: 4)
-                    .frame(maxHeight: .infinity)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
-        )
+        .modifier(ActionRowBackground(status: rowStatus))
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .workflowContextMenu(group: group)
@@ -184,14 +274,6 @@ struct ActionRowView: View {
             }
             previousStatus = newStatus
         }
-    }
-
-    /// Glass card background for the action row.
-    /// Routes through `.glassCard()` to honour the Phase 1 contract — nothing
-    /// outside `PanelViewModifiers` calls `.glassEffect()` directly on card containers.
-    @ViewBuilder private var glassCardBackground: some View {
-        Color.clear
-            .glassCard(cornerRadius: RBRadius.card)
     }
 
     /// Resolves the effective display status for the row.
