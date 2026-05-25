@@ -22,24 +22,35 @@ struct CancelButton: View {
             if let phase {
                 ButtonPhaseView(phase: phase)
             } else {
-                Button(action: startCancel) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "xmark.circle")
-                            .font(.caption)
-                        Text("Cancel")
-                            .font(.caption)
-                            .fixedSize()
-                    }
-                    .foregroundColor(isDisabled ? .secondary.opacity(0.4) : .secondary)
-                }
-                .buttonStyle(.plain)
-                .disabled(isDisabled)
+                idleButton
             }
         }
     }
 
+    // MARK: - Idle button
+    /// Renders the idle state: Liquid Glass button on Swift 6.2+ / macOS 26+,
+    /// plain button on older SDKs.
+    @ViewBuilder private var idleButton: some View {
+        Button(action: startCancel) {
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.circle")
+                    .font(.caption)
+                Text("Cancel")
+                    .font(.caption)
+                    .fixedSize()
+            }
+            .foregroundColor(isDisabled ? .secondary.opacity(0.4) : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .glassButton(cornerRadius: RBRadius.small)
+    }
+
     // MARK: - Actions
-    /// Performs the startCancel operation.
+    /// Performs the cancel action: transitions to `.loading`, invokes `action`,
+    /// then transitions to `.done` or `.failed` before resetting to idle after 1.5 s.
     private func startCancel() {
         guard phase == nil else { return }
         phase = .loading

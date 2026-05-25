@@ -23,6 +23,7 @@ struct SystemStatsView: View {
             statRow(label: "Disk Total", value: String(format: "%.1f GB", viewModel.stats.diskTotalGB))
         }
         .padding()
+        .glassCard(cornerRadius: RBRadius.card)
         .onAppear { viewModel.start() }
         .onDisappear { viewModel.stop() }
     }
@@ -198,6 +199,7 @@ struct HeaderStatsBar: View {
 // Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
 // periphery:ignore
 /// A value type representing BlockBarView.
+@available(macOS, deprecated: 26, message: "Use SparklineMetricView or HeaderStatsBar instead.")
 struct BlockBarView: View {
     /// The label constant.
     let label: String

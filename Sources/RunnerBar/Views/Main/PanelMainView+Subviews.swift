@@ -113,14 +113,7 @@ struct PanelLocalRunnerRow: View {
             }
         }
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xs + 2)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-        )
+        .glassCard(cornerRadius: RBRadius.card)
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xxs)
     }
 }
@@ -152,19 +145,15 @@ struct ActionRowView: View {
         }
         .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-                .overlay(
-                    Rectangle()
-                        .fill(rowStatus.color)
-                        .frame(width: 4)
-                        .frame(maxHeight: .infinity),
-                    alignment: .leading
-                )
+            ZStack {
+                glassCardBackground
+                Rectangle()
+                    .fill(rowStatus.color)
+                    .frame(width: 4)
+                    .frame(maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         )
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
@@ -186,7 +175,7 @@ struct ActionRowView: View {
             previousStatus = status
             expandState = (status == .inProgress) ? false : nil
         }
-        .onChange(of: rowStatus) { newStatus in
+        .onChange(of: rowStatus) { _, newStatus in
             if newStatus == .inProgress && expandState == nil {
                 withAnimation(.easeInOut(duration: 0.15)) { expandState = false }
             }
@@ -196,7 +185,16 @@ struct ActionRowView: View {
             previousStatus = newStatus
         }
     }
-    /// Resolves the effective display status, preferring the overridden `expandState` when set.
+
+    /// Glass card background for the action row.
+    /// Routes through `.glassCard()` to honour the Phase 1 contract — nothing
+    /// outside `PanelViewModifiers` calls `.glassEffect()` directly on card containers.
+    @ViewBuilder private var glassCardBackground: some View {
+        Color.clear
+            .glassCard(cornerRadius: RBRadius.card)
+    }
+
+    /// Resolves the effective display status for the row.
     private var rowStatus: RBStatus {
         switch group.groupStatus {
         case .inProgress: return .inProgress
@@ -263,7 +261,7 @@ struct ActionRowView: View {
             .fixedSize(horizontal: true, vertical: false)
         statusBadge
     }
-    /// Colored pill badge reflecting the current run status (queued, in-progress, success, failure, etc.).
+    /// Colored pill badge reflecting the current run status.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
         case .inProgress: StatusBadge(status: .inProgress, text: "IN PROGRESS")

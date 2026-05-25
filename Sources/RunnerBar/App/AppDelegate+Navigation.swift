@@ -12,7 +12,9 @@ import SwiftUI
 /// Shared ISO-8601 date formatter for this file.
 /// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
 /// keeping one file-level instance avoids repeated allocation on every step enrichment call.
-private let iso8601 = ISO8601DateFormatter()
+/// Safety: this formatter is only ever read (passed to makeActiveJob) — never mutated
+/// after module load — so concurrent access from nonisolated contexts is safe.
+nonisolated(unsafe) private let iso8601 = ISO8601DateFormatter()
 
 /// Extension adding functionality to `AppDelegate`.
 extension AppDelegate {

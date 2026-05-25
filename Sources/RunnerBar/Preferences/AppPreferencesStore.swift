@@ -6,11 +6,12 @@ import Foundation
 // MARK: - AppPreferencesStore
 
 /// Persists general app settings to UserDefaults.
+@MainActor
 final class AppPreferencesStore: ObservableObject {
     /// Shared singleton instance.
     static let shared = AppPreferencesStore()
 
-    /// UserDefaults key constants.
+    /// UserDefaults key constants used by `AppPreferencesStore`.
     private enum Key {
         /// Key for the polling interval setting.
         static let pollingInterval    = "settings.pollingInterval"
@@ -18,7 +19,7 @@ final class AppPreferencesStore: ObservableObject {
         static let showDimmedRunners  = "settings.showDimmedRunners"
     }
 
-    /// Valid range for the polling interval (seconds).
+    /// Valid range for the polling interval in seconds. Minimum 10 s, maximum 300 s.
     static let pollingRange: ClosedRange<Int> = 10 ... 300
 
     /// How often (in seconds) RunnerBar polls GitHub. Clamped to 10–300 s.

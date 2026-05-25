@@ -30,19 +30,7 @@ struct ReRunButton: View {
         Group {
             switch phase {
             case .idle:
-                if !isDisabled {
-                    Button(action: startRerun) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption)
-                            Text("Re-run")
-                                .font(.caption)
-                                .fixedSize()
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
+                if !isDisabled { idleButton }
             case .loading:
                 ButtonPhaseView(phase: .loading)
             case .done:
@@ -51,6 +39,26 @@ struct ReRunButton: View {
                 ButtonPhaseView(phase: .failed)
             }
         }
+    }
+
+    // MARK: - Idle button
+    /// Renders the idle state: Liquid Glass button on Swift 6.2+ / macOS 26+,
+    /// plain button on older SDKs.
+    @ViewBuilder private var idleButton: some View {
+        Button(action: startRerun) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.caption)
+                Text("Re-run")
+                    .font(.caption)
+                    .fixedSize()
+            }
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .glassButton(cornerRadius: RBRadius.small)
     }
 
     // MARK: - Actions

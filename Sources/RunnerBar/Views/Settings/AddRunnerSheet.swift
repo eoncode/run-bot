@@ -136,7 +136,7 @@ struct AddRunnerSheet: View {
                 }
             }
             .pickerStyle(.segmented)
-            .onChange(of: addMode) { _ in
+            .onChange(of: addMode) { _, _ in
                 resetAddNewState()
                 resetExistingState()
             }
@@ -171,7 +171,7 @@ struct AddRunnerSheet: View {
         if isLoadingScopes {
             HStack {
                 ProgressView().scaleEffect(0.7)
-                Text("Loading\u{2026}").font(.caption).foregroundColor(.secondary)
+                Text("Loading…").font(.caption).foregroundColor(.secondary)
             }
         } else if scopeType == .repo {
             selectorButton(
@@ -253,13 +253,15 @@ struct AddRunnerSheet: View {
 
         HStack {
             Spacer()
-            Button("Cancel") { isPresented = false }.keyboardShortcut(.cancelAction)
+            Button("Cancel") { isPresented = false }
+                .keyboardShortcut(.cancelAction)
+                .disabled(isRegistering)
             // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: register) {
+            Button(action: { Task { await register() } }) {
                 if isRegistering {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
-                        Text("Registering\u{2026}")
+                        Text("Registering…")
                     }
                 } else {
                     Text("Add new runner")
@@ -288,7 +290,7 @@ struct AddRunnerSheet: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Choose\u{2026}") { pickExistingFolder() }
+                    Button("Choose…") { pickExistingFolder() }
                         .controlSize(.small)
                 }
                 .padding(8)
@@ -360,7 +362,7 @@ struct AddRunnerSheet: View {
             Text(label).font(.caption).foregroundColor(.secondary)
             Button(action: action) {
                 HStack {
-                    Text(selection.isEmpty ? "\u{2014} select \u{2014}" : selection)
+                    Text(selection.isEmpty ? "— select —" : selection)
                         .font(.system(size: 12))
                         .foregroundColor(selection.isEmpty ? .secondary : .primary)
                         .lineLimit(1)
@@ -517,7 +519,7 @@ struct AddRunnerSheet: View {
         detectedGitHubURL = json.gitHubUrl ?? ""
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
-        log("AddRunnerSheet \u{203a} pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
+        log("AddRunnerSheet › pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
     }
 
     /// Derives scope from the GitHub URL, writes the LaunchAgent plist, and dismisses.
@@ -580,10 +582,10 @@ struct AddRunnerSheet: View {
     /// populates `repos`/`orgs`, then sets `isLoadingScopes = false` on the main thread.
     private func loadScopes() {
         isLoadingScopes = true
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task.detached(priority: .userInitiated) {
             let fetchedRepos = fetchUserRepos()
             let fetchedOrgs  = fetchUserOrgs()
-            DispatchQueue.main.async {
+            await MainActor.run {
                 repos = fetchedRepos
                 orgs  = fetchedOrgs
                 if let first = fetchedRepos.first { selectedRepo = first }
@@ -594,16 +596,16 @@ struct AddRunnerSheet: View {
     }
 
     /// Updates `registrationStep` on the main thread for display in the progress UI.
-    private func setStep(_ msg: String) {
-        DispatchQueue.main.async { registrationStep = msg }
+    @MainActor private func setStep(_ msg: String) {
+        registrationStep = msg
     }
 
     // MARK: - Register (Add new)
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     /// Downloads, unpacks, and configures a new runner, then writes the LaunchAgent plist and dismisses.
-    /// Runs entirely on a background thread; updates `registrationStep` via `setStep(_:)`.
-    private func register() {
+    /// Runs on a detached task; updates `registrationStep` via `setStep(_:)` on MainActor.
+    private func register() async {
         guard canRegister else { return }
         errorMessage = nil
         registrationStep = ""
@@ -613,21 +615,21 @@ struct AddRunnerSheet: View {
         let labels = labelsText.trimmingCharacters(in: .whitespaces)
         let dir    = installDir.trimmingCharacters(in: .whitespaces)
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        await Task.detached(priority: .userInitiated) {
             let homeDir     = FileManager.default.homeDirectoryForCurrentUser
                 .resolvingSymlinksInPath().path
             let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
             guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
-                    errorMessage  = "Install directory must be inside your home folder (~/\u{2026})."
+                    errorMessage  = "Install directory must be inside your home folder (~/…)."
                 }
                 return
             }
 
             let runnerFile = URL(fileURLWithPath: dir).appendingPathComponent(".runner").path
             if FileManager.default.fileExists(atPath: runnerFile) {
-                DispatchQueue.main.async { isRegistering = false }
+                await MainActor.run { isRegistering = false }
                 return
             }
 
@@ -635,7 +637,7 @@ struct AddRunnerSheet: View {
                 try FileManager.default.createDirectory(atPath: dir,
                                                         withIntermediateDirectories: true)
             } catch {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "Failed to create directory: \(error.localizedDescription)"
                 }
@@ -645,9 +647,9 @@ struct AddRunnerSheet: View {
             let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
             if !FileManager.default.fileExists(atPath: configPath) {
-                setStep("Downloading runner package\u{2026}")
+                await setStep("Downloading runner package…")
                 guard let downloadURL = fetchRunnerDownloadURL() else {
-                    DispatchQueue.main.async {
+                    await MainActor.run {
                         isRegistering = false
                         errorMessage  = "Could not determine runner download URL. Check your internet connection."
                     }
@@ -657,56 +659,56 @@ struct AddRunnerSheet: View {
                     .appendingPathComponent("actions-runner.tar.gz").path
                 guard runSimpleProcess("/usr/bin/curl",
                                       args: ["-sL", downloadURL, "-o", tarPath]) == 0 else {
-                    DispatchQueue.main.async { isRegistering = false; errorMessage = "Download failed." }
+                    await MainActor.run { isRegistering = false; errorMessage = "Download failed." }
                     return
                 }
-                setStep("Unpacking runner package\u{2026}")
+                await setStep("Unpacking runner package…")
                 let tarExit = runSimpleProcess("/usr/bin/tar", args: ["xzf", tarPath, "-C", dir])
                 try? FileManager.default.removeItem(atPath: tarPath)
                 guard tarExit == 0 else {
-                    DispatchQueue.main.async { isRegistering = false; errorMessage = "Unpack failed." }
+                    await MainActor.run { isRegistering = false; errorMessage = "Unpack failed." }
                     return
                 }
             }
 
-            setStep("Fetching registration token\u{2026}")
+            await setStep("Fetching registration token…")
             guard let token = fetchRegistrationToken(scope: scope) else {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "Failed to fetch registration token. Ensure `gh auth login` has been run or GH_TOKEN is set."
                 }
                 return
             }
 
-            setStep("Configuring runner\u{2026}")
+            await setStep("Configuring runner…")
             let ghURL      = "\(GitHubURIs.base)\(scope)"
             let configExit = runRegistrationCommand(dir: dir, ghURL: ghURL,
                                                     token: token, name: name, labels: labels)
             guard configExit == 0 else {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isRegistering = false
                     errorMessage  = "config.sh failed (exit \(configExit)). Check the token is valid and the runner name is unique."
                 }
                 return
             }
 
-            setStep("Registering service\u{2026}")
+            await setStep("Registering service…")
             writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
 
-            DispatchQueue.main.async {
+            await MainActor.run {
                 isRegistering    = false
                 registrationStep = ""
                 isPresented      = false
                 onComplete()
             }
-        }
+        }.value
     }
 
     // MARK: - Plist writer (shared by both modes)
 
     /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/` so `LocalRunnerScanner`
     /// can discover the runner on every app launch. Used by both Add-new and Add-pre-existing flows.
-    func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
+    nonisolated func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(GitHubURIs.launchAgentsDir)
         let scopeParts = scope.components(separatedBy: "/")
@@ -724,9 +726,9 @@ struct AddRunnerSheet: View {
                 options: 0
             )
             try plistData.write(to: plistURL, options: .atomic)
-            log("AddRunnerSheet \u{203a} wrote LaunchAgent plist: \(plistURL.path)")
+            log("AddRunnerSheet › wrote LaunchAgent plist: \(plistURL.path)")
         } catch {
-            log("AddRunnerSheet \u{203a} failed to write LaunchAgent plist: \(error)")
+            log("AddRunnerSheet › failed to write LaunchAgent plist: \(error)")
         }
     }
 
@@ -734,7 +736,7 @@ struct AddRunnerSheet: View {
 
     /// Invokes `config.sh` with the GitHub URL, registration token, runner name and labels.
     /// Returns the process exit code; non-zero indicates a configuration failure.
-    private func runRegistrationCommand(
+    nonisolated private func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) -> Int32 {
         let configURL = URL(fileURLWithPath: dir).appendingPathComponent("config.sh")
@@ -747,7 +749,7 @@ struct AddRunnerSheet: View {
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError  = pipe
-        var outputData = Data()
+        nonisolated(unsafe) var outputData = Data()
         let lock = NSLock()
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         pipe.fileHandleForReading.readabilityHandler = { handle in
@@ -757,7 +759,7 @@ struct AddRunnerSheet: View {
         }
         do { try task.run() } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
-            log("runRegistrationCommand \u{203a} launch error: \(error)")
+            log("runRegistrationCommand › launch error: \(error)")
             return 1
         }
         // swiftlint:disable:next multiple_closures_with_trailing_closure
@@ -768,19 +770,19 @@ struct AddRunnerSheet: View {
         pipe.fileHandleForReading.readabilityHandler = nil
         let tail = pipe.fileHandleForReading.readDataToEndOfFile()
         if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-        log("runRegistrationCommand \u{203a} exit=\(task.terminationStatus): \((String(data: outputData, encoding: .utf8) ?? "").prefix(500))")
+        log("runRegistrationCommand › exit=\(task.terminationStatus): \((String(data: outputData, encoding: .utf8) ?? "").prefix(500))")
         return task.terminationStatus
     }
 
     /// Launches `executable` with `args` synchronously and returns the termination status.
-    private func runSimpleProcess(_ executable: String, args: [String]) -> Int32 {
+    nonisolated private func runSimpleProcess(_ executable: String, args: [String]) -> Int32 {
         let task = Process()
         task.executableURL  = URL(fileURLWithPath: executable)
         task.arguments      = args
         task.standardOutput = Pipe()
         task.standardError  = Pipe()
         do { try task.run() } catch {
-            log("runSimpleProcess \u{203a} \(executable) launch error: \(error)")
+            log("runSimpleProcess › \(executable) launch error: \(error)")
             return 1
         }
         // swiftlint:disable:next multiple_closures_with_trailing_closure
@@ -788,7 +790,7 @@ struct AddRunnerSheet: View {
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
         task.waitUntilExit()
         timeoutItem.cancel()
-        log("runSimpleProcess \u{203a} \(executable) exit \(task.terminationStatus)")
+        log("runSimpleProcess › \(executable) exit \(task.terminationStatus)")
         return task.terminationStatus
     }
 }
@@ -811,11 +813,11 @@ private func fetchRunnerDownloadURL() -> String? {
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let assetArch = (arch == "arm64") ? "arm64" : "x64"
     let assetName = "actions-runner-osx-\(assetArch)"
-    log("fetchRunnerDownloadURL \u{203a} arch=\(arch) assetName=\(assetName)")
+    log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
 
     guard let url  = URL(string: GitHubURIs.apiRunnerLatest),
           let data = try? Data(contentsOf: url) else {
-        log("fetchRunnerDownloadURL \u{203a} failed to fetch release JSON")
+        log("fetchRunnerDownloadURL › failed to fetch release JSON")
         return nil
     }
     struct Asset: Decodable {
@@ -827,13 +829,13 @@ private func fetchRunnerDownloadURL() -> String? {
     }
     struct Release: Decodable { let assets: [Asset] }
     guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
-        log("fetchRunnerDownloadURL \u{203a} decode failed")
+        log("fetchRunnerDownloadURL › decode failed")
         return nil
     }
     let match = release.assets.first {
         $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
     }
-    log("fetchRunnerDownloadURL \u{203a} match=\(match?.name ?? "nil")")
+    log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
     return match?.browserDownloadUrl
 }
 // swiftlint:enable type_body_length

@@ -103,7 +103,7 @@ struct SettingsView: View {
         }
         .frame(idealWidth: 480, maxWidth: .infinity)
         .onAppear(perform: onAppearAction)
-        .onChange(of: localRunnerStore.isScanning) { if !$0 { hasLoadedOnce = true } }
+        .onChange(of: localRunnerStore.isScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
         .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .modifier(removalAlertModifier)
@@ -240,13 +240,8 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.small)
-                .fill(Color.rbSurfaceElevated)
-                .overlay(RoundedRectangle(cornerRadius: RBRadius.small)
-                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-                .padding(.horizontal, RBSpacing.xs)
-        )
+        .glassCard(cornerRadius: RBRadius.small)
+        .padding(.horizontal, RBSpacing.xs)
     }
 
     /// Performs the localRunnerRowContent operation.
@@ -445,15 +440,8 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: RBRadius.small)
-                .fill(entry.isEnabled ? Color.rbSurfaceElevated : Color.rbSurface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: RBRadius.small)
-                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                )
-                .padding(.horizontal, RBSpacing.xs)
-        )
+        .glassCard(cornerRadius: RBRadius.small)
+        .padding(.horizontal, RBSpacing.xs)
         .opacity(entry.isEnabled ? 1.0 : 0.5)
     }
 
@@ -489,7 +477,7 @@ struct SettingsView: View {
                 Text("Launch at login").font(.system(size: 12)); Spacer()
                 Toggle("", isOn: $launchAtLogin)
                     .toggleStyle(.switch).tint(Color.rbSuccess).labelsHidden()
-                    .onChange(of: launchAtLogin, perform: applyLaunchAtLogin)
+                    .onChange(of: launchAtLogin) { _, newVal in applyLaunchAtLogin(newVal) }
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
             Divider().padding(.leading, RBSpacing.md)

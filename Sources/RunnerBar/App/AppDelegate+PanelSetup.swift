@@ -13,7 +13,8 @@ import SwiftUI
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
 
-/// Extension adding functionality to `AppDelegate`.
+/// Extension responsible for NSPanel construction, PanelChromeView wiring,
+/// KVO observation, and Combine subscriptions that drive icon and store updates.
 extension AppDelegate {
 
     // MARK: Panel construction
@@ -46,6 +47,10 @@ extension AppDelegate {
         newPanel.level = .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
+        // Pin appearance to darkAqua so the glass chrome never toggles on click.
+        // ❌ NEVER remove or set to nil — causes light/dark toggling on click.
+        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+        newPanel.appearance = NSAppearance(named: .darkAqua)
         panel = newPanel
 
         setupKVO(controller: controller)
@@ -54,7 +59,8 @@ extension AppDelegate {
 
     // MARK: KVO
 
-    /// Performs the setupKVO operation.
+    /// Observes `preferredContentSize` on the hosting controller and triggers
+    /// a panel resize whenever the SwiftUI content height changes.
     private func setupKVO(controller: NSHostingController<AnyView>) {
         sizeObservation = controller.observe(
             \.preferredContentSize,
@@ -67,7 +73,8 @@ extension AppDelegate {
 
     // MARK: Combine subscriptions
 
-    /// Performs the setupCombineSubscriptions operation.
+    /// Starts all Combine subscriptions: local runner reloads, remote runner
+    /// store updates (icon + observable reload), and scope mutation restarts.
     private func setupCombineSubscriptions() {
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)

@@ -53,8 +53,7 @@ struct BranchSelectorSheet: View {
             footerSection
         }
         .frame(width: 360, height: 420)
-        .background(Color.rbSurfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassCard(cornerRadius: 10)
         .onAppear { loadBranches() }
     }
 }
@@ -202,12 +201,7 @@ extension BranchSelectorSheet {
                 .font(.system(size: 12))
                 .foregroundColor(Color.rbTextSecondary)
                 .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.rbSurfaceElevated)
-                        .overlay(RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-                )
+                .glassCard(cornerRadius: 6)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -241,7 +235,7 @@ extension BranchSelectorSheet {
     /// Blocking — must be called from a background thread.
     /// Paginates through all pages (per_page=100) until GitHub returns fewer
     /// than 100 items, collecting all branch names across pages.
-    private func fetchBranchNames(scope: String) -> [String]? {
+    nonisolated private func fetchBranchNames(scope: String) -> [String]? {
         struct BranchItem: Decodable { let name: String }
         var allNames: [String] = []
         var page = 1
