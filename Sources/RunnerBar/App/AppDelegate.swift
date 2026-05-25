@@ -132,12 +132,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Performs the applicationDidFinishLaunching operation.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        configureGHAPI(
-            { endpoint in ghAPI(endpoint) },
-            isRateLimited: { ghIsRateLimited }
-        )
-        setupStatusItem()
-        setupPanel()
+        // ⚠️ UI Testing boot path — bypasses Keychain, OAuth, and API polling.
+        // This prevents macOS from showing a Keychain approval prompt during
+        // XCUITest runs, which would otherwise silently hang CI forever.
+        // ❌ NEVER move configureGHAPI or Auth into the isUITesting branch.
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+
+        if isUITesting {
+            setupStatusItem()
+            setupPanel()
+        } else {
+            configureGHAPI(
+                { endpoint in ghAPI(endpoint) },
+                isRateLimited: { ghIsRateLimited }
+            )
+            setupStatusItem()
+            setupPanel()
+        }
     }
 
     // MARK: - OAuth URL callback (#326)
