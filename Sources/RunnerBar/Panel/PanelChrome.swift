@@ -119,6 +119,13 @@ final class PanelChromeView: NSView {
     //   cornerRadius is set to match the panel body (10pt).
     //   The same CAShapeLayer mask (updateFxMask) clips it to the arrow+body shape.
     //
+    //   NSGlassEffectView has two rendering variants controlled by key-window state:
+    //     • background-window variant — grey/light glass
+    //     • key-window variant        — dark Liquid Glass
+    //   openPanel() calls makeKeyAndOrderFront(nil) so the panel is always the key
+    //   window when shown — guaranteeing the dark variant from the first frame.
+    //   ❌ NEVER change openPanel() back to orderFront(nil) — grey glass on cold open.
+    //
     // macOS < 26: NSVisualEffectView with .hudWindow material (existing behaviour).
     //
     // ❌ NEVER apply glass on macOS < 26 — NSGlassEffectView does not exist there.
@@ -184,32 +191,6 @@ final class PanelChromeView: NSView {
         }
     }
 
-    // MARK: - First appearance re-sample
-    //
-    // NSGlassEffectView’s CABackdropLayer samples the compositor lazily.
-    // On cold open the window compositor has not yet rendered a valid frame,
-    // so the sampler falls back to a neutral grey placeholder.
-    //
-    // One deferred run-loop tick after viewDidMoveToWindow fires guarantees
-    // the compositor has produced at least one real frame before we force
-    // fxView to redisplay and re-apply the mask — giving the backdrop
-    // sampler live desktop content to work from.
-    //
-    // ❌ NEVER remove this override — cold-open glass goes grey without it.
-    // ❌ NEVER call this from init — the window is nil at init time.
-    // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else { return }
-        if #available(macOS 26, *) {
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.fxView.needsDisplay = true
-                self.updateFxMask()
-            }
-        }
-    }
-
     /// Recomputes and applies the CAShapeLayer mask that clips the effect view to the chrome path.
     /// Applied to both NSGlassEffectView (macOS 26+) and NSVisualEffectView (macOS < 26).
     private func updateFxMask() {
@@ -222,12 +203,9 @@ final class PanelChromeView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         // ⚠️ ALPHA CONTRACT — DO NOT RAISE ABOVE 0.001.
-        // draw() fires on cold open and paints this fill over NSGlassEffectView.
-        // At alpha: 0.01 (10x higher) the white fill in light mode produces a
-        // visible grey/washed veil on first open that is absent after navigation
-        // round-trips (where draw() does not re-fire on the chrome view).
-        // 0.001 matches layer?.backgroundColor and is truly invisible while still
-        // satisfying the CABackdropLayer sampler contract.
+        // This fill is painted over NSGlassEffectView on every draw() call.
+        // 0.001 is truly invisible but satisfies the CABackdropLayer sampler
+        // contract (alpha=0.0 disables the sampler entirely — flat grey result).
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let fill: NSColor = isDark ? NSColor(white: 0.18, alpha: 0.001) : NSColor(white: 0.95, alpha: 0.001)

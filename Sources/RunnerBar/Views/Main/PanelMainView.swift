@@ -38,9 +38,11 @@ import SwiftUI
 // RULE 9: displayTick fires every 1 second ALWAYS (no open-state gate).
 //
 // RULE 10: .scrollContentBackground(.hidden) MUST stay on the ScrollView in actionsSectionScrollable.
-// On macOS 26 ScrollView paints an opaque grey system background by default, which blocks
-// NSGlassEffectView in PanelChromeView. .scrollContentBackground(.hidden) removes that fill.
-// ❌ NEVER remove .scrollContentBackground(.hidden) — main panel goes grey without it.
+// On macOS 26, SwiftUI's ScrollView paints an opaque system background fill by default.
+// This fill sits on top of NSGlassEffectView in PanelChromeView and blocks it entirely,
+// making the panel appear grey regardless of key-window state.
+// .scrollContentBackground(.hidden) removes that fill so the glass shows through.
+// ❌ NEVER remove .scrollContentBackground(.hidden) — panel goes grey without it.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 /// Root panel view rendered inside the NSPanel.
 /// Owns the display-tick timer and system-stats lifecycle.
@@ -112,12 +114,11 @@ struct PanelMainView: View {
         }
         .onChange(of: store.actions) { _ in visibleCount = 10 }
     }
-    // MARK: - Scrollable actions section (RULE 5)
+    // MARK: - Scrollable actions section (RULE 5 + RULE 10)
     /// Wraps `actionsSectionContent` in a `ScrollView` capped at `screenScrollMaxHeight`.
     ///
     /// .scrollContentBackground(.hidden) is REQUIRED (RULE 10).
-    /// On macOS 26 ScrollView paints an opaque grey system background that blocks
-    /// NSGlassEffectView. .hidden removes that fill so the glass shows through.
+    /// Without it SwiftUI paints an opaque system fill over NSGlassEffectView on macOS 26.
     /// ❌ NEVER remove .scrollContentBackground(.hidden).
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
     private var actionsSectionScrollable: some View {
