@@ -38,6 +38,64 @@ import SwiftUI
 //          log area uses Color.rbSurfaceElevated background;
 //          all .secondary foreground replaced with Color.rbTextSecondary.
 // Phase 7: meta badge backgrounds → .glassCard(cornerRadius: RBRadius.small).
+// Phase 8 (#913): meta badges → StepMetaBadgeBackground; log area → StepLogAreaBackground.
+
+// MARK: - StepMetaBadgeBackground
+
+/// Background modifier for the inline “step #N” / “job #N” meta badges.
+///
+/// macOS 26+: `Color.secondary.opacity(0.07)` fill
+/// + `.glassEffect(.regular, in: RoundedRectangle(cornerRadius: RBRadius.small))`
+/// + `rbBorderSubtle` strokeBorder overlay (0.5 pt).
+/// macOS < 26: `.glassCard(cornerRadius: RBRadius.small)` (unchanged).
+private struct StepMetaBadgeBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .background(
+                    Color.secondary.opacity(0.07),
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .glassEffect(
+                    .regular,
+                    in: RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                )
+        } else {
+            content
+                .glassCard(cornerRadius: RBRadius.small)
+        }
+    }
+}
+
+// MARK: - StepLogAreaBackground
+
+/// Background modifier for the log `ScrollView` container.
+///
+/// macOS 26+: `Color.rbSurface.opacity(0.04)` tinted fill
+/// + `.glassEffect(.regular, in: Rectangle())`.
+/// macOS < 26: `Color.rbSurfaceElevated` fill (unchanged, per Phase 5 spec).
+private struct StepLogAreaBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content
+                .background(Color.rbSurface.opacity(0.04))
+                .glassEffect(.regular, in: Rectangle())
+        } else {
+            content
+                .background(Color.rbSurfaceElevated)
+        }
+    }
+}
+
+private extension View {
+    func stepMetaBadge() -> some View { modifier(StepMetaBadgeBackground()) }
+    func stepLogArea() -> some View { modifier(StepLogAreaBackground()) }
+}
+
 /// Shows the raw log text for a single `JobStep`.
 ///
 /// Placed by `AppDelegate.navigate()` (rootView swap). Fits the fixed popover frame;
@@ -78,7 +136,7 @@ struct StepLogView: View {
     /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Top bar ────────────────────────────────────────────────────────────────────────────
+            // ── Top bar ────────────────────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Button(action: onBack) {
                     HStack(spacing: 3) {
@@ -119,7 +177,7 @@ struct StepLogView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            // ── Step name (large) ────────────────────────────────────────────────────────────────────────────────────
+            // ── Step name (large) ────────────────────────────────────────────────────────────────────────────────────────────────
             Text(step.name)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2)
@@ -127,7 +185,7 @@ struct StepLogView: View {
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.bottom, 5)
 
-            // ── Meta rows ──────────────────────────────────────────────────────────────────────────────────────
+            // ── Meta rows ──────────────────────────────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Image(systemName: "briefcase").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(job.name).font(.caption).foregroundColor(Color.rbTextSecondary)
@@ -137,7 +195,7 @@ struct StepLogView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, 5).padding(.vertical, 2)
-                    .glassCard(cornerRadius: RBRadius.small)
+                    .stepMetaBadge()
                     .fixedSize()
             }
             .padding(.horizontal, RBSpacing.md).padding(.bottom, 3)
@@ -150,7 +208,7 @@ struct StepLogView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, 5).padding(.vertical, 2)
-                    .glassCard(cornerRadius: RBRadius.small)
+                    .stepMetaBadge()
                     .fixedSize()
             }
             .padding(.horizontal, RBSpacing.md).padding(.bottom, 3)
@@ -176,7 +234,7 @@ struct StepLogView: View {
 
             Divider()
 
-            // ── Log — INSIDE ScrollView ──────────────────────────────────────────────────────────────────────────────────
+            // ── Log — INSIDE ScrollView ────────────────────────────────────────────────────────────────────────────────────────────────
             // ⚠️ .frame(maxHeight:) cap is REQUIRED on this ScrollView (ref #370).
             // ❌ NEVER remove .frame(maxHeight:) from this ScrollView.
             ScrollView(.vertical, showsIndicators: true) {
@@ -202,6 +260,7 @@ struct StepLogView: View {
             // ⚠️ REQUIRED — caps preferredContentSize.height. Prevents panel growing off-screen.
             // ❌ NEVER remove this modifier.
             .frame(maxHeight: NSScreen.main.map { $0.visibleFrame.height * 0.75 } ?? 600)
+            .stepLogArea()
         }
         // ════════════════════════════════════════════════════════════════════════
         // ⚠️ idealWidth: 480 hints the initial panel width before KVO fires.
