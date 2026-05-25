@@ -31,18 +31,18 @@ jobs:
             echo "XcodeGen already installed: $(xcodegen --version)"
           fi
 
+      - name: Set Xcode developer path
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Accept Xcode license
+        run: sudo xcodebuild -license accept
+
       - name: Validate Xcode installation
         run: |
-          XCODE_PATH=$(xcode-select -p 2>/dev/null || true)
-          if [ -z "$XCODE_PATH" ]; then
-            echo "ERROR: xcode-select returns no path. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
-            exit 1
-          fi
+          XCODE_PATH=$(xcode-select -p)
           echo "Xcode developer path: $XCODE_PATH"
-          # Must point at a full Xcode install, not just CLT
           if [[ "$XCODE_PATH" == *"CommandLineTools"* ]]; then
-            echo "ERROR: xcode-select points at CLT only. Full Xcode.app required for xcodebuild UITests."
-            echo "Fix: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+            echo "ERROR: xcode-select still points at CLT. Full Xcode.app required."
             exit 1
           fi
           xcodebuild -version

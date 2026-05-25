@@ -2,14 +2,7 @@
 
 One-time manual setup required on the self-hosted Mac before UI tests will run.
 
-## 1. Point xcode-select at Xcode.app
-
-```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -license accept
-```
-
-## 2. Ensure the runner has a GUI session
+## 1. Ensure the runner has a GUI session
 
 The runner agent must run as a **user-level launch agent**, not a system daemon. Check:
 
@@ -30,6 +23,6 @@ sudo ./svc.sh uninstall
 ./svc.sh start
 ```
 
-## 3. Grant Accessibility permission to xcodebuild
+## 2. Grant Accessibility permission to xcodebuild
 
 **System Settings → Privacy & Security → Accessibility** → add `/usr/bin/xcodebuild`
