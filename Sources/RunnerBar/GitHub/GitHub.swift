@@ -19,11 +19,15 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
 
 // MARK: - Fetch all jobs from active runs
 
-/// Shared ISO-8601 date formatter.
-/// Safety: protected by iso8601Lock.
+// Shared ISO-8601 date formatter.
+// Safety: protected by iso8601Lock.
+
+/// A Sendable wrapper for ISO8601DateFormatter.
 private struct SendableFormatter: @unchecked Sendable {
+    /// The internal formatter instance.
     let iso = ISO8601DateFormatter()
 }
+/// Lock for the formatter.
 private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
 
 /// Fetches all active (in-progress and queued) jobs for a given scope.

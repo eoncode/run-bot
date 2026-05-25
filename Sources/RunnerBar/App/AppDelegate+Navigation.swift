@@ -1,8 +1,8 @@
 // AppDelegate+Navigation.swift
 // RunnerBar
-import SwiftUI
 import os
 import RunnerBarCore
+import SwiftUI
 
 // MARK: - Navigation & view factories
 //
@@ -10,13 +10,17 @@ import RunnerBarCore
 // All view factory methods and the enrichment helper live here so AppDelegate.swift
 // can focus on panel lifecycle, status item, and event monitor concerns.
 
-/// Shared ISO-8601 date formatter for this file.
-/// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
-/// keeping one file-level instance avoids repeated allocation on every step enrichment call.
-/// Safety: protected by iso8601Lock.
+// Shared ISO-8601 date formatter for this file.
+// ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
+// keeping one file-level instance avoids repeated allocation on every step enrichment call.
+// Safety: protected by iso8601Lock.
+
+/// A Sendable wrapper for ISO8601DateFormatter.
 private struct SendableFormatter: @unchecked Sendable {
+    /// The internal formatter instance.
     let iso = ISO8601DateFormatter()
 }
+/// Lock for the formatter.
 private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
 
 /// Extension adding functionality to `AppDelegate`.
