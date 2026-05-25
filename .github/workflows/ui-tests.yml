@@ -28,9 +28,6 @@ jobs:
           if ! command -v xcodegen &> /dev/null; then
             brew install xcodegen
           fi
-          if ! command -v xcpretty &> /dev/null; then
-            brew install xcpretty
-          fi
 
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
@@ -47,8 +44,7 @@ jobs:
             -destination 'platform=macOS' \
             -only-testing RunnerBarUITests \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            | xcpretty && exit ${PIPESTATUS[0]}
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Upload test results
         if: always()
