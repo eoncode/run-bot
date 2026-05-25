@@ -75,7 +75,13 @@ extension AppDelegate {
 
     /// Starts all Combine subscriptions: local runner reloads, remote runner
     /// store updates (icon + observable reload), and scope mutation restarts.
+    ///
+    /// When `UI_TESTING` is set in the environment (i.e. launched by
+    /// XCUIApplication during automated UI tests), all network polling and
+    /// keychain access is skipped. This prevents macOS from showing a keychain
+    /// approval dialog for every ad-hoc-signed CI build.
     private func setupCombineSubscriptions() {
+        // LocalRunnerStore subscription is safe — no network or keychain access.
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -83,6 +89,9 @@ extension AppDelegate {
                 self.observable.reload(localRunnerStore: LocalRunnerStore.shared)
             }
             .store(in: &cancellables)
+
+        // Skip all network + keychain activity during UI tests.
+        guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
         RunnerStore.shared.didUpdate
             .receive(on: DispatchQueue.main)
