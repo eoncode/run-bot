@@ -45,15 +45,15 @@ import SwiftUI
 // ❌ NEVER pass as a plain Bool prop to PanelMainView.
 // See ARCHITECTURE.md §panelVisibilityState.
 //
-// NSGLASS COMPOSITOR WARM-UP (fix #891):
-// After panel.orderFront, we immediately reassign hostingController.rootView
-// to itself. This forces SwiftUI to remount the view tree, which reconnects
-// NSGlassEffectView to the live window compositor so it samples real desktop
-// content on the very first frame. Without this, NSGlassEffectView renders
-// grey on cold open because it was added to the window before orderFront.
-// navigate() has always done this implicitly (rootView swap) which is why
-// Settings→Main always looked correct.
-// ❌ NEVER remove the rootView reassignment in openPanel().
+// HOSTING VIEW LIFECYCLE (fix #891):
+// The hosting controller view is added to chromeView lazily in openPanel(),
+// AFTER panel.orderFront(nil). This ensures viewDidMoveToWindow fires in a
+// live on-screen window so NSGlassEffectView samples real desktop pixels.
+// ❌ NEVER add the hosting view in setupPanel() — fires off-screen, samples grey.
+// ❌ NEVER add the hosting view before orderFront in openPanel().
+//
+// RULE 10: ❌ NEVER wrap ActionRowView or PanelLocalRunnerRow cards in GlassEffectContainer.
+// See PanelMainView.swift for full explanation.
 
 // NOTE: KeyablePanel is defined in KeyablePanel.swift (internal access level).
 // It must NOT be private or fileprivate — AppDelegate+Navigation.swift accesses
@@ -264,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let statusItemRect = button.window?.frame,
               let panel else { return }
 
-        log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
+        log("AppDelegate \u203a openPanel \u2014 seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
 
         panelIsOpen = true
@@ -284,12 +284,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chrome?.arrowX = statusItemRect.midX - posX
         panel.orderFront(nil)
 
-        // fix(#891): Force a rootView remount after orderFront so NSGlassEffectView
-        // connects to the live window compositor and samples real desktop content
-        // on the very first frame. Without this it renders grey on cold open.
-        // navigate() has always done this implicitly — this makes openPanel() consistent.
-        // ❌ NEVER remove this line.
-        if let hc = hostingController { hc.rootView = hc.rootView }
+        // fix(#891): Add hosting view AFTER orderFront so viewDidMoveToWindow fires
+        // in a live on-screen window. NSGlassEffectView then samples real desktop
+        // pixels on the very first frame instead of grey off-screen emptiness.
+        // addSubview is safe to call every open — if the view already has this
+        // parent it is a no-op.
+        // ❌ NEVER move this before orderFront.
+        // ❌ NEVER move this back into setupPanel().
+        if let hc = hostingController, let chromeView = chrome {
+            chromeView.addSubview(hc.view)
+        }
 
         resizeAndRepositionPanel()
 

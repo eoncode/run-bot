@@ -12,6 +12,15 @@ import SwiftUI
 //
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
+//
+// HOSTING VIEW LIFECYCLE (fix #891):
+// The hosting controller view is NOT added to chromeView in setupPanel().
+// It is added lazily in openPanel(), AFTER panel.orderFront(nil), so that
+// viewDidMoveToWindow fires in a live on-screen window with real desktop
+// pixels behind it. NSGlassEffectView then gets a valid compositor sample
+// on the very first frame instead of sampling grey off-screen emptiness.
+// ❌ NEVER move chromeView.addSubview(hostingController.view) back into setupPanel().
+// ❌ NEVER add the hosting view before orderFront.
 
 /// AppDelegate extension that builds the NSPanel, embeds the SwiftUI hosting controller,
 /// wires KVO on `preferredContentSize`, and starts all Combine subscriptions.
@@ -19,18 +28,13 @@ extension AppDelegate {
 
     // MARK: Panel construction
 
-    /// Builds the NSPanel, embeds the SwiftUI hosting controller inside
-    /// PanelChromeView, wires KVO, and starts all Combine subscriptions.
+    /// Builds the NSPanel and PanelChromeView. Does NOT add the hosting view yet —
+    /// that happens lazily in openPanel() after orderFront so NSGlassEffectView
+    /// gets a valid compositor sample on first show.
     func setupPanel() {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
         controller.view.autoresizingMask = [.width, .height]
-        // fix(#891): NSHostingController's backing NSView has a default opaque
-        // background. Without this, the hosting view sits on top of
-        // NSGlassEffectView and produces a grey tint on cold open.
-        // Navigating away and back coincidentally cleared it by triggering a
-        // SwiftUI rootView swap. Setting the layer transparent here fixes it
-        // at source — same contract as PanelChromeView and the NSPanel itself.
         controller.view.wantsLayer = true
         controller.view.layer?.backgroundColor = .clear
         hostingController = controller
@@ -39,7 +43,7 @@ extension AppDelegate {
         let chromeView = PanelChromeView(
             frame: NSRect(x: 0, y: 0, width: initW, height: 300 + arrowHeight)
         )
-        chromeView.addSubview(controller.view)
+        // ❌ NEVER add controller.view here — see HOSTING VIEW LIFECYCLE note above.
         chrome = chromeView
 
         let newPanel = KeyablePanel(
@@ -92,7 +96,7 @@ extension AppDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self else { return }
-                log("AppDelegate › didUpdate fired — panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
+                log("AppDelegate \u203a didUpdate fired \u2014 panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
                 self.updateStatusIcon()
                 self.observable.reload(localRunnerStore: LocalRunnerStore.shared)
             }
@@ -104,7 +108,7 @@ extension AppDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard self != nil else { return }
-                log("AppDelegate › ScopeStore.didMutate — restarting RunnerStore")
+                log("AppDelegate \u203a ScopeStore.didMutate \u2014 restarting RunnerStore")
                 RunnerStore.shared.start()
             }
             .store(in: &cancellables)
