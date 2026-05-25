@@ -15,8 +15,9 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.RunnerBar
-        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: NO
+        AD_HOC_CODE_SIGNING_ALLOWED: YES
         INFOPLIST_FILE: Resources/Info.plist
 
   RunnerBarUITests:
@@ -29,5 +30,6 @@ targets:
       - target: RunnerBar
     settings:
       base:
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: YES
+        AD_HOC_CODE_SIGNING_ALLOWED: YES
