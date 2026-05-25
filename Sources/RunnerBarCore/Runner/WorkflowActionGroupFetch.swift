@@ -138,7 +138,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
         if let cached = cache[sha],
            !cached.jobs.isEmpty,
            cached.jobs.allSatisfy({ $0.conclusion != nil }) &&
-           !cached.jobs.contains(where: { $0.steps.contains { $0.status == .inProgress } }) {
+           !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } }) {
             allJobs = cached.jobs
         } else {
             var fetched: [ActiveJob] = []
@@ -192,7 +192,7 @@ private func fetchJobsForRun(_ runID: Int, scope: String) -> [ActiveJob] {
     var refreshCount = 0
     for idx in result.indices {
         let job = result[idx]
-        let needsRefresh = job.conclusion == nil || job.steps.contains { $0.status == .inProgress }
+        let needsRefresh = job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
         guard needsRefresh, refreshCount < 3 else { continue }
         refreshCount += 1
         guard let freshData = ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
@@ -200,7 +200,7 @@ private func fetchJobsForRun(_ runID: Int, scope: String) -> [ActiveJob] {
         else { continue }
         let freshJob = makeActiveJob(from: fresh, iso: iso8601)
         if fresh.conclusion != nil { result[idx] = freshJob; continue }
-        let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == .inProgress }
+        let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
         if betterSteps {
             result[idx] = ActiveJob(
                 id:          job.id,
