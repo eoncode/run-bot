@@ -1,6 +1,6 @@
 // GitHubURLSessionTransport.swift
 // RunnerBar
-import Foundation
+@preconcurrency import Foundation
 import os
 
 // MARK: - Rate limit flag

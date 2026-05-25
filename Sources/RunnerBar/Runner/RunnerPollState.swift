@@ -22,8 +22,9 @@ extension RunnerStore {
             snapPrev: snapPrev,
             snapCache: snapCache,
             fetchJobs: {
+                let scopes = DispatchQueue.main.sync { ScopeStore.shared.scopes }
                 var jobs: [ActiveJob] = []
-                for scope in ScopeStore.shared.scopes {
+                for scope in scopes {
                     jobs.append(contentsOf: fetchActiveJobs(for: scope))
                 }
                 return jobs
@@ -44,8 +45,9 @@ extension RunnerStore {
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
             fetchGroups: { shaKeyedCache in
+                let scopes = DispatchQueue.main.sync { ScopeStore.shared.scopes }
                 var groups: [WorkflowActionGroup] = []
-                for scope in ScopeStore.shared.scopes {
+                for scope in scopes {
                     groups.append(contentsOf: fetchActionGroups(for: scope, cache: shaKeyedCache))
                 }
                 return groups

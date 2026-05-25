@@ -235,7 +235,7 @@ extension BranchSelectorSheet {
     /// Blocking — must be called from a background thread.
     /// Paginates through all pages (per_page=100) until GitHub returns fewer
     /// than 100 items, collecting all branch names across pages.
-    private func fetchBranchNames(scope: String) -> [String]? {
+    nonisolated private func fetchBranchNames(scope: String) -> [String]? {
         struct BranchItem: Decodable { let name: String }
         var allNames: [String] = []
         var page = 1

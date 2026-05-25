@@ -150,7 +150,7 @@ nonisolated(unsafe) private let _ansiRegex = try! NSRegularExpression( // swiftl
 /// `URLSessionTaskDelegate` that prevents automatic redirect following.
 /// Captures the `Location` header from GitHub's 302 response so the caller
 /// can fetch the pre-signed S3 URL directly.
-private class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
     /// Intercepts redirect responses and calls the completion handler with `nil`
     /// to prevent URLSession from following the redirect automatically.
     func urlSession(
