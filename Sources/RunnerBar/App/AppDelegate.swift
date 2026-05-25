@@ -271,31 +271,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         chrome?.arrowX = statusItemRect.midX - posX
-        panel.orderFront(nil)
 
-        // MARK: Glass re-sample after orderFront
+        // MARK: rootView flush for glass compositor (#850 / #893)
         //
-        // NSGlassEffectView’s CABackdropLayer samples lazily. On the first
-        // orderFront call the window compositor has not yet produced a frame
-        // with live desktop content, so the sampler returns a grey placeholder.
+        // NSGlassEffectView samples both the desktop AND the window’s own SwiftUI
+        // layer stack. On first open the NSHostingController has not flushed its
+        // initial render into the compositor, so glass sees a thin/grey stack.
         //
-        // One run-loop tick after orderFront the display link has composited
-        // the first real frame. Forcing needsDisplay + needsLayout on chrome
-        // at that point gives the backdrop sampler live pixels and produces
-        // the correct dark Liquid Glass appearance on cold open.
+        // Replacing rootView forces NSHostingController to perform a full layout +
+        // compositor flush — exactly what happens on Settings→Main navigation, which
+        // is why that round-trip produces the correct dark glass.
         //
-        // ❌ NEVER remove this block — cold-open glass goes grey without it.
-        // ❌ NEVER move this into viewDidMoveToWindow — the chrome view is
-        //   added to the window at init time (before orderFront), so
-        //   viewDidMoveToWindow fires while the window is still off-screen.
+        // We only do this when no saved nav state would override it (i.e. we are
+        // showing mainView). The replacement is cheap — same view type, same model.
+        //
+        // ❌ NEVER remove this block — main panel shows grey on cold open without it.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-        if #available(macOS 26, *) {
-            DispatchQueue.main.async { [weak self] in
-                self?.chrome?.needsLayout = true
-                self?.chrome?.needsDisplay = true
-            }
+        if savedNavState == nil || savedNavState == .main {
+            hostingController?.rootView = mainView()
         }
 
+        panel.orderFront(nil)
         resizeAndRepositionPanel()
 
         if let saved = savedNavState, let restored = validatedView(for: saved) {
