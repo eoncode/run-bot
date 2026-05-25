@@ -3,6 +3,7 @@
 import SwiftUI
 
 // MARK: - ButtonPhaseView
+
 /// Shared non-idle phase renderer used by `ReRunButton`, `ReRunFailedButton`,
 /// and `CancelButton`.
 ///
@@ -26,42 +27,39 @@ struct ButtonPhaseView: View {
         /// Red cross shown for 1.5 s after failure.
         case failed
     }
-
     /// The phase to render. Must be `.loading`, `.done`, or `.failed`.
     let phase: Phase
-
     /// Renders the appropriate icon+label HStack for the current phase.
     var body: some View {
         switch phase {
         case .loading:
             HStack(spacing: 4) {
-                ProgressView()
-                    .controlSize(.mini)
-                Text("Running\u{2026}")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize()
+                ProgressView().controlSize(.mini)
+                Text("Running\u{2026}").font(.caption).foregroundColor(.secondary).fixedSize()
             }
         case .done:
             HStack(spacing: 4) {
-                Image(systemName: "checkmark")
-                    .font(.caption)
-                    .foregroundColor(.green)
-                Text("Done")
-                    .font(.caption)
-                    .foregroundColor(.green)
-                    .fixedSize()
+                Image(systemName: "checkmark").font(.caption).foregroundColor(.green)
+                Text("Done").font(.caption).foregroundColor(.green).fixedSize()
             }
         case .failed:
             HStack(spacing: 4) {
-                Image(systemName: "xmark")
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Text("Failed")
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .fixedSize()
+                Image(systemName: "xmark").font(.caption).foregroundColor(.red)
+                Text("Failed").font(.caption).foregroundColor(.red).fixedSize()
             }
         }
     }
 }
+
+// MARK: - Preview
+#if DEBUG
+/// Preview of `ButtonPhaseView` in all three non-idle phases.
+#Preview {
+    VStack(spacing: 12) {
+        ButtonPhaseView(phase: .loading)
+        ButtonPhaseView(phase: .done)
+        ButtonPhaseView(phase: .failed)
+    }
+    .padding(20)
+}
+#endif

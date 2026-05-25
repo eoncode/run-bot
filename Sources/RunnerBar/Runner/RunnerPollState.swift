@@ -11,7 +11,13 @@ private let iso8601 = ISO8601DateFormatter()
 /// Extension on `RunnerStore` providing poll-cycle helpers that delegate
 /// to `PollResultBuilder` for independently testable build logic.
 extension RunnerStore {
-    /// Builds the job-poll state by fetching live jobs for all scopes and backfilling concluded jobs.
+    /// Builds the job-poll state by fetching live jobs for all active scopes
+    /// and backfilling concluded jobs with step detail from the GitHub API.
+    ///
+    /// - Parameters:
+    ///   - snapPrev: Previous live-jobs snapshot keyed by job ID.
+    ///   - snapCache: Concluded-jobs cache keyed by job ID.
+    /// - Returns: Updated `JobPollResult`.
     func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
         PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
@@ -25,8 +31,19 @@ extension RunnerStore {
         )
     }
 
-    /// Builds the group-poll state by fetching workflow action groups and enriching their jobs.
-    func buildGroupState(snapPrevGroups: [String: WorkflowActionGroup], snapGroupCache: [String: WorkflowActionGroup], jobCache: [Int: ActiveJob]) -> GroupPollResult {
+    /// Builds the group-poll state by fetching workflow action groups
+    /// for all active scopes and enriching their jobs from the concluded-jobs cache.
+    ///
+    /// - Parameters:
+    ///   - snapPrevGroups: Previous groups snapshot keyed by group ID string.
+    ///   - snapGroupCache: Concluded-groups cache keyed by group ID string.
+    ///   - jobCache: Concluded-jobs cache used to enrich group job data.
+    /// - Returns: Updated `GroupPollResult`.
+    func buildGroupState(
+        snapPrevGroups: [String: WorkflowActionGroup],
+        snapGroupCache: [String: WorkflowActionGroup],
+        jobCache: [Int: ActiveJob]
+    ) -> GroupPollResult {
         PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
@@ -41,7 +58,10 @@ extension RunnerStore {
         )
     }
 
-    /// Backfills missing step data for concluded jobs in `cache` by re-fetching from the GitHub API.
+    /// Backfills missing step data for concluded jobs in `cache`
+    /// by re-fetching each job from the GitHub API when steps are absent or still in-progress.
+    ///
+    /// - Parameter cache: The concluded-jobs cache to mutate in place.
     func backfillSteps(into cache: inout [Int: ActiveJob]) {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
@@ -56,18 +76,31 @@ extension RunnerStore {
         }
     }
 
-    /// Returns the "owner/repo" scope string for a workflow action group.
+    /// Returns the "owner/repo" scope string for a workflow action group,
+    /// using `group.repo` when non-empty, or falling back to parsing `htmlUrl` of the first run.
+    ///
+    /// - Parameter group: The workflow action group whose scope is needed.
+    /// - Returns: An "owner/repo" scope string, or an empty string if it cannot be derived.
     func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         if !group.repo.isEmpty { return group.repo }
-        if let firstRun = group.runs.first, let url = firstRun.htmlUrl, let derived = scopeFromHtmlUrl(url) { return derived }
+        if let firstRun = group.runs.first,
+           let url = firstRun.htmlUrl,
+           let derived = scopeFromHtmlUrl(url) { return derived }
         return ""
     }
 
-    /// Merges enriched job data from `jobCache` into `jobs`, preferring cached entries with more data.
+    /// Merges enriched job data from `jobCache` into `jobs`,
+    /// preferring cached entries that have a conclusion or more steps than the fresh fetch.
+    ///
+    /// - Parameters:
+    ///   - jobs: Freshly-fetched jobs to potentially replace with cached versions.
+    ///   - jobCache: Concluded-jobs cache keyed by job ID.
+    /// - Returns: Array of jobs with cache-preferred entries substituted where applicable.
     func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
-            return (cached.conclusion != nil && job.conclusion == nil) || cached.steps.count > job.steps.count ? cached : job
+            return (cached.conclusion != nil && job.conclusion == nil)
+                || cached.steps.count > job.steps.count ? cached : job
         }
     }
 }

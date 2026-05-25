@@ -18,22 +18,24 @@ struct RemovalAlertModifier: ViewModifier {
     let onCancel: () -> Void
     /// Called when the user confirms removal.
     let onConfirm: () -> Void
-    /// Human-readable description of the runner being removed; shown in the alert.
-    let description: String
     /// Wraps `content` with a runner-removal confirmation alert.
     func body(content: Content) -> some View {
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
-        content.alert(title, isPresented: $isPresented) {
-            Button("Cancel", role: .cancel) { onCancel() }
-            Button("Remove", role: .destructive) { onConfirm() }
-        } message: {
-            if isAuthenticated {
-                Text("This will run ./svc.sh uninstall and ./config.sh remove. "
-                    + "A GitHub token is required for de-registration.")
-            } else {
-                Text("A GitHub token is required to de-register the runner from GitHub. "
-                    + "Sign in via `gh auth login` or set GH_TOKEN / GITHUB_TOKEN env var, then try again.")
+        content.alert(
+            title,
+            isPresented: $isPresented,
+            actions: {
+                Button("Cancel", role: .cancel) { onCancel() }
+                Button("Remove", role: .destructive) { onConfirm() }
+            },
+            message: {
+                if isAuthenticated {
+                    Text("This will run ./svc.sh uninstall and ./config.sh remove. "
+                        + "A GitHub token is required for de-registration.")
+                } else {
+                    Text("A GitHub token is required to de-register the runner from GitHub. "
+                        + "Sign in via `gh auth login` or set GH_TOKEN / GITHUB_TOKEN env var, then try again.")
+                }
             }
-        }
+        )
     }
 }
