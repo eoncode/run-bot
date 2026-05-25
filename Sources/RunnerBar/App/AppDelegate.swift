@@ -272,14 +272,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         chrome?.arrowX = statusItemRect.midX - posX
-        // ❌ NEVER set alpha=0.0 or isOpaque=true before orderFront — collapses glass backdrop.
-        // wantsKey=true is set here (without makeKeyAndOrderFront) so the compositor
-        // treats the panel as key-eligible from the first frame. Without this,
-        // NSGlassEffectView samples at a lower compositor weight and appears grey
-        // on cold open. wantsKey is reset to false in closePanel().
-        // ❌ NEVER remove this line — glass cold-open regression (#892).
+
+        // makeKeyAndOrderFront makes the panel key immediately so NSGlassEffectView
+        // renders its dark variant on the very first compositor frame.
+        // orderFront(nil) only puts the window in front but never makes it key —
+        // NSGlassEffectView renders grey until a tap triggers makeKey internally.
+        // .nonactivatingPanel style mask ensures the app itself does NOT activate,
+        // so this does not steal keyboard focus from whatever the user was doing.
+        // wantsKey=true is required first so KeyablePanel accepts becomeKey.
+        // ❌ NEVER revert to orderFront(nil) — grey cold-open regression (#892).
+        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         panel.wantsKey = true
-        panel.orderFront(nil)
+        panel.makeKeyAndOrderFront(nil)
         resizeAndRepositionPanel()
 
         if let saved = savedNavState, let restored = validatedView(for: saved) {
