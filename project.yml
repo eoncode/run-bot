@@ -1,0 +1,33 @@
+name: RunnerBar
+options:
+  bundleIdPrefix: com.eoncode
+  createIntermediateGroups: true
+
+targets:
+  RunnerBar:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - Sources/RunnerBar
+    resources:
+      - Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.RunnerBar
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+        INFOPLIST_FILE: Resources/Info.plist
+
+  RunnerBarUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - Tests/RunnerBarUITests
+    dependencies:
+      - target: RunnerBar
+    settings:
+      base:
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
