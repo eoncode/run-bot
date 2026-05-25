@@ -3,9 +3,10 @@
 import SwiftUI
 
 // MARK: - DonutStatusView
+
 /// Replaces the PieProgressDot for the action row status indicator.
 /// Three visual states:
-/// - in_progress : animated rotating shimmer arc (blue) + arc trim from 0 → progress
+/// - in\_progress : animated rotating shimmer arc (blue) + arc trim from 0 → progress
 /// - success     : full green circle stroke + checkmark SF Symbol
 /// - failed      : full red circle stroke + xmark SF Symbol
 /// - queued      : solid yellow circle stroke
@@ -13,7 +14,7 @@ import SwiftUI
 /// Animation contract:
 /// - In-progress background ring uses `@State rotationAngle` driven by
 ///   `.linear(duration: 2).repeatForever(autoreverses: false)` — reassures the
-///   user the row hasn’t frozen.
+///   user the row hasn't frozen.
 /// - Progress arc uses `trim(from: 0, to: fraction)` animated with `.easeInOut`.
 /// - Color transitions use `.easeInOut(duration: 0.35)`.
 ///
@@ -26,29 +27,23 @@ struct DonutStatusView: View {
     var progress: Double = 0
     /// Outer diameter of the donut ring in points.
     var size: CGFloat = 16
-
     /// Current rotation angle of the shimmer ring; driven by a repeatForever animation while in-progress.
     @State private var rotationAngle: Double = 0
     /// Smoothed progress value used for the arc trim animation; updated via `.easeInOut` on `progress` changes.
     @State private var displayProgress: Double = 0
-
     /// Line width of the ring stroke, proportional to `size` (11% of outer diameter).
     private var strokeWidth: CGFloat { size * 0.11 }
-    /// Inner ring diameter used for the shimmer arc, set to 82% of the outer `size`. // periphery:ignore
+    // periphery:ignore
+    /// Inner ring diameter used for the shimmer arc, set to 82% of the outer `size`.
     private var innerSize: CGFloat { size * 0.82 }
-
     /// Renders the appropriate ring variant for the current `status`.
     var body: some View {
         ZStack {
             switch status {
-            case .inProgress:
-                inProgressRing
-            case .success:
-                terminalRing(color: .rbSuccess, symbol: "checkmark")
-            case .failed:
-                terminalRing(color: .rbDanger, symbol: "xmark")
-            case .queued:
-                queuedRing
+            case .inProgress: inProgressRing
+            case .success: terminalRing(color: .rbSuccess, symbol: "checkmark")
+            case .failed: terminalRing(color: .rbDanger, symbol: "xmark")
+            case .queued: queuedRing
             default:
                 Circle()
                     .stroke(Color.rbTextTertiary.opacity(0.3), lineWidth: strokeWidth)
@@ -68,26 +63,23 @@ struct DonutStatusView: View {
         }
         // Start rotation if we transition into .inProgress after appearing
         // (e.g. queued → inProgress). No-op for any other transition.
-        .onChange(of: status) { _ in
-            startRotationIfNeeded()
-        }
+        .onChange(of: status) { _ in startRotationIfNeeded() }
     }
 
     // MARK: - Helpers
+
     /// Starts the repeatForever rotation animation only when status is .inProgress.
     /// Safe to call multiple times — SwiftUI deduplicates identical in-flight
     /// animations on the same state variable.
     private func startRotationIfNeeded() {
         guard status == .inProgress else { return }
-        withAnimation(
-            .linear(duration: 2)
-            .repeatForever(autoreverses: false)
-        ) {
+        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
             rotationAngle = 360
         }
     }
 
     // MARK: - Sub-views
+
     /// Animated in-progress ring: faint shimmer background + blue arc trim.
     private var inProgressRing: some View {
         ZStack {
@@ -105,18 +97,15 @@ struct DonutStatusView: View {
             // Progress arc
             Circle()
                 .trim(from: 0, to: CGFloat(displayProgress))
-                .stroke(
-                    Color.rbBlue,
-                    style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round)
-                )
+                .stroke(Color.rbBlue, style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
                 .frame(width: size, height: size)
                 .rotationEffect(.degrees(-90))
         }
     }
 
-    /// Queued ring: solid yellow stroke — spec: queued = yellow.
-    /// fix(#419): was dashed blue, corrected to solid rbWarning.
+    /// Queued ring: solid yellow stroke.
     private var queuedRing: some View {
+        // fix(#419): was dashed blue, corrected to solid rbWarning.
         Circle()
             .stroke(Color.rbWarning, lineWidth: strokeWidth)
             .frame(width: size, height: size)
@@ -137,6 +126,7 @@ struct DonutStatusView: View {
 
 // MARK: - Preview
 #if DEBUG
+/// Preview of `DonutStatusView` in all four status states.
 #Preview {
     HStack(spacing: 16) {
         DonutStatusView(status: .inProgress, progress: 0.6, size: 20)

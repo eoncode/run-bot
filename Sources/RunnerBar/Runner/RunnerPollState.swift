@@ -12,7 +12,7 @@ private let iso8601 = ISO8601DateFormatter()
 /// to `PollResultBuilder` for independently testable build logic.
 extension RunnerStore {
     /// Builds the job-poll state by fetching live jobs for all scopes and backfilling concluded jobs.
-    nonisolated func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
+    func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
         PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
             snapCache: snapCache,
@@ -26,7 +26,7 @@ extension RunnerStore {
     }
 
     /// Builds the group-poll state by fetching workflow action groups and enriching their jobs.
-    nonisolated func buildGroupState(snapPrevGroups: [String: WorkflowActionGroup], snapGroupCache: [String: WorkflowActionGroup], jobCache: [Int: ActiveJob]) -> GroupPollResult {
+    func buildGroupState(snapPrevGroups: [String: WorkflowActionGroup], snapGroupCache: [String: WorkflowActionGroup], jobCache: [Int: ActiveJob]) -> GroupPollResult {
         PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
@@ -42,7 +42,7 @@ extension RunnerStore {
     }
 
     /// Backfills missing step data for concluded jobs in `cache` by re-fetching from the GitHub API.
-    nonisolated func backfillSteps(into cache: inout [Int: ActiveJob]) {
+    func backfillSteps(into cache: inout [Int: ActiveJob]) {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil,
@@ -57,14 +57,14 @@ extension RunnerStore {
     }
 
     /// Returns the "owner/repo" scope string for a workflow action group.
-    nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
+    func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         if !group.repo.isEmpty { return group.repo }
         if let firstRun = group.runs.first, let url = firstRun.htmlUrl, let derived = scopeFromHtmlUrl(url) { return derived }
         return ""
     }
 
     /// Merges enriched job data from `jobCache` into `jobs`, preferring cached entries with more data.
-    nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
+    func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
             return (cached.conclusion != nil && job.conclusion == nil) || cached.steps.count > job.steps.count ? cached : job
