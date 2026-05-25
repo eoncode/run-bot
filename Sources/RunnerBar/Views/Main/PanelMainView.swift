@@ -36,6 +36,12 @@ import SwiftUI
 //
 // RULE 8: AppDelegate.initPanelWidth is 320.
 // RULE 9: displayTick fires every 1 second ALWAYS (no open-state gate).
+//
+// RULE 10: .scrollContentBackground(.hidden) MUST stay on the ScrollView in actionsSectionScrollable.
+// On macOS 26 ScrollView paints an opaque grey system background by default, which blocks
+// NSGlassEffectView in PanelChromeView. .scrollContentBackground(.hidden) removes that fill.
+// ❌ NEVER remove .scrollContentBackground(.hidden) — main panel goes grey without it.
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 /// Root panel view rendered inside the NSPanel.
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
@@ -108,10 +114,17 @@ struct PanelMainView: View {
     }
     // MARK: - Scrollable actions section (RULE 5)
     /// Wraps `actionsSectionContent` in a `ScrollView` capped at `screenScrollMaxHeight`.
+    ///
+    /// .scrollContentBackground(.hidden) is REQUIRED (RULE 10).
+    /// On macOS 26 ScrollView paints an opaque grey system background that blocks
+    /// NSGlassEffectView. .hidden removes that fill so the glass shows through.
+    /// ❌ NEVER remove .scrollContentBackground(.hidden).
+    /// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
     private var actionsSectionScrollable: some View {
         ScrollView(.vertical, showsIndicators: true) {
             actionsSectionContent
         }
+        .scrollContentBackground(.hidden)
         .frame(maxHeight: screenScrollMaxHeight)
     }
     /// Vertical stack of the Workflows section header, `ActionRowView` items, and the load-more button.
