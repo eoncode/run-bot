@@ -272,6 +272,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         chrome?.arrowX = statusItemRect.midX - posX
+        // ❌ NEVER set alpha=0.0 or isOpaque=true before orderFront — collapses glass backdrop.
+        // wantsKey=true is set here (without makeKeyAndOrderFront) so the compositor
+        // treats the panel as key-eligible from the first frame. Without this,
+        // NSGlassEffectView samples at a lower compositor weight and appears grey
+        // on cold open. wantsKey is reset to false in closePanel().
+        // ❌ NEVER remove this line — glass cold-open regression (#892).
+        panel.wantsKey = true
         panel.orderFront(nil)
         resizeAndRepositionPanel()
 
