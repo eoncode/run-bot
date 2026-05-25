@@ -36,6 +36,14 @@ import SwiftUI
 //
 // RULE 8: AppDelegate.initPanelWidth is 320.
 // RULE 9: displayTick fires every 1 second ALWAYS (no open-state gate).
+//
+// RULE 10: ❌ NEVER wrap ActionRowView items in GlassEffectContainer.
+// GlassEffectContainer merges all child glass surfaces into one shared compositor
+// layer which samples the backdrop as a whole — on a mixed/light desktop background
+// this appears grey/flat. SettingsView uses plain ForEach (no GlassEffectContainer)
+// and looks correct for exactly this reason. Each ActionRowView card must get its
+// own independent glass surface via the .glassEffect() modifier in ActionRowBackground.
+// See regression #892.
 /// Root panel view rendered inside the NSPanel.
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
@@ -115,6 +123,10 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
     /// Vertical stack of the Workflows section header, `ActionRowView` items, and the load-more button.
+    ///
+    /// Each ActionRowView gets its own independent glass surface via ActionRowBackground.
+    /// ❌ NEVER wrap with GlassEffectContainer — it merges glass into one layer and looks grey
+    /// on mixed/light desktop backgrounds. See RULE 10 above.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
