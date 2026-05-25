@@ -33,7 +33,9 @@ jobs:
         run: xcodegen generate --spec project.yml
 
       - name: Build app
-        run: ./build.sh
+        run: |
+          chmod +x build.sh
+          ./build.sh
 
       - name: Run UI Tests
         timeout-minutes: 5
