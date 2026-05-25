@@ -106,7 +106,9 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 1: LaunchAgents
 
-    /// Performs the scanLaunchAgents operation.
+    /// Scans `~/Library/LaunchAgents` for `actions.runner.*.plist` entries,
+    /// returning stub `RunnerModel` values and the set of `WorkingDirectory` paths
+    /// to feed into the `.runner` JSON scan.
     private func scanLaunchAgents() -> (models: [RunnerModel], installPaths: Set<String>) {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -156,7 +158,9 @@ struct LocalRunnerScanner {
 
     // MARK: - Source 2: .runner JSON files
 
-    /// Performs the scanRunnerJSONFiles operation.
+    /// Searches default install roots plus any `extraRoots` for `.runner` JSON files
+    /// (up to depth 6) and decodes each into a `RunnerModel`.
+    /// - Parameter extraRoots: Additional directory paths found via LaunchAgent plists.
     private func scanRunnerJSONFiles(extraRoots: Set<String>) -> [RunnerModel] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var rawPaths = [

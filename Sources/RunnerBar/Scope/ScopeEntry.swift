@@ -10,11 +10,11 @@ import Foundation
 /// `isEnabled` controls whether `RunnerStore` polls this scope; disabled scopes
 /// are retained in the list but silently skipped during fetch.
 struct ScopeEntry: Identifiable, Codable, Equatable {
-    /// The id constant.
+    /// Stable identifier used by `ScopeStore` to locate and mutate individual entries.
     let id: UUID
-    /// The scope property.
+    /// The raw GitHub scope string, e.g. `"owner/repo"` or `"myorg"`.
     var scope: String
-    /// The isEnabled property.
+    /// Whether `RunnerStore` should actively poll this scope for runner status.
     var isEnabled: Bool
 
     /// Convenience init with a new random ID and enabled by default.
