@@ -11,7 +11,7 @@ on:
 jobs:
   analyze:
     name: CodeQL Analysis
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       security-events: write
       contents: read
@@ -19,9 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
