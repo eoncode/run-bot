@@ -22,8 +22,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.runner-bar
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: YES
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: 1.0
         CURRENT_PROJECT_VERSION: 1
@@ -39,6 +39,20 @@ targets:
       - target: RunnerBar
     settings:
       base:
-        CODE_SIGN_IDENTITY: ""
-        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.runner-bar.uitests
+
+schemes:
+  RunnerBar:
+    build:
+      targets:
+        RunnerBar: all
+        RunnerBarUITests: [test]
+    test:
+      targets:
+        - RunnerBarUITests
+    run:
+      config: Debug
+    archive:
+      config: Release
