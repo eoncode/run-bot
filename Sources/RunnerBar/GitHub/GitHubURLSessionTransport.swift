@@ -21,7 +21,10 @@ import os
 ///   5. `RunnerViewModel.reload()` mirrors them into `@Published` props.
 ///   6. `PanelMainView.rateLimitBanner` renders a live countdown using
 ///      `store.rateLimitResetDate` + the existing 1-second `displayTick`.
-private struct RateLimitState {
+///
+/// `@unchecked Sendable` because `DispatchWorkItem?` is not itself `Sendable`;
+/// all mutation is serialised through `rateLimitLock`.
+private struct RateLimitState: @unchecked Sendable {
     /// Whether the GitHub API is currently rate-limiting this client.
     var isLimited: Bool = false
     /// The moment at which the rate-limit window expires (mirrors X-RateLimit-Reset).
