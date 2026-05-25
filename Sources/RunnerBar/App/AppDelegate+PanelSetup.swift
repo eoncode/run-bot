@@ -25,6 +25,26 @@ extension AppDelegate {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
         controller.view.autoresizingMask = [.width, .height]
+
+        // MARK: Hosting view transparency
+        //
+        // NSHostingController's backing NSView is opaque by default — it paints a solid
+        // system background colour over whatever is beneath it (NSGlassEffectView in our case),
+        // producing the flat grey appearance on the main panel's cold open.
+        //
+        // After navigating back from Settings, hostingController.rootView is replaced via
+        // navigate(to:), which internally resets the backing view's drawing state to
+        // transparent — which is why the panel looks correct after that navigation round-trip.
+        //
+        // Setting wantsLayer = true and layer.backgroundColor = .clear immediately after
+        // creation makes cold-open Main match the post-navigation appearance permanently.
+        //
+        // ❌ NEVER remove these two lines — main panel goes grey on cold open without them.
+        // ❌ NEVER set isOpaque = true — re-enables the opaque fill.
+        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+        controller.view.wantsLayer = true
+        controller.view.layer?.backgroundColor = CGColor.clear
+
         hostingController = controller
 
         let initW = Self.initPanelWidth
