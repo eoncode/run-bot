@@ -36,7 +36,7 @@ import AppKit
 // 1. macOS coordinate system: y=0 is BOTTOM of view, y=bounds.height is TOP.
 //    Arrow tip is at TOP. contentRect = (0, 0, w, h - arrowHeight).
 //
-// 2. fxView (NSVisualEffectView on <26, NSGlassEffectView on 26+) covers FULL bounds.
+// 2. fxView (NSVisualEffectView) covers FULL bounds.
 //    Body-shape clipping via CAShapeLayer mask on fxView.layer.
 //    Rebuilt on every layout() + arrowX change.
 //    ❌ NEVER set cornerRadius or masksToBounds on fxView.layer directly.
@@ -52,6 +52,16 @@ import AppKit
 // 5. NSBezierPath.cgPath is macOS 14+. Use .compatCGPath (extension below).
 //
 // ❌ NEVER remove this file. Regression is major major major.
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+
+// CHROME BACKDROP NOTE:
+// NSGlassEffectView was trialled here but reverted (#892).
+// It is context-sensitive — it blends with whatever is behind the window,
+// so on a light or mixed desktop the chrome appears grey/washed.
+// NSVisualEffectView with .hudWindow forces a dark translucent HUD look
+// regardless of desktop background, which is the required appearance.
+// ❌ NEVER replace vibrancyView with NSGlassEffectView for the chrome backdrop.
+// .glassEffect() SwiftUI modifiers on inner cards/buttons/pills are fine.
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 
 /// Height of the arrow tip above the panel body, in points.
@@ -103,7 +113,7 @@ private extension NSBezierPath {
     }
 }
 
-/// Custom `NSView` that renders the HUD panel chrome: vibrancy/glass background, rounded corners, and the arrow pointer.
+/// Custom `NSView` that renders the HUD panel chrome: vibrancy background, rounded corners, and the arrow pointer.
 final class PanelChromeView: NSView {
     /// Panel-local X of arrow tip centre.
     /// Formula: button.window!.frame.midX - panel.frame.minX
@@ -113,55 +123,34 @@ final class PanelChromeView: NSView {
         didSet { needsDisplay = true; updateFxMask() }
     }
 
-    // MARK: - Background effect view (OS-branched)
-    //
-    // macOS 26+: NSGlassEffectView provides Liquid Glass backdrop.
-    //   cornerRadius is set to match the panel body (10pt).
-    //   The same CAShapeLayer mask (updateFxMask) clips it to the arrow+body shape.
-    //
-    // macOS < 26: NSVisualEffectView with .hudWindow material (existing behaviour).
-    //
-    // ❌ NEVER apply glass on macOS < 26 — NSGlassEffectView does not exist there.
-    // ❌ NEVER remove the NSVisualEffectView fallback path.
-    // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-
-    /// The backing effect view. On macOS 26+ this is an `NSGlassEffectView`;
-    /// on macOS < 26 it is an `NSVisualEffectView` with `.hudWindow` material.
-    private let fxView: NSView
+    /// The visual effect view providing the HUD vibrancy background.
+    /// .hudWindow gives a forced dark translucent look regardless of desktop background.
+    /// ❌ NEVER switch to .popover — it produces a warm brown tint on dark wallpapers.
+    /// ❌ NEVER replace with NSGlassEffectView — it is context-sensitive and appears
+    /// grey on light/mixed backgrounds. See CHROME BACKDROP NOTE above.
+    /// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+    private let vibrancyView: NSVisualEffectView = {
+        let view = NSVisualEffectView()
+        // .hudWindow gives a cool dark translucent look — no warm tint.
+        // .popover has a warm cream tint in dark mode which is undesirable.
+        // ❌ NEVER switch back to .popover — it produces a warm brown tint on dark wallpapers.
+        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.wantsLayer = true
+        return view
+    }()
 
     override init(frame: NSRect) {
-        if #available(macOS 26, *) {
-            // Liquid Glass chrome — NSGlassEffectView.
-            // cornerRadius matches the panel body constant (10pt).
-            // The CAShapeLayer mask applied in updateFxMask() clips the glass to
-            // the full arrow+body bezier shape, so the system corner clipping is
-            // supplementary rather than authoritative.
-            let glassView = NSGlassEffectView()
-            glassView.cornerRadius = cornerRadius
-            glassView.wantsLayer = true
-            fxView = glassView
-        } else {
-            // Legacy HUD vibrancy — unchanged from original implementation.
-            // .hudWindow gives a cool dark translucent look — no warm tint.
-            // .popover has a warm cream tint in dark mode which is undesirable.
-            // ❌ NEVER switch back to .popover — it produces a warm brown tint on dark wallpapers.
-            // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-            let vibrancyView = NSVisualEffectView()
-            vibrancyView.material = .hudWindow
-            vibrancyView.blendingMode = .behindWindow
-            vibrancyView.state = .active
-            vibrancyView.wantsLayer = true
-            fxView = vibrancyView
-        }
         super.init(frame: frame)
         wantsLayer = true
         // ❌ NEVER set layer?.backgroundColor = CGColor.clear (alpha 0.0).
-        // alpha=0.0 disables CABackdropLayer — vibrancy/glass collapses to flat grey.
+        // alpha=0.0 disables CABackdropLayer — vibrancy collapses to flat grey.
         // Near-zero (0.001) keeps the backdrop sampler active.
-        // Verified: this contract holds for both NSVisualEffectView and NSGlassEffectView.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         layer?.backgroundColor = CGColor(gray: 1, alpha: 0.001)
-        addSubview(fxView)
+        addSubview(vibrancyView)
     }
 
     /// Not implemented — this view is only created programmatically.
@@ -174,23 +163,22 @@ final class PanelChromeView: NSView {
 
     override func layout() {
         super.layout()
-        fxView.frame = bounds
+        vibrancyView.frame = bounds
         updateFxMask()
         // Re-pin ALL non-fx subviews to contentRect on EVERY layout pass.
         // ❌ NEVER set hosting view frame only at init — dynamic height breaks.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-        for sub in subviews where sub !== fxView {
+        for sub in subviews where sub !== vibrancyView {
             sub.frame = contentRect
         }
     }
 
-    /// Recomputes and applies the CAShapeLayer mask that clips the effect view to the chrome path.
-    /// Applied to both NSGlassEffectView (macOS 26+) and NSVisualEffectView (macOS < 26).
+    /// Recomputes and applies the CAShapeLayer mask that clips vibrancy to the chrome path.
     private func updateFxMask() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let maskLayer = CAShapeLayer()
         maskLayer.path = chromePath(in: bounds).compatCGPath
-        fxView.layer?.mask = maskLayer
+        vibrancyView.layer?.mask = maskLayer
     }
 
     override func draw(_ dirtyRect: NSRect) {
