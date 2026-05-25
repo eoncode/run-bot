@@ -184,6 +184,32 @@ final class PanelChromeView: NSView {
         }
     }
 
+    // MARK: - First appearance re-sample
+    //
+    // NSGlassEffectView’s CABackdropLayer samples the compositor lazily.
+    // On cold open the window compositor has not yet rendered a valid frame,
+    // so the sampler falls back to a neutral grey placeholder.
+    //
+    // One deferred run-loop tick after viewDidMoveToWindow fires guarantees
+    // the compositor has produced at least one real frame before we force
+    // fxView to redisplay and re-apply the mask — giving the backdrop
+    // sampler live desktop content to work from.
+    //
+    // ❌ NEVER remove this override — cold-open glass goes grey without it.
+    // ❌ NEVER call this from init — the window is nil at init time.
+    // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        if #available(macOS 26, *) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.fxView.needsDisplay = true
+                self.updateFxMask()
+            }
+        }
+    }
+
     /// Recomputes and applies the CAShapeLayer mask that clips the effect view to the chrome path.
     /// Applied to both NSGlassEffectView (macOS 26+) and NSVisualEffectView (macOS < 26).
     private func updateFxMask() {
