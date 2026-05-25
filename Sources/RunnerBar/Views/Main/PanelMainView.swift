@@ -36,29 +36,37 @@ import SwiftUI
 //
 // RULE 8: AppDelegate.initPanelWidth is 320.
 // RULE 9: displayTick fires every 1 second ALWAYS (no open-state gate).
+//
+// RULE 10: ❌ NEVER wrap ActionRowView items in GlassEffectContainer.
+// GlassEffectContainer merges all child glass surfaces into one shared compositor
+// layer which samples the backdrop as a whole — on a mixed/light desktop background
+// this appears grey/flat. SettingsView uses plain ForEach (no GlassEffectContainer)
+// and looks correct for exactly this reason. Each ActionRowView card must get its
+// own independent glass surface via the .glassEffect() modifier in ActionRowBackground.
+// See regression #892.
 /// Root panel view rendered inside the NSPanel.
 /// Owns the display-tick timer and system-stats lifecycle.
 /// API polling is owned entirely by RunnerStore's adaptive self-scheduling timer.
 struct PanelMainView: View {
-    /// The store property.
+    /// The backing runner view-model driving the workflow list.
     @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row in an inline job list. (#455)
     let onStepTap: (ActiveJob, JobStep) -> Void
-    /// The onSelectSettings constant.
+    /// Called when the user taps the settings gear button.
     let onSelectSettings: () -> Void
-    /// The panelVisibilityState property.
+    /// Tracks whether the panel is currently visible; used to gate stats sampling.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
-    /// The isAuthenticated property.
+    /// Whether a GitHub personal-access token is present in the environment.
     @State private var isAuthenticated = (githubToken() != nil)
-    /// The systemStats property.
+    /// View-model providing CPU / memory / disk samples for the header stats bar.
     @StateObject private var systemStats = SystemStatsViewModel()
-    /// The visibleCount property.
+    /// Number of workflow rows currently shown before the "Load more" button.
     @State private var visibleCount: Int = 10
-    /// The displayTick property.
+    /// Incremented every second by `displayTickTimer`; drives elapsed-time label redraws.
     @State private var displayTick: Int = 0
-    /// The displayTickTimer property.
+    /// The 1-second repeating timer that increments `displayTick`.
     @State private var displayTickTimer: Timer?
-    /// The screenScrollMaxHeight property.
+    /// Maximum height for the scrollable actions section (80% of visible screen height).
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
@@ -115,6 +123,9 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
     /// Vertical stack of the Workflows section header, `ActionRowView` items, and the load-more button.
+    /// Each ActionRowView gets its own independent glass surface via ActionRowBackground.
+    /// ❌ NEVER wrap with GlassEffectContainer — it merges glass into one layer and looks grey
+    /// on mixed/light desktop backgrounds. See RULE 10 above.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -143,7 +154,7 @@ struct PanelMainView: View {
             Button(
                 action: { visibleCount += nextBatch },
                 label: {
-                    Text("Load \(nextBatch) more workflows…")
+                    Text("Load \(nextBatch) more workflows\u{2026}")
                         .font(.caption).foregroundColor(.secondary)
                 }
             )
@@ -168,24 +179,13 @@ struct PanelMainView: View {
     }
     // MARK: - Rate limit banner (#778)
     /// Warning strip shown below the header when GitHub's rate limit has been hit.
-    ///
-    /// Uses `store.rateLimitResetDate` + the 1-second `displayTick` to render
-    /// a live countdown ("resets in 42s", "resets in 3m 07s", etc.).
-    /// Falls back to the static "pausing polls" label when no reset date is
-    /// known (e.g. CLI code path that sets `ghIsRateLimited` without a
-    /// `X-RateLimit-Reset` header value).
-    ///
-    /// `displayTick` is referenced via `_ = displayTick` so SwiftUI re-evaluates
-    /// this computed property every second while the banner is visible — the
-    /// same mechanism used by elapsed-time labels in `ActionRowView`.
     private var rateLimitBanner: some View {
-        // Capture tick to force a re-evaluation every second.
         _ = displayTick // swiftlint:disable:this redundant_discardable_let
         let countdownLabel: String
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
             if remaining < 1 {
-                countdownLabel = "resuming…"
+                countdownLabel = "resuming\u{2026}"
             } else if remaining < 60 {
                 countdownLabel = "resets in \(Int(remaining))s"
             } else {
@@ -205,7 +205,6 @@ struct PanelMainView: View {
         .padding(.horizontal, 12).padding(.vertical, 4)
     }
     // MARK: - Helpers
-    /// Opens the GitHub personal-access-token documentation page in the default browser.
     private func signInWithGitHub() {
         let urlString = "\(GitHubConstants.base)/en/authentication/"
             + "keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
