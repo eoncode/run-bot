@@ -42,3 +42,17 @@ targets:
         CODE_SIGNING_REQUIRED: YES
         AD_HOC_CODE_SIGNING_ALLOWED: YES
         GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  RunnerBar:
+    build:
+      targets:
+        RunnerBar: all
+        RunnerBarUITests: [testing]
+    test:
+      targets:
+        - RunnerBarUITests
+      commandLineArguments:
+        UI_TESTING: true
+    run:
+      config: Debug

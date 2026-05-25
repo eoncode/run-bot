@@ -68,8 +68,9 @@ jobs:
         run: |
           xcodebuild test \
             -project RunnerBar.xcodeproj \
-            -scheme RunnerBarUITests \
-            -destination 'platform=macOS'
+            -scheme RunnerBar \
+            -destination 'platform=macOS' \
+            -only-testing:RunnerBarUITests
         env:
           UI_TESTING: "1"
 
