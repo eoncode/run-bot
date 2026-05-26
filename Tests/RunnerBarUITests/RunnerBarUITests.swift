@@ -8,7 +8,7 @@
 // Design:
 //   • AppDelegate calls setActivationPolicy(.regular) + activate() when
 //     UI_TESTING is set, so the app runs as a normal foreground app.
-//   • This means app.windows, app.buttons, app.staticTexts etc. all work.
+//   • This means app.buttons, app.staticTexts etc. all work.
 //   • The status item can be clicked normally to open the panel.
 //
 // ⚠️ XCUIApplication must be initialised with the bundle ID (not default init)
@@ -19,7 +19,7 @@
 // ⚠️ app.windows does NOT enumerate NSPanel with [.borderless, .nonactivatingPanel].
 //    Borderless non-activating panels appear under app.otherElements, not app.windows.
 //    ❌ NEVER use app.windows to find the RunnerBar panel.
-//    ✓ Use app.staticTexts / app.otherElements to verify panel content directly.
+//    ✓ Use app.staticTexts / app.buttons to verify panel content directly.
 
 import XCTest
 
@@ -41,7 +41,7 @@ final class RunnerBarUITests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Smoke tests
+    // MARK: - Smoke
 
     /// App reaches .runningForeground because UI_TESTING sets .regular activation policy.
     func testAppLaunchesWithoutCrashing() {
@@ -59,23 +59,90 @@ final class RunnerBarUITests: XCTestCase {
         )
     }
 
-    // MARK: - Panel tests
+    // MARK: - Panel open
 
-    /// Clicking the status item opens the panel and shows the Workflows section.
+    /// Clicking the status item opens the panel and shows the Workflows section header.
     ///
-    /// The panel is an NSPanel with [.borderless, .nonactivatingPanel] style mask.
-    /// Borderless non-activating panels are NOT enumerated by app.windows in XCUITest.
-    /// We verify the panel opened by waiting for content directly via app.staticTexts.
+    /// SectionHeaderLabel renders .uppercased(), so "Workflows" → "WORKFLOWS".
     func testPanelOpensAndShowsWorkflowsSection() {
         let statusItem = app.statusItems.firstMatch
         XCTAssertTrue(statusItem.waitForExistence(timeout: 3), "Status item should exist")
         statusItem.click()
 
-        // ❌ Do NOT use app.windows.firstMatch — borderless nonactivating NSPanel
-        //    never appears in app.windows. Query content directly instead.
         XCTAssertTrue(
             app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
             "Panel should contain the 'WORKFLOWS' section header after clicking status item"
+        )
+    }
+
+    /// In UI_TESTING mode all network calls are skipped (RunnerStore.start() is not called),
+    /// so store.actions is empty and PanelMainView renders the empty-state label.
+    /// This proves the content subtree fully rendered — not just the section header.
+    func testPanelShowsEmptyStateWhenNoWorkflows() {
+        let statusItem = app.statusItems.firstMatch
+        XCTAssertTrue(statusItem.waitForExistence(timeout: 3))
+        statusItem.click()
+
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "Section header must appear first"
+        )
+        XCTAssertTrue(
+            app.staticTexts["No recent workflows"].waitForExistence(timeout: 3),
+            "Empty-state label should appear because network is skipped in UI_TESTING mode"
+        )
+    }
+
+    // MARK: - Header buttons
+
+    /// PanelHeaderView renders a gearshape button with .help("Settings").
+    /// Verifies the header fully rendered and the button is hittable.
+    func testSettingsButtonExistsInHeader() {
+        let statusItem = app.statusItems.firstMatch
+        XCTAssertTrue(statusItem.waitForExistence(timeout: 3))
+        statusItem.click()
+
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "Panel must be open before querying header buttons"
+        )
+        let settingsBtn = app.buttons["Settings"]
+        XCTAssertTrue(
+            settingsBtn.waitForExistence(timeout: 3),
+            "Settings (gearshape) button should exist in the panel header"
+        )
+        XCTAssertTrue(settingsBtn.isHittable, "Settings button should be hittable")
+    }
+
+    // MARK: - Panel close / reopen
+
+    /// Clicking the status item a second time closes the panel (panel content disappears),
+    /// and clicking it again reopens it (panel content reappears).
+    /// This exercises openPanel() → closePanel() → openPanel() round-trip.
+    func testPanelClosesAndReopensOnStatusItemClick() {
+        let statusItem = app.statusItems.firstMatch
+        XCTAssertTrue(statusItem.waitForExistence(timeout: 3))
+
+        // Open
+        statusItem.click()
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "Panel should open on first click"
+        )
+
+        // Close — second click toggles panel off
+        statusItem.click()
+        let closedExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.staticTexts["WORKFLOWS"]
+        )
+        wait(for: [closedExpectation], timeout: 3)
+
+        // Reopen
+        statusItem.click()
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "Panel should reopen on third click"
         )
     }
 }
