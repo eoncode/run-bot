@@ -8,11 +8,11 @@
 
 **CI Checks**
 
+![UI Tests](https://github.com/eoncode/runner-bar/actions/workflows/ui-tests.yml/badge.svg)
+![Unit Tests](https://github.com/eoncode/runner-bar/actions/workflows/swift-test.yml/badge.svg)
 ![SwiftLint](https://github.com/eoncode/runner-bar/actions/workflows/swiftlint.yml/badge.svg)
-![Tests](https://github.com/eoncode/runner-bar/actions/workflows/swift-test.yml/badge.svg)
 ![Periphery](https://github.com/eoncode/runner-bar/actions/workflows/periphery.yml/badge.svg)
 [![CodeQL](https://github.com/eoncode/runner-bar/actions/workflows/codeql.yml/badge.svg)](https://github.com/eoncode/runner-bar/actions/workflows/codeql.yml)
-![UI Tests](https://github.com/eoncode/runner-bar/actions/workflows/ui-tests.yml/badge.svg)
 
 **Code Quality**
 
