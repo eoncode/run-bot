@@ -53,6 +53,15 @@
                BlueprintName = "RunnerBarUITests"
                ReferencedContainer = "container:RunnerBar.xcodeproj">
             </BuildableReference>
+            <HostedTestableReference>
+               <BuildableReference
+                  BuildableIdentifier = "primary"
+                  BlueprintIdentifier = "RunnerBar"
+                  BuildableName = "RunnerBar.app"
+                  BlueprintName = "RunnerBar"
+                  ReferencedContainer = "container:RunnerBar.xcodeproj">
+               </BuildableReference>
+            </HostedTestableReference>
          </TestableReference>
       </Testables>
       <MacroExpansion>

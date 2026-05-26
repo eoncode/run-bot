@@ -167,7 +167,7 @@ RunnerBarUITests: [build, test]   # ← `build` is required, not just `test`
 
 Result: `xcodebuild: error: Scheme RunnerBar is not currently configured for the test action.` — even though `project.yml` is logically correct.
 
-**Fix:** Commit the `.xcscheme` file directly into the repo at `RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme` with a hand-written `<TestAction>` containing `<TestableReference skipped="NO">` for `RunnerBarUITests`. Then restore it in the workflow after `xcodegen generate` (see learning #15).
+**Fix:** Commit the `.xcscheme` file directly into the repo at `xcschemes/RunnerBar.xcscheme` (outside the gitignored `.xcodeproj/`) and copy it into place in the workflow after `xcodegen generate` (see learning #15).
 
 ❌ **Never** assume XcodeGen will generate a test-capable scheme on Xcode 26 for UI test targets.
 
@@ -180,14 +180,54 @@ xcodebuild: error: Scheme RunnerBar is not currently configured for the test act
 ```
 This is insidious because the fix looks complete from the git log — the good scheme is committed — but it never survives to runtime.
 
-**Fix:** Add a workflow step **immediately after** `xcodegen generate` that restores the committed scheme:
+**Fix:** Keep the correct `.xcscheme` at `xcschemes/RunnerBar.xcscheme` (NOT inside `.xcodeproj/`), and add a workflow step **immediately after** `xcodegen generate` that copies it into place:
 ```yaml
 - name: Restore committed scheme
   run: |
     mkdir -p RunnerBar.xcodeproj/xcshareddata/xcschemes
-    git checkout HEAD -- RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme
+    cp xcschemes/RunnerBar.xcscheme RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme
 ```
-❌ **Never** commit a `.xcscheme` fix without this restore step in the workflow — the commit is a no-op without it.
+❌ **Never** use `git checkout HEAD -- RunnerBar.xcodeproj/...` — `.xcodeproj/` is gitignored and git silently ignores the restore.
+❌ **Never** commit a `.xcscheme` fix without this copy step in the workflow — the commit is a no-op without it.
+
+---
+
+### 16. Missing `<HostedTestableReference>` inside `<TestableReference>` in the hand-written `.xcscheme`
+**Why it fails:** On Xcode 26, a `<TestableReference>` for a UI test target without a nested `<HostedTestableReference>` causes xcodebuild to construct the host app path as:
+```
+BuildProducts/Debug/RunnerBar.
+```
+(trailing dot, no `.app` extension) even when `<MacroExpansion>` is present and `RunnerBar.app` physically exists. The error is:
+```
+Test target RunnerBarUITests encountered an error (The bundle identifier for RunnerBar couldn't be read. No such file or directory …/BuildProducts/Debug/RunnerBar.)
+```
+This is distinct from Learning #11 (missing `app:` in `project.yml`) — both cause the identical error message, but #11 is about the YAML source and #16 is about the hand-written XML scheme that survives to CI.
+
+**Fix:** Always include `<HostedTestableReference>` inside every UI test `<TestableReference>` in the committed `.xcscheme`:
+```xml
+<TestableReference
+   skipped = "NO"
+   parallelizable = "NO"
+   testExecutionOrdering = "random">
+   <BuildableReference
+      BuildableIdentifier = "primary"
+      BlueprintIdentifier = "RunnerBarUITests"
+      BuildableName = "RunnerBarUITests.xctest"
+      BlueprintName = "RunnerBarUITests"
+      ReferencedContainer = "container:RunnerBar.xcodeproj">
+   </BuildableReference>
+   <HostedTestableReference>
+      <BuildableReference
+         BuildableIdentifier = "primary"
+         BlueprintIdentifier = "RunnerBar"
+         BuildableName = "RunnerBar.app"
+         BlueprintName = "RunnerBar"
+         ReferencedContainer = "container:RunnerBar.xcodeproj">
+      </BuildableReference>
+   </HostedTestableReference>
+</TestableReference>
+```
+❌ **Never** omit `<HostedTestableReference>` from a UI test `<TestableReference>` on Xcode 26 — `<MacroExpansion>` alone is not sufficient.
 
 ---
 
@@ -201,10 +241,11 @@ This is insidious because the fix looks complete from the git log — the good s
 - `--uitesting` launch argument — required to bypass Keychain prompts in CI
 - No `TEST_HOST` / `BUNDLE_LOADER` on `bundle.ui-testing` targets
 - Explicit `xcodebuild build` step before `xcodebuild test -only-testing` — required on Xcode 26
-- `app: RunnerBar` on the UI test target in the scheme test action — required on Xcode 26 for correct `.app` path resolution
+- `app: RunnerBar` on the UI test target in the scheme test action in `project.yml` — required on Xcode 26 for correct `.app` path resolution
 - Explicit action list on main app: `RunnerBar: [build, run, test, profile, analyze, archive]` — never use `all`
 - `RunnerBarUITests: [build, test]` in scheme build targets — `build` is required or TestAction is empty
-- Commit `.xcscheme` directly + restore with `git checkout HEAD --` after `xcodegen generate` — both steps required together
+- Keep `.xcscheme` at `xcschemes/RunnerBar.xcscheme` (outside gitignored `.xcodeproj/`) + copy with `cp` in workflow after `xcodegen generate` — both steps required together
+- `<HostedTestableReference>` inside every UI test `<TestableReference>` in the hand-written `.xcscheme` — required on Xcode 26 for correct `.app` path resolution
 
 ---
 
