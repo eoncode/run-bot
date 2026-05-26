@@ -12,16 +12,18 @@
 //     input events. This keeps CI safe to run on a shared/active machine.
 //
 // ⚠️ LSUIElement apps never reach .runningForeground — use .runningBackground.
-// ⚠️ This app uses NSPanel, not NSPopover — use app.windows, not app.popovers.
+// ⚠️ Do NOT use app.windows for an LSUIElement (background agent) app.
+//    XCTest's AX server never returns AXWindow elements via app.windows for
+//    background-only agents, regardless of window level (.floating, .popUpMenu, etc).
+//    Use XCUIScreen.main.windows instead — this queries ALL visible windows on screen.
+// ⚠️ Similarly, use XCUIScreen.main.staticTexts to find panel content.
 // ⚠️ XCUIApplication must be initialised with the bundle ID (not default init)
 //    to avoid Xcode 26 path resolution bug with LSUIElement apps.
 // ⚠️ Do NOT set XCTTargetAppPath in project.yml scheme env — Xcode 26 strips
 //    the .app extension, causing a fatal "bundle ID couldn't be read" error.
 // ⚠️ To open the panel in CI (no mouse available), set OPEN_PANEL_ON_LAUNCH=1
 //    in launchEnvironment. The app positions the panel with setFrameOrigin+orderFront
-//    at .floating level (NOT openPanel() — that requires a real status item position).
-// ⚠️ NSPanel at .popUpMenu level is INVISIBLE to XCTest AX — the app lowers it
-//    to .floating when OPEN_PANEL_ON_LAUNCH is set so app.windows can see it.
+//    (NOT openPanel() — that requires a real status item position).
 
 import XCTest
 
@@ -71,10 +73,10 @@ final class RunnerBarUITests: XCTestCase {
     /// Uses `OPEN_PANEL_ON_LAUNCH` env var to trigger panel display inside
     /// the app 300ms after launch — no mouse click needed, cursor stays still.
     ///
-    /// The app lowers the panel level to .floating (from .popUpMenu) when
-    /// OPEN_PANEL_ON_LAUNCH is set, because XCTest AX cannot see panels at
-    /// .popUpMenu level. Verifies that the panel exists and SwiftUI rendered
-    /// the "Workflows" section header.
+    /// IMPORTANT: For LSUIElement (background agent) apps, `app.windows` is
+    /// always empty — XCTest's AX server never exposes AXWindow via the process
+    /// handle for background-only agents. We use `XCUIScreen.main.windows`
+    /// instead, which queries all windows visible on the current screen.
     func testPanelOpensAndShowsWorkflowsSection() {
         // Re-launch with the auto-open flag.
         app.terminate()
@@ -82,17 +84,24 @@ final class RunnerBarUITests: XCTestCase {
         app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"
         app.launch()
 
-        // Wait for the panel (NSPanel at .floating level exposes as a window
-        // in the AX tree). Allow 10s: 0.3s app delay + SwiftUI render time.
-        let panel = app.windows.firstMatch
+        // Wait for the app to be running before we check the screen.
+        XCTAssertTrue(
+            app.wait(for: .runningBackground, timeout: 5),
+            "App should reach .runningBackground before panel check"
+        )
+
+        // Use the screen-level window query — the only AX approach that works
+        // for LSUIElement apps. Allow 10s: 0.3s app delay + SwiftUI render time.
+        let screen = XCUIScreen.main
+        let panel = screen.windows.firstMatch
         XCTAssertTrue(
             panel.waitForExistence(timeout: 10),
-            "Panel (NSPanel) should appear in the AX tree after auto-open"
+            "Panel (NSPanel) should appear in XCUIScreen.main.windows after auto-open"
         )
 
         // The panel's SwiftUI content always renders a 'Workflows' static text
         // regardless of auth state — it is the section header in PanelMainView.
-        let workflowsHeader = app.staticTexts["Workflows"]
+        let workflowsHeader = screen.staticTexts["Workflows"]
         XCTAssertTrue(
             workflowsHeader.waitForExistence(timeout: 5),
             "Panel content should contain the 'Workflows' section header"
