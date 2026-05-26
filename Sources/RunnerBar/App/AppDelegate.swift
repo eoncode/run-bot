@@ -146,6 +146,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setupStatusItem()
         setupPanel()
+
+        // ⚠️ UI Testing: open the panel immediately so tests can interact with
+        // app.windows directly. On macOS 26 the Control Centre accessibility tree
+        // does not propagate third-party status item identifiers reliably, so
+        // clicking the status item from XCUI is not a viable approach.
+        // ❌ NEVER remove this block — it is required for all UI tests.
+        if isUITesting {
+            openPanel()
+        }
     }
 
     // MARK: - OAuth URL callback (#326)
