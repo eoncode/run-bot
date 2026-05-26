@@ -56,10 +56,18 @@ schemes:
     build:
       targets:
         RunnerBar: all
+        # ⚠️ RunnerBar must be listed under [test] as well as the UI test target.
+        # On Xcode 26, xcodebuild test does not infer the host app from the target
+        # dependency alone — it must appear explicitly in the scheme build targets.
         RunnerBarUITests: [test]
     test:
       targets:
-        - RunnerBarUITests
+        - target: RunnerBarUITests
+          # ⚠️ `app` is required on Xcode 26.
+          # Without it, xcodebuild resolves the host app path as
+          # `BuildProducts/Debug/RunnerBar.` (trailing dot, no .app extension)
+          # and immediately errors: "The bundle identifier for RunnerBar couldn't be read."
+          app: RunnerBar
     run:
       config: Debug
     archive:

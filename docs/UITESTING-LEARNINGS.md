@@ -24,7 +24,7 @@ The goal is to stop re-discovering the same mistakes.
 
 ---
 
-### 2. `controlCentre.statusItems.firstMatch` for clicking RunnerBar's icon
+### 2. `controlCentre.statusItems.firstMatch` for clicking RunnerBar’s icon
 **Why it fails:** On macOS 26, `firstMatch` resolves to **`com.apple.menuextra.battery`** — the Battery item appears first in the accessibility tree, before RunnerBar. Clicking it does nothing and the panel never opens.
 
 Evidence from CI log:
@@ -36,17 +36,13 @@ Check for interrupting elements affecting com.apple.menuextra.battery StatusItem
 ---
 
 ### 3. `XCUIApplication(bundleIdentifier: "com.apple.systemuiserver")` for status items
-**Why it fails:** On macOS 13+, status items are no longer hosted by `systemuiserver`. They moved to `com.apple.controlcenter`. Querying `systemuiserver` returns an app that either doesn't exist or has no status items.
+**Why it fails:** On macOS 13+, status items are no longer hosted by `systemuiserver`. They moved to `com.apple.controlcenter`. Querying `systemuiserver` returns an app that either doesn’t exist or has no status items.
 **Fix:** Always use `XCUIApplication(bundleIdentifier: "com.apple.controlcenter")`.
 
 ---
 
 ### 4. Running `build.sh` before `xcodebuild test`
-**Why it fails:** `build.sh` compiles a **Release** universal binary into `dist/RunnerBar.app`. `xcodebuild test` expects to find the host app at `$(BUILT_PRODUCTS_DIR)/RunnerBar.app` inside DerivedData (Debug config). These are two different paths. The test runner fails with:
-```
-The bundle identifier for RunnerBar couldn't be read.
-No such file or directory: .../DerivedData/Debug/RunnerBar.
-```
+**Why it fails:** `build.sh` compiles a **Release** universal binary into `dist/RunnerBar.app`. `xcodebuild test` expects to find the host app at `$(BUILT_PRODUCTS_DIR)/RunnerBar.app` inside DerivedData (Debug config). These are two different paths.
 **Fix:** Remove the `Build app` step from the workflow entirely. `xcodebuild test` builds the Debug app itself before running tests.
 
 ---
@@ -56,7 +52,6 @@ No such file or directory: .../DerivedData/Debug/RunnerBar.
 ```
 Invalid configuration: RunnerBarUITests sets both USES_XCTRUNNER and either TEST_HOST or RUNTIME_TEST_HOST
 ```
-`TEST_HOST` is for **unit test** targets (`bundle.unit-test`), not UI test targets. For UI tests, xcodebuild locates the host app via the scheme's test action target dependency — no manual path needed.
 **Fix:** Remove `TEST_HOST` and `BUNDLE_LOADER` entirely from `RunnerBarUITests` settings. Never add them back.
 
 ---
@@ -74,50 +69,58 @@ Invalid configuration: RunnerBarUITests sets both USES_XCTRUNNER and either TEST
 ---
 
 ### 8. `controlCentre.statusItems["com.eoncode.runner-bar"]` on macOS 26
-**Why it fails:** On macOS 26 / Xcode 26, the accessibility identifier of a status bar item is **not** the app's bundle ID. `waitForExistence(timeout: 5)` polls the full 5 seconds and returns false.
+**Why it fails:** On macOS 26 / Xcode 26, the accessibility identifier of a status bar item is **not** the app’s bundle ID. `waitForExistence(timeout: 5)` polls the full 5 seconds and returns false.
 **Fix:** See learning #9 — set an explicit accessibility identifier on the button and query by that.
 
 ---
 
 ### 9. No explicit `accessibilityIdentifier` on the `NSStatusItem` button
-**Why it fails:** Without a hard-coded identifier, there is no stable string to query the button by in XCUI. Bundle ID lookup (#8) and `firstMatch` (#2) both fail on macOS 26. The only reliable approach is to own the identifier yourself.
+**Why it fails:** Without a hard-coded identifier, there is no stable string to query the button by in XCUI. Bundle ID lookup (#8) and `firstMatch` (#2) both fail on macOS 26.
 
 **Fix (app side):** In `AppDelegate+StatusItem.swift`, after configuring the button:
 ```swift
 button.setAccessibilityIdentifier("RunnerBarStatusItem")
 ```
 
-**Fix (test side):** Query by that exact string:
+**Fix (test side):**
 ```swift
 let statusItem = controlCentre.statusItems["RunnerBarStatusItem"]
 ```
 
-This is immune to:
-- Accessibility tree ordering (unlike `firstMatch`)
-- macOS version changes to bundle-ID-based lookup
-- Other system status items appearing before RunnerBar in the tree
-
 ---
 
 ### 10. Using `-only-testing` without a prior explicit host app build on Xcode 26
-**Why it fails:** On Xcode 26, `-only-testing RunnerBarUITests` narrows the build graph and does **not** trigger the `RunnerBar` scheme dependency. `RunnerBar.app` is never placed in `BuildProducts/Debug/`, and the test runner immediately errors with:
+**Why it fails:** On Xcode 26, `-only-testing RunnerBarUITests` narrows the build graph and does **not** trigger the `RunnerBar` scheme dependency. `RunnerBar.app` is never placed in `BuildProducts/Debug/`.
 ```
 The bundle identifier for RunnerBar couldn't be read.
 No such file or directory: …/.derived/BuildProducts/Debug/RunnerBar.
 ```
-This is a regression vs. earlier Xcode versions, where `-only-testing` still honoured the host app dependency.
+**Fix:** Add an explicit `xcodebuild build` step for the `RunnerBar` scheme **before** the test step, sharing the same `-derivedDataPath`.
 
-**Fix:** Add an explicit `xcodebuild build` step for the `RunnerBar` scheme **before** the test step. Both steps must share the same `-derivedDataPath` so the test runner finds `RunnerBar.app` already in place.
-```yaml
-- name: Build host app
-  run: |
-    xcodebuild build \
-      -project RunnerBar.xcodeproj \
-      -scheme RunnerBar \
-      -destination 'platform=macOS' \
-      -derivedDataPath .derived
+---
+
+### 11. Missing `app:` in scheme test targets / missing host app in scheme build targets
+**Why it fails:** On Xcode 26, `xcodebuild test` resolves the host app path through the scheme test action. Without `app: RunnerBar` on the `RunnerBarUITests` entry in `project.yml`'s scheme test targets, xcodebuild constructs the path as:
 ```
-❌ **Never** remove this step or merge it into the test step.
+BuildProducts/Debug/RunnerBar.
+```
+(trailing dot, no `.app` extension) and immediately errors:
+```
+The bundle identifier for RunnerBar couldn't be read.
+No such file or directory: …/.derived/BuildProducts/Debug/RunnerBar.
+```
+This happens even when `RunnerBar.app` physically exists in `BuildProducts/Debug/` — the path resolution is wrong at the scheme level, not the filesystem level.
+
+**Fix in `project.yml`:**
+```yaml
+schemes:
+  RunnerBar:
+    test:
+      targets:
+        - target: RunnerBarUITests
+          app: RunnerBar   # ← required on Xcode 26
+```
+❌ **Never** use the short-form `- RunnerBarUITests` for UI test targets in the scheme. Always use the long-form `target:` + `app:` map.
 
 ---
 
@@ -127,17 +130,18 @@ This is a regression vs. earlier Xcode versions, where `-only-testing` still hon
 - `XCUIApplication(bundleIdentifier: "com.apple.controlcenter")` — correct host for status items on macOS 13+
 - `button.setAccessibilityIdentifier("RunnerBarStatusItem")` + `controlCentre.statusItems["RunnerBarStatusItem"]` — the only reliable way to target the status item on macOS 26
 - `app.windows.firstMatch` — correct way to query the NSPanel (never `app.popovers`)
-- `concurrency: group: ui-test-${{ github.repository }}, cancel-in-progress: false` — serializes runs on the single self-hosted machine, prevents race conditions
+- `concurrency: group: ui-test-${{ github.repository }}, cancel-in-progress: false` — serializes runs on the single self-hosted machine
 - `--uitesting` launch argument — required to bypass Keychain prompts in CI
-- No `TEST_HOST` / `BUNDLE_LOADER` on `bundle.ui-testing` targets — xcodebuild resolves the host app via scheme dependency
-- Explicit `xcodebuild build` step before `xcodebuild test -only-testing` — required on Xcode 26 to place `RunnerBar.app` in `BuildProducts/Debug/` before the test runner starts
+- No `TEST_HOST` / `BUNDLE_LOADER` on `bundle.ui-testing` targets
+- Explicit `xcodebuild build` step before `xcodebuild test -only-testing` — required on Xcode 26
+- `app: RunnerBar` on the UI test target in the scheme test action — required on Xcode 26 for correct `.app` path resolution
 
 ---
 
 ## Process Rules (to stop repeating mistakes)
 
 1. **Read the exact failure line** before writing any fix. Not the full 300KB log — just the `XCTAssert` or `error:` line.
-2. **Run locally first.** If you can't confirm green on the runner machine, don't push.
+2. **Run locally first.** If you can’t confirm green on the runner machine, don’t push.
 3. **One change per commit.** Never bundle workflow + project.yml + test file in one push.
 4. **Update this file** every time something new fails, before pushing the fix.
 5. **Check the learnings file first.** Before writing any fix, read this file top to bottom.
