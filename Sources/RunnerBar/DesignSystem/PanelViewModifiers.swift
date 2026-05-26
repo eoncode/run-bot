@@ -132,19 +132,20 @@ struct StatPillBackground: ViewModifier {
 
 // MARK: - StatusBadgeBackground
 /// Background modifier for `StatusBadge` capsule badges.
-/// macOS 26+: colour tint layer + `.glassEffect(.regular, in: Capsule())`.
+/// macOS 26+: status colour integrated via `.tint()` directly into the glass
+/// compositor — do NOT use a raw `.background` layer underneath `.glassEffect`
+/// as it renders outside the glass stack and fails to adapt with the material.
 /// macOS < 26: `Capsule().strokeBorder(color.opacity(0.5), lineWidth: 1)` (unchanged).
 struct StatusBadgeBackground: ViewModifier {
     /// The status color used to tint the badge.
     let color: Color
 
-    /// Applies a tinted glass capsule background (macOS 26+) or stroke capsule border (pre-26).
+    /// Applies a compositor-tinted glass capsule (macOS 26+) or stroke capsule border (pre-26).
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             AnyView(
                 content
-                    .background(color.opacity(0.15), in: Capsule())
-                    .glassEffect(.regular, in: Capsule())
+                    .glassEffect(.regular.tint(color.opacity(0.4)), in: Capsule())
             )
         } else {
             AnyView(
@@ -226,7 +227,7 @@ extension View {
         modifier(StatPillBackground())
     }
 
-    /// Applies the `StatusBadgeBackground` modifier (tinted glass capsule on macOS 26+).
+    /// Applies the `StatusBadgeBackground` modifier (compositor-tinted glass capsule on macOS 26+).
     func statusBadgeBackground(color: Color) -> some View {
         modifier(StatusBadgeBackground(color: color))
     }
