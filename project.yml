@@ -57,10 +57,14 @@ schemes:
       targets:
         # ⚠️ Do NOT use `all` here — on Xcode 26, XcodeGen's `all` keyword does not
         # reliably populate the TestAction element in the generated .xcscheme.
-        # xcodebuild then reports: "Scheme RunnerBar is not currently configured for
-        # the test action." Always list actions explicitly.
+        # Always list actions explicitly.
         RunnerBar: [build, run, test, profile, analyze, archive]
-        RunnerBarUITests: [test]
+        # ⚠️ RunnerBarUITests MUST include `build` (not just `test`).
+        # XcodeGen only populates BuildActionEntries in the TestAction when the
+        # UI test target has `build` in its scheme build actions. With `[test]`
+        # alone, the TestAction is empty and xcodebuild reports:
+        #   "Scheme RunnerBar is not currently configured for the test action."
+        RunnerBarUITests: [build, test]
     test:
       targets:
         - target: RunnerBarUITests

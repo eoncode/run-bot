@@ -138,9 +138,24 @@ schemes:
     build:
       targets:
         RunnerBar: [build, run, test, profile, analyze, archive]
-        RunnerBarUITests: [test]
+        RunnerBarUITests: [build, test]  # see also learning #13
 ```
 ❌ **Never** use `RunnerBar: all` in the scheme build targets.
+
+---
+
+### 13. `RunnerBarUITests: [test]` (without `build`) in scheme build targets
+**Why it fails:** XcodeGen only populates `BuildActionEntries` in the `.xcscheme` TestAction when the UI test target has **`build`** in its scheme build actions. With `[test]` alone, the BuildActionEntries list is empty and xcodebuild reports:
+```
+xcodebuild: error: Scheme RunnerBar is not currently configured for the test action.
+```
+This is the same error as #12 but a different root cause — the main app can have an explicit list and it still fails if the UI test target is missing `build`.
+
+**Fix:**
+```yaml
+RunnerBarUITests: [build, test]   # ← `build` is required, not just `test`
+```
+❌ **Never** use `RunnerBarUITests: [test]` alone.
 
 ---
 
@@ -155,7 +170,8 @@ schemes:
 - No `TEST_HOST` / `BUNDLE_LOADER` on `bundle.ui-testing` targets
 - Explicit `xcodebuild build` step before `xcodebuild test -only-testing` — required on Xcode 26
 - `app: RunnerBar` on the UI test target in the scheme test action — required on Xcode 26 for correct `.app` path resolution
-- Explicit action list `[build, run, test, profile, analyze, archive]` on main app target in scheme — required on Xcode 26 (never use `all`)
+- Explicit action list on main app: `RunnerBar: [build, run, test, profile, analyze, archive]` — never use `all`
+- `RunnerBarUITests: [build, test]` in scheme build targets — `build` is required or TestAction is empty
 
 ---
 
