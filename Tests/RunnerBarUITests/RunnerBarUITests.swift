@@ -5,7 +5,6 @@ import XCTest
 // ⚠️ runner-bar uses NSPanel, NOT NSPopover.
 // ❌ NEVER query app.popovers — always use app.windows.
 // The app is LSUIElement=YES: no Dock icon, no app switcher, no visible windows.
-// The status bar icon appears briefly during panel interaction tests, then disappears on tearDown.
 final class RunnerBarUITests: XCTestCase {
 
     var app: XCUIApplication!
@@ -13,6 +12,13 @@ final class RunnerBarUITests: XCTestCase {
     // macOS 13+ routes status bar items through Control Centre, not systemuiserver.
     // ❌ NEVER use "com.apple.systemuiserver" — it will not find the status item on modern macOS.
     private let controlCentre = XCUIApplication(bundleIdentifier: "com.apple.controlcenter")
+
+    // The stable accessibility identifier set on the NSStatusItem button in AppDelegate+StatusItem.swift.
+    // ❌ NEVER use controlCentre.statusItems["com.eoncode.runner-bar"] — bundle ID lookup is broken on macOS 26.
+    // ❌ NEVER use controlCentre.statusItems.firstMatch — resolves to com.apple.menuextra.battery on macOS 26.
+    private var statusItem: XCUIElement {
+        controlCentre.statusItems["RunnerBarStatusItem"]
+    }
 
     override func setUp() {
         continueAfterFailure = false
@@ -36,25 +42,17 @@ final class RunnerBarUITests: XCTestCase {
     }
 
     func testStatusBarItemExists() {
-        let statusItem = controlCentre.statusItems.firstMatch
         XCTAssertTrue(statusItem.waitForExistence(timeout: 5))
     }
 
     func testPanelOpensOnClick() {
         // NSPanel — query app.windows, NOT app.popovers.
-        // ⚠️ macOS 26: controlCentre.statusItems["com.eoncode.runner-bar"] does NOT work —
-        // the accessibility identifier is NOT the bundle ID on macOS 26. Use firstMatch instead.
-        // testStatusBarItemExists confirms firstMatch resolves to our item (only one item in CI).
-        let statusItem = controlCentre.statusItems.firstMatch
         XCTAssertTrue(statusItem.waitForExistence(timeout: 5))
         statusItem.click()
-        let panel = app.windows.firstMatch
-        XCTAssertTrue(panel.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 3))
     }
 
     func testPanelDismissesOnSecondClick() {
-        // ⚠️ macOS 26: same as above — use firstMatch, not bundle-id identifier.
-        let statusItem = controlCentre.statusItems.firstMatch
         XCTAssertTrue(statusItem.waitForExistence(timeout: 5))
         statusItem.click()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 3))

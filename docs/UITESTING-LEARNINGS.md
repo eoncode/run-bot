@@ -25,10 +25,13 @@ The goal is to stop re-discovering the same mistakes.
 ---
 
 ### 2. `controlCentre.statusItems.firstMatch` for clicking RunnerBar’s icon
-**Why it fails:** On macOS 13+, all status bar items live inside `com.apple.controlcenter`. `firstMatch` resolves to whatever item happens to be first in the accessibility tree — usually the system Battery or Wi-Fi item, not RunnerBar. Clicking it does nothing useful and the test fails.
-**Fix:** Query by identifier: `controlCentre.statusItems["com.eoncode.runner-bar"]`.
+**Why it fails:** On macOS 26, `firstMatch` resolves to **`com.apple.menuextra.battery`** — the Battery item appears first in the accessibility tree, before RunnerBar. Clicking it does nothing and the panel never opens.
 
-> ⚠️ **macOS 26 exception — see learning #8 below.** The bundle-ID identifier lookup is broken on macOS 26; `firstMatch` is the correct approach there.
+Evidence from CI log:
+```
+Check for interrupting elements affecting com.apple.menuextra.battery StatusItem
+```
+**Fix:** Set `button.setAccessibilityIdentifier("RunnerBarStatusItem")` on the button in app code, then query `controlCentre.statusItems["RunnerBarStatusItem"]` in tests.
 
 ---
 
@@ -71,22 +74,28 @@ Invalid configuration: RunnerBarUITests sets both USES_XCTRUNNER and either TEST
 ---
 
 ### 8. `controlCentre.statusItems["com.eoncode.runner-bar"]` on macOS 26
-**Why it fails:** On macOS 26 / Xcode 26, the accessibility identifier of a status bar item is **not** the app’s bundle ID. The lookup `statusItems["com.eoncode.runner-bar"]` silently returns an element that never exists — `waitForExistence(timeout: 5)` polls the full 5 seconds then returns `false`.
+**Why it fails:** On macOS 26 / Xcode 26, the accessibility identifier of a status bar item is **not** the app’s bundle ID. `waitForExistence(timeout: 5)` polls the full 5 seconds and returns false.
+**Fix:** See learning #9 — set an explicit accessibility identifier on the button and query by that.
 
-Evidence from CI log:
+---
+
+### 9. No explicit `accessibilityIdentifier` on the `NSStatusItem` button
+**Why it fails:** Without a hard-coded identifier, there is no stable string to query the button by in XCUI. Bundle ID lookup (#8) and `firstMatch` (#2) both fail on macOS 26. The only reliable approach is to own the identifier yourself.
+
+**Fix (app side):** In `AppDelegate+StatusItem.swift`, after configuring the button:
+```swift
+button.setAccessibilityIdentifier("RunnerBarStatusItem")
 ```
-t 1.63s Checking existence of com.eoncode.runner-bar StatusItem
-t 2.63s Checking existence of com.eoncode.runner-bar StatusItem
-t 3.61s Checking existence of com.eoncode.runner-bar StatusItem
-t 4.62s Checking existence of com.eoncode.runner-bar StatusItem
-t 5.60s Checking existence of com.eoncode.runner-bar StatusItem
-XCTAssertTrue failed  ← times out after full 5s
+
+**Fix (test side):** Query by that exact string:
+```swift
+let statusItem = controlCentre.statusItems["RunnerBarStatusItem"]
 ```
-The smoke test `testStatusBarItemExists` **passes** using `firstMatch`, confirming the item exists in the tree but just isn’t reachable by that string key.
 
-**Fix:** Use `controlCentre.statusItems.firstMatch` in all tests. On the CI machine only one non-system status item is present (RunnerBar itself), so `firstMatch` reliably targets our item.
-
-**Note:** If multiple items are ever present, a better approach would be to find the item’s actual accessibility identifier by capturing the accessibility tree (e.g. via `po controlCentre.statusItems.allElementsBoundByIndex` in an Xcode test session) and hardcoding that string instead of the bundle ID.
+This is immune to:
+- Accessibility tree ordering (unlike `firstMatch`)
+- macOS version changes to bundle-ID-based lookup
+- Other system status items appearing before RunnerBar in the tree
 
 ---
 
@@ -94,7 +103,7 @@ The smoke test `testStatusBarItemExists` **passes** using `firstMatch`, confirmi
 
 - `app.wait(for: .runningBackground, timeout: 5)` — correct state check for LSUIElement apps
 - `XCUIApplication(bundleIdentifier: "com.apple.controlcenter")` — correct host for status items on macOS 13+
-- `controlCentre.statusItems.firstMatch` — works on macOS 26 CI (one non-system item present)
+- `button.setAccessibilityIdentifier("RunnerBarStatusItem")` + `controlCentre.statusItems["RunnerBarStatusItem"]` — the only reliable way to target the status item on macOS 26
 - `app.windows.firstMatch` — correct way to query the NSPanel (never `app.popovers`)
 - `concurrency: group: ui-test-${{ github.repository }}, cancel-in-progress: false` — serializes runs on the single self-hosted machine, prevents race conditions
 - `--uitesting` launch argument — required to bypass Keychain prompts in CI
