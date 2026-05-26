@@ -130,6 +130,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - App lifecycle
 
+    /// Called before applicationDidFinishLaunching.
+    /// Sets activation policy to .regular during UI tests so XCTest can see
+    /// all windows and elements in the AX tree — LSUIElement apps run as
+    /// .runningBackground and their windows are invisible to XCTest by default.
+    /// Must be in applicationWillFinishLaunching (not DidFinish) so the policy
+    /// is set before XCTest's automation session handshake completes.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard ProcessInfo.processInfo.environment["UI_TESTING"] != nil else { return }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     /// Performs the applicationDidFinishLaunching operation.
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureGHAPI(
