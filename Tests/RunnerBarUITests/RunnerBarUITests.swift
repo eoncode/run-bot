@@ -27,9 +27,10 @@
 //    .accessibilityIdentifier("settings-back-button") to the back button and
 //    query via app.buttons.matching(identifier:).firstMatch instead.
 //
-// ⚠️ Always assert isHittable before clicking a button inside the panel.
-//    The panel may exist in the AX tree before its layout pass completes,
-//    causing clicks to land outside the window bounds.
+// ⚠️ The panel resizes when switching between main view and SettingsView.
+//    XCTest caches AX element coordinates from the previous (larger) frame,
+//    so clicks land outside the shrunken window.
+//    ✓ Call waitForWindowToSettle() after any navigation that triggers a resize.
 
 import XCTest
 
@@ -54,16 +55,32 @@ final class RunnerBarUITests: XCTestCase {
     // MARK: - Helpers
 
     /// Waits for a button to exist AND be hittable before clicking.
-    /// Prevents clicks landing outside the panel when layout hasn't finished.
     private func tapButton(_ button: XCUIElement, timeout: TimeInterval = 5) {
         XCTAssertTrue(button.waitForExistence(timeout: timeout))
-        let hittable = button.waitForExistence(timeout: timeout) &&
+        XCTAssertTrue(
             XCTWaiter.wait(for: [XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "isHittable == true"),
                 object: button
-            )], timeout: timeout) == .completed
-        XCTAssertTrue(hittable, "Button '\(button.label)' must be hittable before tapping")
+            )], timeout: timeout) == .completed,
+            "Button '\(button.label)' must be hittable before tapping"
+        )
         button.click()
+    }
+
+    /// Polls the first window's frame until it stops changing.
+    /// Required after any navigation that resizes the panel (e.g. main ↔ Settings),
+    /// because XCTest computes click coordinates from the AX tree which lags the
+    /// actual NSWindow frame commit — clicks land outside the window otherwise.
+    private func waitForWindowToSettle(timeout: TimeInterval = 3) {
+        let window = app.windows.firstMatch
+        var lastFrame = window.frame
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+            let current = window.frame
+            if current == lastFrame { return }
+            lastFrame = current
+        }
     }
 
     // MARK: - Panel open
@@ -97,17 +114,13 @@ final class RunnerBarUITests: XCTestCase {
             "Main panel must be open before navigating to Settings"
         )
 
-        // ── 1. Open Settings, verify all sections ─────────────────────
+        // ── 1. Open Settings ──────────────────────────────────────────
         tapButton(app.buttons["Settings"])
+        // Panel shrinks to Settings size — wait for frame to stop changing
+        // before querying any element coordinates inside the smaller window.
+        waitForWindowToSettle()
 
-        // SettingsView.headerBar renders Text("Settings") inside the back button
-        XCTAssertTrue(
-            app.staticTexts["Settings"].waitForExistence(timeout: 3),
-            "Settings header should appear"
-        )
-
-        // All six section headers from sectionsStack
-        XCTAssertTrue(app.staticTexts["Active local runners"].exists,
+        XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 5),
                       "Local runners section header")
         XCTAssertTrue(app.staticTexts["Remote runner scopes"].exists,
                       "Remote scopes section header")
@@ -120,68 +133,35 @@ final class RunnerBarUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["About"].exists,
                       "About section header")
 
-        // ── 2. Open Add Runner sheet, verify content, tap Cancel ──────
-        // localRunnersSectionHeader "+" button has .help("Add a new runner")
+        // ── 2. Add Runner sheet ───────────────────────────────────────
         tapButton(app.buttons["Add a new runner"])
-
-        // AddRunnerSheet title: Text("Add runner")
-        XCTAssertTrue(
-            app.staticTexts["Add runner"].waitForExistence(timeout: 3),
-            "Add Runner sheet title should appear"
-        )
-
-        // Mode segmented control segments
-        XCTAssertTrue(app.buttons["Add new"].exists,
-                      "Add new segment should exist")
-        XCTAssertTrue(app.buttons["Add pre-existing"].exists,
-                      "Add pre-existing segment should exist")
-
-        // Cancel button — label "Cancel", .keyboardShortcut(.cancelAction)
+        XCTAssertTrue(app.staticTexts["Add runner"].waitForExistence(timeout: 3),
+                      "Add Runner sheet title should appear")
+        XCTAssertTrue(app.buttons["Add new"].exists)
+        XCTAssertTrue(app.buttons["Add pre-existing"].exists)
         tapButton(app.buttons["Cancel"])
+        XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
+                      "Should return to Settings after cancelling Add Runner sheet")
 
-        // Sheet dismissed — Settings sections visible again
-        XCTAssertTrue(
-            app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
-            "Should return to Settings after cancelling Add Runner sheet"
-        )
-
-        // ── 3. Open Add Scope sheet, verify content, tap Cancel ───────
-        // remoteScopesSectionHeader "+" button has .help("Add a remote scope")
+        // ── 3. Add Scope sheet ────────────────────────────────────────
         tapButton(app.buttons["Add a remote scope"])
-
-        // AddScopeSheet title: Text("Add remote scope")
-        XCTAssertTrue(
-            app.staticTexts["Add remote scope"].waitForExistence(timeout: 3),
-            "Add Scope sheet title should appear"
-        )
-
-        // Type segmented control segments
-        XCTAssertTrue(app.buttons["Organisation"].exists,
-                      "Organisation segment should exist")
-        XCTAssertTrue(app.buttons["Repository"].exists,
-                      "Repository segment should exist")
-
-        // Cancel button in AddScopeSheet — label "Cancel"
+        XCTAssertTrue(app.staticTexts["Add remote scope"].waitForExistence(timeout: 3),
+                      "Add Scope sheet title should appear")
+        XCTAssertTrue(app.buttons["Organisation"].exists)
+        XCTAssertTrue(app.buttons["Repository"].exists)
         tapButton(app.buttons["Cancel"])
+        XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
+                      "Should return to Settings after cancelling Add Scope sheet")
 
-        // Sheet dismissed — Settings visible again
-        XCTAssertTrue(
-            app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
-            "Should return to Settings after cancelling Add Scope sheet"
-        )
-
-        // ── 4. Back to main via the back button ───────────────────────
-        // SettingsView.headerBar back button AX label resolves to "Settings"
-        // (gear button is absent in this nav state — no ambiguity)
+        // ── 4. Back to main ───────────────────────────────────────────
         tapButton(app.buttons["Settings"])
+        // Panel expands back to main view size — wait for frame to settle.
+        waitForWindowToSettle()
 
-        // Main panel is back — WORKFLOWS section header visible
         XCTAssertTrue(
             app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
             "WORKFLOWS section header should reappear after navigating back to main"
         )
-
-        // Settings content must be gone — confirms nav stack popped correctly
         XCTAssertFalse(
             app.staticTexts["Active local runners"].exists,
             "Settings content must not be visible after going back to main"
