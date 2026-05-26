@@ -11,12 +11,11 @@
 //   • All tests here are READ-ONLY: they only query the AX tree, never synthesise
 //     input events. This keeps CI safe to run on a shared/active machine.
 //
-// ⚠️ LSUIElement apps never reach .runningForeground — use .runningBackground.
-// ⚠️ Do NOT use app.windows for an LSUIElement (background agent) app.
-//    XCTest's AX server never returns AXWindow elements via app.windows for
-//    background-only agents, regardless of window level (.floating, .popUpMenu, etc).
-//    Use XCUIScreen.main.windows instead — this queries ALL visible windows on screen.
-// ⚠️ Similarly, use XCUIScreen.main.staticTexts to find panel content.
+// Option A — setActivationPolicy(.regular) workaround:
+//   The app promotes itself from LSUIElement agent to a regular foreground process
+//   when UI_TESTING=1 is set. This allows XCTest's AX server to populate
+//   app.windows normally. A Dock icon briefly appears during CI — acceptable.
+//
 // ⚠️ XCUIApplication must be initialised with the bundle ID (not default init)
 //    to avoid Xcode 26 path resolution bug with LSUIElement apps.
 // ⚠️ Do NOT set XCTTargetAppPath in project.yml scheme env — Xcode 26 strips
@@ -49,11 +48,12 @@ final class RunnerBarUITests: XCTestCase {
     // MARK: - Smoke tests (no panel required)
 
     /// App process reaches running state without crashing.
-    /// LSUIElement agents run in the background, never .runningForeground.
+    /// With Option A (setActivationPolicy(.regular)), the app reaches
+    /// .runningForeground — not .runningBackground as with a raw LSUIElement agent.
     func testAppLaunchesWithoutCrashing() {
         XCTAssertTrue(
-            app.wait(for: .runningBackground, timeout: 5),
-            "App should reach .runningBackground (LSUIElement agent — never .runningForeground)"
+            app.wait(for: .runningForeground, timeout: 5),
+            "App should reach .runningForeground (promoted via setActivationPolicy(.regular) in UI_TESTING mode)"
         )
     }
 
@@ -73,10 +73,8 @@ final class RunnerBarUITests: XCTestCase {
     /// Uses `OPEN_PANEL_ON_LAUNCH` env var to trigger panel display inside
     /// the app 300ms after launch — no mouse click needed, cursor stays still.
     ///
-    /// IMPORTANT: For LSUIElement (background agent) apps, `app.windows` is
-    /// always empty — XCTest's AX server never exposes AXWindow via the process
-    /// handle for background-only agents. We use `XCUIScreen.main.windows`
-    /// instead, which queries all windows visible on the current screen.
+    /// With Option A (setActivationPolicy(.regular)), app.windows is fully
+    /// populated by XCTest's AX server — no XCUIScreen.main workaround needed.
     func testPanelOpensAndShowsWorkflowsSection() {
         // Re-launch with the auto-open flag.
         app.terminate()
@@ -84,24 +82,23 @@ final class RunnerBarUITests: XCTestCase {
         app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"
         app.launch()
 
-        // Wait for the app to be running before we check the screen.
+        // With setActivationPolicy(.regular) the app reaches .runningForeground.
         XCTAssertTrue(
-            app.wait(for: .runningBackground, timeout: 5),
-            "App should reach .runningBackground before panel check"
+            app.wait(for: .runningForeground, timeout: 5),
+            "App should reach .runningForeground before panel check"
         )
 
-        // Use the screen-level window query — the only AX approach that works
-        // for LSUIElement apps. Allow 10s: 0.3s app delay + SwiftUI render time.
-        let screen = XCUIScreen.main
-        let panel = screen.windows.firstMatch
+        // app.windows works because the process is a regular foreground app.
+        // Allow 10s: 0.3s app delay + SwiftUI render time.
+        let panel = app.windows.firstMatch
         XCTAssertTrue(
             panel.waitForExistence(timeout: 10),
-            "Panel (NSPanel) should appear in XCUIScreen.main.windows after auto-open"
+            "Panel (NSPanel) should appear in app.windows after auto-open"
         )
 
         // The panel's SwiftUI content always renders a 'Workflows' static text
         // regardless of auth state — it is the section header in PanelMainView.
-        let workflowsHeader = screen.staticTexts["Workflows"]
+        let workflowsHeader = app.staticTexts["Workflows"]
         XCTAssertTrue(
             workflowsHeader.waitForExistence(timeout: 5),
             "Panel content should contain the 'Workflows' section header"

@@ -51,10 +51,9 @@ extension AppDelegate {
         newPanel.hasShadow = true
 
         // Production: .popUpMenu keeps the panel above all normal windows.
-        // UI testing: must use .floating so the XCTest AX server includes the
-        // panel in app.windows. NSPanel at .popUpMenu level is treated as a
-        // system overlay and is INVISIBLE to XCTest's AX tree, even when
-        // on-screen. .floating is the highest level XCTest can query.
+        // UI testing (Option A): after setActivationPolicy(.regular) the process
+        // is a normal foreground app, so app.windows works at any panel level.
+        // .floating is kept here for the OPEN_PANEL_ON_LAUNCH path; it works fine.
         // ❌ NEVER change this condition — .popUpMenu breaks AX in tests.
         if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
             newPanel.level = .floating
@@ -113,10 +112,21 @@ extension AppDelegate {
     /// store updates (icon + observable reload), and scope mutation restarts.
     ///
     /// When `UI_TESTING` is set in the environment (i.e. launched by
-    /// XCUIApplication during automated UI tests), all network polling and
-    /// keychain access is skipped. This prevents macOS from showing a keychain
-    /// approval dialog for every ad-hoc-signed CI build.
+    /// XCUIApplication during automated UI tests):
+    ///   1. The process is promoted from LSUIElement agent to a regular foreground
+    ///      app so XCTest's AX server exposes app.windows (Option A workaround).
+    ///      A Dock icon briefly appears during the test run — acceptable for CI.
+    ///   2. All network polling and keychain access is skipped to prevent macOS
+    ///      from showing keychain approval dialogs for ad-hoc-signed CI builds.
     private func setupCombineSubscriptions() {
+        // Option A: promote LSUIElement agent to a normal foreground process so
+        // XCTest's AX server populates app.windows. Without this, app.windows is
+        // always empty for background agents regardless of panel level.
+        // ❌ NEVER call this outside the UI_TESTING guard — it adds a Dock icon.
+        if ProcessInfo.processInfo.environment["UI_TESTING"] != nil {
+            NSApp.setActivationPolicy(.regular)
+        }
+
         // LocalRunnerStore subscription is safe — no network or keychain access.
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
