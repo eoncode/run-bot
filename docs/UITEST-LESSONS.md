@@ -1,27 +1,25 @@
-# UI Test CI — What Doesn't Work (and What Does)
+# UI Test CI — What Doesn’t Work (and What Does)
 
 Running log of the `feature/936-xcodegen-uitest-setup` branch.  
 Update this file every time something new breaks or works. Do **not** delete old entries.
 
 ---
 
-## ✅ What Finally Worked (2026-05-26)
+## ✅ What Finally Worked (2026-05-26, 05:34 CEST)
 
-**Passing config:**
+**Passing config — 3 tests, 0 failures:**
 - `type: bundle.ui-testing` in project.yml — no `TEST_HOST`, no `BUNDLE_LOADER`
 - `CODE_SIGN_IDENTITY: "-"` + `CODE_SIGNING_REQUIRED: NO` + `AD_HOC_CODE_SIGNING_ALLOWED: YES`
 - `GENERATE_INFOPLIST_FILE: YES` on `RunnerBarUITests`
 - `XCUIApplication(bundleIdentifier: "dev.eonist.runnerbar")` — NOT default init
-- `app.wait(for: .runningBackground, timeout:)` — NOT `.runningForeground`
+- `app.wait(for: .runningForeground, timeout:)` — works because `setActivationPolicy(.regular)` is called in `applicationWillFinishLaunching`
 - **No `dependencies` on `RunnerBar` in the `RunnerBarUITests` target** — prevents Xcode 26 from auto-injecting `XCTTargetAppPath`
 - **No `testTargetApp` in scheme** — same reason
 - **`UI_TESTING` as `environmentVariables`** in scheme, NOT `commandLineArguments`
 - **Dedicated `RunnerBarUITests` scheme** used for `xcodebuild test`
 - **App built in a separate step** before `xcodebuild test`; both steps share `-derivedDataPath`
-- **Only `pull_request` trigger** in `ui-tests.yml` — not `push` (avoids duplicate runs)
-- `xcodebuild test -scheme RunnerBarUITests -only-testing:RunnerBarUITests` on self-hosted runner with GUI session
-- **`OPEN_PANEL_ON_LAUNCH` sets panel level to `.floating`** and uses `setFrameOrigin + orderFront` — see lessons below
-- **`XCUIScreen.main.windows` / `XCUIScreen.main.staticTexts`** for panel content — NOT `app.windows` (see lesson below)
+- **Status item click** to open panel — works because `.regular` activation policy makes the app fully AX-visible
+- **`app.staticTexts["WORKFLOWS"]`** to assert panel content — NOT `app.windows` (see lesson below)
 
 ---
 
@@ -43,7 +41,7 @@ Update this file every time something new breaks or works. Do **not** delete old
 
 ### ❌ Mismatched package key in `project.yml`
 **Error:** XcodeGen fails to resolve the local SPM package.  
-**Why:** The `packages:` key name must match `Package.swift`'s `name:` field exactly.  
+**Why:** The `packages:` key name must match `Package.swift`’s `name:` field exactly.  
 **Fix:** Use `name: RunnerBar` in Package.swift and `packages: RunnerBar: path: .` in project.yml.
 
 ---
@@ -54,45 +52,44 @@ Update this file every time something new breaks or works. Do **not** delete old
 
 ---
 
-### ❌ `RunnerBarUITests` not wired into the scheme's test action
+### ❌ `RunnerBarUITests` not wired into the scheme’s test action
 **Error:** `xcodebuild test -only-testing:RunnerBarUITests` finds nothing to run.  
 **Fix:** The `schemes.RunnerBarUITests.test.targets` list must explicitly include `RunnerBarUITests`.
 
 ---
 
 ### ❌ Using the `RunnerBar` app scheme for `xcodebuild test` (Xcode 26)
-**Error:** `The bundle identifier for RunnerBar couldn't be read. No such file or directory: ".../Debug/RunnerBar"`  
-**Why:** Running UI tests via the app's own scheme causes Xcode 26 to auto-populate `XCTTargetAppPath` internally with `.app` stripped.  
+**Error:** `The bundle identifier for RunnerBar couldn’t be read. No such file or directory: ".../Debug/RunnerBar"`  
+**Why:** Running UI tests via the app’s own scheme causes Xcode 26 to auto-populate `XCTTargetAppPath` internally with `.app` stripped.  
 **Fix:** Use a dedicated `RunnerBarUITests` scheme with no `testTargetApp` key.
 
 ---
 
 ### ❌ `dependencies: - target: RunnerBar` on `RunnerBarUITests` target (Xcode 26)
-**Error:** `The bundle identifier for RunnerBar couldn't be read. No such file or directory: ".../Debug/RunnerBar"` — persists even with a dedicated scheme.  
-**Why:** On Xcode 26, a target-level dependency from a `bundle.ui-testing` target to an app target triggers auto-injection of `XCTTargetAppPath` regardless of scheme configuration. Xcode sees "this UI test bundle depends on this app" and wires the path internally — then strips `.app` from it.  
-**Fix:** Remove `dependencies` from `RunnerBarUITests` entirely. Build the app in a **separate `xcodebuild build` step** in the CI workflow first, then run `xcodebuild test`. Both steps share `-derivedDataPath` so the already-built `.app` is found by Launch Services.  
-**Rule:** On Xcode 26, `bundle.ui-testing` targets must have **zero target dependencies** on the app. Build separately, test separately.
+**Error:** `The bundle identifier for RunnerBar couldn’t be read.` — persists even with a dedicated scheme.  
+**Why:** On Xcode 26, a target-level dependency from a `bundle.ui-testing` target to an app target triggers auto-injection of `XCTTargetAppPath` regardless of scheme configuration. Xcode sees “this UI test bundle depends on this app” and wires the path internally — then strips `.app` from it.  
+**Fix:** Remove `dependencies` from `RunnerBarUITests` entirely. Build the app in a **separate `xcodebuild build` step** first, then run `xcodebuild test`. Both steps share `-derivedDataPath`.  
+**Rule:** On Xcode 26, `bundle.ui-testing` targets must have **zero target dependencies** on the app.
 
 ---
 
 ### ❌ `UI_TESTING` in scheme `commandLineArguments` instead of `environmentVariables`
 **Error:** `ProcessInfo.processInfo.environment["UI_TESTING"]` is always `nil`.  
 **Why:** `commandLineArguments` become `argv[]` entries, not environment variables.  
-**Fix:** Move `UI_TESTING` to `environmentVariables` in the scheme's `test` block.
+**Fix:** Move `UI_TESTING` to `environmentVariables` in the scheme’s `test` block.
 
 ---
 
 ### ❌ `XCTTargetAppPath` in scheme `environmentVariables` (Xcode 26)
-**Error:** `The bundle identifier for RunnerBar couldn't be read.`  
+**Error:** `The bundle identifier for RunnerBar couldn’t be read.`  
 **Why:** Xcode 26 strips `.app` from this path value.  
 **Fix:** Do not set `XCTTargetAppPath` at all. Use `XCUIApplication(bundleIdentifier:)` + Launch Services.
 
 ---
 
 ### ❌ `push` + `pull_request` triggers both set in `ui-tests.yml`
-**Problem:** Every push to the feature branch fires two runs: one for the push event and one for the PR event. Wastes runner time and shows 2 failing checks instead of 1.  
-**Fix:** Use only `pull_request` trigger. A PR event covers the branch head automatically.  
-**Rule:** For self-hosted runner jobs on feature branches with an open PR, `pull_request` alone is sufficient.
+**Problem:** Every push fires two runs.  
+**Fix:** Use only `pull_request` trigger.
 
 ---
 
@@ -104,92 +101,37 @@ Update this file every time something new breaks or works. Do **not** delete old
 
 ---
 
-### ❌ `app.wait(for: .runningForeground, timeout:)` on a `LSUIElement` menu bar agent
-**Error:** Test always times out.  
-**Why:** `LSUIElement = true` apps are background agents; they never become `.runningForeground`.  
-**Fix:** Use `.runningBackground` instead.
+### ❌ `app.wait(for: .runningForeground)` without `setActivationPolicy(.regular)`
+**Error:** Times out — LSUIElement apps run as `.runningBackground` by default.  
+**Fix:** Add `NSApp.setActivationPolicy(.regular)` + `NSApp.activate(ignoringOtherApps: true)` in `applicationWillFinishLaunching` when `UI_TESTING` is set. Must be `WillFinish`, not `DidFinish`.  
+**Rule:** `setActivationPolicy` must fire before the XCTest automation session handshake.
+
+---
+
+### ❌ `app.windows` always empty for a `[.borderless, .nonactivatingPanel]` NSPanel
+**Error:** `waitForExistence(timeout: 5)` on `app.windows.firstMatch` always times out, even when the panel is visually open.  
+**Why:** `app.windows` in XCUITest only enumerates windows with an **activating** style mask. `NSPanel` with `[.borderless, .nonactivatingPanel]` is permanently invisible to `app.windows` — regardless of window level (`.popUpMenu`, `.floating`, `.normal`), activation policy (`.regular` vs `.background`), or whether the panel is on-screen.  
+**This was the root cause** of the final failure. Window level changes (`.popUpMenu` → `.floating`) were a red herring — they made no difference because the problem is the style mask, not the level.  
+**Fix:** Query panel content directly: `app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5)`. Static texts inside the panel ARE in the AX tree; only the window container itself is hidden from `app.windows`.  
+**Rule:** ❌ NEVER use `app.windows` to find the RunnerBar panel. It will always be empty. Query content elements directly.
+
+---
+
+### ❌ Chasing window level (`.popUpMenu` → `.floating`) as the cause of `app.windows` being empty
+**Why this was wrong:** The correct hypothesis was partially documented in this file (the `LSUIElement + app.windows` lesson above), but we re-investigated it as the cause of a new failure instead of checking whether the panel style mask was the culprit. Three separate CI pushes and one clean build were wasted on this.  
+**Lesson:** Before pushing any fix, re-read this file. The `app.windows always empty` lesson was already documented.
 
 ---
 
 ### ❌ `app.popovers` for an `NSPanel`-based app
 **Error:** `app.popovers.firstMatch` never exists.  
-**Fix:** Use `app.windows` instead — or see next lesson for LSUIElement apps.
+**Fix:** The panel is not a popover. Query content via `app.staticTexts`.
 
 ---
 
 ### ❌ Synthesising click/mouse events in CI on a shared active desktop
 **Problem:** `XCUIApplication.click()` physically moves the mouse cursor and steals focus.  
-**Fix:** Keep all CI tests READ-ONLY. Use `OPEN_PANEL_ON_LAUNCH=1` env var to open the panel.
-
----
-
-### ❌ `openPanel()` called from `OPEN_PANEL_ON_LAUNCH` branch — panel off-screen (PR #947, 2 CI runs)
-**Error:** `XCTAssertTrue failed - Panel (NSPanel) should appear in the AX tree after auto-open`  
-**Root cause:** `openPanel()` positions relative to `statusItem.button?.window.frame`, which is nil/zero in a pure `XCUIApplication` launch. Panel lands at `{0, 0}` — off-screen on macOS.  
-**Fix (983b57a):** Replace with `panel.setFrameOrigin(visibleFrame-based) + panel.orderFront(nil)`.  
-**Rule:** Never call `openPanel()` from `OPEN_PANEL_ON_LAUNCH` branch.
-
----
-
-### ❌ `NSPanel` at `.popUpMenu` level invisible to XCTest AX tree (3f2eea4)
-**Error:** `XCTAssertTrue failed - Panel (NSPanel) should appear in the AX tree after auto-open` — persists even after switching from `openPanel()` to `setFrameOrigin+orderFront`.  
-**Root cause:** The XCTest AX server queries the target app's window list via the Accessibility API. `NSPanel` windows at `.popUpMenu` level are treated as **system overlay UI** and excluded from the AX window list. Only windows at `.normal`, `.floating`, or below are surfaced as `AXWindow` elements.  
-**Fix (3f2eea4):** Lower the panel level to `.floating` when `OPEN_PANEL_ON_LAUNCH` is set. Production keeps `.popUpMenu`.  
-**Rule:** Never use `.popUpMenu` and expect XCTest to see the window via `app.windows`.
-
----
-
-### ❌ `app.windows` always empty for `LSUIElement` (background agent) apps — EVEN at `.floating` level (e03c3ab)
-**Error:** `XCTAssertTrue failed - Panel (NSPanel) should appear in the AX tree after auto-open` — 10s timeout, polled every ~1s, window never found. `.floating` level change did NOT fix it.  
-**Root cause:** For `LSUIElement = true` apps (menu bar agents), XCTest's AX server **never** exposes `AXWindow` elements through `app.windows`, regardless of panel level. This is a fundamental architectural limit: `app.windows` scopes its AX query to the process handle of a foreground-activatable app. Background agents (LSUIElement) run outside that activation context. The AX server simply returns an empty window list for the process.  
-**Fix (e03c3ab):** Use `XCUIScreen.main.windows` instead of `app.windows`. This queries **all windows visible on screen** without scoping to a process, and correctly finds NSPanel windows owned by background agents.  
-Similarly, use `XCUIScreen.main.staticTexts["Workflows"]` instead of `app.staticTexts["Workflows"]` for panel content.  
-**Rule:** For any LSUIElement app, **never use `app.windows`**. Always use `XCUIScreen.main.windows` / `XCUIScreen.main.staticTexts` etc. `app.windows` will always be empty.
-
----
-
-### ❌ `setActivationPolicy(.regular)` "Option A" — test rewritten before app code was committed (PR #947, 2026-05-26)
-**Error:** `XCTAssertTrue failed - App should reach .runningForeground` at line 54 and line 86. Test times out after ~5s on both assertions.  
-**Root cause:** The test file was rewritten to use `.runningForeground` and `app.windows`, betting on a "Option A" approach where the app calls `NSApp.setActivationPolicy(.regular)` when `UI_TESTING=1`. However, **`setActivationPolicy` was never added to the app source code**. A search of the entire repo returns zero results. The PR comment described the fix, but the actual Swift file was never changed or committed.  
-**Secondary root cause:** Even if the call were added, `setActivationPolicy(.regular)` at runtime does not reliably override the `LSUIElement` plist key on all macOS versions. The sandbox and launch services policy are set before `applicationDidFinishLaunching` runs.  
-**Fix:** Revert the test to the proven pattern: `.runningBackground` + `XCUIScreen.main.windows` / `XCUIScreen.main.staticTexts`. This is what was documented as passing in this file.  
-**Rule:** Never rewrite tests to depend on app-side behaviour that has not yet been committed. Verify with `grep`/search before pushing.
-
----
-
-### ✅ How to test the panel without clicking — `OPEN_PANEL_ON_LAUNCH` (current pattern)
-**Solution:** In `AppDelegate+PanelSetup.swift`:
-```swift
-// Level must be .floating for XCTest AX visibility (not .popUpMenu)
-if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
-    newPanel.level = .floating
-} else {
-    newPanel.level = .popUpMenu
-}
-// ... then after panel = newPanel ...
-if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-        guard let self, let p = self.panel else { return }
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        let x = screen.visibleFrame.maxX - p.frame.width - 20
-        let y = screen.visibleFrame.maxY - p.frame.height - 20
-        p.setFrameOrigin(NSPoint(x: x, y: y))
-        p.orderFront(nil)
-    }
-}
-```
-In test:
-```swift
-app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"
-app.launch()
-// Wait for background state first
-XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
-// Query via screen — NOT app.windows
-let panel = XCUIScreen.main.windows.firstMatch
-XCTAssertTrue(panel.waitForExistence(timeout: 10))
-let workflowsHeader = XCUIScreen.main.staticTexts["Workflows"]
-XCTAssertTrue(workflowsHeader.waitForExistence(timeout: 5))
-```
+**Note:** Status item click works fine when the app has `.regular` activation policy and a real GUI session.
 
 ---
 
@@ -202,7 +144,7 @@ XCTAssertTrue(workflowsHeader.waitForExistence(timeout: 5))
 ---
 
 ### ❌ Runner installed as a system `LaunchDaemon`
-**Error:** No GUI session → XCUIApplication can't launch.  
+**Error:** No GUI session → XCUIApplication can’t launch.  
 **Fix:** Install as user `LaunchAgent`:
 ```bash
 sudo ./svc.sh uninstall && ./svc.sh install && ./svc.sh start
@@ -218,7 +160,7 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
 ---
 
-## General Rules (Don't Forget)
+## General Rules (Don’t Forget)
 
 | Rule | Detail |
 |------|--------|
@@ -226,15 +168,13 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 | **`bundle.ui-testing` ≠ `bundle.unit-test`** | No `TEST_HOST`, no `BUNDLE_LOADER`, uses XCTRunner. |
 | **Zero target dependencies on app** | `RunnerBarUITests` must NOT list `RunnerBar` as a dependency. Triggers Xcode 26 `XCTTargetAppPath` bug. |
 | **Build app separately, then test** | `xcodebuild build -scheme RunnerBar` first, then `xcodebuild test -scheme RunnerBarUITests`. Share `-derivedDataPath`. |
-| **LSUIElement apps are `.runningBackground`** | Never `.runningForeground`. setActivationPolicy(.regular) does NOT reliably override LSUIElement plist. |
-| **Use bundle ID init** | `XCUIApplication(bundleIdentifier:)` — not default init. |
+| **`setActivationPolicy(.regular)` in `WillFinishLaunching`** | Must fire before XCTest automation handshake. Required to use `.runningForeground` and `app.statusItems`. |
+| **Use bundle ID init** | `XCUIApplication(bundleIdentifier:)` — not default init on Xcode 26. |
 | **No `XCTTargetAppPath` in scheme** | Xcode 26 strips `.app` → bundle ID read fails. |
 | **No `testTargetApp` in UITests scheme** | Same bug. Use dedicated scheme. |
 | **`UI_TESTING` in `environmentVariables`** | Not `commandLineArguments`. |
 | **`pull_request` trigger only** | Avoids duplicate runs when a PR is open on the feature branch. |
-| **No mouse events in CI** | AX read-only. Use `OPEN_PANEL_ON_LAUNCH` env var for panel tests. |
-| **Runner must be a user LaunchAgent** | GUI session required. System daemons have no screen. |
-| **`openPanel()` needs a real status item position** | For UI tests, use `panel.setFrameOrigin(visibleFrame-based) + orderFront(nil)`. Never call `openPanel()` from `OPEN_PANEL_ON_LAUNCH`. |
-| **NSPanel at `.popUpMenu` is INVISIBLE to XCTest AX** | XCTest's AX server excludes `.popUpMenu`-level panels from `app.windows`. Set `panel.level = .floating` when `OPEN_PANEL_ON_LAUNCH` is set. |
-| **`app.windows` ALWAYS EMPTY for LSUIElement apps** | `app.windows` never returns anything for a background agent, regardless of panel level. Use `XCUIScreen.main.windows` instead. Same for `staticTexts`, etc. |
+| **`app.windows` is ALWAYS EMPTY for `[.borderless, .nonactivatingPanel]`** | The style mask hides the window from `app.windows` permanently. Query `app.staticTexts` directly. |
+| **Window level is NOT the cause of `app.windows` being empty** | `.popUpMenu` vs `.floating` makes no difference. The culprit is `nonactivatingPanel`. |
 | **Never rewrite tests before committing app-side code** | Verify app code exists (`grep`/search) before pushing tests that depend on it. |
+| **Clean build after app source changes** | `xcodebuild test -scheme RunnerBarUITests` does NOT recompile app sources. Run `xcodebuild clean + build -scheme RunnerBar` first. |
