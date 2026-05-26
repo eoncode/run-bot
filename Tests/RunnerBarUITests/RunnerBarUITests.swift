@@ -31,8 +31,8 @@ final class RunnerBarUITests: XCTestCase {
     // MARK: - Smoke tests
 
     func testAppLaunchesWithoutCrashing() {
-        // LSUIElement app — no window on launch, but process must be alive
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        // LSUIElement app never enters runningForeground — runningBackground is the correct state.
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
     }
 
     func testStatusBarItemExists() {
@@ -41,8 +41,9 @@ final class RunnerBarUITests: XCTestCase {
     }
 
     func testPanelOpensOnClick() {
-        // NSPanel — query app.windows, NOT app.popovers
-        let statusItem = controlCentre.statusItems.firstMatch
+        // NSPanel — query app.windows, NOT app.popovers.
+        // Use the RunnerBar bundle identifier to avoid matching system status items (e.g. Battery).
+        let statusItem = controlCentre.statusItems["com.eoncode.runner-bar"]
         XCTAssertTrue(statusItem.waitForExistence(timeout: 5))
         statusItem.click()
         let panel = app.windows.firstMatch
@@ -50,7 +51,8 @@ final class RunnerBarUITests: XCTestCase {
     }
 
     func testPanelDismissesOnSecondClick() {
-        let statusItem = controlCentre.statusItems.firstMatch
+        let statusItem = controlCentre.statusItems["com.eoncode.runner-bar"]
+        XCTAssertTrue(statusItem.waitForExistence(timeout: 5))
         statusItem.click()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 3))
         statusItem.click()
