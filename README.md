@@ -12,6 +12,7 @@
 ![Tests](https://github.com/eoncode/runner-bar/actions/workflows/swift-test.yml/badge.svg)
 ![Periphery](https://github.com/eoncode/runner-bar/actions/workflows/periphery.yml/badge.svg)
 [![CodeQL](https://github.com/eoncode/runner-bar/actions/workflows/codeql.yml/badge.svg)](https://github.com/eoncode/runner-bar/actions/workflows/codeql.yml)
+![UI Tests](https://github.com/eoncode/runner-bar/actions/workflows/ui-tests.yml/badge.svg)
 
 **Code Quality**
 
@@ -66,6 +67,7 @@ curl -fsSL https://eonist.github.io/runner-bar/install.sh | bash
 - [DEVELOPMENT.md](DEVELOPMENT.md) — build and run locally
 - [DEPLOYMENT.md](DEPLOYMENT.md) — releases and deployment
 - [AGENTS.md](AGENTS.md) — context for AI coding agents
+- [docs/TESTING.md](docs/TESTING.md) — UI test runner setup
 
 ---
 
