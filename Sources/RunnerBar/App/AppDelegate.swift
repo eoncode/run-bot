@@ -249,7 +249,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Nav-state persistence — see ARCHITECTURE.md §Nav-state persistence.
         // ❌ NEVER replace hostingController?.rootView = mainView() with a no-op stub.
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }\n            let preserved = self.savedNavState
+            guard let self else { return }
+            let preserved = self.savedNavState
             self.hostingController?.rootView = self.mainView()
             self.savedNavState = preserved
         }
