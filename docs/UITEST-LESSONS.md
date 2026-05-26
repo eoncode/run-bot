@@ -1,7 +1,22 @@
-# UI Test CI — What Doesn't Work (Lessons Learned)
+# UI Test CI — What Doesn't Work (and What Does)
 
-Running log of failures on `feature/936-xcodegen-uitest-setup`.  
-Update this file every time something new breaks. Do **not** delete old entries.
+Running log of the `feature/936-xcodegen-uitest-setup` branch.  
+Update this file every time something new breaks or works. Do **not** delete old entries.
+
+---
+
+## ✅ What Finally Worked (2026-05-26)
+
+**Passing config:**
+- `type: bundle.ui-testing` in project.yml — no `TEST_HOST`, no `BUNDLE_LOADER`
+- `CODE_SIGN_IDENTITY: "-"` + `CODE_SIGNING_REQUIRED: NO` + `AD_HOC_CODE_SIGNING_ALLOWED: YES`
+- `GENERATE_INFOPLIST_FILE: YES` on `RunnerBarUITests`
+- `XCUIApplication(bundleIdentifier: "dev.eonist.runnerbar")` — NOT default init
+- `app.wait(for: .runningBackground, timeout:)` — NOT `.runningForeground`
+- **No `XCTTargetAppPath`** in scheme env — removing it fixed the fatal launch error on Xcode 26
+- `xcodebuild test -only-testing:RunnerBarUITests` on self-hosted runner with GUI session
+
+**Results:** `Executed 2 tests, with 0 failures` ✅
 
 ---
 
@@ -73,7 +88,31 @@ Update this file every time something new breaks. Do **not** delete old entries.
 
 ### ❌ Synthesising click/mouse events in CI on a shared active desktop
 **Problem:** `XCUIApplication.click()` and similar input-synthesis APIs physically move the mouse cursor and steal focus. This breaks anything else running on the machine.  
-**Fix:** Keep all CI tests READ-ONLY — only query the AX tree, never synthesise input events. The click test (`testPanelOpensOnClick`) was removed for this reason.
+**Fix:** Keep all CI tests READ-ONLY — only query the AX tree, never synthesise input events.  
+**For panel tests:** Use `OPEN_PANEL_ON_LAUNCH=1` env var instead of clicking the status item (see below).
+
+---
+
+### ✅ How to test the panel without clicking — `OPEN_PANEL_ON_LAUNCH`
+**Problem:** The panel only opens via `togglePanel()` which is wired to the status item button click. No click = panel never opens = can't test UI content.  
+**Solution:** Add an env var hook in `AppDelegate+PanelSetup.swift`:
+```swift
+if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        self?.openPanel()
+    }
+}
+```
+Then in the test:
+```swift
+app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"
+app.launch()
+let panel = app.windows.firstMatch
+XCTAssertTrue(panel.waitForExistence(timeout: 5))
+let workflowsHeader = app.staticTexts["Workflows"]
+XCTAssertTrue(workflowsHeader.waitForExistence(timeout: 5))
+```
+**Rule:** `OPEN_PANEL_ON_LAUNCH` is the canonical way to open the panel in CI. Never click.
 
 ---
 
@@ -81,14 +120,14 @@ Update this file every time something new breaks. Do **not** delete old entries.
 
 ### ❌ `xcpretty` on macOS arm64 (system Ruby 2.6)
 **Error:** `xcpretty` gem install fails or crashes on Apple Silicon with system Ruby 2.6.  
-**Fix:** Drop `xcpretty`. Use raw `xcodebuild` output. The signal-to-noise ratio is worse but it actually works.
+**Fix:** Drop `xcpretty`. Use raw `xcodebuild` output.
 
 ---
 
 ### ❌ Runner installed as a system `LaunchDaemon` (`/Library/LaunchDaemons/`)
 **Error:** No GUI session available → XCUIApplication can't launch.  
 **Fix:** The runner must be installed as a user `LaunchAgent` (`~/Library/LaunchAgents/`).  
-One-time fix on the runner machine:
+One-time fix:
 ```bash
 sudo ./svc.sh uninstall
 ./svc.sh install && ./svc.sh start
@@ -98,11 +137,10 @@ sudo ./svc.sh uninstall
 
 ### ❌ `xcode-select` pointing at CommandLineTools instead of Xcode.app
 **Error:** `xcodebuild` fails — no full SDK available.  
-**Fix (one-time on runner machine):**
+**Fix (one-time):**
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ```
-The workflow validates this at startup and exits with a clear error if not fixed.
 
 ---
 
@@ -111,9 +149,9 @@ The workflow validates this at startup and exits with a clear error if not fixed
 | Rule | Detail |
 |------|--------|
 | **Never use CI as a scratch pad** | Validate `xcodegen generate && xcodebuild test` locally before committing. |
-| **`bundle.ui-testing` ≠ `bundle.unit-test`** | Different signing, no `TEST_HOST`, no `BUNDLE_LOADER`, uses XCTRunner. |
+| **`bundle.ui-testing` ≠ `bundle.unit-test`** | No `TEST_HOST`, no `BUNDLE_LOADER`, uses XCTRunner. |
 | **LSUIElement apps are `.runningBackground`** | Never `.runningForeground`. |
 | **Use bundle ID init** | `XCUIApplication(bundleIdentifier:)` — not default init — on Xcode 26 + LSUIElement. |
 | **No `XCTTargetAppPath` in scheme** | Xcode 26 strips `.app` from the path → bundle ID read fails. Remove it entirely. |
-| **No mouse events in CI** | AX read-only queries only. Input synthesis moves the real cursor. |
+| **No mouse events in CI** | AX read-only queries only. Use `OPEN_PANEL_ON_LAUNCH` to open the panel instead. |
 | **Runner must be a user LaunchAgent** | GUI session required for UI tests. System daemons have no screen. |

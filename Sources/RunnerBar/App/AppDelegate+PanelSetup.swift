@@ -21,6 +21,9 @@ extension AppDelegate {
 
     /// Builds the NSPanel, embeds the SwiftUI hosting controller inside
     /// PanelChromeView, wires KVO, and starts all Combine subscriptions.
+    /// When `OPEN_PANEL_ON_LAUNCH` is set (UI testing only), opens the panel
+    /// immediately after setup so tests can inspect the panel AX tree without
+    /// needing a mouse click on the status item.
     func setupPanel() {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
@@ -55,6 +58,15 @@ extension AppDelegate {
 
         setupKVO(controller: controller)
         setupCombineSubscriptions()
+
+        // Auto-open for UI tests: avoids needing a real mouse click on the
+        // status item, which moves the cursor and is banned in CI.
+        // ❌ NEVER use this flag outside of XCUITest scenarios.
+        if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.openPanel()
+            }
+        }
     }
 
     // MARK: KVO

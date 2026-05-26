@@ -15,6 +15,10 @@
 // ⚠️ This app uses NSPanel, not NSPopover — use app.windows, not app.popovers.
 // ⚠️ XCUIApplication must be initialised with the bundle ID (not default init)
 //    to avoid Xcode 26 path resolution bug with LSUIElement apps.
+// ⚠️ Do NOT set XCTTargetAppPath in project.yml scheme env — Xcode 26 strips
+//    the .app extension, causing a fatal "bundle ID couldn't be read" error.
+// ⚠️ To open the panel in CI (no mouse available), set OPEN_PANEL_ON_LAUNCH=1
+//    in launchEnvironment. The app auto-calls openPanel() 300ms after launch.
 
 import XCTest
 
@@ -37,6 +41,8 @@ final class RunnerBarUITests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - Smoke tests (no panel required)
+
     /// App process reaches running state without crashing.
     /// LSUIElement agents run in the background, never .runningForeground.
     func testAppLaunchesWithoutCrashing() {
@@ -52,6 +58,37 @@ final class RunnerBarUITests: XCTestCase {
         XCTAssertTrue(
             app.statusItems.firstMatch.waitForExistence(timeout: 3),
             "Status bar item should be visible in the AX tree"
+        )
+    }
+
+    // MARK: - Panel UI test (real UI, no mouse click)
+
+    /// The panel window appears and contains the expected header elements.
+    ///
+    /// Uses `OPEN_PANEL_ON_LAUNCH` env var to trigger `openPanel()` inside
+    /// the app 300ms after launch — no mouse click needed, cursor stays still.
+    /// Verifies that the panel (NSPanel = app.windows) exists and that the
+    /// SwiftUI content rendered the "Workflows" section header.
+    func testPanelOpensAndShowsWorkflowsSection() {
+        // Re-launch with the auto-open flag.
+        app.terminate()
+        app.launchEnvironment["UI_TESTING"] = "1"
+        app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"
+        app.launch()
+
+        // Wait for the panel (NSPanel exposes as a window in the AX tree).
+        let panel = app.windows.firstMatch
+        XCTAssertTrue(
+            panel.waitForExistence(timeout: 5),
+            "Panel (NSPanel) should appear in the AX tree after auto-open"
+        )
+
+        // The panel's SwiftUI content always renders a 'Workflows' static text
+        // regardless of auth state — it is the section header in PanelMainView.
+        let workflowsHeader = app.staticTexts["Workflows"]
+        XCTAssertTrue(
+            workflowsHeader.waitForExistence(timeout: 5),
+            "Panel content should contain the 'Workflows' section header"
         )
     }
 }
