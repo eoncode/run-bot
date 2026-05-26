@@ -38,6 +38,8 @@ extension AppDelegate {
         // UI testing: add .titled so the AX server registers the panel as a
         // proper window and app.windows returns it. Borderless panels are
         // excluded from AX window enumeration regardless of level.
+        // The visible title bar chrome is hidden separately below via
+        // titlebarAppearsTransparent + titleVisibility + button hiding.
         // ❌ NEVER use .titled in production — it shows a title bar chrome.
         let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
         let styleMask: NSWindow.StyleMask = isUITesting
@@ -65,6 +67,20 @@ extension AppDelegate {
         // ❌ NEVER remove or set to nil — causes light/dark toggling on click.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         newPanel.appearance = NSAppearance(named: .darkAqua)
+
+        // UI testing: hide the visible title bar chrome that .titled adds.
+        // The AX server only needs the .titled style mask — it does not require
+        // the title bar to be visible. This keeps the panel looking identical
+        // to production during test runs.
+        // ❌ NEVER apply these in production (styleMask is .borderless there).
+        if isUITesting {
+            newPanel.titlebarAppearsTransparent = true
+            newPanel.titleVisibility = .hidden
+            newPanel.standardWindowButton(.closeButton)?.isHidden = true
+            newPanel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            newPanel.standardWindowButton(.zoomButton)?.isHidden = true
+        }
+
         panel = newPanel
 
         setupKVO(controller: controller)
