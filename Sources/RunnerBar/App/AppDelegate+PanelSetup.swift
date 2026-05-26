@@ -44,7 +44,15 @@ extension AppDelegate {
         newPanel.isOpaque = false
         newPanel.backgroundColor = NSColor(white: 1, alpha: 0.001)
         newPanel.hasShadow = true
-        newPanel.level = .popUpMenu
+        // Production: .popUpMenu keeps the panel above all normal windows.
+        // UI testing: .popUpMenu panels are excluded from the AX window list by
+        // the OS, so app.windows is always empty. .floating panels ARE included.
+        // ❌ NEVER change this condition. ❌ NEVER use .popUpMenu in UI tests.
+        if ProcessInfo.processInfo.environment["UI_TESTING"] != nil {
+            newPanel.level = .floating
+        } else {
+            newPanel.level = .popUpMenu
+        }
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
         // Pin appearance to darkAqua so the glass chrome never toggles on click.
