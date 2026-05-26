@@ -14,10 +14,15 @@ final class RunnerBarUITests: XCTestCase {
     private let controlCentre = XCUIApplication(bundleIdentifier: "com.apple.controlcenter")
 
     // The stable accessibility identifier set on the NSStatusItem button in AppDelegate+StatusItem.swift.
+    // ❌ NEVER use controlCentre.statusItems["RunnerBarStatusItem"] — the subscript matches by
+    //    accessibility label/title, NOT by the programmatic identifier. On macOS 26 the button has
+    //    no text label (it's an SF Symbol image), so the subscript always resolves to a missing element.
     // ❌ NEVER use controlCentre.statusItems["com.eoncode.runner-bar"] — bundle ID lookup is broken on macOS 26.
     // ❌ NEVER use controlCentre.statusItems.firstMatch — resolves to com.apple.menuextra.battery on macOS 26.
     private var statusItem: XCUIElement {
-        controlCentre.statusItems["RunnerBarStatusItem"]
+        controlCentre.descendants(matching: .statusItem)
+            .matching(NSPredicate(format: "identifier == 'RunnerBarStatusItem'"))
+            .firstMatch
     }
 
     override func setUp() {
