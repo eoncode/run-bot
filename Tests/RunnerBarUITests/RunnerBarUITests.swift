@@ -32,6 +32,11 @@
 //      identifier="addRunnerButton" / "addScopeButton"  (remote/PR-merge build)
 //    Always probe both and use whichever exists.
 //    ❌ NEVER hard-code only one identifier.
+//
+// ⚠️ A stale RunnerBar process (launched without UI_TESTING=1) will block
+//    app.launch() from re-launching the app fresh, causing setUp to time-out
+//    waiting for .runningForeground. Always terminate any existing instance
+//    before calling app.launch().
 
 import XCTest
 
@@ -42,10 +47,29 @@ final class RunnerBarUITests: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+
+        // Kill any stale RunnerBar process that may be running without
+        // UI_TESTING=1. If we don't do this, app.launch() re-activates the
+        // existing instance (which lacks the env var) and the app never
+        // reaches .runningForeground from XCTest's perspective.
+        let stale = XCUIApplication(bundleIdentifier: "dev.eonist.runnerbar")
+        if stale.state != .notRunning {
+            print("[UITest] setUp: terminating stale RunnerBar (state=\(stale.state.rawValue))")
+            stale.terminate()
+            // Brief pause to let the process fully exit before re-launching.
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
         app = XCUIApplication(bundleIdentifier: "dev.eonist.runnerbar")
         app.launchEnvironment["UI_TESTING"] = "1"
         app.launch()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        let launched = app.wait(for: .runningForeground, timeout: 10)
+        if !launched {
+            print("[UITest] setUp: app state after wait = \(app.state.rawValue)")
+            print("[UITest] setUp: AX hierarchy dump:")
+            print(app.debugDescription)
+        }
+        XCTAssertTrue(launched, "RunnerBar must reach runningForeground within 10s")
     }
 
     override func tearDown() {
@@ -87,7 +111,6 @@ final class RunnerBarUITests: XCTestCase {
             print("[UITest] addRunnerButton: found via identifier='addRunnerButton'")
             return explicit
         }
-        // Fallback: first 'plus' button = add runner
         let fallback = app.buttons.matching(identifier: "plus").element(boundBy: 0)
         print("[UITest] addRunnerButton: falling back to identifier='plus' boundBy:0")
         return fallback
@@ -104,7 +127,6 @@ final class RunnerBarUITests: XCTestCase {
             print("[UITest] addScopeButton: found via identifier='addScopeButton'")
             return explicit
         }
-        // Fallback: second 'plus' button = add scope
         let fallback = app.buttons.matching(identifier: "plus").element(boundBy: 1)
         print("[UITest] addScopeButton: falling back to identifier='plus' boundBy:1")
         return fallback
