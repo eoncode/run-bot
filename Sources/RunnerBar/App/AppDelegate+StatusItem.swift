@@ -24,6 +24,7 @@ extension AppDelegate {
             button.image = menuBarImage(for: .allOffline)
             button.action = #selector(togglePanel)
             button.target = self
+            button.setAccessibilityIdentifier("RunnerBarStatusItem")
         }
     }
 
