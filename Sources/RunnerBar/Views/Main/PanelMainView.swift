@@ -62,20 +62,23 @@ struct PanelMainView: View {
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
-    /// True only when at least one local runner is actively busy (per the remote GitHub API,
-    /// which is always in sync with store.actions) AND there is at least one in-progress
-    /// workflow. Gates both the section header and PanelLocalRunnerRow so the section never
-    /// appears without an active run.
+    /// True only when at least one in-progress job is running on a local (self-hosted) runner.
+    /// Gates both the section header and PanelLocalRunnerRow so the section never
+    /// appears without an active local run.
     ///
-    /// Fix (#948): previously used localRunners[x].isBusy, which is set by
-    /// RunnerStatusEnricher inside LocalRunnerStore.refresh() on a separate background
-    /// cycle — never in sync with store.actions. Now uses store.runners (remote [Runner],
-    /// same RunnerStore.fetch() cycle as store.actions) cross-referenced against local
-    /// runner names to eliminate the timing race.
+    /// Fix (#948): uses store.jobs (same RunnerStore.fetch() cycle as store.actions)
+    /// filtered by isLocalRunner == true and status == .inProgress.
+    /// ActiveJob.isLocalRunner uses the runner name from the GitHub API to distinguish
+    /// self-hosted from GitHub-hosted runners via a hosted-prefix heuristic.
+    ///
+    /// Previous attempts failed because:
+    /// - v1 used localRunners[x].isBusy: set by RunnerStatusEnricher on a separate
+    ///   background cycle, never in sync with store.actions.
+    /// - v2 used store.runners.busy: store.runners only contains self-hosted runners
+    ///   from the /actions/runners endpoint; GitHub-hosted runners are never returned
+    ///   there, so the check always evaluated false for cloud-hosted jobs.
     private var hasBusyLocalRunners: Bool {
-        guard store.actions.contains(where: { $0.groupStatus == .inProgress }) else { return false }
-        let localNames = Set(store.localRunners.map { $0.runnerName })
-        return store.runners.contains { $0.busy && localNames.contains($0.name) }
+        store.jobs.contains { $0.isLocalRunner == true && $0.status == .inProgress }
     }
     /// Root body: stacks the header, optional rate-limit banner, local-runner section, and scrollable actions list.
     var body: some View {
