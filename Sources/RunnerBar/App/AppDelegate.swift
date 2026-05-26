@@ -175,6 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Falls back to a fixed screen rect when the status item button has no window
     // (headless CI without a visible menu bar).
     // ❌ NEVER call this from production code paths.
+    /// Opens the panel for UI testing, falling back to a fixed screen rect on headless CI.
     func openPanelForUITesting() {
         guard let panel else { return }
 
