@@ -46,6 +46,9 @@ targets:
         CODE_SIGNING_REQUIRED: YES
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.runner-bar.uitests
+        # Point xcodebuild at the Debug host app built into DerivedData
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/RunnerBar.app/Contents/MacOS/RunnerBar
+        BUNDLE_LOADER: $(TEST_HOST)
 
 schemes:
   RunnerBar:

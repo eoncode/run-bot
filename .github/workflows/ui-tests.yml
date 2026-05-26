@@ -39,11 +39,6 @@ jobs:
             -scheme RunnerBar \
             -derivedDataPath .derived
 
-      - name: Build app
-        run: |
-          chmod +x build.sh
-          ./build.sh
-
       - name: Run UI Tests
         timeout-minutes: 5
         run: |
