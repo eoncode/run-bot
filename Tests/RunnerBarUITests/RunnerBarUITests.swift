@@ -21,20 +21,22 @@
 //    ❌ NEVER use app.windows to find the RunnerBar panel.
 //    ✓ Use app.staticTexts / app.buttons to verify panel content directly.
 //
-// ⚠️ NSPanel is non-activating — after statusItem.click() the panel is visible
-//    but the app is NOT frontmost. All subsequent XCUIElement.click() calls
-//    resolve coordinates relative to screen origin (0,0) and land outside.
-//    FIX: call app.activate() immediately after opening the panel so macOS
-//    treats it as the key app and AX coordinate resolution works correctly.
-//
 // ⚠️ The Settings gear button and the Settings back button both have AX label
 //    "Settings" — they are never on-screen simultaneously so app.buttons["Settings"]
-//    is unambiguous in each test.
+//    is unambiguous in each test. If that changes, add
+//    .accessibilityIdentifier("settings-back-button") to the back button and
+//    query via app.buttons.matching(identifier:).firstMatch instead.
 //
 // ⚠️ Text("Settings") in the SettingsView header is nested inside a Button —
 //    it does NOT appear as a standalone staticText in the AX tree.
 //    ❌ NEVER assert app.staticTexts["Settings"] to verify Settings is open.
 //    ✓ Use app.staticTexts["Active local runners"] — first unconditional section header.
+//
+// ⚠️ isHittable is always false for .buttonStyle(.plain) buttons inside a
+//    .nonactivatingPanel — the panel never becomes key, so XCTest cannot
+//    verify hit-testability at the window level.
+//    ❌ NEVER wait for isHittable on panel buttons.
+//    ✓ waitForExistence is sufficient — clicks land correctly once elements exist.
 
 import XCTest
 
@@ -58,25 +60,12 @@ final class RunnerBarUITests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Opens the panel via the status item and activates the app so that
-    /// all subsequent AX coordinate resolution works inside the panel.
-    private func openPanel() {
-        let statusItem = app.statusItems.firstMatch
-        XCTAssertTrue(statusItem.waitForExistence(timeout: 3))
-        statusItem.click()
-        // NSPanel is non-activating — activate() forces macOS to resolve
-        // AX element coordinates relative to the panel, not screen origin.
-        app.activate()
-        XCTAssertTrue(
-            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
-            "Main panel must show WORKFLOWS section header after opening"
-        )
-    }
-
-    /// Waits for a button to exist then clicks it.
+    /// Waits for a button to exist, then clicks it.
+    /// ⚠️ Do NOT wait for isHittable — .nonactivatingPanel buttons always
+    /// report isHittable == false to XCTest; the click itself lands correctly.
     private func tapButton(_ button: XCUIElement, timeout: TimeInterval = 5) {
         XCTAssertTrue(button.waitForExistence(timeout: timeout),
-                      "Button '\(button.label)' must exist before tapping")
+                      "Button '\(button.label)' should exist before tapping")
         button.click()
     }
 
@@ -89,10 +78,19 @@ final class RunnerBarUITests: XCTestCase {
     /// open Add Scope sheet → verify + cancel →
     /// back to main → confirm WORKFLOWS visible, Settings gone.
     func testSettingsNavigationFlow() {
-        openPanel()
+        // ── Open panel ────────────────────────────────────────────────
+        let statusItem = app.statusItems.firstMatch
+        XCTAssertTrue(statusItem.waitForExistence(timeout: 3))
+        statusItem.click()
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "Main panel must show WORKFLOWS section header after status item click"
+        )
 
         // ── 1. Open Settings ──────────────────────────────────────────
         tapButton(app.buttons["Settings"])
+        // Text("Settings") is inside the back Button — not a standalone staticText.
+        // Proof-of-arrival: first unconditional section header in SettingsView.
         XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 5),
                       "Active local runners section header")
         XCTAssertTrue(app.staticTexts["Remote runner scopes"].exists,
