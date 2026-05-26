@@ -292,6 +292,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Panel window level is handled once in setupPanel() — .floating for UI
     /// tests, .popUpMenu for production. Do not set panel.level here.
+    ///
+    /// The global NSEvent monitor and NSWorkspace app-switch observer are skipped
+    /// during UI tests: XCTest synthesises mouse events as global NSEvents, which
+    /// the monitor misinterprets as outside-clicks, immediately calling closePanel()
+    /// before the click reaches its target inside the panel.
+    /// ❌ NEVER install the event monitor or workspace observer when UI_TESTING is set.
     func openPanel() {
         guard let button = statusItem?.button, let panel else { return }
 
@@ -340,6 +346,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let saved = savedNavState, let restored = validatedView(for: saved) {
             navigate(to: restored)
         }
+
+        // Skip dismiss monitors during UI tests.
+        // XCTest synthetic global mouse events are misread as outside-clicks by the
+        // monitor, causing closePanel() to fire before the click reaches its target.
+        // ❌ NEVER install these monitors when UI_TESTING is set.
+        guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
