@@ -38,16 +38,81 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
-      # ⚠️ XcodeGen on Xcode 26 generates a broken .xcscheme for UI test targets.
-      # We keep the correct scheme at xcschemes/RunnerBar.xcscheme (outside the
-      # gitignored RunnerBar.xcodeproj/ directory) and copy it into place after
-      # xcodegen generate overwrites it.
-      # ❌ NEVER use `git checkout HEAD -- RunnerBar.xcodeproj/...` here —
-      # RunnerBar.xcodeproj/ is in .gitignore, so git silently ignores the restore.
-      - name: Restore committed scheme
+      # ⚠️ XcodeGen on Xcode 26 does not emit <HostedTestableReference> for
+      # bundle.ui-testing targets even when `app:` is set in project.yml.
+      # Without it, XCTestConfiguration.targetApplicationBundleID and
+      # targetApplicationPath are null and XCUIApplication() cannot find the host.
+      #
+      # Fix: inject <HostedTestableReference> into the XcodeGen-generated scheme
+      # AFTER generation, preserving the UUID-based BlueprintIdentifiers that
+      # XcodeGen wrote. We must NOT replace the whole scheme file — the
+      # xcschemes/RunnerBar.xcscheme copy uses literal target-name identifiers
+      # which Xcode 26 cannot resolve against the UUID-keyed project.pbxproj.
+      #
+      # The Python script below:
+      #   1. Reads the generated scheme XML
+      #   2. Finds the <BuildableReference> inside <BuildAction> for RunnerBar.app
+      #      (which has the correct UUID as BlueprintIdentifier)
+      #   3. Finds the <TestableReference> block for RunnerBarUITests.xctest
+      #   4. Injects a <HostedTestableReference> wrapping a copy of the RunnerBar
+      #      BuildableReference immediately before </TestableReference>
+      #   5. Writes the patched scheme back in place
+      - name: Patch scheme — inject HostedTestableReference
         run: |
-          mkdir -p RunnerBar.xcodeproj/xcshareddata/xcschemes
-          cp xcschemes/RunnerBar.xcscheme RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme
+          python3 - <<'EOF'
+          import re, sys
+
+          scheme_path = "RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme"
+          with open(scheme_path, "r") as f:
+              content = f.read()
+
+          # Extract the BuildableReference block for RunnerBar.app from BuildAction
+          # (this is the one with BuildableName = "RunnerBar.app")
+          app_ref_match = re.search(
+              r'(<BuildableReference[^>]*>\s*</BuildableReference>)',
+              content,
+              re.DOTALL
+          )
+          # More precise: find the BuildableReference with BuildableName = "RunnerBar.app"
+          app_ref_match = re.search(
+              r'(<BuildableReference(?:[^<]|\n)*?BuildableName\s*=\s*"RunnerBar\.app"(?:[^<]|\n)*?/>)',
+              content
+          )
+          if not app_ref_match:
+              # Try multiline close tag variant
+              app_ref_match = re.search(
+                  r'(<BuildableReference(?:[^<]|\n)*?BuildableName\s*=\s*"RunnerBar\.app"(?:[^<]|\n)*?>\s*</BuildableReference>)',
+                  content
+              )
+          if not app_ref_match:
+              print("ERROR: Could not find RunnerBar.app BuildableReference in scheme", file=sys.stderr)
+              sys.exit(1)
+
+          app_ref_xml = app_ref_match.group(1)
+          print(f"Found app BuildableReference:\n{app_ref_xml}")
+
+          hosted_ref = f"""            <HostedTestableReference>\n               {app_ref_xml.strip()}\n            </HostedTestableReference>\n"""
+
+          # Check if already patched
+          if "<HostedTestableReference>" in content:
+              print("Scheme already contains HostedTestableReference — skipping patch.")
+              sys.exit(0)
+
+          # Inject immediately before </TestableReference>
+          patched = content.replace("</TestableReference>", hosted_ref + "         </TestableReference>", 1)
+
+          if patched == content:
+              print("ERROR: </TestableReference> not found in scheme", file=sys.stderr)
+              sys.exit(1)
+
+          with open(scheme_path, "w") as f:
+              f.write(patched)
+
+          print("Successfully patched scheme with HostedTestableReference.")
+          EOF
+
+      - name: Dump patched scheme (debug)
+        run: cat RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme
 
       - name: Resolve package dependencies
         run: |
