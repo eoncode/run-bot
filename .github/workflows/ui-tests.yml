@@ -15,8 +15,6 @@ on:
     branches: [main]
   pull_request:
 
-# Ensure only one UI test run executes on the self-hosted machine at a time.
-# Concurrent runs would fight over the same RunnerBar process and status bar item.
 concurrency:
   group: ui-test-${{ github.repository }}
   cancel-in-progress: false
@@ -38,81 +36,162 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
-      # ⚠️ XcodeGen on Xcode 26 does not emit <HostedTestableReference> for
-      # bundle.ui-testing targets even when `app:` is set in project.yml.
-      # Without it, XCTestConfiguration.targetApplicationBundleID and
-      # targetApplicationPath are null and XCUIApplication() cannot find the host.
+      # XcodeGen emits an empty <TestAction> (no <Testables>) for bundle.ui-testing
+      # targets when there is no target-level dependency — which is intentional in
+      # project.yml to avoid the Xcode 26 XCTTargetAppPath/.app extension bug.
+      # We therefore discard XcodeGen's generated scheme entirely and write our own
+      # from scratch, using the UUIDs XcodeGen assigned in project.pbxproj.
       #
-      # Fix: inject <HostedTestableReference> into the XcodeGen-generated scheme
-      # AFTER generation, preserving the UUID-based BlueprintIdentifiers that
-      # XcodeGen wrote. We must NOT replace the whole scheme file — the
-      # xcschemes/RunnerBar.xcscheme copy uses literal target-name identifiers
-      # which Xcode 26 cannot resolve against the UUID-keyed project.pbxproj.
-      #
-      # The Python script below:
-      #   1. Reads the generated scheme XML
-      #   2. Finds the <BuildableReference> inside <BuildAction> for RunnerBar.app
-      #      (which has the correct UUID as BlueprintIdentifier)
-      #   3. Finds the <TestableReference> block for RunnerBarUITests.xctest
-      #   4. Injects a <HostedTestableReference> wrapping a copy of the RunnerBar
-      #      BuildableReference immediately before </TestableReference>
-      #   5. Writes the patched scheme back in place
-      - name: Patch scheme — inject HostedTestableReference
+      # UUID extraction: project.pbxproj has lines like:
+      #   AABBCCDD112233 /* RunnerBar */ = {isa = PBXNativeTarget; ...
+      #   EEFFAABB998877 /* RunnerBarUITests */ = {isa = PBXNativeTarget; ...
+      # We grep for PBXNativeTarget lines and extract the leading UUID.
+      - name: Write scheme with correct UUIDs from pbxproj
         run: |
-          python3 - <<'EOF'
-          import re, sys
+          PBXPROJ="RunnerBar.xcodeproj/project.pbxproj"
 
-          scheme_path = "RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme"
-          with open(scheme_path, "r") as f:
-              content = f.read()
+          APP_UUID=$(grep -E '[A-F0-9]{24} /\* RunnerBar \*/ = \{isa = PBXNativeTarget' "$PBXPROJ" | head -1 | grep -oE '[A-F0-9]{24}' | head -1)
+          TESTS_UUID=$(grep -E '[A-F0-9]{24} /\* RunnerBarUITests \*/ = \{isa = PBXNativeTarget' "$PBXPROJ" | head -1 | grep -oE '[A-F0-9]{24}' | head -1)
 
-          # Extract the BuildableReference block for RunnerBar.app from BuildAction
-          # (this is the one with BuildableName = "RunnerBar.app")
-          app_ref_match = re.search(
-              r'(<BuildableReference[^>]*>\s*</BuildableReference>)',
-              content,
-              re.DOTALL
-          )
-          # More precise: find the BuildableReference with BuildableName = "RunnerBar.app"
-          app_ref_match = re.search(
-              r'(<BuildableReference(?:[^<]|\n)*?BuildableName\s*=\s*"RunnerBar\.app"(?:[^<]|\n)*?/>)',
-              content
-          )
-          if not app_ref_match:
-              # Try multiline close tag variant
-              app_ref_match = re.search(
-                  r'(<BuildableReference(?:[^<]|\n)*?BuildableName\s*=\s*"RunnerBar\.app"(?:[^<]|\n)*?>\s*</BuildableReference>)',
-                  content
-              )
-          if not app_ref_match:
-              print("ERROR: Could not find RunnerBar.app BuildableReference in scheme", file=sys.stderr)
-              sys.exit(1)
+          echo "RunnerBar UUID:         $APP_UUID"
+          echo "RunnerBarUITests UUID:   $TESTS_UUID"
 
-          app_ref_xml = app_ref_match.group(1)
-          print(f"Found app BuildableReference:\n{app_ref_xml}")
+          if [ -z "$APP_UUID" ] || [ -z "$TESTS_UUID" ]; then
+            echo "ERROR: could not extract UUIDs from $PBXPROJ" >&2
+            cat "$PBXPROJ" | grep PBXNativeTarget
+            exit 1
+          fi
 
-          hosted_ref = f"""            <HostedTestableReference>\n               {app_ref_xml.strip()}\n            </HostedTestableReference>\n"""
+          SCHEME_PATH="RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme"
+          mkdir -p "$(dirname "$SCHEME_PATH")"
 
-          # Check if already patched
-          if "<HostedTestableReference>" in content:
-              print("Scheme already contains HostedTestableReference — skipping patch.")
-              sys.exit(0)
+          cat > "$SCHEME_PATH" << SCHEMEEOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Scheme
+             LastUpgradeVersion = "1700"
+             version = "1.7">
+             <BuildAction
+                parallelizeBuildables = "YES"
+                buildImplicitDependencies = "YES">
+                <BuildActionEntries>
+                   <BuildActionEntry
+                      buildForTesting = "YES"
+                      buildForRunning = "YES"
+                      buildForProfiling = "YES"
+                      buildForArchiving = "YES"
+                      buildForAnalyzing = "YES">
+                      <BuildableReference
+                         BuildableIdentifier = "primary"
+                         BlueprintIdentifier = "${APP_UUID}"
+                         BuildableName = "RunnerBar.app"
+                         BlueprintName = "RunnerBar"
+                         ReferencedContainer = "container:RunnerBar.xcodeproj">
+                      </BuildableReference>
+                   </BuildActionEntry>
+                   <BuildActionEntry
+                      buildForTesting = "YES"
+                      buildForRunning = "NO"
+                      buildForProfiling = "NO"
+                      buildForArchiving = "NO"
+                      buildForAnalyzing = "NO">
+                      <BuildableReference
+                         BuildableIdentifier = "primary"
+                         BlueprintIdentifier = "${TESTS_UUID}"
+                         BuildableName = "RunnerBarUITests.xctest"
+                         BlueprintName = "RunnerBarUITests"
+                         ReferencedContainer = "container:RunnerBar.xcodeproj">
+                      </BuildableReference>
+                   </BuildActionEntry>
+                </BuildActionEntries>
+             </BuildAction>
+             <TestAction
+                buildConfiguration = "Debug"
+                selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+                selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+                shouldUseLaunchSchemeArgsEnv = "YES">
+                <Testables>
+                   <TestableReference
+                      skipped = "NO"
+                      parallelizable = "NO"
+                      testExecutionOrdering = "random">
+                      <BuildableReference
+                         BuildableIdentifier = "primary"
+                         BlueprintIdentifier = "${TESTS_UUID}"
+                         BuildableName = "RunnerBarUITests.xctest"
+                         BlueprintName = "RunnerBarUITests"
+                         ReferencedContainer = "container:RunnerBar.xcodeproj">
+                      </BuildableReference>
+                      <HostedTestableReference>
+                         <BuildableReference
+                            BuildableIdentifier = "primary"
+                            BlueprintIdentifier = "${APP_UUID}"
+                            BuildableName = "RunnerBar.app"
+                            BlueprintName = "RunnerBar"
+                            ReferencedContainer = "container:RunnerBar.xcodeproj">
+                         </BuildableReference>
+                      </HostedTestableReference>
+                   </TestableReference>
+                </Testables>
+                <MacroExpansion>
+                   <BuildableReference
+                      BuildableIdentifier = "primary"
+                      BlueprintIdentifier = "${APP_UUID}"
+                      BuildableName = "RunnerBar.app"
+                      BlueprintName = "RunnerBar"
+                      ReferencedContainer = "container:RunnerBar.xcodeproj">
+                   </BuildableReference>
+                </MacroExpansion>
+             </TestAction>
+             <LaunchAction
+                buildConfiguration = "Debug"
+                selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+                selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+                launchStyle = "0"
+                useCustomWorkingDirectory = "NO"
+                ignoresPersistentStateOnLaunch = "NO"
+                debugDocumentVersioning = "YES"
+                debugServiceExtension = "internal"
+                allowLocationSimulation = "YES">
+                <BuildableProductRunnable
+                   runnableDebuggingMode = "0">
+                   <BuildableReference
+                      BuildableIdentifier = "primary"
+                      BlueprintIdentifier = "${APP_UUID}"
+                      BuildableName = "RunnerBar.app"
+                      BlueprintName = "RunnerBar"
+                      ReferencedContainer = "container:RunnerBar.xcodeproj">
+                   </BuildableReference>
+                </BuildableProductRunnable>
+             </LaunchAction>
+             <ProfileAction
+                buildConfiguration = "Release"
+                shouldUseLaunchSchemeArgsEnv = "YES"
+                savedToolIdentifier = ""
+                useCustomWorkingDirectory = "NO"
+                debugDocumentVersioning = "YES">
+                <BuildableProductRunnable
+                   runnableDebuggingMode = "0">
+                   <BuildableReference
+                      BuildableIdentifier = "primary"
+                      BlueprintIdentifier = "${APP_UUID}"
+                      BuildableName = "RunnerBar.app"
+                      BlueprintName = "RunnerBar"
+                      ReferencedContainer = "container:RunnerBar.xcodeproj">
+                   </BuildableReference>
+                </BuildableProductRunnable>
+             </ProfileAction>
+             <AnalyzeAction
+                buildConfiguration = "Debug">
+             </AnalyzeAction>
+             <ArchiveAction
+                buildConfiguration = "Release"
+                revealArchiveInOrganizer = "YES">
+             </ArchiveAction>
+          </Scheme>
+          SCHEMEEOF
 
-          # Inject immediately before </TestableReference>
-          patched = content.replace("</TestableReference>", hosted_ref + "         </TestableReference>", 1)
-
-          if patched == content:
-              print("ERROR: </TestableReference> not found in scheme", file=sys.stderr)
-              sys.exit(1)
-
-          with open(scheme_path, "w") as f:
-              f.write(patched)
-
-          print("Successfully patched scheme with HostedTestableReference.")
-          EOF
-
-      - name: Dump patched scheme (debug)
-        run: cat RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme
+          echo "=== Written scheme ==="
+          cat "$SCHEME_PATH"
 
       - name: Resolve package dependencies
         run: |
@@ -122,12 +201,10 @@ jobs:
             -derivedDataPath .derived
 
       - name: Build host app
-        # ⚠️ On Xcode 26, -only-testing narrows the build graph and does NOT
-        # trigger the RunnerBar scheme dependency. RunnerBar.app is never placed
-        # in BuildProducts/Debug/, causing the test step to fail with:
-        #   "The bundle identifier for RunnerBar couldn't be read."
-        # Fix: build the host app explicitly first, using the same -derivedDataPath
-        # so the test step finds RunnerBar.app already in place.
+        # ⚠️ Build RunnerBar.app explicitly first — -only-testing narrows the build
+        # graph on Xcode 26 and skips the host app, causing "bundle identifier
+        # couldn't be read" at test time. Same -derivedDataPath so test step
+        # finds the already-built RunnerBar.app.
         # ❌ NEVER remove this step or merge it into the test step.
         run: |
           xcodebuild build \
@@ -146,10 +223,6 @@ jobs:
             -only-testing RunnerBarUITests \
             -derivedDataPath .derived \
             -resultBundlePath .derived/UITests.xcresult
-        # ⚠️ Do NOT pass CODE_SIGN_IDENTITY or CODE_SIGNING_REQUIRED here.
-        # Passing CODE_SIGNING_REQUIRED=YES via command line causes Xcode 26 to
-        # incorrectly flag USES_XCTRUNNER + TEST_HOST conflict on bundle.ui-testing targets.
-        # Signing is already handled by project.yml.
 
       - name: Upload test results
         if: always()
