@@ -37,7 +37,13 @@ targets:
     sources:
       - Tests/RunnerBarUITests
     dependencies:
-      - target: RunnerBar
+      # ❌ Do NOT add `- target: RunnerBar` here.
+      # On Xcode 26, a target-level dependency from a ui-testing bundle to the host app
+      # causes XCTTargetAppPath to be auto-injected WITHOUT the .app extension, producing:
+      #   "The bundle identifier for RunnerBar couldn't be read."
+      #   "No such file or directory: .../Debug/RunnerBar." (trailing dot, no .app)
+      # The scheme's test action `app: RunnerBar` entry is sufficient for xcodebuild
+      # to locate the host app. No target-level dep needed.
       - package: RunnerBarCore
         product: RunnerBarCore
     settings:
@@ -49,7 +55,7 @@ targets:
         # ❌ Do NOT add TEST_HOST or BUNDLE_LOADER here.
         # bundle.ui-testing automatically sets USES_XCTRUNNER=YES.
         # Xcode 26 treats TEST_HOST + USES_XCTRUNNER as an invalid combination and refuses to build.
-        # xcodebuild locates the host app via the scheme's test action target dependency.
+        # xcodebuild locates the host app via the scheme's test action `app:` entry.
 
 schemes:
   RunnerBar:
@@ -69,9 +75,8 @@ schemes:
       targets:
         - target: RunnerBarUITests
           # ⚠️ `app` is required on Xcode 26.
-          # Without it, xcodebuild resolves the host app path as
-          # `BuildProducts/Debug/RunnerBar.` (trailing dot, no .app extension)
-          # and immediately errors: "The bundle identifier for RunnerBar couldn't be read."
+          # This tells xcodebuild which app to use as the host, without injecting
+          # a broken XCTTargetAppPath (which happens only when a target-level dep exists).
           app: RunnerBar
     run:
       config: Debug
