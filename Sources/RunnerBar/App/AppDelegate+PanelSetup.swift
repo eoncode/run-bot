@@ -22,8 +22,9 @@ extension AppDelegate {
     /// Builds the NSPanel, embeds the SwiftUI hosting controller inside
     /// PanelChromeView, wires KVO, and starts all Combine subscriptions.
     /// When `OPEN_PANEL_ON_LAUNCH` is set (UI testing only), opens the panel
-    /// immediately after setup so tests can inspect the panel AX tree without
-    /// needing a mouse click on the status item.
+    /// directly at a hardcoded on-screen position so the AX tree can see it.
+    /// ❌ NEVER call `openPanel()` from this branch — it requires a real status
+    /// item button frame which doesn't exist in a pure XCUIApplication launch.
     func setupPanel() {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
@@ -62,9 +63,19 @@ extension AppDelegate {
         // Auto-open for UI tests: avoids needing a real mouse click on the
         // status item, which moves the cursor and is banned in CI.
         // ❌ NEVER use this flag outside of XCUITest scenarios.
+        // ❌ NEVER call openPanel() here — it positions relative to the status
+        //    item button frame which is nil/zero in a pure XCUIApplication launch,
+        //    causing the panel to be placed off-screen (invisible to AX tree).
         if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.openPanel()
+                guard let self, let p = self.panel else { return }
+                let screen = NSScreen.main ?? NSScreen.screens[0]
+                // Place panel in the top-right corner of the main screen,
+                // well within the visible area so AX can see it.
+                let x = screen.visibleFrame.maxX - p.frame.width - 20
+                let y = screen.visibleFrame.maxY - p.frame.height - 20
+                p.setFrameOrigin(NSPoint(x: x, y: y))
+                p.orderFront(nil)
             }
         }
     }
