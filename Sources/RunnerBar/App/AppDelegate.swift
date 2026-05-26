@@ -140,8 +140,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // is too late and the app never reaches .runningForeground.
         // A Dock icon briefly appears during CI test runs — acceptable.
         // ❌ NEVER move this call below configureGHAPI / setupStatusItem.
+        // ❌ NEVER remove NSApp.activate — setActivationPolicy alone changes the
+        //    process type but does NOT move the process to foreground. Without
+        //    activate, app.wait(for: .runningForeground) always times out.
         if ProcessInfo.processInfo.environment["UI_TESTING"] != nil {
             NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
         }
 
         configureGHAPI(
