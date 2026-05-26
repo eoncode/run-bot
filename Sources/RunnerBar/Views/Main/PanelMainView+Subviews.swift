@@ -47,18 +47,47 @@ struct PanelHeaderView: View {
                 })
                 .buttonStyle(.plain).help("Sign in with GitHub")
             }
-            Button(action: onSelectSettings, label: {
-                Image(systemName: "gearshape").font(.system(size: 13)).foregroundColor(.secondary)
-            })
-            .buttonStyle(.plain)
-            .help("Settings")
-            .accessibilityLabel("Settings")
-            Button(action: { NSApplication.shared.terminate(nil) }, label: {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
-            })
-            .buttonStyle(.plain)
-            .help("Quit RunnerBar")
-            .accessibilityLabel("Quit RunnerBar")
+            // macOS 26+: wrap both toolbar buttons in a single shared GlassEffectContainer
+            // so they share a CABackdropLayer sampling region, enabling interactive glass
+            // (scaling-on-press, shimmer, bounce) and morphing between sibling buttons.
+            // Pre-26: falls back to .buttonStyle(.plain) as before.
+            if #available(macOS 26, *) {
+                GlassEffectContainer {
+                    Button(action: onSelectSettings, label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                            .padding(6)
+                    })
+                    .buttonStyle(.plain)
+                    .glassButton()
+                    .help("Settings")
+                    .accessibilityLabel("Settings")
+                    Button(action: { NSApplication.shared.terminate(nil) }, label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(6)
+                    })
+                    .buttonStyle(.plain)
+                    .glassButton()
+                    .help("Quit RunnerBar")
+                    .accessibilityLabel("Quit RunnerBar")
+                }
+            } else {
+                Button(action: onSelectSettings, label: {
+                    Image(systemName: "gearshape").font(.system(size: 13)).foregroundColor(.secondary)
+                })
+                .buttonStyle(.plain)
+                .help("Settings")
+                .accessibilityLabel("Settings")
+                Button(action: { NSApplication.shared.terminate(nil) }, label: {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                })
+                .buttonStyle(.plain)
+                .help("Quit RunnerBar")
+                .accessibilityLabel("Quit RunnerBar")
+            }
         }
         .padding(.horizontal, DesignTokens.Spacing.rowHPad)
         .padding(.top, 10)
