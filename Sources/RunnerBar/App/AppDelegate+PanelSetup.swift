@@ -21,11 +21,6 @@ extension AppDelegate {
 
     /// Builds the NSPanel, embeds the SwiftUI hosting controller inside
     /// PanelChromeView, wires KVO, and starts all Combine subscriptions.
-    ///
-    /// When `OPEN_PANEL_ON_LAUNCH` is set (UI testing only), opens the panel
-    /// directly at a hardcoded on-screen position so the AX tree can see it.
-    /// ❌ NEVER call `openPanel()` from this branch — it requires a real status
-    ///    item button frame which doesn't exist in a pure XCUIApplication launch.
     func setupPanel() {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
@@ -49,18 +44,7 @@ extension AppDelegate {
         newPanel.isOpaque = false
         newPanel.backgroundColor = NSColor(white: 1, alpha: 0.001)
         newPanel.hasShadow = true
-
-        // Production: .popUpMenu keeps the panel above all normal windows.
-        // UI testing (Option A): after setActivationPolicy(.regular) the process
-        // is a normal foreground app, so app.windows works at any panel level.
-        // .floating is kept here for the OPEN_PANEL_ON_LAUNCH path; it works fine.
-        // ❌ NEVER change this condition — .popUpMenu breaks AX in tests.
-        if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
-            newPanel.level = .floating
-        } else {
-            newPanel.level = .popUpMenu
-        }
-
+        newPanel.level = .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
         // Pin appearance to darkAqua so the glass chrome never toggles on click.
@@ -71,23 +55,6 @@ extension AppDelegate {
 
         setupKVO(controller: controller)
         setupCombineSubscriptions()
-
-        // Auto-open for UI tests: avoids needing a real mouse click on the
-        // status item, which moves the cursor and is banned in CI.
-        // ❌ NEVER use this flag outside of XCUITest scenarios.
-        // ❌ NEVER call openPanel() here — it positions relative to the status
-        //    item button frame which is nil/zero in a pure XCUIApplication launch,
-        //    causing the panel to be placed off-screen (invisible to AX tree).
-        if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                guard let self, let p = self.panel else { return }
-                let screen = NSScreen.main ?? NSScreen.screens[0]
-                let x = screen.visibleFrame.maxX - p.frame.width - 20
-                let y = screen.visibleFrame.maxY - p.frame.height - 20
-                p.setFrameOrigin(NSPoint(x: x, y: y))
-                p.orderFront(nil)
-            }
-        }
     }
 
     // MARK: KVO
@@ -108,13 +75,7 @@ extension AppDelegate {
 
     /// Starts all Combine subscriptions: local runner reloads, remote runner
     /// store updates (icon + observable reload), and scope mutation restarts.
-    ///
-    /// Option A (setActivationPolicy) is called in applicationDidFinishLaunching
-    /// BEFORE this method runs — it must happen at the very start of launch so
-    /// XCTest's automation session sees the process as .runningForeground.
-    /// See AppDelegate.swift §App lifecycle for the full explanation.
     private func setupCombineSubscriptions() {
-        // LocalRunnerStore subscription is safe — no network or keychain access.
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
