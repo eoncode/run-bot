@@ -159,6 +159,27 @@ RunnerBarUITests: [build, test]   # ← `build` is required, not just `test`
 
 ---
 
+### 14. Trusting XcodeGen to generate a correct .xcscheme for UI tests on Xcode 26
+**Why it fails:** Even with a correct `project.yml` (explicit action lists, `[build, test]` on the UI test target, `app:` in the test action), the XcodeGen version installed on the runner generates a broken `.xcscheme` where either:
+- The `BuildActionEntry` for `RunnerBarUITests` has `buildForTesting="NO"`, or
+- The `TestableReference` has `skipped="YES"`, or
+- The `TestAction` element is structurally incomplete.
+
+Result: `xcodebuild: error: Scheme RunnerBar is not currently configured for the test action.` — even though `project.yml` is logically correct.
+
+**Fix:** Commit the `.xcscheme` file directly into the repo at `RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme`. Since XcodeGen regenerates the project folder, also add the schemes directory to `.gitignore`'s **negation** or switch to a workflow that copies the committed scheme *after* `xcodegen generate`.
+
+**Workflow step to restore the committed scheme after xcodegen:**
+```yaml
+- name: Restore committed scheme
+  run: |
+    mkdir -p RunnerBar.xcodeproj/xcshareddata/xcschemes
+    git checkout HEAD -- RunnerBar.xcodeproj/xcshareddata/xcschemes/RunnerBar.xcscheme
+```
+❌ **Never** assume XcodeGen will generate a test-capable scheme on Xcode 26 for UI test targets. Always commit and restore the scheme explicitly.
+
+---
+
 ## ✅ Confirmed Working Patterns
 
 - `app.wait(for: .runningBackground, timeout: 5)` — correct state check for LSUIElement apps
@@ -172,6 +193,7 @@ RunnerBarUITests: [build, test]   # ← `build` is required, not just `test`
 - `app: RunnerBar` on the UI test target in the scheme test action — required on Xcode 26 for correct `.app` path resolution
 - Explicit action list on main app: `RunnerBar: [build, run, test, profile, analyze, archive]` — never use `all`
 - `RunnerBarUITests: [build, test]` in scheme build targets — `build` is required or TestAction is empty
+- Commit `.xcscheme` directly + restore it after `xcodegen generate` — required on Xcode 26 when XcodeGen scheme generation is broken
 
 ---
 
