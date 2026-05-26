@@ -46,13 +46,13 @@ No such file or directory: .../DerivedData/Debug/RunnerBar.
 
 ---
 
-### 5. Missing `TEST_HOST` and `BUNDLE_LOADER` in `project.yml`
-**Why it fails:** Without these, `xcodebuild test` doesn't know where the host app binary lives. The test bundle can't inject into the app process and the run fails immediately with a bundle identifier / file-not-found error.
-**Fix:** Add to `RunnerBarUITests` settings in `project.yml`:
-```yaml
-TEST_HOST: $(BUILT_PRODUCTS_DIR)/RunnerBar.app/Contents/MacOS/RunnerBar
-BUNDLE_LOADER: $(TEST_HOST)
+### 5. Setting `TEST_HOST` or `BUNDLE_LOADER` on a `bundle.ui-testing` target
+**Why it fails:** `bundle.ui-testing` automatically sets `USES_XCTRUNNER=YES`. Xcode 26 treats `TEST_HOST + USES_XCTRUNNER` as an invalid combination and refuses to build with:
 ```
+Invalid configuration: RunnerBarUITests sets both USES_XCTRUNNER and either TEST_HOST or RUNTIME_TEST_HOST
+```
+`TEST_HOST` is for **unit test** targets (`bundle.unit-test`), not UI test targets. For UI tests, xcodebuild locates the host app via the scheme's test action target dependency — no manual path needed.
+**Fix:** Remove `TEST_HOST` and `BUNDLE_LOADER` entirely from `RunnerBarUITests` settings. Never add them back.
 
 ---
 
@@ -76,6 +76,7 @@ BUNDLE_LOADER: $(TEST_HOST)
 - `app.windows.firstMatch` — correct way to query the NSPanel (never `app.popovers`)
 - `concurrency: group: ui-test-${{ github.repository }}, cancel-in-progress: false` — serializes runs on the single self-hosted machine, prevents race conditions
 - `--uitesting` launch argument — required to bypass Keychain prompts in CI
+- No `TEST_HOST` / `BUNDLE_LOADER` on `bundle.ui-testing` targets — xcodebuild resolves the host app via scheme dependency
 
 ---
 
@@ -85,3 +86,4 @@ BUNDLE_LOADER: $(TEST_HOST)
 2. **Run locally first.** If you can't confirm green on the runner machine, don't push.
 3. **One change per commit.** Never bundle workflow + project.yml + test file in one push.
 4. **Update this file** every time something new fails, before pushing the fix.
+5. **Check the learnings file first.** Before writing any fix, read this file top to bottom.

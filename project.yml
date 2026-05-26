@@ -46,9 +46,10 @@ targets:
         CODE_SIGNING_REQUIRED: YES
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.eoncode.runner-bar.uitests
-        # Point xcodebuild at the Debug host app built into DerivedData
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/RunnerBar.app/Contents/MacOS/RunnerBar
-        BUNDLE_LOADER: $(TEST_HOST)
+        # ❌ Do NOT add TEST_HOST or BUNDLE_LOADER here.
+        # bundle.ui-testing automatically sets USES_XCTRUNNER=YES.
+        # Xcode 26 treats TEST_HOST + USES_XCTRUNNER as an invalid combination and refuses to build.
+        # xcodebuild locates the host app via the scheme's test action target dependency.
 
 schemes:
   RunnerBar:
