@@ -21,6 +21,7 @@ Update this file every time something new breaks or works. Do **not** delete old
 - **Only `pull_request` trigger** in `ui-tests.yml` — not `push` (avoids duplicate runs)
 - `xcodebuild test -scheme RunnerBarUITests -only-testing:RunnerBarUITests` on self-hosted runner with GUI session
 - **`OPEN_PANEL_ON_LAUNCH` sets panel level to `.floating`** and uses `setFrameOrigin + orderFront` — see lessons below
+- **`XCUIScreen.main.windows` / `XCUIScreen.main.staticTexts`** for panel content — NOT `app.windows` (see lesson below)
 
 ---
 
@@ -112,7 +113,7 @@ Update this file every time something new breaks or works. Do **not** delete old
 
 ### ❌ `app.popovers` for an `NSPanel`-based app
 **Error:** `app.popovers.firstMatch` never exists.  
-**Fix:** Use `app.windows` instead.
+**Fix:** Use `app.windows` instead — or see next lesson for LSUIElement apps.
 
 ---
 
@@ -130,25 +131,25 @@ Update this file every time something new breaks or works. Do **not** delete old
 
 ---
 
-### ❌ `NSPanel` at `.popUpMenu` level invisible to XCTest AX tree — `app.windows` always empty (PR #947, 3f2eea4)
+### ❌ `NSPanel` at `.popUpMenu` level invisible to XCTest AX tree (3f2eea4)
 **Error:** `XCTAssertTrue failed - Panel (NSPanel) should appear in the AX tree after auto-open` — persists even after switching from `openPanel()` to `setFrameOrigin+orderFront`.  
-**Confirmed:** `testAppLaunchesWithoutCrashing` ✅ and `testStatusBarItemExists` ✅ still pass. Panel IS on-screen — `orderFront` is called and succeeds.  
-**Root cause:** The XCTest AX server queries the target app's window list via the Accessibility API. `NSPanel` windows at `.popUpMenu` level are treated as **system overlay UI** and excluded from the AX window list returned to external processes. This is a macOS AX architectural limitation: only windows at `.normal`, `.floating`, or below are surfaced as `AXWindow` elements in `app.windows`. `.popUpMenu` panels are invisible to XCTest regardless of position.  
-**Fix (committed in [3f2eea4](https://github.com/eoncode/runner-bar/commit/3f2eea41ede7122f27d471123b4837e4f5893795)):**  
-In `AppDelegate+PanelSetup.swift`, lower the panel level during UI tests:
-```swift
-if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
-    newPanel.level = .floating   // XCTest AX can see .floating; not .popUpMenu
-} else {
-    newPanel.level = .popUpMenu  // Production: stay above all normal windows
-}
-```
-**Rule:** For UI tests that need to query the panel via `app.windows`, set `panel.level = .floating`. Production code keeps `.popUpMenu`. Never use `.popUpMenu` and expect XCTest to see the window.
+**Root cause:** The XCTest AX server queries the target app's window list via the Accessibility API. `NSPanel` windows at `.popUpMenu` level are treated as **system overlay UI** and excluded from the AX window list. Only windows at `.normal`, `.floating`, or below are surfaced as `AXWindow` elements.  
+**Fix (3f2eea4):** Lower the panel level to `.floating` when `OPEN_PANEL_ON_LAUNCH` is set. Production keeps `.popUpMenu`.  
+**Rule:** Never use `.popUpMenu` and expect XCTest to see the window via `app.windows`.
 
 ---
 
-### ✅ How to test the panel without clicking — `OPEN_PANEL_ON_LAUNCH` (final working pattern)
-**Solution (after 3f2eea4):** In `AppDelegate+PanelSetup.swift`:
+### ❌ `app.windows` always empty for `LSUIElement` (background agent) apps — EVEN at `.floating` level (e03c3ab)
+**Error:** `XCTAssertTrue failed - Panel (NSPanel) should appear in the AX tree after auto-open` — 10s timeout, polled every ~1s, window never found. `.floating` level change did NOT fix it.  
+**Root cause:** For `LSUIElement = true` apps (menu bar agents), XCTest's AX server **never** exposes `AXWindow` elements through `app.windows`, regardless of panel level. This is a fundamental architectural limit: `app.windows` scopes its AX query to the process handle of a foreground-activatable app. Background agents (LSUIElement) run outside that activation context. The AX server simply returns an empty window list for the process.  
+**Fix (e03c3ab):** Use `XCUIScreen.main.windows` instead of `app.windows`. This queries **all windows visible on screen** without scoping to a process, and correctly finds NSPanel windows owned by background agents.  
+Similarly, use `XCUIScreen.main.staticTexts["Workflows"]` instead of `app.staticTexts["Workflows"]` for panel content.  
+**Rule:** For any LSUIElement app, **never use `app.windows`**. Always use `XCUIScreen.main.windows` / `XCUIScreen.main.staticTexts` etc. `app.windows` will always be empty.
+
+---
+
+### ✅ How to test the panel without clicking — `OPEN_PANEL_ON_LAUNCH` (current pattern)
+**Solution:** In `AppDelegate+PanelSetup.swift`:
 ```swift
 // Level must be .floating for XCTest AX visibility (not .popUpMenu)
 if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
@@ -168,7 +169,18 @@ if ProcessInfo.processInfo.environment["OPEN_PANEL_ON_LAUNCH"] != nil {
     }
 }
 ```
-In test: `app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"` + `panel.waitForExistence(timeout: 10)`.
+In test:
+```swift
+app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"
+app.launch()
+// Wait for background state first
+XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+// Query via screen — NOT app.windows
+let panel = XCUIScreen.main.windows.firstMatch
+XCTAssertTrue(panel.waitForExistence(timeout: 10))
+let workflowsHeader = XCUIScreen.main.staticTexts["Workflows"]
+XCTAssertTrue(workflowsHeader.waitForExistence(timeout: 5))
+```
 
 ---
 
@@ -214,4 +226,5 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 | **No mouse events in CI** | AX read-only. Use `OPEN_PANEL_ON_LAUNCH` env var for panel tests. |
 | **Runner must be a user LaunchAgent** | GUI session required. System daemons have no screen. |
 | **`openPanel()` needs a real status item position** | For UI tests, use `panel.setFrameOrigin(visibleFrame-based) + orderFront(nil)`. Never call `openPanel()` from `OPEN_PANEL_ON_LAUNCH`. |
-| **NSPanel at `.popUpMenu` is INVISIBLE to XCTest AX** | XCTest's AX server excludes `.popUpMenu`-level panels from `app.windows`. Set `panel.level = .floating` when `OPEN_PANEL_ON_LAUNCH` is set. Never expect XCTest to see a `.popUpMenu` window. |
+| **NSPanel at `.popUpMenu` is INVISIBLE to XCTest AX** | XCTest's AX server excludes `.popUpMenu`-level panels from `app.windows`. Set `panel.level = .floating` when `OPEN_PANEL_ON_LAUNCH` is set. |
+| **`app.windows` ALWAYS EMPTY for LSUIElement apps** | `app.windows` never returns anything for a background agent, regardless of panel level. Use `XCUIScreen.main.windows` instead. Same for `staticTexts`, etc. |
