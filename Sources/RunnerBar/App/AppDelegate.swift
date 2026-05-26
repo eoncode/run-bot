@@ -147,14 +147,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupPanel()
 
-        // ⚠️ UI Testing: open the panel immediately so tests can interact with
-        // app.windows directly. On macOS 26 the Control Centre accessibility tree
-        // does not propagate third-party status item identifiers reliably, so
-        // clicking the status item from XCUI is not a viable approach.
+        // ⚠️ UI Testing: open the panel so tests can interact with app.windows.
+        //
+        // WHY WE DEFER:
+        // openPanel() requires statusItem?.button?.window?.frame to be non-nil.
+        // At applicationDidFinishLaunching time the NSStatusItem has been created
+        // but the system hasn't yet placed it into an NSWindow — button.window is
+        // nil so openPanel()'s guard exits silently and no panel appears.
+        //
+        // Deferring 0.5 s on the main queue gives the status bar time to install
+        // the button in a window. If button.window is still nil after the delay
+        // (headless CI with no visible menu bar) openPanelForUITesting() falls
+        // back to a fixed screen rect so tests can still query app.windows.
+        //
         // ❌ NEVER remove this block — it is required for all UI tests.
+        // ❌ NEVER call openPanel() synchronously here — button.window will be nil.
         if isUITesting {
-            openPanel()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.openPanelForUITesting()
+            }
         }
+    }
+
+    // MARK: - UI Testing panel open
+
+    // ⚠️ Only called from applicationDidFinishLaunching when --uitesting is set.
+    // Falls back to a fixed screen rect when the status item button has no window
+    // (headless CI without a visible menu bar).
+    // ❌ NEVER call this from production code paths.
+    func openPanelForUITesting() {
+        guard let panel else { return }
+
+        if statusItem?.button?.window != nil {
+            // Happy path: status bar window is ready, use normal openPanel().
+            openPanel()
+            return
+        }
+
+        // Fallback: position panel at top-centre of the primary screen.
+        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let visibleFrame = screen.visibleFrame
+        let initW = Self.initPanelWidth
+        let initH: CGFloat = 300 + arrowHeight
+        let posX = visibleFrame.midX - initW / 2
+        let posY = visibleFrame.maxY - initH - Self.gap
+
+        panel.setFrame(
+            NSRect(x: posX, y: posY, width: initW, height: initH),
+            display: false, animate: false
+        )
+        panelTopY = posY + initH + Self.gap
+        panelIsOpen = true
+        panelVisibilityState.isOpen = true
+        chrome?.arrowX = initW / 2
+        panel.wantsKey = true
+        panel.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - OAuth URL callback (#326)
