@@ -45,6 +45,21 @@ jobs:
             -scheme RunnerBar \
             -derivedDataPath .derived
 
+      - name: Build host app
+        # ⚠️ On Xcode 26, -only-testing narrows the build graph and does NOT
+        # trigger the RunnerBar scheme dependency. RunnerBar.app is never placed
+        # in BuildProducts/Debug/, causing the test step to fail with:
+        #   "The bundle identifier for RunnerBar couldn't be read."
+        # Fix: build the host app explicitly first, using the same -derivedDataPath
+        # so the test step finds RunnerBar.app already in place.
+        # ❌ NEVER remove this step or merge it into the test step.
+        run: |
+          xcodebuild build \
+            -project RunnerBar.xcodeproj \
+            -scheme RunnerBar \
+            -destination 'platform=macOS' \
+            -derivedDataPath .derived
+
       - name: Run UI Tests
         timeout-minutes: 5
         run: |
