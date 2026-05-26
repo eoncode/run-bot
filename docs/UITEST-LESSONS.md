@@ -148,6 +148,15 @@ Similarly, use `XCUIScreen.main.staticTexts["Workflows"]` instead of `app.static
 
 ---
 
+### ❌ `setActivationPolicy(.regular)` "Option A" — test rewritten before app code was committed (PR #947, 2026-05-26)
+**Error:** `XCTAssertTrue failed - App should reach .runningForeground` at line 54 and line 86. Test times out after ~5s on both assertions.  
+**Root cause:** The test file was rewritten to use `.runningForeground` and `app.windows`, betting on a "Option A" approach where the app calls `NSApp.setActivationPolicy(.regular)` when `UI_TESTING=1`. However, **`setActivationPolicy` was never added to the app source code**. A search of the entire repo returns zero results. The PR comment described the fix, but the actual Swift file was never changed or committed.  
+**Secondary root cause:** Even if the call were added, `setActivationPolicy(.regular)` at runtime does not reliably override the `LSUIElement` plist key on all macOS versions. The sandbox and launch services policy are set before `applicationDidFinishLaunching` runs.  
+**Fix:** Revert the test to the proven pattern: `.runningBackground` + `XCUIScreen.main.windows` / `XCUIScreen.main.staticTexts`. This is what was documented as passing in this file.  
+**Rule:** Never rewrite tests to depend on app-side behaviour that has not yet been committed. Verify with `grep`/search before pushing.
+
+---
+
 ### ✅ How to test the panel without clicking — `OPEN_PANEL_ON_LAUNCH` (current pattern)
 **Solution:** In `AppDelegate+PanelSetup.swift`:
 ```swift
@@ -217,7 +226,7 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 | **`bundle.ui-testing` ≠ `bundle.unit-test`** | No `TEST_HOST`, no `BUNDLE_LOADER`, uses XCTRunner. |
 | **Zero target dependencies on app** | `RunnerBarUITests` must NOT list `RunnerBar` as a dependency. Triggers Xcode 26 `XCTTargetAppPath` bug. |
 | **Build app separately, then test** | `xcodebuild build -scheme RunnerBar` first, then `xcodebuild test -scheme RunnerBarUITests`. Share `-derivedDataPath`. |
-| **LSUIElement apps are `.runningBackground`** | Never `.runningForeground`. |
+| **LSUIElement apps are `.runningBackground`** | Never `.runningForeground`. setActivationPolicy(.regular) does NOT reliably override LSUIElement plist. |
 | **Use bundle ID init** | `XCUIApplication(bundleIdentifier:)` — not default init. |
 | **No `XCTTargetAppPath` in scheme** | Xcode 26 strips `.app` → bundle ID read fails. |
 | **No `testTargetApp` in UITests scheme** | Same bug. Use dedicated scheme. |
@@ -228,3 +237,4 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 | **`openPanel()` needs a real status item position** | For UI tests, use `panel.setFrameOrigin(visibleFrame-based) + orderFront(nil)`. Never call `openPanel()` from `OPEN_PANEL_ON_LAUNCH`. |
 | **NSPanel at `.popUpMenu` is INVISIBLE to XCTest AX** | XCTest's AX server excludes `.popUpMenu`-level panels from `app.windows`. Set `panel.level = .floating` when `OPEN_PANEL_ON_LAUNCH` is set. |
 | **`app.windows` ALWAYS EMPTY for LSUIElement apps** | `app.windows` never returns anything for a background agent, regardless of panel level. Use `XCUIScreen.main.windows` instead. Same for `staticTexts`, etc. |
+| **Never rewrite tests before committing app-side code** | Verify app code exists (`grep`/search) before pushing tests that depend on it. |
