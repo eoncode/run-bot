@@ -28,12 +28,7 @@ struct SystemStatsView: View {
         .onDisappear { viewModel.stop() }
     }
 
-    /// Returns a single label/value row: left-aligned monospaced label in secondary colour,
-    /// right-aligned monospaced value, separated by a `Spacer`.
-    /// - Parameters:
-    ///   - label: The metric name (e.g. `"CPU"`, `"Memory Used"`).
-    ///   - value: The pre-formatted value string (e.g. `"41.2%"`, `"7.0 GB"`).
-    /// - Returns: An `HStack` row view.
+    /// Returns a single label/value row.
     private func statRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
@@ -51,8 +46,6 @@ struct SystemStatsView: View {
 /// all in one horizontal row -- matching the reference compact header design.
 ///
 /// Layout: CPU [▄6▄6▄6] 41.1% MEM [▄6▄6▄6] 6.4/16.0GB
-///          ^      ^        ^    ^      ^        ^
-///        9pt label  40x14pt sparkline  10pt mono value
 ///
 /// Do NOT restore the VStack layout -- it makes the header ~70pt tall.
 struct SparklineMetricView: View {
@@ -93,17 +86,8 @@ struct SparklineMetricView: View {
 }
 
 // MARK: - DiskPillBadge
-/// Compact pill showing disk FREE percentage, placed inline next to the
-/// DISK sparkline in HeaderStatsBar.
-///
-/// Color thresholds (inverted vs. used-space -- low free = danger):
-///   freePct < 15 → rbDanger  (red)
-///   freePct < 40 → rbWarning (orange)
-///   else         → rbSuccess (green)
-///
-/// Always renders at its intrinsic size -- never truncates.
+/// Compact pill showing disk FREE percentage.
 struct DiskPillBadge: View {
-    // Percentage of disk space that is FREE (0-100).
     /// The freePct constant.
     let freePct: Double
 
@@ -131,13 +115,8 @@ struct DiskPillBadge: View {
 // MARK: - HeaderStatsBar
 // Compact single-row stats header: CPU | MEM | DISK [pill] as inline chips.
 //
-// Layout: CPU [spark] 41.1% | MEM [spark] 7.0/16.0GB | DISK [spark] 394/460GB [13% free] → ⚙ ✕
-//
-// The DiskPillBadge sits immediately after the DISK SparklineMetricView,
-// before the Spacer, so it stays adjacent to the disk graph.
-//
 // Accepts an existing SystemStatsViewModel so it shares the sampler
-// already running in PopoverMainView -- no second timer is created.
+// already running in PopoverMainView — no second timer is created.
 /// A value type representing HeaderStatsBar.
 struct HeaderStatsBar: View {
     /// The statsVM property.
@@ -191,48 +170,5 @@ struct HeaderStatsBar: View {
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, RBSpacing.sm)
-    }
-}
-
-// MARK: - BlockBarView (kept for backward compat)
-// Renders a coloured block-bar and percentage label for a given metric.
-// Deprecated -- use SparklineMetricView / HeaderStatsBar instead.
-// periphery:ignore
-/// A value type representing BlockBarView.
-@available(macOS, deprecated: 26, message: "Use SparklineMetricView or HeaderStatsBar instead.")
-struct BlockBarView: View {
-    /// The label constant.
-    let label: String
-    /// The pct constant.
-    let pct: Double
-
-    /// The body property.
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(DesignTokens.Fonts.monoLabel)
-                .foregroundColor(.secondary)
-            GeometryReader { geo in
-                let barWidth = geo.size.width * CGFloat(min(max(pct / 100.0, 0), 1))
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.2))
-                    Rectangle()
-                        .fill(usageColor)
-                        .frame(width: barWidth)
-                }
-                .cornerRadius(2)
-            }
-            .frame(height: 6)
-            Text(String(format: "%.0f%%", pct))
-                .font(DesignTokens.Fonts.mono)
-                .foregroundColor(usageColor)
-                .frame(width: 36, alignment: .trailing)
-        }
-    }
-
-    /// The usageColor property.
-    private var usageColor: Color {
-        DesignTokens.Colors.usage(pct: pct)
     }
 }
