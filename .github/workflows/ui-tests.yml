@@ -1,10 +1,8 @@
 name: UI Tests
 
 on:
-  push:
-    branches:
-      - 'feature/936-xcodegen-uitest-setup'
-      - main
+  # Only trigger on pull_request — not on push.
+  # push to this branch also fires a PR event; having both causes duplicate runs.
   pull_request:
 
 jobs:
@@ -12,6 +10,7 @@ jobs:
     runs-on: self-hosted
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
+      DERIVED_DATA: .derived
 
     steps:
       - uses: actions/checkout@v4
@@ -61,18 +60,32 @@ jobs:
       - name: Generate ephemeral Xcode project
         run: xcodegen generate
 
+      # Step 1: Build the app first, with NO test dependency.
+      # This must be a separate build step so the .app lands in DerivedData
+      # before xcodebuild test runs. Using -derivedDataPath to share output
+      # between this step and the test step.
+      # CRITICAL: Do NOT add RunnerBar as a target dependency in project.yml.
+      # On Xcode 26, any target-level dep from a ui-testing bundle to an app
+      # causes XCTTargetAppPath to be auto-injected with .app stripped.
+      - name: Build app (no test dependency)
+        run: |
+          xcodebuild build \
+            -project RunnerBar.xcodeproj \
+            -scheme RunnerBar \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA"
+
+      # Step 2: Run UI tests. The test bundle locates the app via
+      # XCUIApplication(bundleIdentifier:) + Launch Services.
+      # No XCTTargetAppPath is injected because RunnerBarUITests has no
+      # target dependency on RunnerBar.
       - name: Run UI Tests
-        # Use the dedicated RunnerBarUITests scheme — NOT the RunnerBar scheme.
-        # The RunnerBar scheme wires testTargetApp which causes Xcode 26 to
-        # auto-inject XCTTargetAppPath with the .app extension stripped,
-        # producing a fatal "bundle ID couldn't be read" error.
-        # The RunnerBarUITests scheme has no testTargetApp; the test code uses
-        # XCUIApplication(bundleIdentifier:) + Launch Services instead.
         run: |
           xcodebuild test \
             -project RunnerBar.xcodeproj \
             -scheme RunnerBarUITests \
             -destination 'platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA" \
             -only-testing:RunnerBarUITests
 
       - name: Clean up ephemeral project

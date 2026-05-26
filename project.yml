@@ -34,8 +34,13 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - Tests/RunnerBarUITests
-    dependencies:
-      - target: RunnerBar
+    # CRITICAL: NO dependencies on RunnerBar here.
+    # On Xcode 26, any target-level dependency from a bundle.ui-testing target
+    # to an app target causes xcodebuild to auto-inject XCTTargetAppPath with
+    # the .app extension stripped -> "bundle ID couldn't be read" fatal error.
+    # The app is built in a separate xcodebuild step (see ui-tests.yml).
+    # The test code uses XCUIApplication(bundleIdentifier:) + Launch Services
+    # to locate the already-built .app at runtime.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.eonist.runnerbar.uitests
@@ -52,22 +57,18 @@ schemes:
     run:
       config: Debug
 
-  # Separate scheme for UI tests.
-  # CRITICAL: no testTargetApp key here — omitting it prevents xcodebuild from
-  # auto-populating XCTTargetAppPath. On Xcode 26 that path has its .app
-  # extension stripped, causing a fatal "bundle ID couldn't be read" error.
-  # The test code uses XCUIApplication(bundleIdentifier:) + Launch Services
-  # to locate the app — no path injection needed.
+  # Dedicated UI test scheme.
+  # CRITICAL: no testTargetApp key and RunnerBarUITests has no target dependency
+  # on RunnerBar. Both together prevent Xcode 26 from auto-injecting
+  # XCTTargetAppPath (which strips .app and breaks bundle ID lookup).
+  # The RunnerBar app is built via a separate xcodebuild build step first.
   RunnerBarUITests:
     build:
       targets:
-        RunnerBar: [build]
         RunnerBarUITests: [build, testing]
     test:
       targets:
         - name: RunnerBarUITests
           parallelizable: false
       environmentVariables:
-        # UI_TESTING must be an env var (not a commandLineArgument) so that
-        # ProcessInfo.processInfo.environment["UI_TESTING"] sees it in the app.
         UI_TESTING: "1"
