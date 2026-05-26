@@ -4,7 +4,8 @@ import SwiftUI
 
 // MARK: - GlassCard
 /// Centralised Liquid Glass card modifier.
-/// On macOS 26+ uses `.glassEffect(.regular.interactive())`;
+/// On macOS 26+ uses `.glassEffect(.regular)` (non-interactive — passive containers
+/// must not use `.interactive()`; see #963);
 /// on older OSes falls back to `.ultraThinMaterial` + a subtle stroke overlay.
 ///
 /// All phases of the Liquid Glass adoption (Phase 3–7) must use `.glassCard()`
@@ -73,8 +74,13 @@ struct GlassSection: ViewModifier {
 
 // MARK: - GlassButton
 /// Liquid Glass interactive button modifier.
-/// On macOS 26+ wraps content in a `GlassEffectContainer` with `.regular.interactive()`;
-/// on older OSes passes through unstyled.
+/// On macOS 26+ applies `.glassEffect(.regular.interactive())` directly to content.
+/// On older OSes passes through unstyled.
+///
+/// ⚠️ Call sites that group multiple `GlassButton` instances side-by-side MUST wrap
+/// them in a shared `GlassEffectContainer` so sibling buttons share a single
+/// CABackdropLayer sampling region — enabling morphing and avoiding redundant
+/// GPU compositing passes. Do NOT embed a `GlassEffectContainer` inside this modifier.
 ///
 /// ❌ Do NOT call `.glassEffect(.regular.interactive())` directly on buttons.
 struct GlassButton: ViewModifier {
@@ -90,13 +96,11 @@ struct GlassButton: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             AnyView(
-                GlassEffectContainer {
-                    content
-                        .glassEffect(
-                            .regular.interactive(),
-                            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        )
-                }
+                content
+                    .glassEffect(
+                        .regular.interactive(),
+                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    )
             )
         } else {
             AnyView(content)
@@ -211,6 +215,8 @@ extension View {
     }
 
     /// Applies the `GlassButton` modifier (interactive glass for tappable buttons).
+    /// ⚠️ Wrap multiple sibling `.glassButton()` calls in a shared `GlassEffectContainer`
+    /// at the call site to enable correct CABackdropLayer sampling and morphing.
     func glassButton(cornerRadius: CGFloat = RBRadius.small) -> some View {
         modifier(GlassButton(cornerRadius: cornerRadius))
     }
@@ -246,9 +252,9 @@ extension View {
 /// ❌ Do NOT convert to GlassCard — this is a capsule-shaped inline pill,
 /// not a card container. Background is provided by `StatPillBackground`.
 struct StatPill: View {
-    /// The metric label displayed before the value (e.g. "CPU").
+    /// The metric label displayed before the value (e.g. \"CPU\").
     let label: String
-    /// The formatted metric value (e.g. "3.6%").
+    /// The formatted metric value (e.g. \"3.6%\").
     let value: String
 
     /// The pill content: label + value in a glass capsule.
@@ -310,6 +316,8 @@ struct StatusBadge: View {
 }
 
 #Preview("GlassButton") {
+    // ⚠️ Multiple sibling GlassButtons must share a GlassEffectContainer at the call site.
+    // Single-button preview shown here without container — correct for isolated use.
     Button(action: { /* preview stub */ }) {
         Text("Re-run")
             .font(.caption)
