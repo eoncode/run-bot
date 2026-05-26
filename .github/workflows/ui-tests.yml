@@ -15,6 +15,12 @@ on:
     branches: [main]
   pull_request:
 
+# Ensure only one UI test run executes on the self-hosted machine at a time.
+# Concurrent runs would fight over the same RunnerBar process and status bar item.
+concurrency:
+  group: ui-test-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   ui-test:
     runs-on: self-hosted
