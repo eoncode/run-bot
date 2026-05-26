@@ -20,6 +20,12 @@
 //    Borderless non-activating panels appear under app.otherElements, not app.windows.
 //    ❌ NEVER use app.windows to find the RunnerBar panel.
 //    ✓ Use app.staticTexts / app.buttons to verify panel content directly.
+//
+// ⚠️ The Settings gear button and the Settings back button both have AX label
+//    "Settings" — they are never on-screen simultaneously so app.buttons["Settings"]
+//    is unambiguous in each test. If that changes, add
+//    .accessibilityIdentifier("settings-back-button") to the back button and
+//    query via app.buttons.matching(identifier:).firstMatch instead.
 
 import XCTest
 
@@ -143,6 +149,118 @@ final class RunnerBarUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
             "Panel should reopen on third click"
+        )
+    }
+
+    // MARK: - Settings navigation
+
+    /// Full settings flow:
+    /// open panel → open settings → verify sections →
+    /// open Add Runner sheet → verify + cancel →
+    /// open Add Scope sheet → verify + cancel →
+    /// back to main → confirm main panel is visible.
+    func testSettingsNavigationFlow() {
+        // ── Open panel ────────────────────────────────────────────────
+        let statusItem = app.statusItems.firstMatch
+        XCTAssertTrue(statusItem.waitForExistence(timeout: 3))
+        statusItem.click()
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "Main panel must be open before navigating to Settings"
+        )
+
+        // ── 1. Open Settings, verify all sections ─────────────────────
+        app.buttons["Settings"].click()
+
+        // SettingsView.headerBar renders Text("Settings") inside the back button
+        XCTAssertTrue(
+            app.staticTexts["Settings"].waitForExistence(timeout: 3),
+            "Settings header should appear"
+        )
+
+        // All six section headers from sectionsStack
+        XCTAssertTrue(app.staticTexts["Active local runners"].exists,
+                      "Local runners section header")
+        XCTAssertTrue(app.staticTexts["Remote runner scopes"].exists,
+                      "Remote scopes section header")
+        XCTAssertTrue(app.staticTexts["Notifications"].exists,
+                      "Notifications section header")
+        XCTAssertTrue(app.staticTexts["General"].exists,
+                      "General section header")
+        XCTAssertTrue(app.staticTexts["Account"].exists,
+                      "Account section header")
+        XCTAssertTrue(app.staticTexts["About"].exists,
+                      "About section header")
+
+        // ── 2. Open Add Runner sheet, verify content, tap Cancel ──────
+        // localRunnersSectionHeader "+" button has .help("Add a new runner")
+        app.buttons["Add a new runner"].click()
+
+        // AddRunnerSheet title: Text("Add runner")
+        XCTAssertTrue(
+            app.staticTexts["Add runner"].waitForExistence(timeout: 3),
+            "Add Runner sheet title should appear"
+        )
+
+        // Mode segmented control segments
+        XCTAssertTrue(app.buttons["Add new"].exists,
+                      "Add new segment should exist")
+        XCTAssertTrue(app.buttons["Add pre-existing"].exists,
+                      "Add pre-existing segment should exist")
+
+        // Cancel button — label "Cancel", .keyboardShortcut(.cancelAction)
+        let addRunnerCancel = app.buttons["Cancel"]
+        XCTAssertTrue(addRunnerCancel.waitForExistence(timeout: 2))
+        addRunnerCancel.click()
+
+        // Sheet dismissed — Settings sections visible again
+        XCTAssertTrue(
+            app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
+            "Should return to Settings after cancelling Add Runner sheet"
+        )
+
+        // ── 3. Open Add Scope sheet, verify content, tap Cancel ───────
+        // remoteScopesSectionHeader "+" button has .help("Add a remote scope")
+        app.buttons["Add a remote scope"].click()
+
+        // AddScopeSheet title: Text("Add remote scope")
+        XCTAssertTrue(
+            app.staticTexts["Add remote scope"].waitForExistence(timeout: 3),
+            "Add Scope sheet title should appear"
+        )
+
+        // Type segmented control segments
+        XCTAssertTrue(app.buttons["Organisation"].exists,
+                      "Organisation segment should exist")
+        XCTAssertTrue(app.buttons["Repository"].exists,
+                      "Repository segment should exist")
+
+        // Cancel button in AddScopeSheet — label "Cancel"
+        let addScopeCancel = app.buttons["Cancel"]
+        XCTAssertTrue(addScopeCancel.waitForExistence(timeout: 2))
+        addScopeCancel.click()
+
+        // Sheet dismissed — Settings visible again
+        XCTAssertTrue(
+            app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
+            "Should return to Settings after cancelling Add Scope sheet"
+        )
+
+        // ── 4. Back to main via the back button ───────────────────────
+        // SettingsView.headerBar back button AX label resolves to "Settings"
+        // (same Text child as the gear button, but gear is gone in this nav state)
+        app.buttons["Settings"].click()
+
+        // Main panel is back — WORKFLOWS section header visible
+        XCTAssertTrue(
+            app.staticTexts["WORKFLOWS"].waitForExistence(timeout: 5),
+            "WORKFLOWS section header should reappear after navigating back to main"
+        )
+
+        // Settings content must be gone — confirms nav stack popped correctly
+        XCTAssertFalse(
+            app.staticTexts["Active local runners"].exists,
+            "Settings content must not be visible after going back to main"
         )
     }
 }
