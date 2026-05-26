@@ -43,6 +43,8 @@ targets:
         CODE_SIGNING_REQUIRED: NO
         AD_HOC_CODE_SIGNING_ALLOWED: YES
         GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/RunnerBar.app/Contents/MacOS/RunnerBar
+        BUNDLE_LOADER: $(TEST_HOST)
 
 schemes:
   RunnerBar:
