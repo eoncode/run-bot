@@ -34,6 +34,12 @@ extension AppDelegate {
         chromeView.addSubview(controller.view)
         chrome = chromeView
 
+        // Both production and UI testing use [.borderless, .nonactivatingPanel].
+        // .titled was previously added for UI testing to help app.windows, but
+        // app.windows is ALWAYS EMPTY for nonactivatingPanel regardless of style
+        // mask — we query app.staticTexts directly instead. .titled only caused
+        // a visible ghost header in the panel during tests with no benefit.
+        // ❌ NEVER add .titled — it shows unwanted title bar chrome.
         let newPanel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: initW, height: 300 + arrowHeight),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -44,7 +50,12 @@ extension AppDelegate {
         newPanel.isOpaque = false
         newPanel.backgroundColor = NSColor(white: 1, alpha: 0.001)
         newPanel.hasShadow = true
-        newPanel.level = .popUpMenu
+        // Production: .popUpMenu keeps the panel above all normal windows.
+        // UI testing: .popUpMenu panels are excluded from the AX window list by
+        // the OS, so app.windows is always empty. .floating panels ARE included.
+        // ❌ NEVER change this condition. ❌ NEVER use .popUpMenu in UI tests.
+        let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
+        newPanel.level = isUITesting ? .floating : .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
         // Pin appearance to darkAqua so the glass chrome never toggles on click.
@@ -83,6 +94,9 @@ extension AppDelegate {
                 self.observable.reload(localRunnerStore: LocalRunnerStore.shared)
             }
             .store(in: &cancellables)
+
+        // Skip all network + keychain activity during UI tests.
+        guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
         RunnerStore.shared.didUpdate
             .receive(on: DispatchQueue.main)

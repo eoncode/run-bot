@@ -50,11 +50,15 @@ struct PanelHeaderView: View {
             Button(action: onSelectSettings, label: {
                 Image(systemName: "gearshape").font(.system(size: 13)).foregroundColor(.secondary)
             })
-            .buttonStyle(.plain).help("Settings")
+            .buttonStyle(.plain)
+            .help("Settings")
+            .accessibilityLabel("Settings")
             Button(action: { NSApplication.shared.terminate(nil) }, label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
             })
-            .buttonStyle(.plain).help("Quit RunnerBar")
+            .buttonStyle(.plain)
+            .help("Quit RunnerBar")
+            .accessibilityLabel("Quit RunnerBar")
         }
         .padding(.horizontal, DesignTokens.Spacing.rowHPad)
         .padding(.top, 10)

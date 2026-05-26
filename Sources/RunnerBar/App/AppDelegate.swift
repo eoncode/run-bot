@@ -130,6 +130,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - App lifecycle
 
+    /// Called before applicationDidFinishLaunching.
+    /// Sets activation policy to .regular during UI tests so XCTest can see
+    /// all windows and elements in the AX tree — LSUIElement apps run as
+    /// .runningBackground and their windows are invisible to XCTest by default.
+    /// Must be in applicationWillFinishLaunching (not DidFinish) so the policy
+    /// is set before XCTest's automation session handshake completes.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard ProcessInfo.processInfo.environment["UI_TESTING"] != nil else { return }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     /// Performs the applicationDidFinishLaunching operation.
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureGHAPI(
@@ -156,13 +168,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
     // ❌ NEVER re-derive panelTopY here. ❌ NEVER call from a background thread.
+    //
+    // UI_TESTING note: in UI tests button.window is nil (no real menu-bar backing
+    // window). The guard below falls back to a centred rect on the main screen so
+    // the panel is positioned on-screen and XCTest's AX server can find it in
+    // app.windows. ❌ NEVER remove the button.window fallback.
     // swiftlint:disable:next missing_docs
     func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
         guard panelIsOpen,
               let panel,
               let chrome,
               let button = statusItem?.button,
-              let statusItemRect = button.window?.frame,
               let topY = panelTopY else { return }
 
         let preferred = hostingController?.preferredContentSize ?? CGSize(width: Self.initPanelWidth, height: 300)
@@ -170,6 +186,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let contentW = min(max(preferred.width, Self.minWidth), maxWidth)
         let contentH = min(max(preferred.height, 60), maxHeight)
         let totalH = contentH + arrowHeight
+
+        // In UI tests button.window is nil — fall back to centred position on main screen.
+        // ❌ NEVER remove this fallback — required for testPanelOpensAndShowsWorkflowsSection.
+        let statusItemRect: NSRect
+        if let windowFrame = button.window?.frame {
+            statusItemRect = windowFrame
+        } else {
+            let screen = NSScreen.main ?? NSScreen.screens[0]
+            let sf = screen.visibleFrame
+            statusItemRect = NSRect(
+                x: sf.midX - contentW / 2,
+                y: sf.maxY,
+                width: contentW,
+                height: 0
+            )
+        }
 
         let posX = statusItemRect.midX - contentW / 2
         let rawPosY = topY - totalH
@@ -253,10 +285,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Open
 
     /// Performs the openPanel operation.
+    ///
+    /// When `UI_TESTING=1` is set, `button.window` is nil because the app runs
+    /// as `.regular` activation policy (no real menu-bar backing window). In that
+    /// case we fall back to a centred position on the main screen.
+    ///
+    /// Panel window level is handled once in setupPanel() — .floating for UI
+    /// tests, .popUpMenu for production. Do not set panel.level here.
+    ///
+    /// The global NSEvent monitor and NSWorkspace app-switch observer are skipped
+    /// during UI tests: XCTest synthesises mouse events as global NSEvents, which
+    /// the monitor misinterprets as outside-clicks, immediately calling closePanel()
+    /// before the click reaches its target inside the panel.
+    /// ❌ NEVER install the event monitor or workspace observer when UI_TESTING is set.
     func openPanel() {
-        guard let button = statusItem?.button,
-              let statusItemRect = button.window?.frame,
-              let panel else { return }
+        guard let button = statusItem?.button, let panel else { return }
+
+        // In UI tests button.window is nil (no real menu-bar backing window), so
+        // we fall back to a centred rect on the main screen.
+        let statusItemRect: NSRect
+        if let windowFrame = button.window?.frame {
+            statusItemRect = windowFrame
+        } else {
+            let screen = NSScreen.main ?? NSScreen.screens[0]
+            let sf = screen.visibleFrame
+            statusItemRect = NSRect(
+                x: sf.midX - Self.initPanelWidth / 2,
+                y: sf.maxY,
+                width: Self.initPanelWidth,
+                height: 0
+            )
+        }
 
         log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
@@ -287,6 +346,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let saved = savedNavState, let restored = validatedView(for: saved) {
             navigate(to: restored)
         }
+
+        // Skip dismiss monitors during UI tests.
+        // XCTest synthetic global mouse events are misread as outside-clicks by the
+        // monitor, causing closePanel() to fire before the click reaches its target.
+        // ❌ NEVER install these monitors when UI_TESTING is set.
+        guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]

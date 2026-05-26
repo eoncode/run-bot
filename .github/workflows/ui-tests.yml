@@ -1,0 +1,108 @@
+name: UI Tests
+
+on:
+  pull_request:
+  workflow_dispatch:  # allows manual trigger from the GitHub Actions UI
+
+# Cancel any in-progress run for the same ref when a new one starts.
+concurrency:
+  group: ui-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui-test:
+    # Opt-in only: the job runs ONLY when the triggering commit message
+    # contains [run ui tests]. This prevents the UI test workflow from
+    # monopolising the self-hosted Mac on every push.
+    #
+    # Usage:
+    #   git commit -m "fix: settings nav [run ui tests]"
+    #
+    # workflow_dispatch (manual trigger) always runs regardless of message.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.head.commit.message, '[run ui tests]')
+    runs-on: self-hosted
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      DERIVED_DATA: .derived
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure Homebrew is available
+        run: |
+          if ! command -v brew &>/dev/null; then
+            echo "Installing Homebrew..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          else
+            echo "Homebrew already installed: $(brew --version)"
+          fi
+
+      - name: Ensure XcodeGen is available
+        run: |
+          if ! command -v xcodegen &>/dev/null; then
+            brew install xcodegen
+          else
+            echo "XcodeGen already installed: $(xcodegen --version)"
+          fi
+
+      - name: Verify Xcode.app (not CLT)
+        run: |
+          XCODE_PATH=$(xcode-select -p 2>/dev/null || true)
+          if [ -z "$XCODE_PATH" ] || [[ "$XCODE_PATH" == *"CommandLineTools"* ]]; then
+            echo "ERROR: xcode-select points at CLT or is unset. Full Xcode.app required."
+            echo "Fix once on the runner machine: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+            exit 1
+          fi
+          echo "Xcode developer path: $XCODE_PATH"
+          xcodebuild -version
+
+      - name: Check runner GUI session
+        run: |
+          if ls ~/Library/LaunchAgents/com.github.runner.*.plist &>/dev/null; then
+            echo "Runner is a user launch agent (GUI session available)."
+          elif ls /Library/LaunchDaemons/com.github.runner.*.plist &>/dev/null; then
+            echo "ERROR: Runner is a system daemon and has no GUI session."
+            echo "Reinstall as a user launch agent:"
+            echo "  sudo ./svc.sh uninstall"
+            echo "  ./svc.sh install && ./svc.sh start"
+            exit 1
+          else
+            echo "WARNING: Could not detect runner service type. Proceeding."
+          fi
+
+      - name: Generate ephemeral Xcode project
+        run: xcodegen generate
+
+      # Step 1: Build the app first, with NO test dependency.
+      # This must be a separate build step so the .app lands in DerivedData
+      # before xcodebuild test runs. Using -derivedDataPath to share output
+      # between this step and the test step.
+      # CRITICAL: Do NOT add RunnerBar as a target dependency in project.yml.
+      # On Xcode 26, any target-level dep from a ui-testing bundle to an app
+      # causes XCTTargetAppPath to be auto-injected with .app stripped.
+      - name: Build app (no test dependency)
+        run: |
+          xcodebuild build \
+            -project RunnerBar.xcodeproj \
+            -scheme RunnerBar \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA"
+
+      # Step 2: Run UI tests. The test bundle locates the app via
+      # XCUIApplication(bundleIdentifier:) + Launch Services.
+      # No XCTTargetAppPath is injected because RunnerBarUITests has no
+      # target dependency on RunnerBar.
+      - name: Run UI Tests
+        run: |
+          xcodebuild test \
+            -project RunnerBar.xcodeproj \
+            -scheme RunnerBarUITests \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            -only-testing:RunnerBarUITests
+
+      - name: Clean up ephemeral project
+        if: always()
+        run: rm -rf RunnerBar.xcodeproj
