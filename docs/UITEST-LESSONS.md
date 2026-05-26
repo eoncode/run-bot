@@ -135,6 +135,21 @@ Then in the test set `app.launchEnvironment["OPEN_PANEL_ON_LAUNCH"] = "1"` and q
 
 ---
 
+### ❌ `app.windows.firstMatch` not found even with `OPEN_PANEL_ON_LAUNCH` — panel not visible in AX tree (2026-05-26, PR #947)
+**Error:** `XCTAssertTrue failed - Panel (NSPanel) should appear in the AX tree after auto-open`  
+**Test:** `testPanelOpensAndShowsWorkflowsSection` — 5s timeout on `app.windows.firstMatch.waitForExistence`  
+**What we confirmed works:** `testStatusBarItemExists` ✅ and `testAppLaunchesWithoutCrashing` ✅ both pass. The app launches fine.  
+**Why it fails:** The NSPanel is opened by `openPanel()` called 300ms after launch, but the panel is **not anchored to a status item position** because no status item click occurred. `openPanel()` positions the panel relative to `statusItem.button?.window` — in a pure XCUITest launch (no real status bar interaction), that button's window frame may be zero/off-screen, causing the panel to be placed off-screen or at `{0,0}` and therefore invisible to the AX accessibility tree. A window that is off-screen or has a zero-size frame does **not** appear in `app.windows` in the AX tree.  
+**Confirmed NOT the cause:** The `OPEN_PANEL_ON_LAUNCH` hook fires (the 0.3s delay logic is correct). The panel is constructed. The issue is positioning.  
+**Fix candidates (try in this order):**
+1. In `openPanel()`, guard against a nil/zero status item button frame and fall back to a fixed on-screen position (e.g., top-right of the main screen) when running under UI tests.
+2. Add `panel.makeKeyAndOrderFront(nil)` + `panel.setFrameOrigin(NSPoint(x: 100, y: NSScreen.main!.frame.height - 400))` in the `OPEN_PANEL_ON_LAUNCH` branch instead of calling `openPanel()`.
+3. Check whether the panel's `collectionBehavior` (`.canJoinAllSpaces`, `.fullScreenAuxiliary`) prevents it from appearing in the AX tree when there is no active screen space context.
+
+**Rule:** `openPanel()` requires a valid status item position. For UI tests, bypass `openPanel()` entirely and call `panel.orderFront(nil)` with a hardcoded on-screen frame directly from the `OPEN_PANEL_ON_LAUNCH` branch.
+
+---
+
 ## CI Workflow — `ui-tests.yml`
 
 ### ❌ `xcpretty` on macOS arm64 (system Ruby 2.6)
@@ -176,3 +191,4 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 | **`pull_request` trigger only** | Avoids duplicate runs when a PR is open on the feature branch. |
 | **No mouse events in CI** | AX read-only. Use `OPEN_PANEL_ON_LAUNCH` env var for panel tests. |
 | **Runner must be a user LaunchAgent** | GUI session required. System daemons have no screen. |
+| **`openPanel()` needs a real status item position** | For UI tests, don't call `openPanel()` — call `panel.orderFront(nil)` with a hardcoded on-screen frame instead. |
