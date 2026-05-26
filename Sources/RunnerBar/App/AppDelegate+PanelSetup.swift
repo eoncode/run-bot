@@ -34,21 +34,15 @@ extension AppDelegate {
         chromeView.addSubview(controller.view)
         chrome = chromeView
 
-        // Production: borderless + nonactivatingPanel.
-        // UI testing: add .titled so the AX server registers the panel as a
-        // proper window and app.windows returns it. Borderless panels are
-        // excluded from AX window enumeration regardless of level.
-        // The visible title bar chrome is hidden separately below via
-        // titlebarAppearsTransparent + titleVisibility + button hiding.
-        // ❌ NEVER use .titled in production — it shows a title bar chrome.
-        let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
-        let styleMask: NSWindow.StyleMask = isUITesting
-            ? [.titled, .nonactivatingPanel]
-            : [.borderless, .nonactivatingPanel]
-
+        // Both production and UI testing use [.borderless, .nonactivatingPanel].
+        // .titled was previously added for UI testing to help app.windows, but
+        // app.windows is ALWAYS EMPTY for nonactivatingPanel regardless of style
+        // mask — we query app.staticTexts directly instead. .titled only caused
+        // a visible ghost header in the panel during tests with no benefit.
+        // ❌ NEVER add .titled — it shows unwanted title bar chrome.
         let newPanel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: initW, height: 300 + arrowHeight),
-            styleMask: styleMask,
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -60,6 +54,7 @@ extension AppDelegate {
         // UI testing: .popUpMenu panels are excluded from the AX window list by
         // the OS, so app.windows is always empty. .floating panels ARE included.
         // ❌ NEVER change this condition. ❌ NEVER use .popUpMenu in UI tests.
+        let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
         newPanel.level = isUITesting ? .floating : .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
@@ -67,20 +62,6 @@ extension AppDelegate {
         // ❌ NEVER remove or set to nil — causes light/dark toggling on click.
         // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         newPanel.appearance = NSAppearance(named: .darkAqua)
-
-        // UI testing: hide the visible title bar chrome that .titled adds.
-        // The AX server only needs the .titled style mask — it does not require
-        // the title bar to be visible. This keeps the panel looking identical
-        // to production during test runs.
-        // ❌ NEVER apply these in production (styleMask is .borderless there).
-        if isUITesting {
-            newPanel.titlebarAppearsTransparent = true
-            newPanel.titleVisibility = .hidden
-            newPanel.standardWindowButton(.closeButton)?.isHidden = true
-            newPanel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            newPanel.standardWindowButton(.zoomButton)?.isHidden = true
-        }
-
         panel = newPanel
 
         setupKVO(controller: controller)
