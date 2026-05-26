@@ -34,9 +34,19 @@ extension AppDelegate {
         chromeView.addSubview(controller.view)
         chrome = chromeView
 
+        // Production: borderless + nonactivatingPanel.
+        // UI testing: add .titled so the AX server registers the panel as a
+        // proper window and app.windows returns it. Borderless panels are
+        // excluded from AX window enumeration regardless of level.
+        // ❌ NEVER use .titled in production — it shows a title bar chrome.
+        let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
+        let styleMask: NSWindow.StyleMask = isUITesting
+            ? [.titled, .nonactivatingPanel]
+            : [.borderless, .nonactivatingPanel]
+
         let newPanel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: initW, height: 300 + arrowHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: styleMask,
             backing: .buffered,
             defer: false
         )
@@ -48,11 +58,7 @@ extension AppDelegate {
         // UI testing: .popUpMenu panels are excluded from the AX window list by
         // the OS, so app.windows is always empty. .floating panels ARE included.
         // ❌ NEVER change this condition. ❌ NEVER use .popUpMenu in UI tests.
-        if ProcessInfo.processInfo.environment["UI_TESTING"] != nil {
-            newPanel.level = .floating
-        } else {
-            newPanel.level = .popUpMenu
-        }
+        newPanel.level = isUITesting ? .floating : .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
         // Pin appearance to darkAqua so the glass chrome never toggles on click.
