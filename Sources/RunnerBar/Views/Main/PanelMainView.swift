@@ -66,27 +66,45 @@ struct PanelMainView: View {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
 
-    /// The subset of locally-installed runners whose name matches a currently
-    /// in-progress job's runnerName. This is the single source of truth for
-    /// what to display in the Local Runners section.
+    /// The subset of locally-installed runners that are currently active.
     ///
-    /// Derivation (#948):
-    ///   - Collect runner names from store.jobs where status == .inProgress
-    ///     and runnerName is non-nil.
-    ///   - Filter store.localRunners to those whose runnerName is in that set.
+    /// A local runner is considered active when ANY of the following is true:
+    ///   1. Its `runnerName` appears in `store.jobs` with status `.inProgress`
+    ///      (repo-scoped runners whose jobs land in store.jobs normally).
+    ///   2. Its `agentId` matches a `busy == true` runner in `store.runners`
+    ///      (org-scoped runners whose jobs come from the org API — those jobs
+    ///       may not be present in store.jobs due to org-API 403, but
+    ///       store.runners is populated via the per-scope runner-list endpoint
+    ///       which does return the busy flag).
+    ///   3. Its `runnerName` matches a `busy == true` runner in `store.runners`
+    ///      (same as 2 but for runners that lack an agentId on disk).
     ///
-    /// store.jobs and store.localRunners are both updated in the same
+    /// Both store.jobs and store.runners are updated in the same
     /// AppDelegate didUpdate → reload() cycle — no timing drift.
     ///
     /// ❌ DO NOT filter on RunnerModel.isBusy — it is set by RunnerStatusEnricher
     /// on a separate background cycle and always lags, causing empty rows. (#948)
     private var activeLocalRunners: [RunnerModel] {
-        let activeNames = Set(
+        // Source 1: names from in-progress jobs (repo-scoped path)
+        let activeNamesFromJobs = Set(
             store.jobs
                 .filter { $0.status == .inProgress }
                 .compactMap { $0.runnerName }
         )
-        return store.localRunners.filter { activeNames.contains($0.runnerName) }
+        // Source 2: busy runners from the enriched runner list (org-scoped fallback)
+        let busyRunners = store.runners.filter { $0.busy }
+        let busyIds = Set(busyRunners.compactMap { $0.id })
+        let busyNames = Set(busyRunners.map { $0.name })
+
+        return store.localRunners.filter { local in
+            // Path 1: matched via job runnerName
+            if activeNamesFromJobs.contains(local.runnerName) { return true }
+            // Path 2: matched via agentId against busy runner list
+            if let aid = local.agentId, busyIds.contains(aid) { return true }
+            // Path 3: matched via name against busy runner list
+            if busyNames.contains(local.runnerName) { return true }
+            return false
+        }
     }
 
     /// Root body: stacks the header, optional rate-limit banner, local-runner section, and scrollable actions list.
