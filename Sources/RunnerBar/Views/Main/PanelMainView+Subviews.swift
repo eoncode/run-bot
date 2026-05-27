@@ -287,18 +287,14 @@ struct ActionRowView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .background(
-                ZStack {
-                    // Status colour bar — no clip here; the outer .clipShape on the card
-                    // cuts the left edge into the half-pill shape (same as legacyBody / main).
-                    Rectangle()
-                        .fill(rowStatus.color)
-                        .frame(width: 4)
-                        .frame(maxHeight: .infinity)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
-            )
+            .glassCard(cornerRadius: RBRadius.card)
+            .overlay(alignment: .leading) {
+                // Status half-pill: Rectangle with no clip; card's RoundedRectangle
+                // shape from .glassCard clips left corners into half-pill.
+                Rectangle()
+                    .fill(rowStatus.color)
+                    .frame(width: 4)
+            }
             .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .workflowContextMenu(group: group)
