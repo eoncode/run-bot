@@ -281,10 +281,15 @@ struct ActionRowView: View {
                     Color.clear.frame(width: RBSpacing.md)
                     rowContent
                 }
+                if let fullExpand = expandState {
+                    InlineJobRowsView(group: group, tick: tick, fullExpand: fullExpand, onStepTap: onStepTap)
+                        .glassEffectTransition(.materialize)
+                }
             }
             .frame(maxWidth: .infinity)
             .background(alignment: .leading) {
                 // Status colour bar only — GlassEffectContainer provides the glass layer.
+                // Bar is inside the VStack so it spans header + job rows together.
                 Rectangle()
                     .fill(rowStatus.color)
                     .frame(width: 4)
@@ -295,12 +300,6 @@ struct ActionRowView: View {
             .workflowContextMenu(group: group)
             .modifier(RowTapModifier(jobs: group.jobs, expandState: $expandState, rowStatus: rowStatus, useBouncyAnimation: true))
             .glassEffectID(group.id, in: glassNS)
-
-            if let fullExpand = expandState {
-                InlineJobRowsView(group: group, tick: tick, fullExpand: fullExpand, onStepTap: onStepTap)
-                    .glassEffectID(group.id + "-jobs", in: glassNS)
-                    .glassEffectTransition(.materialize)
-            }
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, RBSpacing.xxs)
