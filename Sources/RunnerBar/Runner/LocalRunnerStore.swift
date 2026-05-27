@@ -38,8 +38,6 @@ final class LocalRunnerStore: ObservableObject {
         }
         isScanning = true
         log("LocalRunnerStore > refresh() — isScanning set to true, dispatching background scan")
-        // Capture scanner and enricher before entering the Sendable background closure so the
-        // compiler does not see a main-actor-isolated property reference inside async.
         let scanner = self.scanner
         let enricher = self.enricher
         DispatchQueue.global(qos: .userInitiated).async { [weak self, scanner] in
@@ -64,10 +62,13 @@ final class LocalRunnerStore: ObservableObject {
                 log("LocalRunnerStore > refresh() background — no token, skipping enricher")
             }
 
-            // Phase 3 (#591): enrich each busy runner with per-runner CPU/MEM metrics.
-            // Matched by installPath so each runner gets its own process metrics, not slot-index.
+            // Phase 3 (#591 / #948): collect CPU/MEM metrics for any runner whose
+            // launchd service is active (isRunning == true), not only isBusy runners.
+            // isBusy is set by RunnerStatusEnricher via the GitHub API and lags behind
+            // the launchctl live-service check — gating on isBusy caused metrics to be
+            // absent on the first render and permanently missing when isBusy never synced.
             for idx in enriched.indices {
-                guard enriched[idx].isBusy, let installPath = enriched[idx].installPath else { continue }
+                guard enriched[idx].isRunning, let installPath = enriched[idx].installPath else { continue }
                 enriched[idx].metrics = metricsForRunner(installPath: installPath)
                 log("LocalRunnerStore > refresh() background — metrics for \(enriched[idx].runnerName): \(String(describing: enriched[idx].metrics))")
             }
