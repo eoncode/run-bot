@@ -62,23 +62,27 @@ struct PanelMainView: View {
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
-    /// True only when at least one in-progress job is running on a local (self-hosted) runner.
-    /// Gates both the section header and PanelLocalRunnerRow so the section never
-    /// appears without an active local run.
+    /// True only when at least one in-progress job is running on a runner that is
+    /// both self-hosted (not a GitHub-hosted cloud runner) AND installed locally
+    /// on this machine. Gates both the section header and PanelLocalRunnerRow.
     ///
-    /// Fix (#948): uses store.jobs (same RunnerStore.fetch() cycle as store.actions)
-    /// filtered by isLocalRunner == true and status == .inProgress.
-    /// ActiveJob.isLocalRunner uses the runner name from the GitHub API to distinguish
-    /// self-hosted from GitHub-hosted runners via a hosted-prefix heuristic.
+    /// Three conditions must all hold (#948):
+    ///   1. job.status == .inProgress
+    ///   2. job.isLocalRunner == true  — filters out GitHub-hosted runners
+    ///      (ubuntu-latest, macos-*, windows-*, buildjet-*, depot-*) via name-prefix heuristic
+    ///   3. job.runnerName is in the set of locally-installed runner names from
+    ///      LocalRunnerStore — ensures the section only appears when this machine
+    ///      is the one doing the work, not a remote self-hosted runner in the same scope
     ///
-    /// Previous attempts failed because:
-    /// - v1 used localRunners[x].isBusy: set by RunnerStatusEnricher on a separate
-    ///   background cycle, never in sync with store.actions.
-    /// - v2 used store.runners.busy: store.runners only contains self-hosted runners
-    ///   from the /actions/runners endpoint; GitHub-hosted runners are never returned
-    ///   there, so the check always evaluated false for cloud-hosted jobs.
+    /// All three sources (jobs, localRunners, actions) are updated in the same
+    /// AppDelegate didUpdate → reload() cycle, so there is no timing drift.
     private var hasBusyLocalRunners: Bool {
-        store.jobs.contains { $0.isLocalRunner == true && $0.status == .inProgress }
+        let localNames = Set(store.localRunners.map { $0.runnerName })
+        return store.jobs.contains {
+            $0.status == .inProgress
+                && $0.isLocalRunner == true
+                && $0.runnerName.map { localNames.contains($0) } == true
+        }
     }
     /// Root body: stacks the header, optional rate-limit banner, local-runner section, and scrollable actions list.
     var body: some View {
