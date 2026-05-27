@@ -192,9 +192,6 @@ struct ActionRowView: View {
     /// on expand/collapse. Animation is .bouncy for native Liquid Glass feel.
     /// InlineJobRowsView uses .glassEffectTransition(.materialize) so rows
     /// appear by modulating light-bending — the native Liquid Glass insertion transition.
-    ///
-    /// glassEffectID is placed on the card VStack (the outermost content view with
-    /// the glass shape) so the morph engine has the correct frame to animate from/to.
     @available(macOS 26, *)
     @ViewBuilder private var glassMorphBody: some View {
         GlassEffectContainer(spacing: 4) {
@@ -220,16 +217,7 @@ struct ActionRowView: View {
             .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .workflowContextMenu(group: group)
-            .onTapGesture {
-                guard !group.jobs.isEmpty else { return }
-                withAnimation(.bouncy) {
-                    if expandState == true {
-                        expandState = (rowStatus == .inProgress) ? false : nil
-                    } else {
-                        expandState = true
-                    }
-                }
-            }
+            .modifier(RowTapModifier(jobs: group.jobs, expandState: $expandState, rowStatus: rowStatus, useBouncyAnimation: true))
             .glassEffectID(group.id, in: glassNS)
 
             if let fullExpand = expandState {
@@ -271,16 +259,7 @@ struct ActionRowView: View {
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .workflowContextMenu(group: group)
-        .onTapGesture {
-            guard !group.jobs.isEmpty else { return }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                if expandState == true {
-                    expandState = (rowStatus == .inProgress) ? false : nil
-                } else {
-                    expandState = true
-                }
-            }
-        }
+        .modifier(RowTapModifier(jobs: group.jobs, expandState: $expandState, rowStatus: rowStatus, useBouncyAnimation: false))
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, RBSpacing.xxs)
         .onAppear { applyInitialExpandState() }
@@ -399,6 +378,38 @@ struct ActionRowView: View {
             case "success": StatusBadge(status: .success, text: "SUCCESS")
             case "failure": StatusBadge(status: .failed, text: "FAILED")
             default: StatusBadge(status: .unknown, text: "DONE")
+            }
+        }
+    }
+}
+
+// MARK: - RowTapModifier
+/// Applies the expand-on-tap interaction to an action row card.
+/// Shared by both `glassMorphBody` (macOS 26+) and `legacyBody` (pre-26)
+/// to eliminate duplicated `.onTapGesture` blocks.
+private struct RowTapModifier: ViewModifier {
+    /// The jobs to check before expanding.
+    let jobs: [ActiveJob]
+    /// Binding to the parent row's expand state.
+    @Binding var expandState: Bool?
+    /// Current display status of the row.
+    let rowStatus: RBStatus
+    /// When true, uses `.bouncy` animation (macOS 26+); otherwise `.easeInOut`.
+    let useBouncyAnimation: Bool
+
+    /// Applies the tap gesture with the appropriate animation.
+    func body(content: Content) -> some View {
+        content.onTapGesture {
+            guard !jobs.isEmpty else { return }
+            let animation: Animation = useBouncyAnimation
+                ? .bouncy
+                : .easeInOut(duration: 0.15)
+            withAnimation(animation) {
+                if expandState == true {
+                    expandState = (rowStatus == .inProgress) ? false : nil
+                } else {
+                    expandState = true
+                }
             }
         }
     }
