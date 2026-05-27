@@ -1,6 +1,5 @@
 // LoginItem.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import ServiceManagement
 
 /// Manages the app's launch-at-login registration via `SMAppService`.
