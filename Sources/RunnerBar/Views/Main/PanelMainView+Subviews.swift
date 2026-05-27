@@ -287,14 +287,18 @@ struct ActionRowView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .background(alignment: .leading) {
-                // Status colour bar only — GlassEffectContainer provides the glass layer.
-                // Bar is inside the VStack so it spans header + job rows together.
-                Rectangle()
-                    .fill(rowStatus.color)
-                    .frame(width: 4)
-                    .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
-            }
+            .background(
+                ZStack {
+                    // Status colour bar — no clip here; the outer .clipShape on the card
+                    // cuts the left edge into the half-pill shape (same as legacyBody / main).
+                    Rectangle()
+                        .fill(rowStatus.color)
+                        .frame(width: 4)
+                        .frame(maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+            )
             .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .workflowContextMenu(group: group)
