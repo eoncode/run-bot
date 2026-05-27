@@ -285,10 +285,12 @@ struct ActionRowView: View {
 
     /// Reacts to row status changes, auto-expanding on inProgress and collapsing on completion.
     private func handleStatusChange(_ newStatus: RBStatus) {
-        let animation: Animation = {
-            if #available(macOS 26, *) { return .bouncy }
-            return .easeInOut(duration: 0.15)
-        }()
+        let animation: Animation
+        if #available(macOS 26, *) {
+            animation = .bouncy
+        } else {
+            animation = .easeInOut(duration: 0.15)
+        }
         if newStatus == .inProgress && expandState == nil {
             withAnimation(animation) { expandState = false }
         }
