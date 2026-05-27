@@ -42,9 +42,6 @@ struct SettingsView: View {
     @ObservedObject private var settings = AppPreferencesStore.shared
     /// The notifications property.
     @ObservedObject private var notifications = NotificationPreferences.shared
-    /// The legal property.
-    // periphery:ignore
-    @ObservedObject private var legal = LegalPreferences.shared
     /// The localRunnerStore property.
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
     /// The scopeStore property.

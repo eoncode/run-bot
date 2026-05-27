@@ -153,7 +153,7 @@ struct StatusBadgeBackground: ViewModifier {
 }
 
 // MARK: - BranchTagPillBackground
-/// Background modifier for `BranchTagPill` capsule pills.
+/// Background modifier for branch/tag name capsule pills.
 /// macOS 26+: `rbAccent` tint layer + `.glassEffect(.regular, in: Capsule())`.
 /// macOS < 26: `Capsule().strokeBorder(rbAccent.opacity(0.4), lineWidth: 1)` (unchanged).
 struct BranchTagPillBackground: ViewModifier {
@@ -241,7 +241,7 @@ extension View {
 }
 
 // MARK: - StatPill
-/// Compact pill showing a label + value (e.g. “CPU 3.2%”).
+/// Compact pill showing a label + value (e.g. "CPU 3.2%").
 /// Used in PanelLocalRunnerRow to surface per-runner CPU / MEM metrics.
 /// ❌ Do NOT convert to GlassCard — this is a capsule-shaped inline pill,
 /// not a card container. Background is provided by `StatPillBackground`.
@@ -285,30 +285,6 @@ struct StatusBadge: View {
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .statusBadgeBackground(color: status.color)
-    }
-}
-
-// MARK: - BranchTagPill
-/// Inline pill displaying a git branch or tag name.
-/// Uses an accent-tinted glass capsule on macOS 26+, stroke capsule pre-26.
-struct BranchTagPill: View { // periphery:ignore
-    /// The branch or tag name displayed inside the pill.
-    let name: String
-
-    /// The pill content: a branch icon + name in an accent-tinted capsule.
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 8, weight: .medium))
-            Text(name)
-                .font(.system(size: 10, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .foregroundColor(Color.rbAccent)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .branchTagPillBackground()
     }
 }
 
@@ -359,14 +335,6 @@ struct BranchTagPill: View { // periphery:ignore
         StatusBadge(status: .success, text: "SUCCESS")
         StatusBadge(status: .failed, text: "FAILED")
         StatusBadge(status: .queued, text: "QUEUED")
-    }
-    .padding()
-}
-
-#Preview("BranchTagPill") {
-    VStack(spacing: 8) {
-        BranchTagPill(name: "feat/redesign-phases-1-5")
-        BranchTagPill(name: "main")
     }
     .padding()
 }

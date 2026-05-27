@@ -185,17 +185,14 @@ extension View {
         modifier(JobContextMenuModifier(job: job, group: group))
     }
 
-    func stepContextMenu(step: JobStep, job: ActiveJob, onTap: @escaping () -> Void) -> some View {
-        modifier(StepContextMenuModifier(step: step, job: job, onTap: onTap))
+    func stepContextMenu(step: JobStep, onTap: @escaping () -> Void) -> some View {
+        modifier(StepContextMenuModifier(step: step, onTap: onTap))
     }
 }
 
 // MARK: - StepContextMenuModifier
-
 private struct StepContextMenuModifier: ViewModifier {
     let step: JobStep
-    // periphery:ignore
-    let job: ActiveJob
     let onTap: () -> Void
 
     func body(content: Content) -> some View {
