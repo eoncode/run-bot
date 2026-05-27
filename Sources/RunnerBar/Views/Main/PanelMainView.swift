@@ -62,28 +62,30 @@ struct PanelMainView: View {
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
-    /// True only when at least one in-progress job is running on a runner that is
-    /// both self-hosted (not a GitHub-hosted cloud runner) AND installed locally
-    /// on this machine. Gates both the section header and PanelLocalRunnerRow.
+
+    /// The subset of locally-installed runners whose name matches a currently
+    /// in-progress job's runnerName. This is the single source of truth for
+    /// what to display in the Local Runners section.
     ///
-    /// Three conditions must all hold (#948):
-    ///   1. job.status == .inProgress
-    ///   2. job.isLocalRunner == true  — filters out GitHub-hosted runners
-    ///      (ubuntu-latest, macos-*, windows-*, buildjet-*, depot-*) via name-prefix heuristic
-    ///   3. job.runnerName is in the set of locally-installed runner names from
-    ///      LocalRunnerStore — ensures the section only appears when this machine
-    ///      is the one doing the work, not a remote self-hosted runner in the same scope
+    /// Derivation (#948):
+    ///   - Collect runner names from store.jobs where status == .inProgress
+    ///     and runnerName is non-nil.
+    ///   - Filter store.localRunners to those whose runnerName is in that set.
     ///
-    /// All three sources (jobs, localRunners, actions) are updated in the same
-    /// AppDelegate didUpdate → reload() cycle, so there is no timing drift.
-    private var hasBusyLocalRunners: Bool {
-        let localNames = Set(store.localRunners.map { $0.runnerName })
-        return store.jobs.contains {
-            $0.status == .inProgress
-                && $0.isLocalRunner == true
-                && $0.runnerName.map { localNames.contains($0) } == true
-        }
+    /// store.jobs and store.localRunners are both updated in the same
+    /// AppDelegate didUpdate → reload() cycle — no timing drift.
+    ///
+    /// ❌ DO NOT filter on RunnerModel.isBusy — it is set by RunnerStatusEnricher
+    /// on a separate background cycle and always lags, causing empty rows. (#948)
+    private var activeLocalRunners: [RunnerModel] {
+        let activeNames = Set(
+            store.jobs
+                .filter { $0.status == .inProgress }
+                .compactMap { $0.runnerName }
+        )
+        return store.localRunners.filter { activeNames.contains($0.runnerName) }
     }
+
     /// Root body: stacks the header, optional rate-limit banner, local-runner section, and scrollable actions list.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -96,9 +98,9 @@ struct PanelMainView: View {
             .onAppear { systemStats.start() }
             Divider()
             if store.isRateLimited { rateLimitBanner; Divider() }
-            if hasBusyLocalRunners {
+            if !activeLocalRunners.isEmpty {
                 SectionHeaderLabel(title: "Local Runners")
-                PanelLocalRunnerRow(runners: store.localRunners)
+                PanelLocalRunnerRow(runners: activeLocalRunners)
             }
             Color.clear.frame(width: 0, height: 0)
                 .onAppear {
@@ -158,7 +160,7 @@ struct PanelMainView: View {
             Button(
                 action: { visibleCount += nextBatch },
                 label: {
-                    Text("Load \(nextBatch) more workflows…")
+                    Text("Load \(nextBatch) more workflows\u{2026}")
                         .font(.caption).foregroundColor(.secondary)
                 }
             )
@@ -182,25 +184,13 @@ struct PanelMainView: View {
         displayTickTimer = nil
     }
     // MARK: - Rate limit banner (#778)
-    /// Warning strip shown below the header when GitHub's rate limit has been hit.
-    ///
-    /// Uses `store.rateLimitResetDate` + the 1-second `displayTick` to render
-    /// a live countdown ("resets in 42s", "resets in 3m 07s", etc.).
-    /// Falls back to the static "pausing polls" label when no reset date is
-    /// known (e.g. CLI code path that sets `ghIsRateLimited` without a
-    /// `X-RateLimit-Reset` header value).
-    ///
-    /// `displayTick` is referenced via `_ = displayTick` so SwiftUI re-evaluates
-    /// this computed property every second while the banner is visible — the
-    /// same mechanism used by elapsed-time labels in `ActionRowView`.
     private var rateLimitBanner: some View {
-        // Capture tick to force a re-evaluation every second.
         _ = displayTick // swiftlint:disable:this redundant_discardable_let
         let countdownLabel: String
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
             if remaining < 1 {
-                countdownLabel = "resuming…"
+                countdownLabel = "resuming\u{2026}"
             } else if remaining < 60 {
                 countdownLabel = "resets in \(Int(remaining))s"
             } else {

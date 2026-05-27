@@ -81,21 +81,25 @@ private struct RunnerTypeIcon: View {
 }
 
 // MARK: - PanelLocalRunnerRow
-/// Row displaying a single local self-hosted runner: name, status badge, and
-/// CPU/memory stats. Only shown when `showLocalRunnerSection` is true.
+/// Renders a card for each runner passed in. Caller is responsible for
+/// pre-filtering to only the runners that are currently active — this
+/// view renders all entries it receives without internal re-filtering.
+///
+/// ❌ DO NOT add an isBusy filter here — isBusy is set by RunnerStatusEnricher
+/// on a separate background cycle and will always lag behind the RunnerStore
+/// fetch cycle, causing rows to be silently swallowed. (#948)
 struct PanelLocalRunnerRow: View {
     /// The runners constant.
     let runners: [RunnerModel]
     /// The body property.
     var body: some View {
-        let busy = runners.filter { $0.isBusy }
-        if !busy.isEmpty { runnerList(busy) }
+        if !runners.isEmpty { runnerList(runners) }
     }
-    /// Renders a vertical stack of `runnerCard` views for each busy local runner.
-    @ViewBuilder private func runnerList(_ busy: [RunnerModel]) -> some View {
-        ForEach(busy.prefix(3)) { runner in runnerCard(runner) }
-        if busy.count > 3 {
-            Text("+ \(busy.count - 3) more…")
+    /// Renders a vertical stack of `runnerCard` views for each runner.
+    @ViewBuilder private func runnerList(_ active: [RunnerModel]) -> some View {
+        ForEach(active.prefix(3)) { runner in runnerCard(runner) }
+        if active.count > 3 {
+            Text("+ \(active.count - 3) more\u{2026}")
                 .font(.caption2).foregroundColor(.secondary)
                 .padding(.horizontal, DesignTokens.Spacing.rowHPad).padding(.vertical, 2)
         }
@@ -191,8 +195,6 @@ struct ActionRowView: View {
     }
 
     /// Glass card background for the action row.
-    /// Routes through `.glassCard()` to honour the Phase 1 contract — nothing
-    /// outside `PanelViewModifiers` calls `.glassEffect()` directly on card containers.
     @ViewBuilder private var glassCardBackground: some View {
         Color.clear
             .glassCard(cornerRadius: RBRadius.card)
