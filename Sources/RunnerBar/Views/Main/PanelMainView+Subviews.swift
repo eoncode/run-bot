@@ -298,12 +298,14 @@ struct ActionRowView: View {
             .glassCard(cornerRadius: RBRadius.card)
     }
 
+    /// Sets the initial expand state based on the row's current status on first appearance.
     private func applyInitialExpandState() {
         let status = rowStatus
         previousStatus = status
         expandState = (status == .inProgress) ? false : nil
     }
 
+    /// Reacts to row status changes, auto-expanding on inProgress and collapsing on completion.
     private func handleStatusChange(_ newStatus: RBStatus) {
         let animation: Animation = {
             if #available(macOS 26, *) { return .bouncy }
