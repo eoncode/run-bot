@@ -53,8 +53,10 @@ struct PanelHeaderView: View {
             // Pre-26: falls back to .buttonStyle(.plain) as before.
             if #available(macOS 26, *) {
                 GlassEffectContainer {
-                    settingsButton.glassButton()
-                    quitButton.glassButton()
+                    HStack(spacing: 0) {
+                        settingsButton.glassButton()
+                        quitButton.glassButton()
+                    }
                 }
             } else {
                 settingsButton
@@ -281,18 +283,13 @@ struct ActionRowView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .background(
-                ZStack {
-                    Color.clear
-                        .glassCard(cornerRadius: RBRadius.card)
-                    Rectangle()
-                        .fill(rowStatus.color)
-                        .frame(width: 4)
-                        .frame(maxHeight: .infinity)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
-            )
+            .background(alignment: .leading) {
+                // Status colour bar only — GlassEffectContainer provides the glass layer.
+                Rectangle()
+                    .fill(rowStatus.color)
+                    .frame(width: 4)
+                    .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+            }
             .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
             .workflowContextMenu(group: group)
