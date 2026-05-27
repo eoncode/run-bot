@@ -28,7 +28,10 @@ struct SystemStatsView: View {
         .onDisappear { viewModel.stop() }
     }
 
-    /// Returns a single label/value row.
+    /// Returns a single label/value row for display in the stats panel.
+    /// - Parameters:
+    ///   - label: The metric name displayed on the leading edge (e.g. "CPU").
+    ///   - value: The formatted metric value displayed on the trailing edge (e.g. "41.2%").
     private func statRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
@@ -87,6 +90,11 @@ struct SparklineMetricView: View {
 
 // MARK: - DiskPillBadge
 /// Compact pill showing disk FREE percentage.
+///
+/// Color thresholds (based on free space, not used):
+/// - `freePct < 15` → `rbDanger`  (disk nearly full)
+/// - `freePct < 40` → `rbWarning` (disk getting full)
+/// - `freePct >= 40` → `rbSuccess` (plenty of space)
 struct DiskPillBadge: View {
     /// The freePct constant.
     let freePct: Double
