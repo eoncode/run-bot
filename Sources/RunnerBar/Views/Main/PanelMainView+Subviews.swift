@@ -138,23 +138,24 @@ struct PanelLocalRunnerRow: View {
         }
         Divider()
     }
-    /// Compact card showing a runner's name, optional arch/platform subtitle, and a grouped CPU/MEM badge.
+    /// Compact card showing runner name with optional arch/platform inline,
+    /// and a grouped CPU/MEM badge on the trailing edge.
     ///
-    /// The subtitle is built from `runner.platformArchitecture` and `runner.platform`,
-    /// both sourced from the `.runner` JSON file. Raw API strings are normalised for
-    /// display: "ARM64"→"arm64", "X64"→"x64", "osx"→"macOS", "linux"→"Linux", "win"→"Windows".
-    /// The subtitle line is hidden entirely when both fields are nil.
+    /// arch and platform are rendered as muted secondary text after the name,
+    /// separated by middle dots (e.g. "psw-org-runner · arm64 · macOS").
+    /// The meta tokens are hidden when both fields are nil.
     private func runnerCard(_ runner: RunnerModel) -> some View {
         HStack(spacing: 8) {
             Circle().fill(Color.rbWarning).frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 1) {
+            // Name + optional arch/platform inline
+            HStack(spacing: 4) {
                 Text(runner.runnerName)
                     .font(RBFont.label)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 if let subtitle = runnerSubtitle(runner) {
-                    Text(subtitle)
-                        .font(.system(size: 9))
+                    Text("· \(subtitle)")
+                        .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -171,7 +172,7 @@ struct PanelLocalRunnerRow: View {
     }
 
     /// Builds a normalised subtitle string from architecture and platform fields.
-    /// Returns nil when both are absent so the caller can hide the line entirely.
+    /// Returns nil when both are absent so the caller can hide the tokens entirely.
     /// Parts are joined with a middle dot separator (·).
     private func runnerSubtitle(_ runner: RunnerModel) -> String? {
         let arch = runner.platformArchitecture.map { normaliseArch($0) }

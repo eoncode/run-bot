@@ -108,7 +108,11 @@ public struct LocalRunnerScanner: Sendable {
 
     // MARK: - Source 1: LaunchAgents
 
-    /// Performs the scanLaunchAgents operation.
+    /// Scans `~/Library/LaunchAgents` for `actions.runner.*.plist` entries.
+    /// For each plist, extracts the `WorkingDirectory` and attempts to decode
+    /// the `.runner` JSON at that path so `platform` and `platformArchitecture`
+    /// are populated on the stub model even when the JSON isn't found by the
+    /// default-root `find` scan in Source 2.
     private func scanLaunchAgents() -> (models: [RunnerModel], installPaths: Set<String>) {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
@@ -126,7 +130,6 @@ public struct LocalRunnerScanner: Sendable {
             let parts = remainder.components(separatedBy: ".")
             let runnerName = parts.last ?? "runner"
             // Derive a GitHub URL fallback from the label when possible.
-            // Requires at least owner + repo (i.e. ≥2 dot-separated parts before the name).
             var plistGitHubUrl: String?
             if parts.count >= 3 {
                 let owner = parts[0]
@@ -135,22 +138,35 @@ public struct LocalRunnerScanner: Sendable {
                     plistGitHubUrl = "\(Self.gitHubBaseURL)/\(owner)/\(repo)"
                 }
             } else if parts.count == 2 {
-                // Org-scoped runner: actions.runner.<org>.<runnerName>
                 let org = parts[0]
                 if !org.isEmpty { plistGitHubUrl = "\(Self.gitHubBaseURL)/\(org)" }
             }
+            // Extract WorkingDirectory and opportunistically read the .runner JSON
+            // so platform/arch are available even for runners outside the default roots.
+            var workDir: String?
+            var jsonPlatform: String?
+            var jsonArch: String?
             if let plist = NSDictionary(contentsOf: url),
-               let workDir = plist["WorkingDirectory"] as? String,
-               !workDir.isEmpty {
-                installPaths.insert(workDir)
+               let dir = plist["WorkingDirectory"] as? String,
+               !dir.isEmpty {
+                workDir = dir
+                installPaths.insert(dir)
+                let jsonURL = URL(fileURLWithPath: dir).appendingPathComponent(".runner")
+                if let data = try? Data(contentsOf: jsonURL),
+                   let json = try? JSONDecoder().decode(RunnerJSON.self, from: data) {
+                    jsonPlatform = json.platform
+                    jsonArch     = json.platformArchitecture
+                }
             }
             models.append(RunnerModel(
                 runnerName: runnerName,
                 gitHubUrl: plistGitHubUrl,
                 agentId: nil,
-                workFolder: nil,
-                installPath: nil,
-                isRunning: false
+                workFolder: workDir,
+                installPath: workDir,
+                isRunning: false,
+                platform: jsonPlatform,
+                platformArchitecture: jsonArch
             ))
         }
         return (models, installPaths)
