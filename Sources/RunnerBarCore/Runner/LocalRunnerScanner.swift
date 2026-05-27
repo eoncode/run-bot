@@ -61,13 +61,21 @@ public struct LocalRunnerScanner: Sendable {
         /// Without these keys, JSONDecoder looks for exact lowercase matches
         /// and all fields decode as nil. (#948)
         enum CodingKeys: String, CodingKey {
+            /// Maps to the `GitHubUrl` field in the runner `.runner` JSON.
             case gitHubUrl            = "GitHubUrl"
+            /// Maps to the `AgentName` field (the runner's display name).
             case runnerName           = "AgentName"
+            /// Maps to the `AgentId` field (the runner's integer ID on GitHub).
             case agentId              = "AgentId"
+            /// Maps to the `WorkFolder` field (the runner's working directory).
             case workFolder           = "WorkFolder"
+            /// Maps to the `Platform` field (e.g. `"osx"`, `"linux"`, `"win"`).
             case platform             = "Platform"
+            /// Maps to the `PlatformArchitecture` field (e.g. `"arm64"`, `"x64"`).
             case platformArchitecture = "PlatformArchitecture"
+            /// Maps to the `AgentVersion` field (the runner agent version string).
             case agentVersion         = "AgentVersion"
+            /// Maps to the `Ephemeral` field (true for just-in-time ephemeral runners).
             case ephemeral            = "Ephemeral"
         }
     }
