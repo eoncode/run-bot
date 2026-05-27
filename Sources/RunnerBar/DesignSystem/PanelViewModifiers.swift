@@ -246,9 +246,9 @@ extension View {
 /// ❌ Do NOT convert to GlassCard — this is a capsule-shaped inline pill,
 /// not a card container. Background is provided by `StatPillBackground`.
 struct StatPill: View {
-    /// The metric label displayed before the value (e.g. \"CPU\").
+    /// The metric label displayed before the value (e.g. "CPU").
     let label: String
-    /// The formatted metric value (e.g. \"3.6%\").
+    /// The formatted metric value (e.g. "3.6%").
     let value: String
 
     /// The pill content: label + value in a glass capsule.
