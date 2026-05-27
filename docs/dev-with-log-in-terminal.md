@@ -31,3 +31,14 @@ The app itself is also doing the heavy lifting — it's already printing structu
 
 Sources
 
+## Newer approche:
+
+```bash
+git fetch origin && \
+git checkout fix/948-local-runners-not-showing && \
+git pull origin fix/948-local-runners-not-showing && \
+bash build.sh && \
+pkill RunnerBar 2>/dev/null; sleep 1; \
+log stream --level debug --predicate 'subsystem == "com.eoncode.runner-bar"' & LOG_PID=$!; sleep 1; \
+./dist/RunnerBar.app/Contents/MacOS/RunnerBar; kill $LOG_PID
+```
