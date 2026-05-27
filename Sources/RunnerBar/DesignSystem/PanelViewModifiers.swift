@@ -305,6 +305,30 @@ struct StatusBadge: View {
     }
 }
 
+// MARK: - BranchTagPill
+/// Inline pill displaying a git branch or tag name.
+/// Uses an accent-tinted glass capsule on macOS 26+, stroke capsule pre-26.
+struct BranchTagPill: View { // periphery:ignore
+    /// The branch or tag name displayed inside the pill.
+    let name: String
+
+    /// The pill content: a branch icon + name in an accent-tinted capsule.
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 8, weight: .medium))
+            Text(name)
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundColor(Color.rbAccent)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .branchTagPillBackground()
+    }
+}
+
 // MARK: - Previews
 #if DEBUG
 #Preview("GlassCard") {
@@ -354,6 +378,14 @@ struct StatusBadge: View {
         StatusBadge(status: .success, text: "SUCCESS")
         StatusBadge(status: .failed, text: "FAILED")
         StatusBadge(status: .queued, text: "QUEUED")
+    }
+    .padding()
+}
+
+#Preview("BranchTagPill") {
+    VStack(spacing: 8) {
+        BranchTagPill(name: "feat/redesign-phases-1-5")
+        BranchTagPill(name: "main")
     }
     .padding()
 }
