@@ -1,8 +1,8 @@
 // WorkflowProgressExtensions.swift
 // RunnerBar
 // Extracted from PanelProgressViews.swift during dead-code cleanup (removed PieProgressDot).
+import Foundation
 import RunnerBarCore
-import SwiftUI
 
 // MARK: - RelativeTimeFormatter
 /// Formats a `Date` into a compact relative string like `"3m ago"`, `"1h ago"`, `"2d ago"`.
