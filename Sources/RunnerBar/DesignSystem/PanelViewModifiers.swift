@@ -4,8 +4,13 @@ import SwiftUI
 
 // MARK: - GlassCard
 /// Centralised Liquid Glass card modifier.
-/// On macOS 26+ uses `.glassEffect(.regular.interactive())`;
-/// on older OSes falls back to `.ultraThinMaterial` + a subtle stroke overlay.
+/// On macOS 26+ uses `.glassEffect(.regular)` — passive containers must NOT
+/// use `.interactive()`. The LiquidGlassReference guide restricts `.interactive()`
+/// to tappable controls (buttons, icons) only. Applying it to a passive container
+/// activates scaling/shimmer on the entire card surface including non-interactive
+/// children, which is semantically wrong and wastes GPU compositing budget.
+/// Tappable rows handle interactivity at the contentShape/button level via GlassButton.
+/// On older OSes falls back to `.ultraThinMaterial` + a subtle stroke overlay.
 ///
 /// All phases of the Liquid Glass adoption (Phase 3–7) must use `.glassCard()`
 /// instead of calling `.glassEffect()` or `.ultraThinMaterial` directly on
@@ -13,6 +18,7 @@ import SwiftUI
 ///
 /// ❌ Do NOT convert `StatPill` to `GlassCard` — it is a capsule-shaped inline
 /// pill, not a card container. Use `StatPillBackground` instead.
+/// ❌ Do NOT add `.interactive()` back to GlassCard — see #963.
 struct GlassCard: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to `RBRadius.card`.
     var cornerRadius: CGFloat
@@ -28,11 +34,18 @@ struct GlassCard: ViewModifier {
     /// Applies the glass card effect to the given content view.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
+            // glassEffect does not render a stroke automatically — add it as an
+            // overlay so the card has the same subtle border in both OS paths.
             AnyView(
-                content.glassEffect(
-                    .regular.interactive(),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
+                content
+                    .glassEffect(
+                        .regular,
+                        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(strokeOpacity), lineWidth: 0.5)
+                    )
             )
         } else {
             AnyView(materialFallback(content: content))
@@ -73,8 +86,13 @@ struct GlassSection: ViewModifier {
 
 // MARK: - GlassButton
 /// Liquid Glass interactive button modifier.
-/// On macOS 26+ wraps content in a `GlassEffectContainer` with `.regular.interactive()`;
-/// on older OSes passes through unstyled.
+/// On macOS 26+ applies `.glassEffect(.regular.interactive())` directly to content.
+/// On older OSes passes through unstyled.
+///
+/// ⚠️ Call sites that group multiple `GlassButton` instances side-by-side MUST wrap
+/// them in a shared `GlassEffectContainer` so sibling buttons share a single
+/// CABackdropLayer sampling region — enabling morphing and avoiding redundant
+/// GPU compositing passes. Do NOT embed a `GlassEffectContainer` inside this modifier.
 ///
 /// ❌ Do NOT call `.glassEffect(.regular.interactive())` directly on buttons.
 struct GlassButton: ViewModifier {
@@ -89,17 +107,13 @@ struct GlassButton: ViewModifier {
     /// Applies the interactive glass button effect to the given content view.
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
-            AnyView(
-                GlassEffectContainer {
-                    content
-                        .glassEffect(
-                            .regular.interactive(),
-                            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        )
-                }
-            )
+            content
+                .glassEffect(
+                    .regular.interactive(),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
         } else {
-            AnyView(content)
+            content
         }
     }
 }
@@ -139,8 +153,8 @@ struct StatusBadgeBackground: ViewModifier {
         if #available(macOS 26, *) {
             AnyView(
                 content
-                    .background(color.opacity(0.15), in: Capsule())
-                    .glassEffect(.regular, in: Capsule())
+                    .background(color.opacity(0.25), in: Capsule())
+                    .overlay(Capsule().strokeBorder(color.opacity(0.55), lineWidth: 0.5))
             )
         } else {
             AnyView(
@@ -153,16 +167,16 @@ struct StatusBadgeBackground: ViewModifier {
 }
 
 // MARK: - BranchTagPillBackground
-/// Background modifier for branch/tag name capsule pills.
-/// macOS 26+: `rbAccent` tint layer + `.glassEffect(.regular, in: Capsule())`.
+/// Background modifier for `BranchTagPill` capsule pills.
+/// macOS 26+: accent tint layer + `.glassEffect(.regular, in: Capsule())`.
 /// macOS < 26: `Capsule().strokeBorder(rbAccent.opacity(0.4), lineWidth: 1)` (unchanged).
 struct BranchTagPillBackground: ViewModifier {
-    /// Applies an accent-tinted glass capsule background (macOS 26+) or stroke capsule border (pre-26).
+    /// Applies a tinted glass capsule background (macOS 26+) or stroke capsule border (pre-26).
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
             AnyView(
                 content
-                    .background(Color.rbAccent.opacity(0.12), in: Capsule())
+                    .background(Color.rbAccent.opacity(0.15), in: Capsule())
                     .glassEffect(.regular, in: Capsule())
             )
         } else {
@@ -200,7 +214,8 @@ struct CardRowModifier: ViewModifier {
 // MARK: - View extensions
 /// Convenience modifiers for applying glass and surface effects to any `View`.
 extension View {
-    /// Applies the `GlassCard` modifier (interactive glass on macOS 26+, material fallback pre-26).
+    /// Applies the `GlassCard` modifier (non-interactive glass on macOS 26+, material fallback pre-26).
+    /// ❌ Do NOT add `.interactive()` to GlassCard — use GlassButton for tappable controls.
     func glassCard(cornerRadius: CGFloat = RBRadius.card) -> some View {
         modifier(GlassCard(cornerRadius: cornerRadius))
     }
@@ -211,6 +226,8 @@ extension View {
     }
 
     /// Applies the `GlassButton` modifier (interactive glass for tappable buttons).
+    /// ⚠️ Wrap multiple sibling `.glassButton()` calls in a shared `GlassEffectContainer`
+    /// at the call site to enable correct CABackdropLayer sampling and morphing.
     func glassButton(cornerRadius: CGFloat = RBRadius.small) -> some View {
         modifier(GlassButton(cornerRadius: cornerRadius))
     }
@@ -220,12 +237,12 @@ extension View {
         modifier(StatPillBackground())
     }
 
-    /// Applies the `StatusBadgeBackground` modifier (tinted glass capsule on macOS 26+).
+    /// Applies the `StatusBadgeBackground` modifier (compositor-tinted glass capsule on macOS 26+).
     func statusBadgeBackground(color: Color) -> some View {
         modifier(StatusBadgeBackground(color: color))
     }
 
-    /// Applies the `BranchTagPillBackground` modifier (accent-tinted glass capsule on macOS 26+).
+    /// Applies the `BranchTagPillBackground` modifier (compositor-tinted glass capsule on macOS 26+).
     func branchTagPillBackground() -> some View {
         modifier(BranchTagPillBackground())
     }
@@ -288,6 +305,30 @@ struct StatusBadge: View {
     }
 }
 
+// MARK: - BranchTagPill
+/// Inline pill displaying a git branch or tag name.
+/// Uses an accent-tinted glass capsule on macOS 26+, stroke capsule pre-26.
+struct BranchTagPill: View { // periphery:ignore
+    /// The branch or tag name displayed inside the pill.
+    let name: String
+
+    /// The pill content: a branch icon + name in an accent-tinted capsule.
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 8, weight: .medium))
+            Text(name)
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundColor(Color.rbAccent)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .branchTagPillBackground()
+    }
+}
+
 // MARK: - Previews
 #if DEBUG
 #Preview("GlassCard") {
@@ -310,6 +351,8 @@ struct StatusBadge: View {
 }
 
 #Preview("GlassButton") {
+    // ⚠️ Multiple sibling GlassButtons must share a GlassEffectContainer at the call site.
+    // Single-button preview shown here without container — correct for isolated use.
     Button(action: { /* preview stub */ }) {
         Text("Re-run")
             .font(.caption)
@@ -335,6 +378,14 @@ struct StatusBadge: View {
         StatusBadge(status: .success, text: "SUCCESS")
         StatusBadge(status: .failed, text: "FAILED")
         StatusBadge(status: .queued, text: "QUEUED")
+    }
+    .padding()
+}
+
+#Preview("BranchTagPill") {
+    VStack(spacing: 8) {
+        BranchTagPill(name: "feat/redesign-phases-1-5")
+        BranchTagPill(name: "main")
     }
     .padding()
 }

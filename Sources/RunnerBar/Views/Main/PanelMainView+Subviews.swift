@@ -47,22 +47,51 @@ struct PanelHeaderView: View {
                 })
                 .buttonStyle(.plain).help("Sign in with GitHub")
             }
-            Button(action: onSelectSettings, label: {
-                Image(systemName: "gearshape").font(.system(size: 13)).foregroundColor(.secondary)
-            })
-            .buttonStyle(.plain)
-            .help("Settings")
-            .accessibilityLabel("Settings")
-            Button(action: { NSApplication.shared.terminate(nil) }, label: {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
-            })
-            .buttonStyle(.plain)
-            .help("Quit RunnerBar")
-            .accessibilityLabel("Quit RunnerBar")
+            // macOS 26+: wrap both toolbar buttons in a single shared GlassEffectContainer
+            // so they share a CABackdropLayer sampling region, enabling interactive glass
+            // (scaling-on-press, shimmer, bounce) and morphing between sibling buttons.
+            // Pre-26: falls back to .buttonStyle(.plain) as before.
+            if #available(macOS 26, *) {
+                // Each button gets its own GlassEffectContainer so their backdrops
+                // stay independent (no bleed). HStack keeps them side-by-side.
+                HStack(spacing: 8) {
+                    GlassEffectContainer { settingsButton.glassButton() }
+                    GlassEffectContainer { quitButton.glassButton() }
+                }
+            } else {
+                settingsButton
+                quitButton
+            }
         }
         .padding(.horizontal, DesignTokens.Spacing.rowHPad)
         .padding(.top, 10)
         .padding(.bottom, 8)
+    }
+
+    /// Settings gear button — shared between the macOS 26 glass path and pre-26 plain path.
+    @ViewBuilder private var settingsButton: some View {
+        Button(action: onSelectSettings, label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .frame(width: 28, height: 28)
+        })
+        .buttonStyle(.plain)
+        .help("Settings")
+        .accessibilityLabel("Settings")
+    }
+
+    /// Quit button — shared between the macOS 26 glass path and pre-26 plain path.
+    @ViewBuilder private var quitButton: some View {
+        Button(action: { NSApplication.shared.terminate(nil) }, label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 28, height: 28)
+        })
+        .buttonStyle(.plain)
+        .help("Quit RunnerBar")
+        .accessibilityLabel("Quit RunnerBar")
     }
 }
 
@@ -206,6 +235,13 @@ struct PanelLocalRunnerRow: View {
 // MARK: - ActionRowView
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.
+///
+/// macOS 26+: the card background uses `.glassCard()` directly on the VStack,
+/// identical structure to the pre-26 path. Animation is `.easeInOut(duration: 0.15)`
+/// on both paths — matching main branch exactly.
+///
+/// ⚠️ Do NOT add GlassEffectContainer, .glassEffectID, .bouncy, or
+/// .glassEffectTransition — they cause staggered/slow expand animations (#957).
 struct ActionRowView: View {
     /// The group constant.
     let group: WorkflowActionGroup
@@ -219,6 +255,51 @@ struct ActionRowView: View {
     @State private var previousStatus: RBStatus?
     /// The body property.
     var body: some View {
+        if #available(macOS 26, *) {
+            glassMorphBody
+        } else {
+            legacyBody
+        }
+    }
+
+    // MARK: macOS 26+ body
+    /// macOS 26+ path — uses .glassCard() directly on the VStack with the same
+    /// .easeInOut(duration: 0.15) animation as main. No GlassEffectContainer,
+    /// no .bouncy, no .glassEffectTransition — these caused staggered/slow animation.
+    @available(macOS 26, *)
+    @ViewBuilder private var glassMorphBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                Color.clear.frame(width: RBSpacing.md)
+                rowContent
+            }
+            if let fullExpand = expandState {
+                InlineJobRowsView(group: group, tick: tick, fullExpand: fullExpand, onStepTap: onStepTap)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .background {
+            Rectangle()
+                .fill(rowStatus.color)
+                .frame(width: 4)
+                .frame(maxHeight: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+        }
+        .glassCard(cornerRadius: RBRadius.card)
+        .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
+        .workflowContextMenu(group: group)
+        .modifier(RowTapModifier(jobs: group.jobs, expandState: $expandState, rowStatus: rowStatus, useBouncyAnimation: false))
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.vertical, RBSpacing.xxs)
+        .onAppear { applyInitialExpandState() }
+        .onChange(of: rowStatus) { _, newStatus in handleStatusChange(newStatus) }
+    }
+
+    // MARK: Pre-macOS-26 body
+    /// Pre-macOS-26 fallback body using plain animations and no glass morphing.
+    @ViewBuilder private var legacyBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 Color.clear.frame(width: RBSpacing.md)
@@ -243,38 +324,40 @@ struct ActionRowView: View {
         .clipShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: RBRadius.card, style: .continuous))
         .workflowContextMenu(group: group)
-        .onTapGesture {
-            guard !group.jobs.isEmpty else { return }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                if expandState == true {
-                    expandState = (rowStatus == .inProgress) ? false : nil
-                } else {
-                    expandState = true
-                }
-            }
-        }
+        .modifier(RowTapModifier(jobs: group.jobs, expandState: $expandState, rowStatus: rowStatus, useBouncyAnimation: false))
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, RBSpacing.xxs)
-        .onAppear {
-            let status = rowStatus
-            previousStatus = status
-            expandState = (status == .inProgress) ? false : nil
-        }
-        .onChange(of: rowStatus) { _, newStatus in
-            if newStatus == .inProgress && expandState == nil {
-                withAnimation(.easeInOut(duration: 0.15)) { expandState = false }
-            }
-            if previousStatus == .inProgress && (newStatus == .success || newStatus == .failed) {
-                withAnimation(.easeInOut(duration: 0.15)) { expandState = nil }
-            }
-            previousStatus = newStatus
-        }
+        .onAppear { applyInitialExpandState() }
+        .onChange(of: rowStatus) { _, newStatus in handleStatusChange(newStatus) }
     }
 
-    /// Glass card background for the action row.
+    // MARK: Shared helpers
+
+    /// Glass card background for the action row (pre-26 path).
+    /// Routes through `.glassCard()` to honour the Phase 1 contract — nothing
+    /// outside `PanelViewModifiers` calls `.glassEffect()` directly on card containers.
     @ViewBuilder private var glassCardBackground: some View {
         Color.clear
             .glassCard(cornerRadius: RBRadius.card)
+    }
+
+    /// Sets the initial expand state based on the row's current status on first appearance.
+    private func applyInitialExpandState() {
+        let status = rowStatus
+        previousStatus = status
+        expandState = (status == .inProgress) ? false : nil
+    }
+
+    /// Reacts to row status changes, auto-expanding on inProgress and collapsing on completion.
+    private func handleStatusChange(_ newStatus: RBStatus) {
+        let animation: Animation = .easeInOut(duration: 0.15)
+        if newStatus == .inProgress && expandState == nil {
+            withAnimation(animation) { expandState = false }
+        }
+        if previousStatus == .inProgress && (newStatus == .success || newStatus == .failed) {
+            withAnimation(animation) { expandState = nil }
+        }
+        previousStatus = newStatus
     }
 
     /// Resolves the effective display status for the row.
@@ -290,6 +373,7 @@ struct ActionRowView: View {
             }
         }
     }
+
     /// Main body of the action row: workflow name, repo, branch, and trailing meta info.
     private var rowContent: some View {
         let tickSnapshot = tick
@@ -324,6 +408,7 @@ struct ActionRowView: View {
         .padding(.trailing, RBSpacing.xs)
         .padding(.vertical, 4)
     }
+
     /// Trailing meta area: elapsed time or conclusion label, keyed off `tickSnapshot` for live updates.
     @ViewBuilder private func metaTrailing(tick tickSnapshot: Int) -> some View {
         if let start = group.firstJobStartedAt {
@@ -344,6 +429,7 @@ struct ActionRowView: View {
             .fixedSize(horizontal: true, vertical: false)
         statusBadge
     }
+
     /// Colored pill badge reflecting the current run status.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
@@ -354,6 +440,38 @@ struct ActionRowView: View {
             case "success": StatusBadge(status: .success, text: "SUCCESS")
             case "failure": StatusBadge(status: .failed, text: "FAILED")
             default: StatusBadge(status: .unknown, text: "DONE")
+            }
+        }
+    }
+}
+
+// MARK: - RowTapModifier
+/// Applies the expand-on-tap interaction to an action row card.
+/// Shared by both `glassMorphBody` (macOS 26+) and `legacyBody` (pre-26)
+/// to eliminate duplicated `.onTapGesture` blocks.
+private struct RowTapModifier: ViewModifier {
+    /// The jobs to check before expanding.
+    let jobs: [ActiveJob]
+    /// Binding to the parent row's expand state.
+    @Binding var expandState: Bool?
+    /// Current display status of the row.
+    let rowStatus: RBStatus
+    /// When true, uses `.bouncy` animation (macOS 26+); otherwise `.easeInOut`.
+    let useBouncyAnimation: Bool
+
+    /// Applies the tap gesture with the appropriate animation.
+    func body(content: Content) -> some View {
+        content.onTapGesture {
+            guard !jobs.isEmpty else { return }
+            let animation: Animation = useBouncyAnimation
+                ? .bouncy
+                : .easeInOut(duration: 0.15)
+            withAnimation(animation) {
+                if expandState == true {
+                    expandState = (rowStatus == .inProgress) ? false : nil
+                } else {
+                    expandState = true
+                }
             }
         }
     }
