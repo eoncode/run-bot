@@ -230,8 +230,6 @@ struct ActionRowView: View {
                     }
                 }
             }
-            // glassEffectID on the card VStack — the outermost view with the glass shape.
-            // Do NOT move this to Color.clear inside .background().
             .glassEffectID(group.id, in: glassNS)
 
             if let fullExpand = expandState {
@@ -246,7 +244,8 @@ struct ActionRowView: View {
         .onChange(of: rowStatus) { _, newStatus in handleStatusChange(newStatus) }
     }
 
-    // MARK: Pre-macOS-26 body (unchanged)
+    // MARK: Pre-macOS-26 body
+    /// Pre-macOS-26 fallback body using plain animations and no glass morphing.
     @ViewBuilder private var legacyBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
@@ -333,6 +332,7 @@ struct ActionRowView: View {
             }
         }
     }
+
     /// Main body of the action row: workflow name, repo, branch, and trailing meta info.
     private var rowContent: some View {
         let tickSnapshot = tick
@@ -367,6 +367,7 @@ struct ActionRowView: View {
         .padding(.trailing, RBSpacing.xs)
         .padding(.vertical, 4)
     }
+
     /// Trailing meta area: elapsed time or conclusion label, keyed off `tickSnapshot` for live updates.
     @ViewBuilder private func metaTrailing(tick tickSnapshot: Int) -> some View {
         if let start = group.firstJobStartedAt {
@@ -387,6 +388,7 @@ struct ActionRowView: View {
             .fixedSize(horizontal: true, vertical: false)
         statusBadge
     }
+
     /// Colored pill badge reflecting the current run status.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
