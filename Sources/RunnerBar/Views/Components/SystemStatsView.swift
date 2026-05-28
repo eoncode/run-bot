@@ -42,15 +42,16 @@ struct SystemStatsView: View {
 }
 
 // MARK: - GlassBadgeContainer
-/// A stable glass wrapper for live-updating chip content.
+/// A stable glass wrapper for live-updating chip content (CPU, MEM, DISK chips only).
 ///
 /// macOS 26+: uses `GlassEffectContainer { content.glassButton() }` — identical
 /// to the settings/quit toolbar button pattern in `PanelHeaderView`. This gives
 /// the same subtle frosted look with no fill, no tint, no stroke.
-/// Pre-26: plain `.background` with a faint fill.
+/// Pre-26: plain `.background` with a faint fill + stroke.
 ///
-/// Sizing: `frame(height: 28)` + `RBRadius.small` corner radius matches toolbar buttons.
+/// Corner radius: `RBRadius.small` (6 pt) — matches toolbar button rounding.
 ///
+/// ❌ Do NOT apply to DiskPillBadge (the "22% free" pill) — that has its own styling.
 /// ❌ Do NOT add fill, tint, or stroke on macOS 26+ — the glass handles all rendering.
 /// ❌ Do NOT use `.tint()` on glassEffect — renders too aggressively.
 struct GlassBadgeContainer<Content: View>: View {
@@ -63,13 +64,11 @@ struct GlassBadgeContainer<Content: View>: View {
             GlassEffectContainer {
                 content()
                     .padding(.horizontal, RBSpacing.sm)
-                    .frame(height: 28)
                     .glassButton(cornerRadius: RBRadius.small)
             }
         } else {
             content()
                 .padding(.horizontal, RBSpacing.sm)
-                .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
                         .fill(Color.primary.opacity(0.06))
@@ -129,9 +128,6 @@ struct SparklineMetricView: View {
 // MARK: - DiskPillBadge
 /// Compact pill showing disk FREE percentage.
 ///
-/// Uses the same `GlassBadgeContainer` pattern as the CPU/MEM/DISK chips
-/// so all stat badges have a consistent glass appearance.
-///
 /// Color thresholds (based on free space, not used):
 /// - `freePct < 15` → `rbDanger`  (disk nearly full)
 /// - `freePct < 40` → `rbWarning` (disk getting full)
@@ -142,12 +138,15 @@ struct DiskPillBadge: View {
 
     /// The body property.
     var body: some View {
-        GlassBadgeContainer {
-            Text(String(format: "%.0f%% free", freePct))
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(pillColor)
-                .fixedSize()
-        }
+        Text(String(format: "%.0f%% free", freePct))
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .foregroundStyle(pillColor)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(pillColor.opacity(0.15), in: Capsule())
+            .glassEffect(.regular, in: Capsule())
+            .fixedSize()
     }
 
     /// The pillColor property.
