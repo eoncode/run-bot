@@ -18,15 +18,11 @@ import SwiftUI
 //      y (frame origin) = max(visibleFrame.minY, panelTopY - totalH) ← clamped
 //              ❌ NEVER re-derive panelTopY from statusItemRect inside
 //                 resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
-//      panelH  = clampedContentH + arrowHeight
-// 3. arrowX = statusItemRect.midX - panel.frame.minX
-//    ❌ NEVER use convertToScreen(button.frame) — button.frame is button-local.
+//      panelH  = clampedContentH   (no arrowHeight — chrome removed in #1017)
+// 3. ❌ NEVER use convertToScreen(button.frame) — button.frame is button-local.
 // 4. sizingOptions = .preferredContentSize: KVO on preferredContentSize
 //    → resizeAndRepositionPanel() → setFrame(). Zero jump.
 // 5. Dismiss: NSEvent global monitor + NSWorkspace app-switch notification.
-//
-// CHROME DIMENSIONS (match NSPopover exactly):
-//   arrowHeight = 9pt, arrowWidth = 30pt, cornerRadius = 10pt
 //
 // WIDTH: Content-driven via preferredContentSize.width.
 // SwiftUI views declare their own minWidth or idealWidth — NO shared fixed width.
@@ -352,7 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelTopY = statusItemRect.minY - Self.gap
 
         let initW = Self.initPanelWidth
-        let initH: CGFloat = 300 + arrowHeight
+        let initH: CGFloat = 300  // no arrowHeight — chrome removed in #1017
         let posX = statusItemRect.midX - initW / 2
         let posY = statusItemRect.minY - initH - Self.gap
 
@@ -361,7 +357,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             display: false, animate: false
         )
 
-        // (arrow removed — plain rounded panel, no chrome)
         // Use wantsKey + makeKeyAndOrderFront to guarantee the panel receives
         // keyboard events on first open, preventing grey cold-open regression.
         // ❌ NEVER revert to orderFront(nil) — grey cold-open regression (#892).
