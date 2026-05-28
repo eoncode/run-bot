@@ -72,7 +72,7 @@ struct SettingsView: View {
     @State private var editingRunner: RunnerModel?
     /// `true` while `commitRunnerEdit` is in-flight.
     @State private var isCommitting = false
-    /// Non-nil when the last commit attempt produced errors; shown in the popover footer.
+    /// Non-nil when the last commit attempt produced errors; forwarded into `RunnerDetailPopover`.
     @State private var commitError: String?
 
     /// The appVersion property.
@@ -133,11 +133,19 @@ struct SettingsView: View {
     private func runnerEditingPopover(runner: RunnerModel) -> some View {
         RunnerDetailPopover(
             runner: runner,
+            commitError: commitError,
             onCommit: { draft in
                 guard !isCommitting else { return }
                 isCommitting = true
                 commitError = nil
-                let original = RunnerEditDraft(runner: runner)
+                // Build original from disk so the dirty-check in commitRunnerEdit
+                // compares against actual persisted values, not model defaults.
+                // (#1001 fix: was RunnerEditDraft(runner: runner) which left
+                // autoUpdate=true and proxy fields empty regardless of disk state.)
+                var original = RunnerEditDraft(runner: runner)
+                if let installPath = runner.installPath {
+                    original.load(installPath: installPath)
+                }
                 commitRunnerEdit(runner: runner, draft: draft, original: original) { result in
                     isCommitting = false
                     switch result {

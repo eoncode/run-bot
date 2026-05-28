@@ -20,6 +20,9 @@ struct RunnerDetailPopover: View {
 
     /// The runner being edited (read-only identity + info fields).
     let runner: RunnerModel
+    /// Error message from the last commit attempt, forwarded by the parent (`SettingsView`).
+    /// `nil` while no error is active. Displayed in the footer so the user knows why OK did not close.
+    let commitError: String?
     /// Called when the user taps OK. The caller runs the commit flow (Phase 3).
     let onCommit: (RunnerEditDraft) -> Void
     /// Called when the user taps Cancel or the popover is dismissed externally.
@@ -42,10 +45,12 @@ struct RunnerDetailPopover: View {
     /// Creates the popover, seeding the draft and info fields from `runner`.
     init(
         runner: RunnerModel,
+        commitError: String? = nil,
         onCommit: @escaping (RunnerEditDraft) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.runner = runner
+        self.commitError = commitError
         self.onCommit = onCommit
         self.onCancel = onCancel
 
@@ -102,17 +107,30 @@ struct RunnerDetailPopover: View {
     // MARK: - Footer
 
     /// Cancel / OK action bar at the bottom of the popover.
+    /// Shows `commitError` in red above the buttons when non-nil so the user
+    /// knows why OK did not close the popover.
     private var footerBar: some View {
-        HStack {
-            Spacer()
-            Button("Cancel", action: onCancel)
-                .keyboardShortcut(.escape, modifiers: [])
-            Button("OK") { onCommit(draft) }
-                .keyboardShortcut(.return, modifiers: [])
-                .buttonStyle(.borderedProminent)
+        VStack(alignment: .leading, spacing: 6) {
+            if let error = commitError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(Color.rbDanger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, RBSpacing.md)
+                    .padding(.top, 8)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.escape, modifiers: [])
+                Button("OK") { onCommit(draft) }
+                    .keyboardShortcut(.return, modifiers: [])
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal, RBSpacing.md)
+            .padding(.bottom, 10)
+            .padding(.top, commitError == nil ? 10 : 4)
         }
-        .padding(.horizontal, RBSpacing.md)
-        .padding(.vertical, 10)
     }
 
     // MARK: - Info Section
