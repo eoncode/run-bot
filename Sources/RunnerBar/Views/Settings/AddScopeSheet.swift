@@ -170,26 +170,16 @@ struct AddScopeSheet: View {
 
             // ── Button row ─────────────────────────────────────────────────
             HStack {
-                // Proper dismiss button — no async machinery needed for sheet dismissal.
-                Button(action: { isPresented = false }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "xmark.circle")
-                            .font(.caption)
-                        Text("Cancel")
-                            .font(.caption)
-                            .fixedSize()
-                    }
-                    .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-
                 Spacer()
+
+                Button("Cancel") { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
 
                 Button(action: confirmAdd) {
                     Text("Add Scope")
                         .font(.system(size: 13, weight: .medium))
                 }
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .disabled(!canAdd)
             }
