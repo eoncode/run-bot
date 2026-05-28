@@ -105,10 +105,6 @@ extension AppDelegate {
                 guard let self else { return }
                 self.navigate(to: self.runnerDetailView(runner: runner))
             },
-            onSelectScope: { [weak self] entry in
-                guard let self else { return }
-                self.navigate(to: self.scopeDetailView(entry: entry))
-            },
             store: observable
         ))
     }
@@ -121,22 +117,6 @@ extension AppDelegate {
         }
         return wrapEnv(RunnerDetailView(
             runner: runner,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
-        ))
-    }
-
-    /// #499: ScopeDetailView drill-down from SettingsView scope row tap.
-    func scopeDetailView(entry: ScopeEntry) -> AnyView {
-        savedNavState = .scopeDetail(entry)
-        if ProcessInfo.processInfo.environment["UI_TESTING"] == nil {
-            makeKeyForTextInput()
-        }
-        let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) ?? entry
-        return wrapEnv(ScopeDetailView(
-            scopeEntry: live,
             onBack: { [weak self] in
                 guard let self else { return }
                 self.navigate(to: self.settingsView())
@@ -159,11 +139,6 @@ extension AppDelegate {
         case .runnerDetail(let runner):
             let live = LocalRunnerStore.shared.runners.first(where: { $0.id == runner.id }) ?? runner
             return runnerDetailView(runner: live)
-        case .scopeDetail(let entry):
-            guard let live = ScopeStore.shared.entries.first(where: { $0.id == entry.id }) else {
-                return settingsView()
-            }
-            return scopeDetailView(entry: live)
         }
     }
 }

@@ -34,8 +34,6 @@ struct SettingsView: View {
     let onBack: () -> Void
     /// Called when the user taps a runner row; navigates to RunnerDetailView.
     let onSelectRunner: (RunnerModel) -> Void
-    /// #499: Called when the user taps a scope row; navigates to ScopeDetailView.
-    let onSelectScope: (ScopeEntry) -> Void
     /// The store property.
     @ObservedObject var store: RunnerViewModel
     /// The settings property.
@@ -62,6 +60,8 @@ struct SettingsView: View {
     @State private var showAddRunnerSheet = false
     /// The showAddScopeSheet property.
     @State private var showAddScopeSheet = false
+    /// #992: The scope entry currently being edited; non-nil while ScopeEditSheet is presented.
+    @State private var selectedScopeEntry: ScopeEntry?
     /// The removeErrorMessage property.
     @State private var removeErrorMessage: String?
     /// Retains the Combine subscription for ScopeStore.didMutate.
@@ -103,6 +103,17 @@ struct SettingsView: View {
         .onChange(of: localRunnerStore.isScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
         .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
+        .sheet(item: $selectedScopeEntry) { entry in
+            // #992: ScopeEditSheet replaces the old nav drill-down.
+            // isPresented binding: setting selectedScopeEntry to nil closes the sheet.
+            ScopeEditSheet(
+                scopeEntry: entry,
+                isPresented: Binding(
+                    get: { selectedScopeEntry != nil },
+                    set: { if !$0 { selectedScopeEntry = nil } }
+                )
+            )
+        }
         .modifier(removalAlertModifier)
     }
 
@@ -387,7 +398,7 @@ struct SettingsView: View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopePreferencesStore.displayName(for: entry.scope)
         // swiftlint:disable:next multiple_closures_with_trailing_closure
-        return Button(action: { onSelectScope(entry) }) {
+        return Button(action: { selectedScopeEntry = entry }) {
             HStack(spacing: 8) {
                 Text(isRepo ? "Repo" : "Org")
                     .font(.caption2)

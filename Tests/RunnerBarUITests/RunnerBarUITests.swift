@@ -37,6 +37,11 @@
 //    app.launch() from re-launching the app fresh, causing setUp to time-out
 //    waiting for .runningForeground. Always terminate any existing instance
 //    before calling app.launch().
+//
+// ⚠️ ScopeEditSheet (#992): sheet is presented modally from SettingsView.
+//    Arrival proof: app.staticTexts["Edit Scope"].exists
+//    The sheet root carries accessibilityIdentifier "scopeEditSheet".
+//    Skip gracefully (XCTSkip) when no scope rows are present in the test env.
 
 import XCTest
 
@@ -178,5 +183,53 @@ final class RunnerBarUITests: XCTestCase {
             app.staticTexts["Active local runners"].exists,
             "Settings content must not be visible on main view"
         )
+    }
+
+    // MARK: - ScopeEditSheet (#992)
+
+    /// Verifies that tapping a scope row opens ScopeEditSheet as a modal sheet,
+    /// that Cancel dismisses it back to Settings, and that Save also dismisses it.
+    ///
+    /// Skips gracefully when no scope rows exist in the test environment
+    /// (CI runners have no pre-seeded scopes).
+    func testScopeEditSheetFlow() throws {
+        openPanel()
+        tapButton(app.buttons["Settings"])
+        XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 5),
+                      "Must reach Settings")
+
+        // Scope rows have no stable identifier — they are plain Button rows whose
+        // first child is the Repo/Org type badge. We detect presence via the
+        // "Edit Scope" title that appears once a row is tapped. If no rows exist
+        // we skip rather than fail so CI stays green on fresh installs.
+        let firstScopeRow = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Repo' OR label CONTAINS 'Org'")).firstMatch
+        guard firstScopeRow.waitForExistence(timeout: 2) else {
+            print("[UITest] testScopeEditSheetFlow: no scope rows found — skipping")
+            throw XCTSkip("No scope rows present in test environment")
+        }
+
+        // ── 1. Open ScopeEditSheet ────────────────────────────────────
+        tapButton(firstScopeRow)
+        XCTAssertTrue(app.staticTexts["Edit Scope"].waitForExistence(timeout: 3),
+                      "ScopeEditSheet must show 'Edit Scope' title")
+        XCTAssertTrue(app.staticTexts["Scope Info"].exists, "Scope Info section must be visible")
+        XCTAssertTrue(app.staticTexts["Monitoring"].exists, "Monitoring section must be visible")
+
+        // ── 2. Cancel dismisses sheet ─────────────────────────────────
+        tapButton(app.buttons["Cancel"])
+        XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
+                      "Settings must reappear after Cancel")
+        XCTAssertFalse(app.staticTexts["Edit Scope"].exists,
+                       "ScopeEditSheet must not be visible after Cancel")
+
+        // ── 3. Save dismisses sheet ───────────────────────────────────
+        tapButton(firstScopeRow)
+        XCTAssertTrue(app.staticTexts["Edit Scope"].waitForExistence(timeout: 3),
+                      "ScopeEditSheet must reopen")
+        tapButton(app.buttons["Save"])
+        XCTAssertTrue(app.staticTexts["Active local runners"].waitForExistence(timeout: 3),
+                      "Settings must reappear after Save")
+        XCTAssertFalse(app.staticTexts["Edit Scope"].exists,
+                       "ScopeEditSheet must not be visible after Save")
     }
 }
