@@ -143,24 +143,15 @@ extension ScopeEditSheet {
     /// Cancel / Save button row at the bottom of the sheet.
     var buttonFooter: some View {
         HStack {
-            Button(action: { isPresented = false }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "xmark.circle")
-                        .font(.caption)
-                    Text("Cancel")
-                        .font(.caption)
-                        .fixedSize()
-                }
-                .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
             Spacer()
+            Button("Cancel") { isPresented = false }
+                .keyboardShortcut(.escape, modifiers: [])
             Button(action: confirmSave) {
                 Text("Save")
                     .font(.system(size: 13, weight: .medium))
             }
             .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.return, modifiers: [])
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, RBSpacing.sm)
