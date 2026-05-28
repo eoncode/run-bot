@@ -32,8 +32,6 @@ import SwiftUI
 struct SettingsView: View {
     /// The onBack constant.
     let onBack: () -> Void
-    /// Called when the user taps a runner row; navigates to RunnerDetailView.
-    let onSelectRunner: (RunnerModel) -> Void
     /// The store property.
     @ObservedObject var store: RunnerViewModel
     /// The settings property.
@@ -68,6 +66,14 @@ struct SettingsView: View {
     @State private var scopeMutateCancellable: AnyCancellable?
     /// Retains the Combine subscription for OAuthService.didSignOut.
     @State private var signOutCancellable: AnyCancellable?
+
+    // MARK: - Popover editing state (#1001)
+    /// The runner currently being edited in `RunnerDetailPopover`. `nil` = popover dismissed.
+    @State private var editingRunner: RunnerModel?
+    /// `true` while `commitRunnerEdit` is in-flight.
+    @State private var isCommitting = false
+    /// Non-nil when the last commit attempt produced errors; forwarded into `RunnerDetailPopover`.
+    @State private var commitError: String?
 
     /// The appVersion property.
     private var appVersion: String {
@@ -105,7 +111,6 @@ struct SettingsView: View {
         .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .sheet(item: $selectedScopeEntry) { entry in
             // #992: ScopeEditSheet replaces the old nav drill-down.
-            // isPresented binding: setting selectedScopeEntry to nil closes the sheet.
             ScopeEditSheet(
                 scopeEntry: entry,
                 isPresented: Binding(
@@ -115,6 +120,48 @@ struct SettingsView: View {
             )
         }
         .modifier(removalAlertModifier)
+        // #1001: runner editing popover
+        .popover(item: $editingRunner) { runner in
+            runnerEditingPopover(runner: runner)
+        }
+    }
+
+    // MARK: - Runner editing popover (#1001)
+
+    /// Builds the `RunnerDetailPopover` with commit/cancel wiring.
+    @ViewBuilder
+    private func runnerEditingPopover(runner: RunnerModel) -> some View {
+        RunnerDetailPopover(
+            runner: runner,
+            commitError: commitError,
+            onCommit: { draft in
+                guard !isCommitting else { return }
+                isCommitting = true
+                commitError = nil
+                // Build original from disk so the dirty-check in commitRunnerEdit
+                // compares against actual persisted values, not model defaults.
+                // (#1001 fix: was RunnerEditDraft(runner: runner) which left
+                // autoUpdate=true and proxy fields empty regardless of disk state.)
+                var original = RunnerEditDraft(runner: runner)
+                if let installPath = runner.installPath {
+                    original.load(installPath: installPath)
+                }
+                commitRunnerEdit(runner: runner, draft: draft, original: original) { result in
+                    isCommitting = false
+                    switch result {
+                    case .success:
+                        localRunnerStore.refresh()
+                        editingRunner = nil
+                    case .failure(let msgs):
+                        commitError = msgs.joined(separator: "\n")
+                    }
+                }
+            },
+            onCancel: {
+                commitError = nil
+                editingRunner = nil
+            }
+        )
     }
 
     /// Performs the addRunnerSheet operation.
@@ -162,15 +209,12 @@ struct SettingsView: View {
             isCLIAuthenticated = !success && githubToken() != nil
             isSigningIn = false
         }
-        // #723: subscribe to didSignOut via Combine — consistent with didUpdate/didMutate pattern.
         signOutCancellable = OAuthService.shared.didSignOut
             .receive(on: DispatchQueue.main)
             .sink {
                 isOAuthAuthenticated = false
                 isCLIAuthenticated = githubToken() != nil
             }
-        // #695: Subscribe to ScopeStore.didMutate via Combine instead of the old
-        // onMutate closure (which no longer exists after the Combine migration).
         scopeMutateCancellable = ScopeStore.shared.didMutate
             .receive(on: DispatchQueue.main)
             .sink { [weak store] in store?.reload() }
@@ -245,7 +289,10 @@ struct SettingsView: View {
     /// Performs the localRunnerRow operation.
     private func localRunnerRow(_ runner: RunnerModel) -> some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
-        Button(action: { onSelectRunner(runner) }) {
+        Button(action: {
+            commitError = nil
+            editingRunner = runner
+        }) {
             localRunnerRowContent(runner)
                 .contentShape(Rectangle())
         }

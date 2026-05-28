@@ -9,6 +9,12 @@ import SwiftUI
 // Extracted from AppDelegate.swift (#604).
 // All view factory methods and the enrichment helper live here so AppDelegate.swift
 // can focus on panel lifecycle, status item, and event monitor concerns.
+//
+// #1001: runnerDetailView(runner:) removed — runner editing is now a popover
+// inside SettingsView (RunnerDetailPopover). NavState.runnerDetail also removed.
+// #1001 Phase 6: onSelectRunner parameter removed from SettingsView.
+// #992: scopeDetailView(entry:) removed — ScopeEditSheet is presented directly
+// from SettingsView via @State selectedScopeEntry. NavState.scopeDetail removed.
 
 // Shared ISO-8601 date formatter for this file.
 // ISO8601DateFormatter is expensive to allocate (loads ICU calendars);
@@ -34,7 +40,6 @@ extension AppDelegate {
     // Marked nonisolated to opt out of @MainActor isolation.
     /// Performs the enrichStepsIfNeeded operation.
     nonisolated func enrichStepsIfNeeded(_ job: ActiveJob) -> ActiveJob {
-        // ActiveJob.steps[].status is typed as JobStatus — compare against enum case.
         guard job.steps.isEmpty || job.steps.contains(where: { $0.status == .inProgress }),
               let scope = scopeFromHtmlUrl(job.htmlUrl),
               let data = ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
@@ -101,26 +106,7 @@ extension AppDelegate {
                 guard let self else { return }
                 self.navigate(to: self.mainView())
             },
-            onSelectRunner: { [weak self] runner in
-                guard let self else { return }
-                self.navigate(to: self.runnerDetailView(runner: runner))
-            },
             store: observable
-        ))
-    }
-
-    /// #491: RunnerDetailView drill-down from SettingsView runner row.
-    func runnerDetailView(runner: RunnerModel) -> AnyView {
-        savedNavState = .runnerDetail(runner)
-        if ProcessInfo.processInfo.environment["UI_TESTING"] == nil {
-            makeKeyForTextInput()
-        }
-        return wrapEnv(RunnerDetailView(
-            runner: runner,
-            onBack: { [weak self] in
-                guard let self else { return }
-                self.navigate(to: self.settingsView())
-            }
         ))
     }
 
@@ -136,9 +122,6 @@ extension AppDelegate {
             return stepLogFromMain(job: live, step: step)
         case .settings:
             return settingsView()
-        case .runnerDetail(let runner):
-            let live = LocalRunnerStore.shared.runners.first(where: { $0.id == runner.id }) ?? runner
-            return runnerDetailView(runner: live)
         }
     }
 }
