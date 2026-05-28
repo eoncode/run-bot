@@ -1,6 +1,7 @@
 // RunnerEditDraft.swift
 // RunnerBar
 // swiftlint:disable missing_docs
+import Foundation
 import RunnerBarCore
 
 // MARK: - RunnerEditDraft
