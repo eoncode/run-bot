@@ -47,11 +47,14 @@ struct SystemStatsView: View {
 // MARK: - GlassBadgeContainer
 /// A stable glass wrapper for live-updating chip content.
 ///
-/// Places `.glassEffect()` in a `.background {}` block so SwiftUI evaluates
-/// the glass layer independently from the foreground content. The
-/// `CABackdropLayer` never re-composites on timer ticks — only the inner
-/// text/sparkline diffs and redraws. This is the correct pattern for Liquid
-/// Glass on views that update frequently (CPU, MEM).
+/// Places the glass layer in a `.background {}` block so SwiftUI evaluates
+/// it independently from the foreground content — the `CABackdropLayer`
+/// never re-composites on timer ticks. Only the inner text/sparkline diffs.
+///
+/// Visual intent: barely-there rounded chip. A faint tinted fill gives the
+/// shape definition; a very subtle glass hint adds depth; a light stroke
+/// traces the edge. All three are intentionally low-opacity so they sit
+/// quietly behind the content in dark mode without washing it out.
 struct GlassBadgeContainer<Content: View>: View {
     /// The semantic tint colour for the badge (danger / warning / primary).
     let labelColor: Color
@@ -65,9 +68,13 @@ struct GlassBadgeContainer<Content: View>: View {
             .padding(.vertical, 3)
             .background {
                 Capsule()
-                    .glassEffect(.regular.tint(labelColor.opacity(0.15)), in: Capsule())
+                    .fill(labelColor.opacity(0.10))
+                    .background {
+                        Capsule()
+                            .glassEffect(.regular.tint(labelColor.opacity(0.08)), in: Capsule())
+                    }
             }
-            .overlay(Capsule().strokeBorder(labelColor.opacity(0.35), lineWidth: 0.5))
+            .overlay(Capsule().strokeBorder(labelColor.opacity(0.20), lineWidth: 0.5))
     }
 }
 
