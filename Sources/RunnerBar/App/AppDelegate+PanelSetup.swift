@@ -6,62 +6,53 @@ import SwiftUI
 
 // MARK: - AppDelegate + Panel Setup
 //
-// Owns NSPanel construction, PanelChromeView wiring, KVO on
-// preferredContentSize, and Combine subscriptions that drive icon/store updates.
+// Owns NSPanel construction, KVO on preferredContentSize, and Combine
+// subscriptions that drive icon/store updates.
 // Called once from applicationDidFinishLaunching via setupPanel().
 //
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
 
-/// Extension responsible for NSPanel construction, PanelChromeView wiring,
-/// KVO observation, and Combine subscriptions that drive icon and store updates.
+/// Extension responsible for NSPanel construction, KVO observation, and
+/// Combine subscriptions that drive icon and store updates.
 extension AppDelegate {
 
     // MARK: Panel construction
 
-    /// Builds the NSPanel, embeds the SwiftUI hosting controller inside
-    /// PanelChromeView, wires KVO, and starts all Combine subscriptions.
+    /// Builds the NSPanel, embeds the SwiftUI hosting controller directly in the
+    /// panel content view, wires KVO, and starts all Combine subscriptions.
     func setupPanel() {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
         controller.view.autoresizingMask = [.width, .height]
+        controller.view.wantsLayer = true
         hostingController = controller
 
         let initW = Self.initPanelWidth
-        let chromeView = PanelChromeView(
-            frame: NSRect(x: 0, y: 0, width: initW, height: 300 + arrowHeight)
-        )
-        chromeView.addSubview(controller.view)
-        chrome = chromeView
-
-        // Both production and UI testing use [.borderless, .nonactivatingPanel].
-        // .titled was previously added for UI testing to help app.windows, but
-        // app.windows is ALWAYS EMPTY for nonactivatingPanel regardless of style
-        // mask — we query app.staticTexts directly instead. .titled only caused
-        // a visible ghost header in the panel during tests with no benefit.
-        // ❌ NEVER add .titled — it shows unwanted title bar chrome.
         let newPanel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: initW, height: 300 + arrowHeight),
+            contentRect: NSRect(x: 0, y: 0, width: initW, height: 300),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        newPanel.contentView = chromeView
+
+        newPanel.contentViewController = controller
         newPanel.isOpaque = false
-        newPanel.backgroundColor = NSColor(white: 1, alpha: 0.001)
+        newPanel.backgroundColor = .clear
         newPanel.hasShadow = true
-        // Production: .popUpMenu keeps the panel above all normal windows.
-        // UI testing: .popUpMenu panels are excluded from the AX window list by
-        // the OS, so app.windows is always empty. .floating panels ARE included.
-        // ❌ NEVER change this condition. ❌ NEVER use .popUpMenu in UI tests.
         let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
         newPanel.level = isUITesting ? .floating : .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
-        // Pin appearance to darkAqua so the glass chrome never toggles on click.
-        // ❌ NEVER remove or set to nil — causes light/dark toggling on click.
-        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
         newPanel.appearance = NSAppearance(named: .darkAqua)
+
+        // Local experiment for #1017: use plain rounded CA corners instead of
+        // PanelChromeView arrow/mask. Do not commit until validated.
+        newPanel.contentView?.wantsLayer = true
+        newPanel.contentView?.layer?.cornerRadius = cornerRadius
+        newPanel.contentView?.layer?.masksToBounds = true
+        newPanel.contentView?.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.98).cgColor
+
         panel = newPanel
 
         setupKVO(controller: controller)

@@ -65,8 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?           // internal: required for AppDelegate+Navigation
     /// The panel property.
     var panel: KeyablePanel?               // internal: required for AppDelegate+Navigation
-    /// The chrome property.
-    var chrome: PanelChromeView?           // internal: required for AppDelegate+Navigation
     /// The hostingController property.
     var hostingController: NSHostingController<AnyView>? // internal: required for AppDelegate+Navigation
     /// The observable constant.
@@ -191,7 +189,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
         guard panelIsOpen,
               let panel,
-              let chrome,
               let button = statusItem?.button,
               let topY = panelTopY else { return }
 
@@ -199,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let contentW = min(max(preferred.width, Self.minWidth), maxWidth)
         let contentH = min(max(preferred.height, 60), maxHeight)
-        let totalH = contentH + arrowHeight
+        let totalH = contentH
 
         // In UI tests button.window is nil — fall back to centred position on main screen.
         // ❌ NEVER remove this fallback — required for testPanelOpensAndShowsWorkflowsSection.
@@ -217,15 +214,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
-        let posX = statusItemRect.midX - contentW / 2
+        let visibleFrame = statusItemScreen.visibleFrame
+        let posX = min(max(statusItemRect.midX - contentW / 2, visibleFrame.minX + 8), visibleFrame.maxX - contentW - 8)
         let rawPosY = topY - totalH
-        let screenMinY = statusItemScreen.visibleFrame.minY
-        let posY = max(rawPosY, screenMinY)
+        let posY = max(rawPosY, visibleFrame.minY)
 
         panel.setFrame(NSRect(x: posX, y: posY, width: contentW, height: totalH),
                        display: true, animate: false)
-
-        chrome.arrowX = statusItemRect.midX - panel.frame.minX
     }
 
     // MARK: - Navigation
@@ -366,7 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             display: false, animate: false
         )
 
-        chrome?.arrowX = statusItemRect.midX - posX
+        // (arrow removed — plain rounded panel, no chrome)
         // Use wantsKey + makeKeyAndOrderFront to guarantee the panel receives
         // keyboard events on first open, preventing grey cold-open regression.
         // ❌ NEVER revert to orderFront(nil) — grey cold-open regression (#892).
