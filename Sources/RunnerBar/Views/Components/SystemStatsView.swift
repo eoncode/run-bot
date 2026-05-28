@@ -51,10 +51,12 @@ struct SystemStatsView: View {
 /// it independently from the foreground content — the `CABackdropLayer`
 /// never re-composites on timer ticks. Only the inner text/sparkline diffs.
 ///
-/// Visual intent: barely-there rounded chip. A faint tinted fill gives the
-/// shape definition; a very subtle glass hint adds depth; a light stroke
-/// traces the edge. All three are intentionally low-opacity so they sit
-/// quietly behind the content in dark mode without washing it out.
+/// Visual intent: barely-there rounded chip. The glass tint alone at low
+/// opacity gives shape definition and depth without washing out the content
+/// in dark mode. A light stroke traces the edge.
+///
+/// ❌ Do NOT add a `.fill(labelColor.opacity(...))` layer on top of the glass —
+/// it compounds with the tint and makes badges appear too bright/solid.
 struct GlassBadgeContainer<Content: View>: View {
     /// The semantic tint colour for the badge (danger / warning / primary).
     let labelColor: Color
@@ -67,12 +69,14 @@ struct GlassBadgeContainer<Content: View>: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background {
-                Capsule()
-                    .fill(labelColor.opacity(0.10))
-                    .background {
-                        Capsule()
-                            .glassEffect(.regular.tint(labelColor.opacity(0.08)), in: Capsule())
-                    }
+                if #available(macOS 26, *) {
+                    Capsule()
+                        .glassEffect(.regular.tint(labelColor.opacity(0.08)), in: Capsule())
+                } else {
+                    Capsule()
+                        .fill(labelColor.opacity(0.08))
+                        .overlay(Capsule().strokeBorder(labelColor.opacity(0.20), lineWidth: 0.5))
+                }
             }
             .overlay(Capsule().strokeBorder(labelColor.opacity(0.20), lineWidth: 0.5))
     }
@@ -141,8 +145,17 @@ struct DiskPillBadge: View {
             .fixedSize()
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(pillColor.opacity(0.15), in: Capsule())
-            .glassEffect(.regular, in: Capsule())
+            .background {
+                if #available(macOS 26, *) {
+                    Capsule()
+                        .glassEffect(.regular.tint(pillColor.opacity(0.08)), in: Capsule())
+                } else {
+                    Capsule()
+                        .fill(pillColor.opacity(0.08))
+                        .overlay(Capsule().strokeBorder(pillColor.opacity(0.20), lineWidth: 0.5))
+                }
+            }
+            .overlay(Capsule().strokeBorder(pillColor.opacity(0.20), lineWidth: 0.5))
             .fixedSize()
     }
 
