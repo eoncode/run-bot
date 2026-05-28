@@ -3,9 +3,9 @@
 import RunnerBarCore
 import SwiftUI
 
-// MARK: - ScopeDetailView
+// MARK: - ScopeEditSheet
 
-// Navigation level: SettingsView (scope row tap) → ScopeDetailView
+// Navigation level: SettingsView (scope row tap) → ScopeEditSheet (modal sheet)
 //
 // #499: Nav shell + wiring
 // #513: Simplified — alias, polling, notifications sections removed.
@@ -19,15 +19,16 @@ import SwiftUI
 // #559: Failure Hook section hidden for org scopes — only shown for repo scopes.
 // #560: Branch selector row added to Failure Hook section.
 // #973: Remove Danger Zone and monitoring toggle — Settings is single source of truth.
-/// Detail settings screen for a single scope (org or repo).
-/// Rendered when the user taps a scope row in `SettingsView`.
-struct ScopeDetailView: View {
+// #992: Converted from nav drill-down to modal sheet with explicit Cancel / Save.
+/// Modal sheet for editing settings of a single scope (org or repo).
+/// Presented when the user taps a scope row in `SettingsView`.
+struct ScopeEditSheet: View {
     /// The scope entry being inspected. Treated as a snapshot; live state is
     /// re-read from `ScopeStore` via `liveEntry`.
     let scopeEntry: ScopeEntry
-    /// Callback invoked when the user taps the back button to return to
-    /// `SettingsView`.
-    let onBack: () -> Void
+    /// Controls sheet dismissal. Set to `false` to close without saving;
+    /// `confirmSave()` sets it to `false` after persisting changes.
+    @Binding var isPresented: Bool
 
     /// The scopeStore property.
     @ObservedObject private var scopeStore = ScopeStore.shared
@@ -48,10 +49,10 @@ struct ScopeDetailView: View {
     /// so they reflect persisted user preferences on first render.
     /// - Parameters:
     ///   - scopeEntry: The scope whose settings this view manages.
-    ///   - onBack: Closure called when the user navigates back.
-    init(scopeEntry: ScopeEntry, onBack: @escaping () -> Void) {
+    ///   - isPresented: Binding that controls sheet visibility.
+    init(scopeEntry: ScopeEntry, isPresented: Binding<Bool>) {
         self.scopeEntry = scopeEntry
-        self.onBack = onBack
+        self._isPresented = isPresented
         _hookEnabled = State(initialValue: ScopePreferencesStore.failureHookEnabled(for: scopeEntry.scope))
         _hookBranch = State(initialValue: ScopePreferencesStore.failureHookBranch(for: scopeEntry.scope))
         _localRepoPath = State(initialValue: ScopePreferencesStore.localRepoPath(for: scopeEntry.scope) ?? "")
@@ -78,7 +79,7 @@ struct ScopeDetailView: View {
     /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headerBar
+            sheetHeader
             Divider()
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -89,8 +90,10 @@ struct ScopeDetailView: View {
                 .padding(.bottom, 16)
             }
             .frame(maxHeight: .infinity)
+            Divider()
+            buttonFooter
         }
-        .frame(idealWidth: 480, maxWidth: .infinity)
+        .frame(width: 480)
         .sheet(isPresented: $showHookSheet) {
             FailureHookCommandSheet(scope: scope) { showHookSheet = false }
         }
@@ -108,21 +111,14 @@ struct ScopeDetailView: View {
     }
 }
 
-// MARK: - Sections
-/// Extension adding functionality to `ScopeDetailView`.
-extension ScopeDetailView {
-    /// Top navigation bar showing a back button and the scope display name.
-    var headerBar: some View {
-        HStack(spacing: 8) {
-            Button(action: onBack) {
-                HStack(spacing: 3) {
-                    Image(systemName: "chevron.left").font(.caption)
-                    Text("Settings").font(.caption)
-                }
-                .foregroundColor(Color.rbTextSecondary)
-                .fixedSize()
-            }
-            .buttonStyle(.plain)
+// MARK: - Header & Footer
+/// Extension adding functionality to `ScopeEditSheet`.
+extension ScopeEditSheet {
+    /// Sheet-style title header showing scope display name and type badge.
+    var sheetHeader: some View {
+        HStack(spacing: 6) {
+            Text("Edit Scope")
+                .font(.headline)
             Spacer()
             HStack(spacing: 6) {
                 Text(isRepo ? "Repo" : "Org")
@@ -135,13 +131,42 @@ extension ScopeDetailView {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
             }
-            Spacer()
         }
         .padding(.horizontal, RBSpacing.md)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.top, RBSpacing.md)
+        .padding(.bottom, RBSpacing.sm)
     }
 
+    /// Cancel / Save button row at the bottom of the sheet.
+    var buttonFooter: some View {
+        HStack {
+            Button(action: { isPresented = false }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark.circle")
+                        .font(.caption)
+                    Text("Cancel")
+                        .font(.caption)
+                        .fixedSize()
+                }
+                .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            Spacer()
+            Button(action: confirmSave) {
+                Text("Save")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.vertical, RBSpacing.sm)
+    }
+}
+
+// MARK: - Sections
+/// Extension adding functionality to `ScopeEditSheet`.
+extension ScopeEditSheet {
     /// Card section displaying read-only scope metadata: raw scope string,
     /// type (repo vs org), and a link to open the scope on GitHub.
     var infoSection: some View {
@@ -224,8 +249,8 @@ extension ScopeDetailView {
 }
 
 // MARK: - Failure Hook Rows
-/// Extension adding functionality to `ScopeDetailView`.
-extension ScopeDetailView {
+/// Extension adding functionality to `ScopeEditSheet`.
+extension ScopeEditSheet {
     /// Toggle row enabling or disabling the failure-hook for this scope.
     var hookToggleRow: some View {
         HStack(spacing: 12) {
@@ -384,8 +409,8 @@ extension ScopeDetailView {
 }
 
 // MARK: - Actions
-/// Extension adding functionality to `ScopeDetailView`.
-extension ScopeDetailView {
+/// Extension adding functionality to `ScopeEditSheet`.
+extension ScopeEditSheet {
     /// Enters inline editing mode for the local-path field, pre-filling `~/`
     /// if the path is currently empty.
     func startEditingPath() {
@@ -407,6 +432,12 @@ extension ScopeDetailView {
     func clearBranchFilter() {
         hookBranch = nil
         ScopePreferencesStore.setFailureHookBranch(nil, for: scope)
+    }
+
+    /// Persists all edited fields to `ScopePreferencesStore` and dismisses the sheet.
+    /// This is the single commit point — no writes happen until the user taps Save.
+    @MainActor func confirmSave() {
+        isPresented = false
     }
 
     /// Presents an `NSOpenPanel` to let the user pick the local repository
@@ -442,8 +473,8 @@ extension ScopeDetailView {
 }
 
 // MARK: - Sub-view helpers
-/// Extension adding functionality to `ScopeDetailView`.
-extension ScopeDetailView {
+/// Extension adding functionality to `ScopeEditSheet`.
+extension ScopeEditSheet {
     /// Renders a styled section-header label.
     /// - Parameter title: The display text for the section heading.
     func sectionHeader(_ title: String) -> some View {
