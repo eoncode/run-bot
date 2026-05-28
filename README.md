@@ -57,7 +57,7 @@
 ## Install
 
 ```bash
-curl -fsSL https://eonist.github.io/runner-bar/install.sh | bash
+curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 ```
 
 ---
@@ -74,9 +74,9 @@ curl -fsSL https://eonist.github.io/runner-bar/install.sh | bash
 ## Quick deploy
 
 ```bash
-git pull && bash build.sh && pkill RunnerBar; sleep 1 && open dist/RunnerBar.app 2>&1
+git pull && git fetch && bash build.sh && pkill RunnerBar; sleep 1 && open dist/RunnerBar.app 2>&1
 bash build.sh && bash deploy.sh
-curl -fsSL https://eonist.github.io/runner-bar/install.sh | bash
+curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 ```
 
 **Test a branch:**

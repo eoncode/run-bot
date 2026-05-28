@@ -47,11 +47,16 @@ struct SystemStatsView: View {
 // MARK: - GlassBadgeContainer
 /// A stable glass wrapper for live-updating chip content.
 ///
-/// Places `.glassEffect()` in a `.background {}` block so SwiftUI evaluates
-/// the glass layer independently from the foreground content. The
-/// `CABackdropLayer` never re-composites on timer ticks — only the inner
-/// text/sparkline diffs and redraws. This is the correct pattern for Liquid
-/// Glass on views that update frequently (CPU, MEM).
+/// Places the glass layer in a `.background {}` block so SwiftUI evaluates
+/// it independently from the foreground content — the `CABackdropLayer`
+/// never re-composites on timer ticks. Only the inner text/sparkline diffs.
+///
+/// Visual intent: barely-there rounded chip. The glass tint alone at low
+/// opacity gives shape definition and depth without washing out the content
+/// in dark mode. A light stroke traces the edge.
+///
+/// ❌ Do NOT add a `.fill(labelColor.opacity(...))` layer on top of the glass —
+/// it compounds with the tint and makes badges appear too bright/solid.
 struct GlassBadgeContainer<Content: View>: View {
     /// The semantic tint colour for the badge (danger / warning / primary).
     let labelColor: Color
@@ -64,10 +69,16 @@ struct GlassBadgeContainer<Content: View>: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background {
-                Capsule()
-                    .glassEffect(.regular.tint(labelColor.opacity(0.15)), in: Capsule())
+                if #available(macOS 26, *) {
+                    Capsule()
+                        .glassEffect(.regular.tint(labelColor.opacity(0.08)), in: Capsule())
+                } else {
+                    Capsule()
+                        .fill(labelColor.opacity(0.08))
+                        .overlay(Capsule().strokeBorder(labelColor.opacity(0.20), lineWidth: 0.5))
+                }
             }
-            .overlay(Capsule().strokeBorder(labelColor.opacity(0.35), lineWidth: 0.5))
+            .overlay(Capsule().strokeBorder(labelColor.opacity(0.20), lineWidth: 0.5))
     }
 }
 
@@ -134,8 +145,17 @@ struct DiskPillBadge: View {
             .fixedSize()
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(pillColor.opacity(0.15), in: Capsule())
-            .glassEffect(.regular, in: Capsule())
+            .background {
+                if #available(macOS 26, *) {
+                    Capsule()
+                        .glassEffect(.regular.tint(pillColor.opacity(0.08)), in: Capsule())
+                } else {
+                    Capsule()
+                        .fill(pillColor.opacity(0.08))
+                        .overlay(Capsule().strokeBorder(pillColor.opacity(0.20), lineWidth: 0.5))
+                }
+            }
+            .overlay(Capsule().strokeBorder(pillColor.opacity(0.20), lineWidth: 0.5))
             .fixedSize()
     }
 
