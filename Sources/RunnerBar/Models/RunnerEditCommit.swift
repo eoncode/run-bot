@@ -41,7 +41,7 @@ func commitRunnerEdit(
     runner: RunnerModel,
     draft: RunnerEditDraft,
     original: RunnerEditDraft,
-    completion: @escaping (CommitResult) -> Void
+    completion: @escaping @Sendable (CommitResult) -> Void
 ) {
     DispatchQueue.global(qos: .userInitiated).async {
         var errors: [String] = []
@@ -126,7 +126,7 @@ func commitRunnerEdit(
 // MARK: - Private helpers
 
 /// Dispatches the final `CommitResult` on the main queue.
-private func finalize(_ errors: [String], _ completion: @escaping (CommitResult) -> Void) {
+private func finalize(_ errors: [String], _ completion: @escaping @Sendable (CommitResult) -> Void) {
     DispatchQueue.main.async {
         completion(errors.isEmpty ? .success : .failure(errors))
     }
