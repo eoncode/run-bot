@@ -12,6 +12,8 @@ import RunnerBarCore
 //
 // #455: Removed .jobDetail, .actionDetail, .actionJobDetail, .actionStepLog.
 // Navigation from the main view now goes directly: inline step tap → .stepLog.
+// #992: Removed .scopeDetail — ScopeEditSheet is now a modal sheet presented
+// directly from SettingsView, not a nav drill-down.
 
 /// Represents the currently visible navigation screen inside the RunnerBar panel.
 enum NavState {
@@ -23,6 +25,4 @@ enum NavState {
     case settings
     /// Runner detail drill-down reached from SettingsView runner row tap. (#491)
     case runnerDetail(RunnerModel)
-    /// Scope detail drill-down reached from SettingsView scope row tap. (#499)
-    case scopeDetail(ScopeEntry)
 }
