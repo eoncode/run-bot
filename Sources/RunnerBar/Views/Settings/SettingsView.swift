@@ -146,7 +146,7 @@ struct SettingsView: View {
                 if let installPath = runner.installPath {
                     original.load(installPath: installPath)
                 }
-                commitRunnerEdit(runner: runner, draft: draft, original: original) { result in
+                commitRunnerEdit(runner: runner, draft: draft, original: original) { @MainActor result in
                     isCommitting = false
                     switch result {
                     case .success:
