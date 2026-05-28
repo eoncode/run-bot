@@ -44,36 +44,41 @@ struct SystemStatsView: View {
 // MARK: - GlassBadgeContainer
 /// A stable glass wrapper for live-updating chip content.
 ///
-/// Places the glass layer in a `.background {}` block so SwiftUI evaluates
-/// it independently from the foreground content — the `CABackdropLayer`
-/// never re-composites on timer ticks. Only the inner text/sparkline diffs.
+/// macOS 26+: uses `GlassEffectContainer { content.glassButton() }` — identical
+/// to the settings/quit toolbar button pattern in `PanelHeaderView`. This gives
+/// the same subtle frosted look with no fill, no tint, no stroke.
+/// Pre-26: plain `.background` with a faint fill.
 ///
-/// Shape: `RoundedRectangle(cornerRadius: RBRadius.small)` — matches the
-/// settings and quit button shape language in `PanelHeaderView`.
+/// Sizing: `frame(height: 28)` + `RBRadius.small` corner radius matches toolbar buttons.
 ///
-/// ❌ Do NOT use Capsule — use RoundedRectangle to match toolbar button shape.
+/// ❌ Do NOT add fill, tint, or stroke on macOS 26+ — the glass handles all rendering.
 /// ❌ Do NOT use `.tint()` on glassEffect — renders too aggressively.
 struct GlassBadgeContainer<Content: View>: View {
-    /// The semantic tint colour for the badge stroke (danger / warning / primary).
-    let labelColor: Color
     /// The live-updating chip content rendered in the foreground.
     @ViewBuilder let content: () -> Content
 
-    private let shape = RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
-
     /// The body property.
     var body: some View {
-        content()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background {
-                if #available(macOS 26, *) {
-                    shape.glassEffect(.regular, in: shape)
-                } else {
-                    shape.fill(Color.primary.opacity(0.06))
-                }
+        if #available(macOS 26, *) {
+            GlassEffectContainer {
+                content()
+                    .padding(.horizontal, RBSpacing.sm)
+                    .frame(height: 28)
+                    .glassButton(cornerRadius: RBRadius.small)
             }
-            .overlay(shape.strokeBorder(labelColor.opacity(0.30), lineWidth: 0.5))
+        } else {
+            content()
+                .padding(.horizontal, RBSpacing.sm)
+                .frame(height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5)
+                        )
+                )
+        }
     }
 }
 
@@ -124,6 +129,9 @@ struct SparklineMetricView: View {
 // MARK: - DiskPillBadge
 /// Compact pill showing disk FREE percentage.
 ///
+/// Uses the same `GlassBadgeContainer` pattern as the CPU/MEM/DISK chips
+/// so all stat badges have a consistent glass appearance.
+///
 /// Color thresholds (based on free space, not used):
 /// - `freePct < 15` → `rbDanger`  (disk nearly full)
 /// - `freePct < 40` → `rbWarning` (disk getting full)
@@ -132,25 +140,14 @@ struct DiskPillBadge: View {
     /// The freePct constant.
     let freePct: Double
 
-    private let shape = RoundedRectangle(cornerRadius: RBRadius.small, style: .continuous)
-
     /// The body property.
     var body: some View {
-        Text(String(format: "%.0f%% free", freePct))
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .foregroundStyle(pillColor)
-            .fixedSize()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background {
-                if #available(macOS 26, *) {
-                    shape.glassEffect(.regular, in: shape)
-                } else {
-                    shape.fill(Color.primary.opacity(0.06))
-                }
-            }
-            .overlay(shape.strokeBorder(pillColor.opacity(0.30), lineWidth: 0.5))
-            .fixedSize()
+        GlassBadgeContainer {
+            Text(String(format: "%.0f%% free", freePct))
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(pillColor)
+                .fixedSize()
+        }
     }
 
     /// The pillColor property.
@@ -175,7 +172,7 @@ struct HeaderStatsBar: View {
     var body: some View {
         HStack(spacing: RBSpacing.md) {
             let cpuPct = statsVM.stats.cpuPct
-            GlassBadgeContainer(labelColor: chipColor(for: cpuPct)) {
+            GlassBadgeContainer {
                 SparklineMetricView(
                     label: "CPU",
                     value: String(format: "%.1f%%", cpuPct),
@@ -190,7 +187,7 @@ struct HeaderStatsBar: View {
             let memTotal = statsVM.stats.memTotalGB
             let memUsed = statsVM.stats.memUsedGB
             let memPct = memTotal > 0 ? memUsed / memTotal * 100 : 0.0
-            GlassBadgeContainer(labelColor: chipColor(for: memPct)) {
+            GlassBadgeContainer {
                 SparklineMetricView(
                     label: "MEM",
                     value: String(format: "%.1f/%.1fGB", memUsed, memTotal),
@@ -202,11 +199,11 @@ struct HeaderStatsBar: View {
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
 
-            HStack(spacing: 5) {
+            HStack(spacing: RBSpacing.xs) {
                 let diskTotal = statsVM.stats.diskTotalGB
                 let diskUsed = statsVM.stats.diskUsedGB
                 let diskUsedPct = diskTotal > 0 ? diskUsed / diskTotal * 100 : 0.0
-                GlassBadgeContainer(labelColor: chipColor(for: diskUsedPct)) {
+                GlassBadgeContainer {
                     SparklineMetricView(
                         label: "DISK",
                         value: String(format: "%d/%dGB",
@@ -226,13 +223,5 @@ struct HeaderStatsBar: View {
         }
         .padding(.horizontal, RBSpacing.md)
         .padding(.vertical, RBSpacing.sm)
-    }
-
-    /// Returns the semantic badge colour for a given usage percentage.
-    /// - Parameter pct: Usage percentage (0–100).
-    private func chipColor(for pct: Double) -> Color {
-        if pct > 85 { return .rbDanger }
-        if pct > 60 { return .rbWarning }
-        return .primary
     }
 }
