@@ -1,0 +1,22 @@
+name: Dependency Check
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly Monday
+  workflow_dispatch:
+
+jobs:
+  check-deps:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for outdated Swift packages
+        uses: MarcoEidinger/swift-package-dependencies-check@v1
+        with:
+          failWhenOutdated: true
+
+      - name: Scan for known vulnerabilities (OSV)
+        uses: google/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --lockfile=Package.resolved
