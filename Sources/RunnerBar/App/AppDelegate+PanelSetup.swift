@@ -12,6 +12,21 @@ import SwiftUI
 //
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
+//
+// CHROME NOTE (#1017):
+// PanelChromeView has been removed. The panel uses native window-server rounded
+// corners: backgroundColor = .clear + isOpaque = false on a borderless NSPanel
+// gives the system HUD appearance including rounded corners, drawn below the
+// layer tree. This survives SwiftUI .sheet attachment without going rectangular.
+//
+// Liquid glass / vibrancy is applied as a SwiftUI .background(.regularMaterial)
+// in PanelMainView — not as an AppKit layer.
+//
+// ❌ NEVER add panel.appearance = NSAppearance(...) — forces appearance on child
+//    sheet windows and breaks their system chrome.
+// ❌ NEVER add contentView.layer.cornerRadius — fights AppKit sheet compositing.
+// ❌ NEVER add contentView.layer.masksToBounds — clips child NSWindows.
+// ❌ NEVER add contentView.layer.backgroundColor — conflicts with clear panel bg.
 
 /// Extension responsible for NSPanel construction, KVO observation, and
 /// Combine subscriptions that drive icon and store updates.
@@ -25,7 +40,6 @@ extension AppDelegate {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
         controller.view.autoresizingMask = [.width, .height]
-        controller.view.wantsLayer = true
         hostingController = controller
 
         let initW = Self.initPanelWidth
@@ -37,6 +51,8 @@ extension AppDelegate {
         )
 
         newPanel.contentViewController = controller
+        // backgroundColor = .clear + isOpaque = false → window server draws native
+        // rounded corners on the borderless panel. No CALayer manipulation needed.
         newPanel.isOpaque = false
         newPanel.backgroundColor = .clear
         newPanel.hasShadow = true
@@ -44,14 +60,8 @@ extension AppDelegate {
         newPanel.level = isUITesting ? .floating : .popUpMenu
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         newPanel.animationBehavior = .none
-        newPanel.appearance = NSAppearance(named: .darkAqua)
-
-        // Local experiment for #1017: use plain rounded CA corners instead of
-        // PanelChromeView arrow/mask. Do not commit until validated.
-        newPanel.contentView?.wantsLayer = true
-        newPanel.contentView?.layer?.cornerRadius = cornerRadius
-        newPanel.contentView?.layer?.masksToBounds = false  // masksToBounds=true clips child NSWindows (popovers/sheets) — cornerRadius renders fine without it
-        newPanel.contentView?.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.98).cgColor
+        // No appearance override — let the system / user appearance propagate
+        // naturally to child windows (sheets).
 
         panel = newPanel
 
@@ -93,7 +103,7 @@ extension AppDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self else { return }
-                log("AppDelegate › didUpdate fired — panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
+                log("AppDelegate \u{203a} didUpdate fired \u{2014} panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
                 self.updateStatusIcon()
                 self.observable.reload(localRunnerStore: LocalRunnerStore.shared)
             }
@@ -105,7 +115,7 @@ extension AppDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard self != nil else { return }
-                log("AppDelegate › ScopeStore.didMutate — restarting RunnerStore")
+                log("AppDelegate \u{203a} ScopeStore.didMutate \u{2014} restarting RunnerStore")
                 RunnerStore.shared.start()
             }
             .store(in: &cancellables)
