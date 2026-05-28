@@ -14,13 +14,13 @@ import SwiftUI
 // #539: Layout improvements -- section labels, card structure aligned with spec.
 // #544: Failure Hook section added between Monitoring and Danger Zone.
 // #546: Local Path row — inline editing, NSOpenPanel folder picker, tilde pre-fill.
-//       Popover is closed before NSOpenPanel runs and reopened after, so the
-//       panel is never obscured by the popover.
 // #559: Failure Hook section hidden for org scopes — only shown for repo scopes.
 // #560: Branch selector row added to Failure Hook section.
 // #973: Remove Danger Zone and monitoring toggle — Settings is single source of truth.
 // #992: Converted from nav drill-down to modal sheet with explicit Cancel / Save.
 //       All edits are staged locally; ScopePreferencesStore is only written on Save.
+//       NSOpenPanel runs without closing the panel — the NSPanel is non-activating
+//       so it does not obscure the picker.
 /// Modal sheet for editing settings of a single scope (org or repo).
 /// Presented when the user taps a scope row in `SettingsView`.
 struct ScopeEditSheet: View {
@@ -436,34 +436,31 @@ extension ScopeEditSheet {
         isPresented = false
     }
 
-    /// Presents an `NSOpenPanel` to let the user pick the local repository
-    /// folder. Closes the panel before opening the picker so the floating
-    /// window does not obscure the sheet (#546).
+    /// Presents an `NSOpenPanel` to let the user pick the local repository folder.
+    /// The NSPanel is non-activating so it does not obscure the file picker —
+    /// no close/reopen dance is needed when the sheet is presented modally (#992).
     /// Updates draft `localRepoPath` only — not persisted until Save.
     func openFolderPicker() {
-        let appDelegate = NSApp.delegate as? AppDelegate
-        appDelegate?.closePanel()
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Select"
-        panel.message = "Choose the local folder for \(scope)"
+        let picker = NSOpenPanel()
+        picker.canChooseFiles = false
+        picker.canChooseDirectories = true
+        picker.allowsMultipleSelection = false
+        picker.prompt = "Select"
+        picker.message = "Choose the local folder for \(scope)"
         if !localRepoPath.isEmpty {
             let expanded = NSString(string: localRepoPath).expandingTildeInPath
-            panel.directoryURL = URL(fileURLWithPath: expanded)
+            picker.directoryURL = URL(fileURLWithPath: expanded)
         } else {
-            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
         NSApp.activate(ignoringOtherApps: true)
-        panel.begin { response in
-            if response == .OK, let url = panel.url {
+        picker.begin { response in
+            if response == .OK, let url = picker.url {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
                 let abs = url.path
                 let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
                 localRepoPath = tilde
             }
-            appDelegate?.openPanel()
         }
     }
 }
