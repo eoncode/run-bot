@@ -50,7 +50,7 @@ extension AppDelegate {
         // PanelChromeView arrow/mask. Do not commit until validated.
         newPanel.contentView?.wantsLayer = true
         newPanel.contentView?.layer?.cornerRadius = cornerRadius
-        newPanel.contentView?.layer?.masksToBounds = true
+        newPanel.contentView?.layer?.masksToBounds = false  // masksToBounds=true clips child NSWindows (popovers/sheets) — cornerRadius renders fine without it
         newPanel.contentView?.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.98).cgColor
 
         panel = newPanel
