@@ -91,16 +91,22 @@ struct RunnerEditDraft: Equatable {
 
     // MARK: - Private disk helpers
 
-    private mutating func loadRunnerJSON(installPath: String) {
+    /// Reads and parses the `.runner` JSON at `installPath`, applies `autoUpdate`
+    /// and `workFolder` to the draft, and returns the raw dictionary so callers
+    /// can extract additional fields (e.g. `platform`, `agentVersion`) without a
+    /// second read of the same file.
+    @discardableResult
+    mutating func loadRunnerJSON(installPath: String) -> [String: Any]? {
         let path = installPath + "/.runner"
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return }
+        else { return nil }
         let disableUpdate = json["disableUpdate"] as? Bool ?? false
         autoUpdate = !disableUpdate
         if let wf = json["workFolder"] as? String, !wf.isEmpty {
             workFolder = wf
         }
+        return json
     }
 
     private mutating func loadProxy(installPath: String) {
