@@ -176,53 +176,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OAuthService.shared.handleCallback(url)
     }
 
-    // MARK: - Panel resize
-
-    // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
-    // ❌ NEVER re-derive panelTopY here. ❌ NEVER call from a background thread.
-    //
-    // UI_TESTING note: in UI tests button.window is nil (no real menu-bar backing
-    // window). The guard below falls back to a centred rect on the main screen so
-    // the panel is positioned on-screen and XCTest's AX server can find it in
-    // app.windows. ❌ NEVER remove the button.window fallback.
-    // swiftlint:disable:next missing_docs
-    func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
-        guard panelIsOpen,
-              let panel,
-              let button = statusItem?.button,
-              let topY = panelTopY else { return }
-
-        let preferred = hostingController?.preferredContentSize ?? CGSize(width: Self.initPanelWidth, height: 300)
-
-        let contentW = min(max(preferred.width, Self.minWidth), maxWidth)
-        let contentH = min(max(preferred.height, 60), maxHeight)
-        let totalH = contentH
-
-        // In UI tests button.window is nil — fall back to centred position on main screen.
-        // ❌ NEVER remove this fallback — required for testPanelOpensAndShowsWorkflowsSection.
-        let statusItemRect: NSRect
-        if let windowFrame = button.window?.frame {
-            statusItemRect = windowFrame
-        } else {
-            let screen = NSScreen.main ?? NSScreen.screens[0]
-            let sf = screen.visibleFrame
-            statusItemRect = NSRect(
-                x: sf.midX - contentW / 2,
-                y: sf.maxY,
-                width: contentW,
-                height: 0
-            )
-        }
-
-        let visibleFrame = statusItemScreen.visibleFrame
-        let posX = min(max(statusItemRect.midX - contentW / 2, visibleFrame.minX + 8), visibleFrame.maxX - contentW - 8)
-        let rawPosY = topY - totalH
-        let posY = max(rawPosY, visibleFrame.minY)
-
-        panel.setFrame(NSRect(x: posX, y: posY, width: contentW, height: totalH),
-                       display: true, animate: false)
-    }
-
     // MARK: - Navigation
 
     // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
@@ -265,24 +218,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Hides the panel without resetting the view hierarchy. (#1015)
-    /// Used by workspaceObserver when the user switches to another app.
-    /// Preserves hostingController.rootView so the sheet/popover is restored
-    /// intact when the user taps the status bar icon again.
-    /// ❌ NEVER call from togglePanel() — use closePanel() for explicit dismissal.
-    func hidePanel() {
-        guard panelIsOpen else { return }
-        panel?.wantsKey = false
-        panel?.orderOut(nil)
-        panelIsOpen = false
-        panelTopY = nil
-        panelVisibilityState.isOpen = false
-        removeEventMonitor()
-        removeWorkspaceObserver()
-        // Intentionally does NOT reset hostingController.rootView.
-        // openPanel() restores the current view via savedNavState on next open.
-    }
-
     /// Performs the removeEventMonitor operation.
     func removeEventMonitor() {
         if let monitor = eventMonitor { NSEvent.removeMonitor(monitor); eventMonitor = nil }
@@ -293,19 +228,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let opt = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(opt)
             workspaceObserver = nil
-        }
-    }
-
-    // MARK: - Toggle
-
-    // internal (not private) so AppDelegate+StatusItem.swift can reference
-    // it via #selector(togglePanel) from a separate file.
-    /// Performs the togglePanel operation.
-    @objc func togglePanel() {
-        if panelIsOpen {
-            closePanel()
-        } else {
-            openPanel()
         }
     }
 
