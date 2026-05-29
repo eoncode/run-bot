@@ -276,18 +276,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Restores windows hidden by `hidePopoverWindowsPreservingSheets()`.
     @discardableResult
     func restorePopoverWindowsPreservingSheetsIfNeeded() -> Bool {
-        guard let popover,
-              popover.isShown,
-              let popoverWindow = popover.contentViewController?.view.window
+        guard preservedSheetWindowHide,
+              let popoverWindow = popover?.contentViewController?.view.window
         else { return false }
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
             context.allowsImplicitAnimation = false
-            popoverWindow.orderFrontRegardless()
+            popoverWindow.orderFront(nil)
         }
         preservedSheetWindowHide = false
         return true
+    }
+
+    /// Nudges the NSPopover backing window through AppKit's normal key-window
+    /// path without re-showing or resizing it.
+    ///
+    /// The native popover Liquid Glass sometimes cold-opens in a grey inactive
+    /// material state. Navigating to Settings already fixes it because that path
+    /// activates the app for text input. Doing the same harmless activation nudge
+    /// after open keeps the natural black popover glass without adding tint or
+    /// changing the positioning anchor.
+    func stabilizePopoverGlassAppearance() {
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Performs the removeEventMonitor operation.
@@ -327,8 +338,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelIsOpen = true
         panelVisibilityState.isOpen = true
 
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        NSApp.activate(ignoringOtherApps: true)
+        if !restorePopoverWindowsPreservingSheetsIfNeeded() {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+        stabilizePopoverGlassAppearance()
         resizeAndRepositionPanel()
 
         // Only navigate if we have a saved state AND the current rootView is
@@ -343,8 +356,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 navigate(to: restored)
             }
         }
-
-        restorePopoverWindowsPreservingSheetsIfNeeded()
 
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.preservedSheetWindowHide else { return }
