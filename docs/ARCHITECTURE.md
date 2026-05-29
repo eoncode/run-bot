@@ -40,14 +40,15 @@ attachment. Rounded corners survive `.sheet` natively with zero extra code.
 
 - ❌ NEVER re-call `popover.show()` on resize.
 - ❌ NEVER revert to `NSPanel` without understanding the `.sheet` corner regression.
-- ❌ NEVER remove `dismissSheets()` from `closePanel()` or `hidePanel()` — see §SheetOrphans below.
+- ❌ NEVER call `popover.performClose()` while a sheet is open without first ordering out via `hidePopoverWindowsPreservingSheets()` — see §SheetOrphans below.
 
 ---
 
-## Sheet Orphans — Why dismissSheets() Must Run Before performClose() §SheetOrphans
+## Sheet Orphans — How the Final Architecture Prevents Them §SheetOrphans
 
 > Regression guard ref: issue #1017  
-> See also: `AppDelegate.swift` `closePanel()`, `hidePanel()`
+> See also: `AppDelegate.swift` `closePanel()`, `hidePanel()`,
+>           `hidePopoverWindowsPreservingSheets()`, `restorePopoverWindowsPreservingSheetsIfNeeded()`
 
 ### The problem
 
@@ -58,7 +59,7 @@ an **orphan**: the window is still visible and still intercepts all mouse events
 but has no SwiftUI view tree driving it. The result is the app appearing completely
 frozen — clicks land on the invisible orphan sheet window, not on the popover content.
 
-### What was tried and failed
+### What was tried and failed (B1 / B2 / B3)
 
 1. **`popoverShouldClose` returning `false` when `hasActiveSheet`** — blocks the
    user from interacting with other apps. The popover cannot be dismissed at all
@@ -72,38 +73,39 @@ frozen — clicks land on the invisible orphan sheet window, not on the popover 
    all reset to their defaults. The sheet disappears, and the orphaned sheet
    `NSWindow` from before close is still attached — SettingsView is frozen.
 
-3. **Not resetting `hostingController.rootView` at all on close** — same result.
-   The orphaned sheet NSWindow from the previous session blocks hit-testing
-   regardless of what SwiftUI state we put in the hosting controller.
+3. **Calling `endSheet(_:)` on all child windows before `performClose()` (`dismissSheets()`)** —
+   this correctly removes the orphan, but also destroys the sheet's SwiftUI
+   `@State`. On re-open the user is back at a blank `SettingsView` with the sheet
+   gone. Acceptable for `closePanel()` (explicit dismiss), but unacceptable for
+   `hidePanel()` (outside-tap / workspace-switch), where the user expects to
+   return to exactly what they were doing.
 
-### The fix
+### The final fix — order out, don't close
 
-Call `endSheet(_:)` on every sheet window **before** `performClose()`. This lets
-AppKit synchronously remove the child sheet window from the window hierarchy
-before the popover closes, preventing the orphan entirely.
+`hidePanel()` calls `hidePopoverWindowsPreservingSheets()` when `hasActiveSheet`
+is true. This **orders the popover window out** (`orderOut(nil)`) without calling
+`performClose()`, leaving the sheet `NSWindow` fully attached and the SwiftUI
+`@State` intact. On re-open, `restorePopoverWindowsPreservingSheetsIfNeeded()`
+calls `orderFront(nil)` on the same window — the sheet re-appears exactly as the
+user left it.
 
-```swift
-private func dismissSheets() {
-    guard let win = popover?.contentViewController?.view.window else { return }
-    for sheet in win.sheets {
-        win.endSheet(sheet)
-    }
-}
-```
+`closePanel()` (explicit dismiss — Escape / back nav) never has a live sheet
+because the user can only trigger explicit close from the main view or settings
+header, both of which require the sheet to already be dismissed. `hasActiveSheet`
+is false at that point, so `performClose()` is safe.
 
-Call `dismissSheets()` at the top of both `closePanel()` and `hidePanel()`.
-
-### Sheet state after re-open
+### Sheet state after re-open (explicit close path)
 
 Sheet `@State` (e.g. `showAddScopeSheet = true`) **cannot** be preserved across
-a close/open cycle. `@State` lives in the SwiftUI view value type and is reset
-when a new view is constructed. `savedNavState = .settings` is still preserved
-so re-opening navigates back to `SettingsView` (interactive, no sheet). This is
-the correct and only viable behaviour.
+an explicit close/open cycle. `@State` lives in the SwiftUI view value type and
+is reset when a new view is constructed. `savedNavState = .settings` is preserved
+so re-opening navigates back to `SettingsView` (interactive, no sheet open). This
+is the correct and only viable behaviour for the explicit-close path.
 
-- ❌ NEVER try to "restore" sheet state by keeping the old rootView.
+- ❌ NEVER try to "restore" sheet state by keeping the old rootView on explicit close.
 - ❌ NEVER try to "restore" sheet state by passing sheet-open flags as init params.
-- ❌ NEVER remove `dismissSheets()` from `closePanel()` or `hidePanel()`.
+- ❌ NEVER call `performClose()` from `hidePanel()` when `hasActiveSheet` is true — use `hidePopoverWindowsPreservingSheets()` instead.
+- ❌ NEVER add `endSheet(_:)` / `dismissSheets()` to `hidePanel()` — it destroys sheet `@State` and was the discarded B3 approach.
 
 ---
 
@@ -152,7 +154,8 @@ reset to `mainView()` (so the SwiftUI tree is fresh), but `savedNavState` is
 kept — `openPanel()` reads it and calls `navigate(to: validatedView(for: saved))`.
 
 - ❌ NEVER clear `savedNavState` inside `closePanel()` or `hidePanel()`.
-- ❌ NEVER try to preserve sheet @State across close — see §SheetOrphans.
+- ❌ NEVER try to preserve sheet @State across an **explicit close** (`closePanel()`) — see §SheetOrphans.
+- Sheet @State IS preserved across `hidePanel()` (outside-tap / workspace-switch) via `hidePopoverWindowsPreservingSheets()` — this is intentional.
 
 ---
 
