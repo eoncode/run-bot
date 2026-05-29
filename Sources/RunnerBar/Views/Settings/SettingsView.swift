@@ -6,45 +6,6 @@ import RunnerBarCore
 import ServiceManagement
 import SwiftUI
 
-// MARK: - SettingsSubScreen
-
-// #inline-sheets: All sub-screens are pushed inline within the panel using
-// this enum + ZStack/.move(edge:) transitions. No .sheet modifier is used
-// anywhere in SettingsView or its sub-screens.
-//
-// REASON: SwiftUI .sheet on macOS creates an NSSheetWindow child window.
-// macOS sheet-hosting mode forces the parent NSPanel into rectangular-corner
-// mode, overriding the PanelChromeView CAShapeLayer mask. This is unfixable
-// at the layer level — the only fix is to never create child windows.
-//
-// See docs/status-bar-view.md for full decision log.
-
-/// Enumerates all sub-screens that can be pushed inline within SettingsView.
-private enum SettingsSubScreen: Equatable {
-    /// The main settings list.
-    case main
-    /// AddRunnerSheet pushed inline.
-    case addRunner
-    /// AddScopeSheet pushed inline.
-    case addScope
-    /// ScopeEditSheet pushed inline for a specific scope entry.
-    case editScope(ScopeEntry)
-    /// RunnerDetailPopover pushed inline for a specific runner.
-    case editRunner(RunnerModel)
-
-    /// Equatable conformance — compare by case only, not associated values.
-    static func == (lhs: SettingsSubScreen, rhs: SettingsSubScreen) -> Bool {
-        switch (lhs, rhs) {
-        case (.main, .main): return true
-        case (.addRunner, .addRunner): return true
-        case (.addScope, .addScope): return true
-        case (.editScope(let a), .editScope(let b)): return a.id == b.id
-        case (.editRunner(let a), .editRunner(let b)): return a.id == b.id
-        default: return false
-        }
-    }
-}
-
 // MARK: - SettingsView
 // Settings view — complete implementation for all phases 1-6.
 //
@@ -93,6 +54,12 @@ struct SettingsView: View {
     @State private var hasLoadedOnce = false
     /// The runnerPendingRemoval property.
     @State private var runnerPendingRemoval: RunnerModel?
+    /// The showAddRunnerSheet property.
+    @State private var showAddRunnerSheet = false
+    /// The showAddScopeSheet property.
+    @State private var showAddScopeSheet = false
+    /// #992: The scope entry currently being edited; non-nil while ScopeEditSheet is presented.
+    @State private var selectedScopeEntry: ScopeEntry?
     /// The removeErrorMessage property.
     @State private var removeErrorMessage: String?
     /// Retains the Combine subscription for ScopeStore.didMutate.
@@ -100,17 +67,12 @@ struct SettingsView: View {
     /// Retains the Combine subscription for OAuthService.didSignOut.
     @State private var signOutCancellable: AnyCancellable?
 
-    // MARK: - Inline nav state (#inline-sheets)
-    /// Active sub-screen. `.main` means show the settings list.
-    /// All sub-screens are pushed inline — no .sheet modifiers anywhere.
-    @State private var subScreen: SettingsSubScreen = .main
-    /// Direction used for the slide transition.
-    @State private var navForward = true
-
-    // MARK: - Runner editing state (#1001)
+    // MARK: - Popover editing state (#1001)
+    /// The runner currently being edited in `RunnerDetailPopover`. `nil` = popover dismissed.
+    @State private var editingRunner: RunnerModel?
     /// `true` while `commitRunnerEdit` is in-flight.
     @State private var isCommitting = false
-    /// Non-nil when the last commit attempt produced errors.
+    /// Non-nil when the last commit attempt produced errors; forwarded into `RunnerDetailPopover`.
     @State private var commitError: String?
 
     /// The appVersion property.
@@ -128,67 +90,6 @@ struct SettingsView: View {
 
     /// The body property.
     var body: some View {
-        ZStack {
-            switch subScreen {
-            case .main:
-                mainSettingsScreen
-                    .transition(.move(edge: navForward ? .leading : .trailing))
-            case .addRunner:
-                AddRunnerSheet(
-                    isPresented: Binding(
-                        get: { subScreen == .addRunner },
-                        set: { if !$0 { navigateBack() } }
-                    ),
-                    onComplete: { localRunnerStore.refresh() }
-                )
-                .transition(.move(edge: navForward ? .trailing : .leading))
-            case .addScope:
-                AddScopeSheet(
-                    isPresented: Binding(
-                        get: { subScreen == .addScope },
-                        set: { if !$0 { navigateBack() } }
-                    )
-                )
-                .transition(.move(edge: navForward ? .trailing : .leading))
-            case .editScope(let entry):
-                ScopeEditSheet(
-                    scopeEntry: entry,
-                    isPresented: Binding(
-                        get: { if case .editScope = subScreen { return true }; return false },
-                        set: { if !$0 { navigateBack() } }
-                    )
-                )
-                .transition(.move(edge: navForward ? .trailing : .leading))
-            case .editRunner(let runner):
-                runnerEditScreen(runner: runner)
-                    .transition(.move(edge: navForward ? .trailing : .leading))
-            }
-        }
-        .animation(.easeInOut(duration: 0.22), value: subScreen)
-        .frame(idealWidth: 480, maxWidth: .infinity)
-        .onAppear(perform: onAppearAction)
-        .onChange(of: localRunnerStore.isScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
-        .modifier(removalAlertModifier)
-    }
-
-    // MARK: - Navigation helpers
-
-    /// Push a sub-screen (slide from right).
-    private func navigateTo(_ screen: SettingsSubScreen) {
-        navForward = true
-        subScreen = screen
-    }
-
-    /// Return to main settings (slide from left).
-    private func navigateBack() {
-        navForward = false
-        subScreen = .main
-    }
-
-    // MARK: - Main settings screen
-
-    /// The main settings list (header + scroll).
-    private var mainSettingsScreen: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
             Divider()
@@ -203,13 +104,33 @@ struct SettingsView: View {
             }
             .frame(maxHeight: .infinity)
         }
+        .frame(idealWidth: 480, maxWidth: .infinity)
+        .onAppear(perform: onAppearAction)
+        .onChange(of: localRunnerStore.isScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
+        .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
+        .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
+        .sheet(item: $selectedScopeEntry) { entry in
+            // #992: ScopeEditSheet replaces the old nav drill-down.
+            ScopeEditSheet(
+                scopeEntry: entry,
+                isPresented: Binding(
+                    get: { selectedScopeEntry != nil },
+                    set: { if !$0 { selectedScopeEntry = nil } }
+                )
+            )
+        }
+        .modifier(removalAlertModifier)
+        // #1001: runner editing sheet (was .popover — converted to .sheet to match ScopeEditSheet)
+        .sheet(item: $editingRunner) { runner in
+            runnerEditingPopover(runner: runner)
+        }
     }
 
-    // MARK: - Runner editing screen (#1001, #inline-sheets)
+    // MARK: - Runner editing popover (#1001)
 
-    /// Builds the `RunnerDetailPopover` pushed inline (no .sheet).
+    /// Builds the `RunnerDetailPopover` with commit/cancel wiring.
     @ViewBuilder
-    private func runnerEditScreen(runner: RunnerModel) -> some View {
+    private func runnerEditingPopover(runner: RunnerModel) -> some View {
         RunnerDetailPopover(
             runner: runner,
             commitError: commitError,
@@ -217,6 +138,10 @@ struct SettingsView: View {
                 guard !isCommitting else { return }
                 isCommitting = true
                 commitError = nil
+                // Build original from disk so the dirty-check in commitRunnerEdit
+                // compares against actual persisted values, not model defaults.
+                // (#1001 fix: was RunnerEditDraft(runner: runner) which left
+                // autoUpdate=true and proxy fields empty regardless of disk state.)
                 var original = RunnerEditDraft(runner: runner)
                 if let installPath = runner.installPath {
                     original.load(installPath: installPath)
@@ -226,7 +151,7 @@ struct SettingsView: View {
                     switch result {
                     case .success:
                         localRunnerStore.refresh()
-                        navigateBack()
+                        editingRunner = nil
                     case .failure(let msgs):
                         commitError = msgs.joined(separator: "\n")
                     }
@@ -234,11 +159,15 @@ struct SettingsView: View {
             },
             onCancel: {
                 commitError = nil
-                navigateBack()
+                editingRunner = nil
             }
         )
     }
 
+    /// Performs the addRunnerSheet operation.
+    private func addRunnerSheet() -> some View {
+        AddRunnerSheet(isPresented: $showAddRunnerSheet) { localRunnerStore.refresh() }
+    }
     /// The removalAlertModifier property.
     private var removalAlertModifier: RemovalAlertModifier {
         RemovalAlertModifier(
@@ -317,7 +246,7 @@ struct SettingsView: View {
             Text("Active local runners")
                 .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
             Spacer()
-            Button(action: { navigateTo(.addRunner) }, label: {
+            Button(action: { showAddRunnerSheet = true }, label: {
                 Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
             })
             .buttonStyle(.plain)
@@ -362,7 +291,7 @@ struct SettingsView: View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         Button(action: {
             commitError = nil
-            navigateTo(.editRunner(runner))
+            editingRunner = runner
         }) {
             localRunnerRowContent(runner)
                 .contentShape(Rectangle())
@@ -482,7 +411,7 @@ struct SettingsView: View {
                 .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
             Spacer()
             // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: { navigateTo(.addScope) }) {
+            Button(action: { showAddScopeSheet = true }) {
                 Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
             }
             .buttonStyle(.plain)
@@ -516,7 +445,7 @@ struct SettingsView: View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopePreferencesStore.displayName(for: entry.scope)
         // swiftlint:disable:next multiple_closures_with_trailing_closure
-        return Button(action: { navigateTo(.editScope(entry)) }) {
+        return Button(action: { selectedScopeEntry = entry }) {
             HStack(spacing: 8) {
                 Text(isRepo ? "Repo" : "Org")
                     .font(.caption2)

@@ -1,27 +1,11 @@
 // ScopeDetailView.swift
 // RunnerBar
-// #inline-sheets: showHookSheet and showBranchSheet .sheet modifiers replaced
-// with ScopeDetailSubScreen enum + ZStack/.move transitions. No child windows.
 import RunnerBarCore
 import SwiftUI
 
-// MARK: - ScopeDetailSubScreen
-
-/// Navigation state for ScopeEditSheet inline sub-screens.
-/// Replaces the old showHookSheet / showBranchSheet @State booleans that
-/// each created a child NSSheetWindow and broke the panel chrome.
-private enum ScopeDetailSubScreen: Equatable {
-    /// The main scope-edit form.
-    case main
-    /// FailureHookCommandSheet pushed inline.
-    case hookCommand
-    /// BranchSelectorSheet pushed inline.
-    case branchSelector
-}
-
 // MARK: - ScopeEditSheet
 
-// Navigation level: SettingsView (scope row tap) → ScopeEditSheet (inline push)
+// Navigation level: SettingsView (scope row tap) → ScopeEditSheet (modal sheet)
 //
 // #499: Nav shell + wiring
 // #513: Simplified — alias, polling, notifications sections removed.
@@ -37,24 +21,22 @@ private enum ScopeDetailSubScreen: Equatable {
 //       All edits are staged locally; ScopePreferencesStore is only written on Save.
 //       NSOpenPanel runs without closing the panel — the NSPanel is non-activating
 //       so it does not obscure the picker.
-// #inline-sheets: .sheet modifiers for HookCommand and BranchSelector replaced
-//       with inline ZStack push. See ScopeDetailSubScreen.
 /// Modal sheet for editing settings of a single scope (org or repo).
 /// Presented when the user taps a scope row in `SettingsView`.
 struct ScopeEditSheet: View {
     /// The scope entry being inspected. Treated as a snapshot; live state is
     /// re-read from `ScopeStore` via `liveEntry`.
     let scopeEntry: ScopeEntry
-    /// Controls dismissal. Set to `false` to close without saving;
+    /// Controls sheet dismissal. Set to `false` to close without saving;
     /// `confirmSave()` sets it to `false` after persisting changes.
     @Binding var isPresented: Bool
 
     /// The scopeStore property.
     @ObservedObject private var scopeStore = ScopeStore.shared
-    /// Active sub-screen — replaces showHookSheet + showBranchSheet.
-    @State private var subScreen: ScopeDetailSubScreen = .main
-    /// Slide direction: true = forward (push), false = back (pop).
-    @State private var navForward = true
+    /// The showHookSheet property.
+    @State private var showHookSheet = false
+    /// The showBranchSheet property.
+    @State private var showBranchSheet = false
     /// Draft: whether the failure hook is enabled. Written to store only on Save.
     @State private var hookEnabled: Bool
     /// Draft: selected branch filter. Written to store only on Save.
@@ -64,7 +46,11 @@ struct ScopeEditSheet: View {
     /// The isEditingPath property.
     @State private var isEditingPath = false
 
-    /// Creates the view, seeding `@State` values from `ScopePreferencesStore`.
+    /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
+    /// so they reflect persisted user preferences on first render.
+    /// - Parameters:
+    ///   - scopeEntry: The scope whose settings this view manages.
+    ///   - isPresented: Binding that controls sheet visibility.
     init(scopeEntry: ScopeEntry, isPresented: Binding<Bool>) {
         self.scopeEntry = scopeEntry
         self._isPresented = isPresented
@@ -73,64 +59,27 @@ struct ScopeEditSheet: View {
         _localRepoPath = State(initialValue: ScopePreferencesStore.localRepoPath(for: scopeEntry.scope) ?? "")
     }
 
-    /// The up-to-date entry from `ScopeStore`.
+    /// The up-to-date entry from `ScopeStore`, or `nil` if the scope has been
+    /// removed since this view was created.
     private var liveEntry: ScopeEntry? {
         scopeStore.entries.first(where: { $0.id == scopeEntry.id })
     }
     /// Whether monitoring is currently enabled for this scope.
+    /// Falls back to the snapshot value if the live entry is unavailable.
     private var isEnabled: Bool { liveEntry?.isEnabled ?? scopeEntry.isEnabled }
-    /// The raw scope string.
+    /// The raw scope string (e.g. `"owner/repo"` or `"owner"`).
     private var scope: String { scopeEntry.scope }
-    /// `true` when the scope string contains a slash (repository scope).
+    /// `true` when the scope string contains a slash, indicating a repository
+    /// scope rather than an organisation scope.
     private var isRepo: Bool { scope.contains("/") }
-    /// The persisted failure-hook terminal command.
+    /// The persisted failure-hook terminal command for this scope, if set.
+    /// Command is edited via FailureHookCommandSheet which has its own save flow.
     private var hookCommand: String? { ScopePreferencesStore.failureHookCommand(for: scope) }
-    /// The GitHub web URL for this scope.
+    /// The GitHub web URL for this scope, used to render the "Open on GitHub" link.
     private var gitHURL: URL? { URL(string: "https://github.com/\(scope)") }
 
     /// The body property.
     var body: some View {
-        ZStack {
-            switch subScreen {
-            case .main:
-                mainEditForm
-                    .transition(.move(edge: navForward ? .leading : .trailing))
-            case .hookCommand:
-                FailureHookCommandSheet(
-                    scope: scope,
-                    onDismiss: {
-                        navForward = false
-                        subScreen = .main
-                    }
-                )
-                .transition(.move(edge: navForward ? .trailing : .leading))
-            case .branchSelector:
-                BranchSelectorSheet(
-                    scope: scope,
-                    onDismiss: {
-                        navForward = false
-                        subScreen = .main
-                    },
-                    onSelect: { chosen in
-                        hookBranch = chosen
-                        navForward = false
-                        subScreen = .main
-                    }
-                )
-                .transition(.move(edge: navForward ? .trailing : .leading))
-            }
-        }
-        .animation(.easeInOut(duration: 0.22), value: subScreen)
-        .frame(width: 440)
-        .accessibilityIdentifier("scopeEditSheet")
-    }
-}
-
-// MARK: - Main form
-/// Extension adding functionality to `ScopeEditSheet`.
-extension ScopeEditSheet {
-    /// The main edit form (header + scroll + footer).
-    var mainEditForm: some View {
         VStack(alignment: .leading, spacing: 0) {
             sheetHeader
             Divider()
@@ -146,13 +95,29 @@ extension ScopeEditSheet {
             Divider()
             buttonFooter
         }
+        .frame(width: 440)
+        .accessibilityIdentifier("scopeEditSheet")
+        .sheet(isPresented: $showHookSheet) {
+            FailureHookCommandSheet(scope: scope) { showHookSheet = false }
+        }
+        .sheet(isPresented: $showBranchSheet) {
+            BranchSelectorSheet(
+                scope: scope,
+                onDismiss: { showBranchSheet = false },
+                onSelect: { chosen in
+                    // Stage locally only — not persisted until Save.
+                    hookBranch = chosen
+                    showBranchSheet = false
+                }
+            )
+        }
     }
 }
 
 // MARK: - Header & Footer
 /// Extension adding functionality to `ScopeEditSheet`.
 extension ScopeEditSheet {
-    /// Sheet-style title header.
+    /// Sheet-style title header showing scope display name and type badge.
     var sheetHeader: some View {
         HStack(spacing: 6) {
             Text("Edit Scope")
@@ -175,7 +140,7 @@ extension ScopeEditSheet {
         .padding(.bottom, RBSpacing.sm)
     }
 
-    /// Cancel / Save button row.
+    /// Cancel / Save button row at the bottom of the sheet.
     var buttonFooter: some View {
         HStack {
             Spacer()
@@ -196,7 +161,8 @@ extension ScopeEditSheet {
 // MARK: - Sections
 /// Extension adding functionality to `ScopeEditSheet`.
 extension ScopeEditSheet {
-    /// Read-only scope metadata card.
+    /// Card section displaying read-only scope metadata: raw scope string,
+    /// type (repo vs org), and a link to open the scope on GitHub.
     var infoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Scope Info")
@@ -231,7 +197,8 @@ extension ScopeEditSheet {
         }
     }
 
-    /// Monitoring status card.
+    /// Card section displaying the current monitoring status for this scope as a read-only label.
+    /// Toggle and remove controls live in Settings — see #973.
     var monitoringSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Monitoring")
@@ -257,7 +224,8 @@ extension ScopeEditSheet {
         }
     }
 
-    /// Failure hook configuration card (repo scopes only).
+    /// Card section for configuring the failure-hook command.
+    /// Only rendered for repository scopes (`isRepo == true`).
     var failureHookSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Failure Hook")
@@ -277,7 +245,8 @@ extension ScopeEditSheet {
 // MARK: - Failure Hook Rows
 /// Extension adding functionality to `ScopeEditSheet`.
 extension ScopeEditSheet {
-    /// Toggle row enabling or disabling the failure-hook.
+    /// Toggle row enabling or disabling the failure-hook for this scope.
+    /// Updates draft state only — not persisted until Save.
     var hookToggleRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -297,13 +266,11 @@ extension ScopeEditSheet {
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 10)
     }
 
-    /// Branch filter row — pushes BranchSelectorSheet inline.
+    /// Row for selecting the branch filter applied by the failure hook.
+    /// Tapping opens `BranchSelectorSheet`; an ×-button clears the draft filter.
     var branchRow: some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
-        Button(action: {
-            navForward = true
-            subScreen = .branchSelector
-        }) {
+        Button(action: { showBranchSheet = true }) {
             HStack(spacing: 8) {
                 Text("Branch")
                     .font(.system(size: 12))
@@ -340,7 +307,8 @@ extension ScopeEditSheet {
         .buttonStyle(.plain)
     }
 
-    /// Local repo path row.
+    /// Row for setting the local repository path used by the failure hook.
+    /// Supports inline text editing and an NSOpenPanel folder-picker.
     var localPathRow: some View {
         HStack(spacing: 8) {
             Text("Local Path")
@@ -378,6 +346,7 @@ extension ScopeEditSheet {
                 .buttonStyle(.plain)
                 .help("Browse for folder…")
                 if !localRepoPath.isEmpty {
+                    // Clears draft only — not persisted until Save.
                     Button(action: { localRepoPath = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
@@ -391,13 +360,11 @@ extension ScopeEditSheet {
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 9)
     }
 
-    /// Command row — pushes FailureHookCommandSheet inline.
+    /// Row for configuring the hook command. Tapping opens
+    /// `FailureHookCommandSheet` where the user can enter or edit the command.
     var commandRow: some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
-        Button(action: {
-            navForward = true
-            subScreen = .hookCommand
-        }) {
+        Button(action: { showHookSheet = true }) {
             HStack(spacing: 8) {
                 Text("Command")
                     .font(.system(size: 12))
@@ -431,25 +398,28 @@ extension ScopeEditSheet {
 // MARK: - Actions
 /// Extension adding functionality to `ScopeEditSheet`.
 extension ScopeEditSheet {
-    /// Enters inline editing mode for the local-path field.
+    /// Enters inline editing mode for the local-path field, pre-filling `~/`
+    /// if the path is currently empty.
     func startEditingPath() {
         if localRepoPath.isEmpty { localRepoPath = "~/" }
         isEditingPath = true
     }
 
-    /// Normalises the draft local path.
+    /// Normalises the draft local path: trims whitespace and clears the `~/` placeholder.
+    /// Does NOT write to `ScopePreferencesStore` — that happens in `confirmSave()`.
     func commitLocalPath() {
         isEditingPath = false
         let trimmed = localRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
         localRepoPath = (trimmed == "~/") ? "" : trimmed
     }
 
-    /// Clears the draft branch filter.
+    /// Clears the draft branch filter. Does NOT write to `ScopePreferencesStore`.
     func clearBranchFilter() {
         hookBranch = nil
     }
 
-    /// Writes all draft fields to `ScopePreferencesStore` and dismisses.
+    /// Single commit point: writes all three draft fields to `ScopePreferencesStore`,
+    /// then dismisses the sheet. Nothing is persisted before this runs.
     @MainActor func confirmSave() {
         ScopePreferencesStore.setFailureHookEnabled(hookEnabled, for: scope)
         ScopePreferencesStore.setFailureHookBranch(hookBranch, for: scope)
@@ -458,7 +428,10 @@ extension ScopeEditSheet {
         isPresented = false
     }
 
-    /// Opens an `NSOpenPanel` to let the user pick the local repository folder.
+    /// Presents an `NSOpenPanel` to let the user pick the local repository folder.
+    /// The NSPanel is non-activating so it does not obscure the file picker —
+    /// no close/reopen dance is needed when the sheet is presented modally (#992).
+    /// Updates draft `localRepoPath` only — not persisted until Save.
     func openFolderPicker() {
         let picker = NSOpenPanel()
         picker.canChooseFiles = false
@@ -488,13 +461,16 @@ extension ScopeEditSheet {
 /// Extension adding functionality to `ScopeEditSheet`.
 extension ScopeEditSheet {
     /// Renders a styled section-header label.
+    /// - Parameter title: The display text for the section heading.
     func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
             .padding(.horizontal, RBSpacing.md).padding(.top, 12).padding(.bottom, 4)
     }
 
-    /// Wraps `content` in the standard rounded-card background.
+    /// Wraps `content` in the standard rounded-card background used across all
+    /// settings sections.
+    /// - Parameter content: The view builder producing the card's contents.
     func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             content()
@@ -505,6 +481,10 @@ extension ScopeEditSheet {
     }
 
     /// Renders a label–value row inside an info card.
+    /// - Parameters:
+    ///   - label: The left-aligned field name (fixed 100 pt width).
+    ///   - value: The monospaced value string displayed to the right.
+    ///   - copyable: When `true`, a copy-to-clipboard button is appended.
     func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(label)
