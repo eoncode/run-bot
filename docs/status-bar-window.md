@@ -263,22 +263,38 @@ private func dismissSheets() {
 Sheet is not re-opened (impossible — `@State` cannot be restored), but SettingsView is fully
 interactive. This is the correct and only viable behaviour.
 
-**Invariants:**
+**Invariants (as of B3 — superseded, see below):**
 - ❌ NEVER remove `dismissSheets()` from `closePanel()` or `hidePanel()`.
 - ❌ NEVER try to restore sheet `@State` across close/open via any mechanism.
 - ❌ NEVER leave `performClose()` as the first call without `dismissSheets()` preceding it.
 
+> **⚠️ Update — B3 was also discarded.**
+> `dismissSheets()` correctly prevents orphan windows on explicit close, but calling it
+> from `hidePanel()` (outside-tap / workspace-switch) **destroys sheet `@State`** — the
+> user loses their open sheet on every app-switch. Not acceptable.
+>
+> **Final fix: `hidePopoverWindowsPreservingSheets()` / `restorePopoverWindowsPreservingSheetsIfNeeded()`**
+> — on `hidePanel()`, if a sheet is active, order the popover window out (`orderOut(nil)`) instead
+> of calling `performClose()`. On re-open, `orderFront(nil)` restores the same window with the
+> sheet fully intact. `closePanel()` (explicit dismiss) never fires while a sheet is open by
+> design, so `performClose()` is always safe there.
+>
+> See `§SheetOrphans` in `ARCHITECTURE.md` for the definitive invariants.
+
 ---
 
-## Files Changed in This Branch (so far — failed attempts)
+## Files Changed in This Branch
 
 | File | Change | Status |
 |---|---|---|
 | `Panel/PanelChrome.swift` | Emptied (tombstone) | ✅ keep |
-| `App/AppDelegate+PanelSetup.swift` | Removed all layer manipulation; NSPopover migration | ✅ keep |
-| `App/AppDelegate.swift` | NSPopover, dismissSheets(), closePanel/hidePanel fixes | ✅ keep |
+| `App/AppDelegate+PanelSetup.swift` | NSPopover migration, `NSPopoverDelegate` conformance | ✅ keep |
+| `App/AppDelegate.swift` | NSPopover, `hidePopoverWindowsPreservingSheets()`, closePanel/hidePanel rewrite | ✅ keep |
 | `App/AppDelegate+Navigation.swift` | PanelContainerView applied once per view level | ✅ keep |
-| `Views/Main/PanelMainView.swift` | Added `.background(.regularMaterial)` | ⚠️ may revert |
+| `App/PanelSheetState.swift` | New — process-lifetime runner sheet state | ✅ keep |
+| `Views/Main/PanelContainerView.swift` | New — dim overlay via 100ms sheet polling | ✅ keep |
+| `Views/Settings/SettingsView.swift` | `editingRunner` moved to `PanelSheetState` | ✅ keep |
+| `Views/Main/PanelMainView.swift` | Comments condensed, workflow list layout refactored | ✅ keep |
 
 ---
 
