@@ -57,6 +57,12 @@ final class PanelVisibilityState: ObservableObject {
     /// `true` from immediately before the panel opens until after it closes.
     @Published var isOpen: Bool = false
 
+    /// `true` when `isOpen` was set to `false` by `hidePanel()` (transient hide)
+    /// rather than `closePanel()` (full close). Read by `PanelContainerView` to
+    /// skip clearing `isSheetActive` during a transient hide.
+    /// ❌ NEVER read this outside PanelContainerView.
+    var isTransientHide: Bool = false
+
     // periphery:ignore
     /// Set to `false` before each `show()`, set to `true` after first height report.
     /// Guards against repeated `setContentSize` calls on every layout pass.

@@ -235,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func hidePanel() {
         guard panelIsOpen else { return }
         panelSheetState.captureTransientHideState()
+        panelVisibilityState.isTransientHide = true
 
         if hidePopoverWindowsPreservingSheets() {
             panelIsOpen = false

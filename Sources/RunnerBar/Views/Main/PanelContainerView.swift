@@ -44,22 +44,24 @@ struct PanelContainerView<Content: View>: View {
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .allowsHitTesting(true)
+                    .transition(.opacity)
             }
         }
-        // ❌ No animation — overlay must snap on/off instantly.\n        // Any animation here re-triggers visibly on transient hide/restore.
+        .animation(.easeInOut(duration: 0.15), value: isSheetActive)
         .onAppear { startPolling() }
         .onDisappear { stopPolling() }
         .onChange(of: panelVisibilityState.isOpen) { _, open in
             if open {
-                // ❌ Do NOT reset isSheetActive here — a transient hide keeps the
-                // sheet window alive. Resetting causes a flicker: the overlay
-                // disappears for one frame then the 100ms timer brings it back.
+                panelVisibilityState.isTransientHide = false
                 startPolling()
             } else {
                 stopPolling()
-                // Safe to clear on close — closePanel() has already called
-                // dismissSheets() so no sheet window remains.
-                isSheetActive = false
+                // Only clear the overlay on a full close (closePanel).
+                // hidePanel() sets isTransientHide = true — sheet window is still
+                // alive, so isSheetActive must stay true to avoid re-animation.
+                if !panelVisibilityState.isTransientHide {
+                    isSheetActive = false
+                }
             }
         }
     }
