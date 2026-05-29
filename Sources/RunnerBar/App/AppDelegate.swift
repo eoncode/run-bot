@@ -47,29 +47,22 @@ import SwiftUI
 //
 // SHEET STATE ACROSS HIDE/SHOW:
 // When the user taps outside while a sheet is open, hidePanel() is called.
-// Goal: re-opening the status bar icon should show settings WITH the sheet.
+// dismissSheets() runs first to remove the child sheet NSWindow from the
+// popover window hierarchy before performClose(). This prevents the orphan
+// sheet NSWindow regression (§SheetOrphans in ARCHITECTURE.md).
 //
-// How this works:
-// - hidePanel() does NOT call dismissSheets() and does NOT reset rootView.
-//   NSPopover's performClose() closes the NSPopoverWindowFrame and all its
-//   child windows (including the sheet NSWindow) together. They are removed
-//   from screen but the NSHostingController and its SwiftUI tree remain alive.
-//   SwiftUI @State (editingRunner, showAddScopeSheet, etc.) is preserved inside
-//   the hosting controller's view because the hosting controller itself is never
-//   destroyed or replaced.
-// - On re-open, openPanel() calls popover.show() which re-attaches the same
-//   NSHostingController. SwiftUI sees the existing state, the binding is still
-//   true, and re-presents the sheet automatically.
+// Sheet @State (showAddScopeSheet, editingRunner, etc.) CANNOT be preserved
+// across a close/open cycle — @State lives in the SwiftUI view value type
+// and resets when a new struct is constructed. savedNavState = .settings
+// ensures re-opening navigates back to a fresh, fully interactive SettingsView.
 //
-// closePanel() IS different: it is called when the user explicitly closes
-// (e.g. pressing Escape, or navigating back). In that case we DO reset rootView
-// to mainView() so the next open starts fresh at the main view.
+// closePanel() is called on explicit close (Escape / back navigation).
+// hidePanel() is called on outside-tap or workspace app-switch.
+// Both must call dismissSheets() first.
 //
-// ❌ NEVER add dismissSheets() to hidePanel() — it destroys sheet @State.
+// ❌ NEVER call performClose() without dismissSheets() preceding it.
+// ❌ NEVER try to restore sheet @State across close — see §SheetOrphans.
 // ❌ NEVER reset hostingController.rootView inside hidePanel().
-// ❌ NEVER add a validatedView(for: .settings) navigate() call inside openPanel()
-//    when the current rootView is already SettingsView — it replaces the live
-//    view with a new struct and resets all @State.
 
 // MARK: - AppDelegate
 
@@ -198,6 +191,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: - Sheet cleanup
+
+    /// Calls endSheet(_:) on every child sheet window before performClose().
+    ///
+    /// When NSPopover.performClose() is called while a SwiftUI .sheet is open,
+    /// the sheet's backing NSWindow is NOT automatically removed by AppKit.
+    /// It becomes an orphan window that blocks all hit-testing on the next open,
+    /// making SettingsView appear completely frozen.
+    ///
+    /// Calling endSheet(_:) synchronously removes each child sheet window from
+    /// the hierarchy before the popover closes, preventing the orphan entirely.
+    ///
+    /// ❌ NEVER call performClose() without dismissSheets() preceding it.
+    /// ❌ NEVER remove this call from closePanel() or hidePanel().
+    /// See: ARCHITECTURE.md §SheetOrphans
+    private func dismissSheets() {
+        guard let win = popover?.contentViewController?.view.window else { return }
+        for sheet in win.sheets { win.endSheet(sheet) }
+    }
+
     // MARK: - Dismiss
 
     /// Closes the popover explicitly (Escape / back navigation / manual close).
@@ -205,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ Do NOT call this from outside-tap / workspace-switch — use hidePanel().
     func closePanel() {
         guard panelIsOpen else { return }
+        dismissSheets()
         popover?.performClose(nil)
         panelIsOpen = false
         panelVisibilityState.isOpen = false
@@ -219,15 +233,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Hides the popover on outside-tap or workspace app-switch.
     ///
-    /// Intentionally does NOT call dismissSheets() and does NOT reset rootView.
-    /// The NSHostingController and its SwiftUI @State (including any open sheet
-    /// bindings) remain alive. On re-open, popover.show() reattaches the same
-    /// controller and SwiftUI re-presents the sheet automatically.
+    /// Calls dismissSheets() first to remove any child sheet NSWindow before
+    /// performClose(). This prevents an orphan sheet window that would block
+    /// all hit-testing on the next open (§SheetOrphans in ARCHITECTURE.md).
     ///
-    /// ❌ NEVER add dismissSheets() here.
+    /// savedNavState is preserved (not reset) so openPanel() navigates back
+    /// to SettingsView on re-open. Sheet @State cannot be restored — the user
+    /// will see a fresh SettingsView without the sheet re-presented.
+    ///
+    /// ❌ NEVER remove dismissSheets() from this method.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
         guard panelIsOpen else { return }
+        dismissSheets()
         popover?.performClose(nil)
         panelIsOpen = false
         panelVisibilityState.isOpen = false
@@ -276,13 +294,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         resizeAndRepositionPanel()
 
-        // Only navigate if we have a saved state AND the current rootView is
-        // NOT already showing that view (i.e. we came from closePanel/mainView reset,
-        // not from hidePanel which preserves rootView).
-        // We detect "already correct" by checking savedNavState against the
-        // current rootView identity via a flag set in navigate(to:).
-        // Simpler approach: only navigate when savedNavState is set AND
-        // hasActiveSheet is false (if sheet is open, rootView is correct already).
+        // Navigate to saved state if present. hasActiveSheet will always be
+        // false here because dismissSheets() ran before close, so no orphan
+        // sheet window exists. The check is kept as a safety guard.
         if let saved = savedNavState, !hasActiveSheet {
             if let restored = validatedView(for: saved) {
                 navigate(to: restored)
