@@ -47,13 +47,7 @@ struct PanelHeaderView: View {
                 })
                 .buttonStyle(.plain).help("Sign in with GitHub")
             }
-            // macOS 26+: wrap both toolbar buttons in a single shared GlassEffectContainer
-            // so they share a CABackdropLayer sampling region, enabling interactive glass
-            // (scaling-on-press, shimmer, bounce) and morphing between sibling buttons.
-            // Pre-26: falls back to .buttonStyle(.plain) as before.
             if #available(macOS 26, *) {
-                // Each button gets its own GlassEffectContainer so their backdrops
-                // stay independent (no bleed). HStack keeps them side-by-side.
                 HStack(spacing: 8) {
                     GlassEffectContainer { settingsButton.glassButton() }
                     GlassEffectContainer { quitButton.glassButton() }
@@ -68,7 +62,6 @@ struct PanelHeaderView: View {
         .padding(.bottom, 8)
     }
 
-    /// Settings gear button — shared between the macOS 26 glass path and pre-26 plain path.
     @ViewBuilder private var settingsButton: some View {
         Button(action: onSelectSettings, label: {
             Image(systemName: "gearshape")
@@ -81,7 +74,6 @@ struct PanelHeaderView: View {
         .accessibilityLabel("Settings")
     }
 
-    /// Quit button — shared between the macOS 26 glass path and pre-26 plain path.
     @ViewBuilder private var quitButton: some View {
         Button(action: { NSApplication.shared.terminate(nil) }, label: {
             Image(systemName: "xmark")
@@ -110,9 +102,6 @@ private struct RunnerTypeIcon: View {
 }
 
 // MARK: - RunnerMetricsBadge
-/// Single grouped badge showing CPU and MEM for a runner inside one
-/// shared glass background. Uses `.statPillBackground()` so macOS 26+
-/// gets native Liquid Glass and pre-26 falls back to ultraThinMaterial.
 private struct RunnerMetricsBadge: View {
     /// The cpu constant.
     let cpu: Double
@@ -128,7 +117,6 @@ private struct RunnerMetricsBadge: View {
         .padding(.vertical, 4)
         .statPillBackground()
     }
-    /// Renders a label+value pair.
     private func metricItem(label: String, value: String) -> some View {
         HStack(spacing: 3) {
             Text(label)
@@ -157,7 +145,6 @@ struct PanelLocalRunnerRow: View {
     var body: some View {
         if !runners.isEmpty { runnerList(runners) }
     }
-    /// Renders a vertical stack of `runnerCard` views for each runner.
     @ViewBuilder private func runnerList(_ active: [RunnerModel]) -> some View {
         ForEach(active.prefix(3)) { runner in runnerCard(runner) }
         if active.count > 3 {
@@ -167,16 +154,9 @@ struct PanelLocalRunnerRow: View {
         }
         Divider()
     }
-    /// Compact card showing runner name with optional arch/platform inline,
-    /// and a grouped CPU/MEM badge on the trailing edge.
-    ///
-    /// arch and platform are rendered as muted secondary text after the name,
-    /// separated by middle dots (e.g. "psw-org-runner · arm64 · macOS").
-    /// The meta tokens are hidden when both fields are nil.
     private func runnerCard(_ runner: RunnerModel) -> some View {
         HStack(spacing: 8) {
             Circle().fill(Color.rbWarning).frame(width: 7, height: 7)
-            // Name + optional arch/platform inline
             HStack(spacing: 4) {
                 Text(runner.runnerName)
                     .font(RBFont.label)
@@ -199,19 +179,12 @@ struct PanelLocalRunnerRow: View {
         .glassCard(cornerRadius: RBRadius.card)
         .padding(.horizontal, RBSpacing.md).padding(.vertical, RBSpacing.xxs)
     }
-
-    /// Builds a normalised subtitle string from architecture and platform fields.
-    /// Returns nil when both are absent so the caller can hide the tokens entirely.
-    /// Parts are joined with a middle dot separator (·).
     private func runnerSubtitle(_ runner: RunnerModel) -> String? {
         let arch = runner.platformArchitecture.map { normaliseArch($0) }
         let os = runner.platform.map { normalisePlatform($0) }
         let parts = [arch, os].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
-
-    /// Normalises raw architecture strings from the GitHub runner agent JSON.
-    /// Maps "ARM64"→"arm64", "X64"→"x64", "X86"→"x86"; lowercases all others.
     private func normaliseArch(_ raw: String) -> String {
         switch raw.uppercased() {
         case "ARM64": return "arm64"
@@ -220,9 +193,6 @@ struct PanelLocalRunnerRow: View {
         default:      return raw.lowercased()
         }
     }
-
-    /// Normalises raw platform strings from the GitHub runner agent JSON.
-    /// Maps "osx"/"darwin"→"macOS", "linux"→"Linux", "win"→"Windows".
     private func normalisePlatform(_ raw: String) -> String {
         let lower = raw.lowercased()
         if lower.hasPrefix("osx") || lower.hasPrefix("darwin") { return "macOS" }
@@ -235,10 +205,6 @@ struct PanelLocalRunnerRow: View {
 // MARK: - ActionRowView
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.
-///
-/// macOS 26+: the card background uses `.glassCard()` directly on the VStack,
-/// identical structure to the pre-26 path. Animation is `.easeInOut(duration: 0.15)`
-/// on both paths — matching main branch exactly.
 ///
 /// ⚠️ Do NOT add GlassEffectContainer, .glassEffectID, .bouncy, or
 /// .glassEffectTransition — they cause staggered/slow expand animations (#957).
@@ -262,10 +228,6 @@ struct ActionRowView: View {
         }
     }
 
-    // MARK: macOS 26+ body
-    /// macOS 26+ path — uses .glassCard() directly on the VStack with the same
-    /// .easeInOut(duration: 0.15) animation as main. No GlassEffectContainer,
-    /// no .bouncy, no .glassEffectTransition — these caused staggered/slow animation.
     @available(macOS 26, *)
     @ViewBuilder private var glassMorphBody: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -297,8 +259,6 @@ struct ActionRowView: View {
         .onChange(of: rowStatus) { _, newStatus in handleStatusChange(newStatus) }
     }
 
-    // MARK: Pre-macOS-26 body
-    /// Pre-macOS-26 fallback body using plain animations and no glass morphing.
     @ViewBuilder private var legacyBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
@@ -331,24 +291,17 @@ struct ActionRowView: View {
         .onChange(of: rowStatus) { _, newStatus in handleStatusChange(newStatus) }
     }
 
-    // MARK: Shared helpers
-
-    /// Glass card background for the action row (pre-26 path).
-    /// Routes through `.glassCard()` to honour the Phase 1 contract — nothing
-    /// outside `PanelViewModifiers` calls `.glassEffect()` directly on card containers.
     @ViewBuilder private var glassCardBackground: some View {
         Color.clear
             .glassCard(cornerRadius: RBRadius.card)
     }
 
-    /// Sets the initial expand state based on the row's current status on first appearance.
     private func applyInitialExpandState() {
         let status = rowStatus
         previousStatus = status
         expandState = (status == .inProgress) ? false : nil
     }
 
-    /// Reacts to row status changes, auto-expanding on inProgress and collapsing on completion.
     private func handleStatusChange(_ newStatus: RBStatus) {
         let animation: Animation = .easeInOut(duration: 0.15)
         if newStatus == .inProgress && expandState == nil {
@@ -360,7 +313,6 @@ struct ActionRowView: View {
         previousStatus = newStatus
     }
 
-    /// Resolves the effective display status for the row.
     private var rowStatus: RBStatus {
         switch group.groupStatus {
         case .inProgress: return .inProgress
@@ -377,32 +329,47 @@ struct ActionRowView: View {
     /// Main body of the action row.
     ///
     /// Column order (#984):
-    /// graph-dot · local-remote-icon · repo-name · commit-title(truncated)
-    /// · Spacer · time-ago · steps/total · elapsed(mm:ss, active only) · statusBadge
-    ///
-    /// Notes:
-    /// - `group.repoShortName` is used for repo-name (e.g. "runner-bar"), NOT group.label
-    /// - `group.label` (SHA/PR#) is intentionally omitted from this row per #984
-    /// - `headBranch` is deferred to a future settings toggle per #984
-    /// - `currentJobName` lives in the expanded InlineJobRowsView, not here
+    /// graph-dot · local-remote-icon · sha · repo-name · commit-title · ❯ branch-icon+name · Spacer
+    /// · time-ago · steps/total · elapsed(mm:ss, active only) · statusBadge
     private var rowContent: some View {
         let tickSnapshot = tick
         return HStack(spacing: 6) {
             DonutStatusView(status: rowStatus, progress: group.progressFraction ?? 0, size: 14)
             RunnerTypeIcon(isLocal: group.isLocalGroup ?? false)
-            // Leading: repo name + commit title
-            HStack(spacing: 4) {
-                Text(group.repoShortName)
-                    .font(DesignTokens.Fonts.mono)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                Text(group.title)
-                    .font(.system(size: 12))
-                    .foregroundColor(group.isDimmed ? .secondary : .primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
+            // SHA (7-char or PR#)
+            Text(group.label)
+                .font(DesignTokens.Fonts.mono)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            // Repo name
+            Text(group.repoShortName)
+                .font(DesignTokens.Fonts.mono)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            // Commit title
+            Text(group.title)
+                .font(.system(size: 12))
+                .foregroundColor(group.isDimmed ? .secondary : .primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+            // Branch icon + name (hidden when nil)
+            if let branch = group.headBranch {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Text(branch)
+                        .font(DesignTokens.Fonts.mono)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 80, alignment: .leading)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(0)
             }
             Spacer()
             metaTrailing(tick: tickSnapshot)
@@ -412,9 +379,6 @@ struct ActionRowView: View {
     }
 
     /// Trailing meta: time-ago · steps/total · elapsed(mm:ss, active only) · statusBadge.
-    ///
-    /// elapsed is only shown while the run is inProgress or queued — completed rows
-    /// show only time-ago to avoid a frozen clock.
     @ViewBuilder private func metaTrailing(tick tickSnapshot: Int) -> some View {
         if let start = group.firstJobStartedAt {
             Text(RelativeTimeFormatter.string(from: start))
@@ -441,7 +405,6 @@ struct ActionRowView: View {
         statusBadge
     }
 
-    /// Colored pill badge reflecting the current run status.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
         case .inProgress: StatusBadge(status: .inProgress, text: "IN PROGRESS")
@@ -457,9 +420,6 @@ struct ActionRowView: View {
 }
 
 // MARK: - RowTapModifier
-/// Applies the expand-on-tap interaction to an action row card.
-/// Shared by both `glassMorphBody` (macOS 26+) and `legacyBody` (pre-26)
-/// to eliminate duplicated `.onTapGesture` blocks.
 private struct RowTapModifier: ViewModifier {
     /// The jobs to check before expanding.
     let jobs: [ActiveJob]
@@ -470,7 +430,6 @@ private struct RowTapModifier: ViewModifier {
     /// When true, uses `.bouncy` animation (macOS 26+); otherwise `.easeInOut`.
     let useBouncyAnimation: Bool
 
-    /// Applies the tap gesture with the appropriate animation.
     func body(content: Content) -> some View {
         content.onTapGesture {
             guard !jobs.isEmpty else { return }
