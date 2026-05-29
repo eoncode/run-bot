@@ -374,33 +374,30 @@ struct ActionRowView: View {
         }
     }
 
-    /// Main body of the action row: workflow name, repo, branch, and trailing meta info.
+    /// Main body of the action row: status dot, runner icon, repo label + commit title, trailing meta.
+    ///
+    /// Column order: DonutStatus · RunnerTypeIcon · label · title(truncated) · Spacer
+    /// · time-ago · steps/total · elapsed(active only) · statusBadge
+    ///
+    /// headBranch is intentionally omitted here — deferred to a future settings toggle per #984.
     private var rowContent: some View {
         let tickSnapshot = tick
         return HStack(spacing: 6) {
             DonutStatusView(status: rowStatus, progress: group.progressFraction ?? 0, size: 14)
             RunnerTypeIcon(isLocal: group.isLocalGroup ?? false)
-            Text(group.label)
-                .font(DesignTokens.Fonts.mono).foregroundColor(.secondary).lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-            Text(group.title)
-                .font(.system(size: 12))
-                .foregroundColor(group.isDimmed ? .secondary : .primary)
-                .lineLimit(1).truncationMode(.tail).layoutPriority(1)
-            if let branch = group.headBranch {
-                HStack(spacing: 3) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
-                    Text(branch)
-                        .font(DesignTokens.Fonts.mono)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 80, alignment: .leading)
-                }
-                .layoutPriority(0)
+            // Leading: repo label + commit title grouped together
+            HStack(spacing: 4) {
+                Text(group.label)
+                    .font(DesignTokens.Fonts.mono)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(group.title)
+                    .font(.system(size: 12))
+                    .foregroundColor(group.isDimmed ? .secondary : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
             }
             Spacer()
             metaTrailing(tick: tickSnapshot)
@@ -409,24 +406,38 @@ struct ActionRowView: View {
         .padding(.vertical, 4)
     }
 
-    /// Trailing meta area: elapsed time or conclusion label, keyed off `tickSnapshot` for live updates.
+    /// Trailing meta area: time-ago · steps/total · elapsed(active only) · statusBadge.
+    ///
+    /// - `time-ago`: relative age of the run since firstJobStartedAt, keyed off tick for live refresh.
+    /// - `steps/total`: job progress fraction — hidden while jobs are loading.
+    /// - `elapsed`: mm:ss live timer — only shown for inProgress/queued runs to avoid
+    ///   a frozen clock on completed rows.
+    /// - `statusBadge`: coloured pill reflecting conclusion.
+    ///
+    /// currentJobName is intentionally omitted — it belongs in the expanded InlineJobRowsView.
     @ViewBuilder private func metaTrailing(tick tickSnapshot: Int) -> some View {
         if let start = group.firstJobStartedAt {
             Text(RelativeTimeFormatter.string(from: start))
-                .font(DesignTokens.Fonts.mono).foregroundColor(.secondary).lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false).id(tickSnapshot)
+                .font(DesignTokens.Fonts.mono)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .id(tickSnapshot)
+        }
+        if !group.jobs.isEmpty {
+            Text(group.jobProgress)
+                .font(DesignTokens.Fonts.mono)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         if group.groupStatus == .inProgress || group.groupStatus == .queued {
-            Text(group.currentJobName)
-                .font(.caption).foregroundColor(.secondary)
-                .lineLimit(1).truncationMode(.tail).layoutPriority(0)
+            Text(group.elapsed)
+                .font(DesignTokens.Fonts.mono)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
-        Text(group.jobProgress)
-            .font(DesignTokens.Fonts.mono).foregroundColor(.secondary).lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-        Text(group.elapsed)
-            .font(DesignTokens.Fonts.mono).foregroundColor(.secondary).lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
         statusBadge
     }
 
