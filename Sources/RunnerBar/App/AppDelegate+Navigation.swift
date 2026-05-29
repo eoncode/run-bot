@@ -87,7 +87,8 @@ extension AppDelegate {
     func validatedView(for state: NavState) -> AnyView? {
         switch state {
         case .main:
-            return mainView()
+            // Already at main — no navigation needed.
+            return nil
         case .settings:
             return settingsView()
         case .stepLog(let job, let step):

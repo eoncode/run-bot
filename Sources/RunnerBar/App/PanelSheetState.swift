@@ -31,11 +31,6 @@ final class PanelSheetState: ObservableObject {
         editingRunner = runnerSheetSnapshot
     }
 
-    /// Clears any pending restore snapshot after an explicit dismissal.
-    func clearRunnerSheetRestore() {
-        runnerSheetSnapshot = nil
-    }
-
     /// Clears all runner sheet state for explicit close/reset paths.
     func clearRunnerSheet() {
         editingRunner = nil

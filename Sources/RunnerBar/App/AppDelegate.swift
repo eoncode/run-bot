@@ -216,7 +216,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         removeEventMonitor()
         removeWorkspaceObserver()
         savedNavState = nil
-        preservedSheetWindowHide = false
         panelSheetState.clearRunnerSheet()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
