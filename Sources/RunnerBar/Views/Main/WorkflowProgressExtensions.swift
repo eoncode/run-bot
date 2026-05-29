@@ -28,7 +28,7 @@ enum RelativeTimeFormatter {
 // MARK: - WorkflowActionGroup progress helpers
 
 /// UI-layer extensions on `WorkflowActionGroup` for deriving progress fractions
-/// and display strings used by the panel's action rows.
+/// and display strings used by the panel’s action rows.
 extension WorkflowActionGroup {
 
     /// Returns the overall completion fraction (0.0–1.0) across all jobs in the group.
@@ -56,12 +56,18 @@ extension WorkflowActionGroup {
         jobs.first { $0.status == .inProgress }?.name ?? ""
     }
 
-    /// A human-readable elapsed-time string derived from the earliest job start date.
+    /// Elapsed time as a `mm:ss` string, computed from `firstJobStartedAt` to
+    /// `lastJobCompletedAt` (completed runs) or `Date()` (active runs).
     ///
     /// Returns an empty string when no job has started yet.
+    /// Use `RelativeTimeFormatter.string(from: firstJobStartedAt)` for the time-ago display.
     var elapsed: String {
         guard let start = firstJobStartedAt else { return "" }
-        return RelativeTimeFormatter.string(from: start)
+        let end = lastJobCompletedAt ?? Date()
+        let sec = max(0, Int(end.timeIntervalSince(start)))
+        let mins = sec / 60
+        let secs = sec % 60
+        return String(format: "%02d:%02d", mins, secs)
     }
 
     /// The start date of the earliest job in the group, or `nil` if none has started.
@@ -69,8 +75,7 @@ extension WorkflowActionGroup {
         jobs.compactMap { $0.startedAt }.min()
     }
 
-    /// `true` when every job in the group is either dimmed (cancelled/skipped) or
-    /// the group conclusion is neither success nor failure.
+    /// `true` when the group is completed and its conclusion is neither success nor failure.
     var isDimmed: Bool {
         guard groupStatus == .completed else { return false }
         return conclusion != "success" && conclusion != "failure"
@@ -78,10 +83,16 @@ extension WorkflowActionGroup {
 
     /// `true` when the group originated from a self-hosted (local) runner.
     ///
-    /// Derived from the first job's runner name; returns `nil` when ambiguous.
+    /// Derived from the first job’s runner name; returns `nil` when ambiguous.
     var isLocalGroup: Bool? {
         guard let first = jobs.first else { return nil }
         return first.runnerName?.lowercased().contains("self-hosted") == true
+    }
+
+    /// The short repo name (without owner prefix), e.g. `"runner-bar"` from `"eoncode/runner-bar"`.
+    /// Falls back to the full `repo` string when no slash is present.
+    var repoShortName: String {
+        repo.components(separatedBy: "/").last ?? repo
     }
 }
 
