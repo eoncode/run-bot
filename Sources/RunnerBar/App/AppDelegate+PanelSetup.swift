@@ -12,6 +12,13 @@ import SwiftUI
 //
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
+//
+// CORNER RADIUS CONTRACT:
+// contentView.layer.mask = CAShapeLayer (rounded rect path).
+// ❌ NEVER use layer.cornerRadius + masksToBounds=true  → clips child NSWindows (sheets).
+// ❌ NEVER use layer.cornerRadius + masksToBounds=false → radius has no visual effect.
+// ✅ CAShapeLayer.mask clips pixel drawing only; child NSWindows are unaffected.
+// The mask path MUST be updated in resizeAndRepositionPanel() whenever size changes.
 
 /// Extension responsible for NSPanel construction, KVO observation, and
 /// Combine subscriptions that drive icon and store updates.
@@ -46,12 +53,21 @@ extension AppDelegate {
         newPanel.animationBehavior = .none
         newPanel.appearance = NSAppearance(named: .darkAqua)
 
-        // Local experiment for #1017: use plain rounded CA corners instead of
-        // PanelChromeView arrow/mask. Do not commit until validated.
+        // Round the panel corners using a CAShapeLayer mask on contentView.layer.
+        // This clips pixel drawing only — child NSWindows (sheets, popovers) are
+        // outside the CALayer tree and are completely unaffected.
+        // See docs/sheet-rectangle-corners.md for full rationale.
         newPanel.contentView?.wantsLayer = true
-        newPanel.contentView?.layer?.cornerRadius = cornerRadius
-        newPanel.contentView?.layer?.masksToBounds = false  // masksToBounds=true clips child NSWindows (popovers/sheets) — cornerRadius renders fine without it
-        newPanel.contentView?.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.98).cgColor
+        newPanel.contentView?.layer?.backgroundColor =
+            NSColor.windowBackgroundColor.withAlphaComponent(0.98).cgColor
+        let maskLayer = CAShapeLayer()
+        maskLayer.path = CGPath(
+            roundedRect: CGRect(x: 0, y: 0, width: initW, height: 300),
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
+        newPanel.contentView?.layer?.mask = maskLayer
 
         panel = newPanel
 
