@@ -189,13 +189,95 @@ app like **Tot** and **Pockity** handle it.
 
 ---
 
+## Session Log — 2026-05-29: Outside-tap + Frozen SettingsView Regressions
+
+After the NSPopover migration landed, two new bugs appeared when tapping outside the app
+while a sheet was open.
+
+### Bug A — Main view gray/black flash
+
+**Symptom:** After navigating settings → back → main, the main view flickered gray or black.
+
+**Root cause:** `PanelContainerView` (the sheet-dim overlay) was being instantiated at multiple
+levels of the view hierarchy simultaneously. `mainView()` wrapped in it, `settingsView()` wrapped
+in it, and `StepLogView` also wrapped in it via `validatedView`. Each instance runs an independent
+100ms timer polling `NSPopoverWindowFrame.sheets`. Multiple overlapping `Color.black.opacity(0.35)`
+layers animate independently → combined opacity varies → gray/black flicker.
+
+**Fix:** `PanelContainerView` applied only in `mainView()` and `settingsView()`. `StepLogView`
+gets no wrapper (it has no sheets).
+
+---
+
+### Bug B — Tapping outside while sheet open: sheet gone, SettingsView frozen on re-open
+
+This is the main regression. Three approaches were tried before finding the correct fix.
+
+#### Attempt B1 — `popoverShouldClose` returns `false` when `hasActiveSheet`
+
+**What it did:** Blocked `NSPopover` from closing at all while a sheet was open.
+
+**Why it failed:** Also blocked outside-tap and workspace app-switch. The user couldn't
+interact with any other app while a sheet was open. Rejected.
+
+#### Attempt B2 — Preserve `hostingController.rootView`, restore via `validatedView(.settings)` on re-open
+
+**What it did:** `closePanel()` skipped resetting `hostingController.rootView` when
+`savedNavState == .settings`, hoping the existing SwiftUI tree (with sheet `@State` = `true`)
+would survive the popover close and be reused on next open. On re-open, `validatedView(.settings)`
+called `settingsView()` to navigate.
+
+**Why it failed (two reasons):**
+1. `settingsView()` constructs a **brand new `SettingsView` struct**. Swift `@State` lives inside
+   the View value type and is reset on every new construction. `showAddScopeSheet`, `editingRunner`,
+   `selectedScopeEntry` all reset to `false`/`nil`. Sheet cannot be restored this way — ever.
+2. The sheet's `NSWindow` (a child of the popover window added by AppKit during `.sheet`
+   presentation) is **not** removed when `performClose()` fires. It becomes an **orphan** — still
+   attached to the popover window, still intercepting all mouse events, but with no SwiftUI tree
+   driving it. On re-open, SettingsView renders behind the invisible orphan sheet window and
+   appears completely frozen.
+
+#### Attempt B3 — Same as B2 but without resetting `rootView` at all
+
+**What it did:** Left `hostingController.rootView` as-is (pointing at the old SettingsView
+instance with the old `@State`).
+
+**Why it failed:** The orphaned sheet `NSWindow` from the previous session is still attached
+regardless of what `rootView` points to. Hit-testing is blocked. Same freeze.
+
+#### Fix — `dismissSheets()` before `performClose()`
+
+**What it does:** Before calling `performClose(nil)`, call `endSheet(_:)` on every window in
+`popoverWindow.sheets`. AppKit synchronously removes each child sheet window from the hierarchy
+before the popover closes. No orphan is created.
+
+```swift
+private func dismissSheets() {
+    guard let win = popover?.contentViewController?.view.window else { return }
+    for sheet in win.sheets { win.endSheet(sheet) }
+}
+// Called at top of both closePanel() and hidePanel().
+```
+
+**Result on re-open:** `savedNavState = .settings` navigates back to a fresh `SettingsView`.
+Sheet is not re-opened (impossible — `@State` cannot be restored), but SettingsView is fully
+interactive. This is the correct and only viable behaviour.
+
+**Invariants:**
+- ❌ NEVER remove `dismissSheets()` from `closePanel()` or `hidePanel()`.
+- ❌ NEVER try to restore sheet `@State` across close/open via any mechanism.
+- ❌ NEVER leave `performClose()` as the first call without `dismissSheets()` preceding it.
+
+---
+
 ## Files Changed in This Branch (so far — failed attempts)
 
 | File | Change | Status |
 |---|---|---|
 | `Panel/PanelChrome.swift` | Emptied (tombstone) | ✅ keep |
-| `App/AppDelegate+PanelSetup.swift` | Removed all layer manipulation | ✅ keep |
-| `App/AppDelegate.swift` | Removed `arrowHeight` from `openPanel()` | ✅ keep |
+| `App/AppDelegate+PanelSetup.swift` | Removed all layer manipulation; NSPopover migration | ✅ keep |
+| `App/AppDelegate.swift` | NSPopover, dismissSheets(), closePanel/hidePanel fixes | ✅ keep |
+| `App/AppDelegate+Navigation.swift` | PanelContainerView applied once per view level | ✅ keep |
 | `Views/Main/PanelMainView.swift` | Added `.background(.regularMaterial)` | ⚠️ may revert |
 
 ---
