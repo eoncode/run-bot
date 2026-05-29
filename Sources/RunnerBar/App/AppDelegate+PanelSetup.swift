@@ -19,6 +19,12 @@ import SwiftUI
 // ❌ NEVER use layer.cornerRadius + masksToBounds=false → radius has no visual effect.
 // ✅ CAShapeLayer.mask clips pixel drawing only; child NSWindows are unaffected.
 // The mask path MUST be updated in resizeAndRepositionPanel() whenever size changes.
+//
+// SHEET CORNER RADIUS:
+// SwiftUI .sheet creates a sibling NSWindow via addChildWindow(_:ordered:).
+// That window's corners are rounded in the NSWindowDelegate extension below.
+// ❌ NEVER expect contentView.layer changes to affect a different NSWindow.
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
 
 /// Extension responsible for NSPanel construction, KVO observation, and
 /// Combine subscriptions that drive icon and store updates.
@@ -68,6 +74,10 @@ extension AppDelegate {
             transform: nil
         )
         newPanel.contentView?.layer?.mask = maskLayer
+
+        // Assign delegate so the NSWindowDelegate extension below can intercept
+        // child windows (SwiftUI sheet windows) and round their corners.
+        newPanel.delegate = self
 
         panel = newPanel
 
@@ -125,5 +135,40 @@ extension AppDelegate {
                 RunnerStore.shared.start()
             }
             .store(in: &cancellables)
+    }
+}
+
+// MARK: - NSWindowDelegate — child window corner rounding
+//
+// SwiftUI's .sheet modifier presents its content in a brand-new NSWindow that
+// AppKit registers as a child of the panel via addChildWindow(_:ordered:).
+// This fires window(_:didAddChildWindow:) on the panel's delegate.
+//
+// The CAShapeLayer mask on the panel's own contentView.layer has zero effect on
+// the child window — it owns a completely separate layer tree rendered
+// independently by the WindowServer. We must round the child's own contentView.
+//
+// Why async: SwiftUI finishes configuring the child window's layer slightly
+// after the delegate call. Deferring one runloop tick ensures the layer exists
+// and is fully initialised before mutation.
+//
+// Why masksToBounds=true on the child: the child is the outermost surface of
+// the sheet — clipping its own content to the rounded rect is correct.
+//
+// ❌ NEVER set masksToBounds=true on the PANEL's own contentView — that clips
+//    child NSWindows off-screen (they are in the layer tree at that level).
+// ❌ NEVER remove this extension — sheets will regress to square corners.
+// If you are an agent or human, DO NOT REMOVE THIS COMMENT.
+extension AppDelegate: NSWindowDelegate {
+    /// Called by AppKit whenever a child window is added to the panel.
+    /// Rounds the child window's corners to match the panel chrome (10 pt).
+    func window(_ window: NSWindow, didAddChildWindow child: NSWindow) {
+        DispatchQueue.main.async {
+            child.contentView?.wantsLayer = true
+            child.contentView?.layer?.cornerRadius = cornerRadius
+            child.contentView?.layer?.masksToBounds = true
+            child.isOpaque = false
+            child.backgroundColor = .clear
+        }
     }
 }
