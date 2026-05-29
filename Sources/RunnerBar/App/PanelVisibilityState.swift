@@ -77,7 +77,11 @@ final class PanelVisibilityState: ObservableObject {
     ///   closePanel()             → isTransientHide stays false, isOpen = false
     ///   onChange(false) in view  → isTransientHide=false so isSheetActive cleared ✅
     ///
+    /// SET BY:   AppDelegate.hidePanel() (sets true) — see AppDelegate.swift
+    /// RESET BY: PanelContainerView.onChange(isOpen) open=true branch (sets false)
+    ///
     /// ❌ NEVER set this from anywhere other than hidePanel().
+    /// ❌ NEVER reset this from anywhere other than the open branch of onChange in PanelContainerView.
     /// ❌ NEVER read this outside PanelContainerView — it is an internal signal
     ///    between hidePanel() and the dim-overlay state machine.
     /// ❌ NEVER set isOpen = false in hidePanel() before setting this to true —

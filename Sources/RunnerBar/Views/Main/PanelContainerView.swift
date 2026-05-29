@@ -98,6 +98,7 @@ struct PanelContainerView<Content: View>: View {
     /// onChange and the timer know NOT to clear isSheetActive.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
 
+    /// The view body.
     var body: some View {
         ZStack {
             content
@@ -224,6 +225,7 @@ private struct WindowReader: NSViewRepresentable {
     /// Updated with the NSWindow that hosts this view hierarchy.
     @Binding var window: NSWindow?
 
+    /// Creates the underlying NSView and reports its window asynchronously.
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         // Async because view.window is nil synchronously at make time.
@@ -231,6 +233,7 @@ private struct WindowReader: NSViewRepresentable {
         return view
     }
 
+    /// Updates the window binding when the view's window changes.
     func updateNSView(_ nsView: NSView, context: Context) {
         // Re-capture on every update in case the view moves to a different window
         // (e.g. after a transient hide/restore cycle).
