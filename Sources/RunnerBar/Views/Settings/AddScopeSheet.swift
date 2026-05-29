@@ -1,5 +1,7 @@
 // AddScopeSheet.swift
 // RunnerBar
+// #inline-sheets: .sheet(isPresented: $showScopeSelector) replaced with inline
+// push using AddScopeSubScreen enum. No child NSWindow is ever created.
 import SwiftUI
 
 // MARK: - ScopeType
@@ -14,15 +16,20 @@ private enum ScopeType: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// MARK: - AddScopeSubScreen
+
+/// Navigation state for AddScopeSheet inline sub-screens.
+private enum AddScopeSubScreen: Equatable {
+    /// The main add-scope form.
+    case main
+    /// The repo/org selector list pushed inline.
+    case repoSelector
+}
+
 // MARK: - AddScopeSheet
 
-/// Modal sheet for adding a new remote runner scope (org or repo).
-///
-/// Mirrors `AddRunnerSheet` in structure: segmented type toggle at the top,
-/// a searchable `RepoSelectorSheet` when authenticated (populated from the
-/// GitHub API) with a plain `TextField` fallback, and Cancel / Add buttons.
-///
-/// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
+/// Inline view for adding a new remote runner scope (org or repo).
+/// Embedded inside SettingsView's ZStack — not presented as a .sheet.
 struct AddScopeSheet: View {
     /// The isPresented property.
     @Binding var isPresented: Bool
@@ -43,25 +50,56 @@ struct AddScopeSheet: View {
     @State private var errorMessage: String?
     /// The usePicker property.
     @State private var usePicker = false
-    /// The showScopeSelector property.
-    @State private var showScopeSelector = false
+    /// Sub-screen nav state — replaces showScopeSelector .sheet.
+    @State private var subScreen: AddScopeSubScreen = .main
+    /// Slide direction: true = forward (push), false = back (pop).
+    @State private var navForward = true
 
     /// The list of picker options matching the current `scopeType` (orgs or repos).
     private var pickerItems: [String] {
         scopeType == .org ? orgs : repos
     }
 
-    /// The scope string that will be saved: the selected picker value when `usePicker` is true,
-    /// otherwise the trimmed manual text-field input.
+    /// The scope string that will be saved.
     private var effectiveScope: String {
         usePicker ? selectedScope : manualScope.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Guards the Add button: `true` when `effectiveScope` is non-empty.
+    /// Guards the Add button.
     private var canAdd: Bool { !effectiveScope.isEmpty }
 
     /// The body property.
     var body: some View {
+        ZStack {
+            switch subScreen {
+            case .main:
+                mainForm
+                    .transition(.move(edge: navForward ? .leading : .trailing))
+            case .repoSelector:
+                RepoSelectorSheet(
+                    items: pickerItems,
+                    label: scopeType == .org ? "Organisation" : "Repository",
+                    onDismiss: {
+                        navForward = false
+                        subScreen = .main
+                    },
+                    onSelect: { item in
+                        selectedScope = item
+                        navForward = false
+                        subScreen = .main
+                    }
+                )
+                .transition(.move(edge: navForward ? .trailing : .leading))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: subScreen)
+        .frame(width: 420)
+        .onAppear(perform: fetchScopeOptions)
+    }
+
+    // MARK: - Main form
+
+    private var mainForm: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Header ─────────────────────────────────────────────────────
             Text("Add remote scope")
@@ -84,7 +122,7 @@ struct AddScopeSheet: View {
                     .pickerStyle(.segmented)
                     .onChange(of: scopeType) { _, _ in
                         selectedScope = pickerItems.first ?? ""
-                        showScopeSelector = false
+                        subScreen = .main
                     }
 
                     // ── Scope picker / text field ────────────────────────────
@@ -103,8 +141,11 @@ struct AddScopeSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 6)
                         } else if usePicker && !pickerItems.isEmpty {
-                            // ── Searchable selector trigger ──────────────────
-                            Button(action: { showScopeSelector = true }) {
+                            // ── Selector trigger — pushes inline ─────────────
+                            Button(action: {
+                                navForward = true
+                                subScreen = .repoSelector
+                            }) {
                                 HStack {
                                     Text(selectedScope.isEmpty ? "\u{2014} select \u{2014}" : selectedScope)
                                         .font(.system(size: 12))
@@ -175,29 +216,14 @@ struct AddScopeSheet: View {
             .padding(.horizontal, RBSpacing.md)
             .padding(.vertical, RBSpacing.sm)
         }
-        .frame(width: 420)
-        .onAppear(perform: fetchScopeOptions)
-        // Nested inline overlay for scope selector — no child NSWindow.
-        .inlineSheet(isPresented: $showScopeSelector) {
-            RepoSelectorSheet(
-                items: pickerItems,
-                label: scopeType == .org ? "Organisation" : "Repository",
-                onDismiss: { showScopeSelector = false },
-                onSelect: { item in
-                    selectedScope = item
-                    showScopeSelector = false
-                }
-            )
-        }
     }
 
     // MARK: - Actions
 
     /// Fetches orgs and repos from GitHub on a background thread.
-    /// Falls back to manual text entry when no token is present or the fetch returns empty results.
     private func fetchScopeOptions() {
         guard githubToken() != nil else {
-            log("AddScopeSheet \u{203a} no token \u{2014} falling back to text field")
+            log("AddScopeSheet › no token — falling back to text field")
             usePicker = false
             return
         }
@@ -209,7 +235,7 @@ struct AddScopeSheet: View {
             DispatchQueue.main.async {
                 isFetching = false
                 if fetchedOrgs.isEmpty && fetchedRepos.isEmpty {
-                    log("AddScopeSheet \u{203a} fetch returned no orgs or repos \u{2014} using text field")
+                    log("AddScopeSheet › fetch returned no orgs or repos — using text field")
                     usePicker = false
                     errorMessage = "Could not load orgs/repos. Enter manually."
                 } else {
@@ -217,19 +243,19 @@ struct AddScopeSheet: View {
                     repos = fetchedRepos
                     usePicker = true
                     selectedScope = pickerItems.first ?? ""
-                    log("AddScopeSheet \u{203a} loaded orgs=\(orgs.count) repos=\(repos.count)")
+                    log("AddScopeSheet › loaded orgs=\(orgs.count) repos=\(repos.count)")
                 }
             }
         }
     }
 
-    /// Persists `effectiveScope` to `ScopeStore`, triggers `onAdd`, and dismisses the sheet.
+    /// Persists `effectiveScope` to `ScopeStore` and dismisses.
     @MainActor private func confirmAdd() {
         let scope = effectiveScope
         guard !scope.isEmpty else { return }
         ScopeStore.shared.add(scope)
         RunnerStore.shared.start()
-        log("AddScopeSheet \u{203a} added scope: \(scope)")
+        log("AddScopeSheet › added scope: \(scope)")
         isPresented = false
     }
 }
