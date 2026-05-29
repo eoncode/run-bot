@@ -289,16 +289,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// Nudges the NSPopover backing window through AppKit's normal key-window
-    /// path without re-showing or resizing it.
+    /// Makes the lazy NSPopover backing window key immediately after show/restore.
     ///
-    /// The native popover Liquid Glass sometimes cold-opens in a grey inactive
-    /// material state. Navigating to Settings already fixes it because that path
-    /// activates the app for text input. Doing the same harmless activation nudge
-    /// after open keeps the natural black popover glass without adding tint or
-    /// changing the positioning anchor.
-    func stabilizePopoverGlassAppearance() {
+    /// The native Liquid Glass chrome resolves differently while the popover
+    /// window is inactive. A user click makes the window key and restores the
+    /// desired dark glass look; doing it immediately avoids the grey first-open
+    /// state without adding tint, overlays, or extra `show()` calls.
+    func makePopoverWindowKeyIfPossible() {
+        guard let popoverWindow = popover?.contentViewController?.view.window else { return }
         NSApp.activate(ignoringOtherApps: true)
+        popoverWindow.makeKey()
     }
 
     /// Performs the removeEventMonitor operation.
@@ -341,7 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !restorePopoverWindowsPreservingSheetsIfNeeded() {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
-        stabilizePopoverGlassAppearance()
+        makePopoverWindowKeyIfPossible()
         resizeAndRepositionPanel()
 
         // Only navigate if we have a saved state AND the current rootView is
