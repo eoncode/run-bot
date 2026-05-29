@@ -44,10 +44,9 @@ struct PanelContainerView<Content: View>: View {
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .allowsHitTesting(true)
-                    .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: isSheetActive)
+        // ❌ No animation — overlay must snap on/off instantly.\n        // Any animation here re-triggers visibly on transient hide/restore.
         .onAppear { startPolling() }
         .onDisappear { stopPolling() }
         .onChange(of: panelVisibilityState.isOpen) { _, open in
