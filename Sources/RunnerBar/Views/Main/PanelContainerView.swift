@@ -52,10 +52,14 @@ struct PanelContainerView<Content: View>: View {
         .onDisappear { stopPolling() }
         .onChange(of: panelVisibilityState.isOpen) { _, open in
             if open {
-                isSheetActive = false
+                // ❌ Do NOT reset isSheetActive here — a transient hide keeps the
+                // sheet window alive. Resetting causes a flicker: the overlay
+                // disappears for one frame then the 100ms timer brings it back.
                 startPolling()
             } else {
                 stopPolling()
+                // Safe to clear on close — closePanel() has already called
+                // dismissSheets() so no sheet window remains.
                 isSheetActive = false
             }
         }
