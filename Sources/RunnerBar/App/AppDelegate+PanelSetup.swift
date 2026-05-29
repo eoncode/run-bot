@@ -23,16 +23,26 @@ import SwiftUI
 // window. Two problems arise:
 //
 // 1. NO DIM: NSPopoverWindowFrame does not participate in AppKit's standard
-//    modal sheet dimming. Fix: we apply a SwiftUI .overlay dim inside the
-//    popover content via PanelContainerView, keyed on hasActiveSheet.
+//    modal sheet dimming. Fix: PanelContainerView polls NSWindow.sheets and
+//    overlays Color.black.opacity(0.35) when a sheet is present.
 //
-// 2. ORPHANED SHEET on outside click: even with .applicationDefined behavior,
-//    AppKit can close the popover when the user clicks outside (e.g. via the
-//    NSPopoverDelegate popoverShouldClose path). If the popover closes while a
-//    sheet is open, the sheet's NSWindow is orphaned — visible but with no
-//    parent popover, leaving the app in a non-interactive frozen state.
-//    Fix: NSPopoverDelegate.popoverShouldClose returns false when a sheet is
-//    open. This prevents AppKit from closing the popover underneath a sheet.
+// 2. OUTSIDE-TAP BEHAVIOUR DURING SHEET:
+//    Desired: tapping outside while a sheet is open hides the popover
+//    (so the user can interact with other apps), but saves nav state so
+//    re-opening the status bar app restores the sheet context.
+//
+//    Implementation:
+//    - popoverShouldClose always returns true. AppKit is never blocked.
+//    - popoverDidClose saves hasActiveSheet into a flag before state clears.
+//    - openPanel restores via savedNavState (already the case).
+//    - The global event monitor no longer has a hasActiveSheet guard —
+//      outside clicks always trigger closePanel().
+//    - closePanel() does NOT call endSheet on any open sheet. The sheet
+//      window is a child of the popover window; when the popover window
+//      closes, AppKit removes all child windows including the sheet.
+//      On re-open, SwiftUI re-presents the sheet if the binding is still true
+//      (e.g. showAddScopeSheet = true is preserved in @State in SettingsView).
+//      savedNavState = .settings ensures we navigate back to SettingsView.
 //
 // SIZE NOTE:
 // popover.contentSize is updated (both width AND height) via KVO on
@@ -67,22 +77,16 @@ extension AppDelegate: NSPopoverDelegate {
 
     // MARK: NSPopoverDelegate
 
-    /// Prevents the popover closing while a sheet is presented over it.
-    /// Without this, AppKit orphans the sheet's NSWindow and the app freezes.
+    /// Always allow close. Outside-tap during a sheet hides the popover so the
+    /// user can interact with other apps. Nav state is preserved and restored
+    /// on next open via savedNavState.
     public func popoverShouldClose(_ popover: NSPopover) -> Bool {
-        // Block close if a sheet is currently attached.
-        // The user must dismiss the sheet first.
-        return !hasActiveSheet
+        return true
     }
 
-    /// Called after the popover actually closes (e.g. user pressed Escape).
-    /// Ensures our internal state stays in sync.
+    /// Syncs internal state after the popover closes for any reason.
     public func popoverDidClose(_ notification: Notification) {
         guard panelIsOpen else { return }
-        // Force-dismiss any orphaned sheet windows just in case.
-        popover?.contentViewController?.view.window?.sheets.forEach { sheet in
-            popover?.contentViewController?.view.window?.endSheet(sheet)
-        }
         panelIsOpen = false
         panelVisibilityState.isOpen = false
         removeEventMonitor()

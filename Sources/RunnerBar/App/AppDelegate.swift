@@ -102,8 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Sheet guard
-    // NOTE: internal (not private) — accessed from AppDelegate+PanelSetup.swift
-    // in NSPopoverDelegate.popoverShouldClose(_:).
+    // NOTE: internal (not private) — accessible from AppDelegate+PanelSetup.swift.
     /// Returns true when a SwiftUI sheet is currently presented over the popover.
     var hasActiveSheet: Bool {
         guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
@@ -183,6 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Dismiss
 
     /// Closes the popover and resets all state.
+    /// If a sheet is open, savedNavState is already set to .settings
+    /// so re-opening restores the settings view (sheet @State in SettingsView
+    /// is preserved in the hosting controller until rootView is replaced).
     func closePanel() {
         guard panelIsOpen else { return }
         popover?.performClose(nil)
@@ -190,11 +192,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelVisibilityState.isOpen = false
         removeEventMonitor()
         removeWorkspaceObserver()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let preserved = self.savedNavState
-            self.hostingController?.rootView = self.mainView()
-            self.savedNavState = preserved
+        // Only reset rootView to main if no sheet-related nav state to preserve.
+        // If savedNavState == .settings the user was in settings (possibly with a
+        // sheet open). We keep the hostingController rootView as-is so that when
+        // the popover re-shows the sheet @State is still alive.
+        if savedNavState == nil || savedNavState == .main {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.hostingController?.rootView = self.mainView()
+            }
         }
     }
 
@@ -263,17 +269,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Skip dismiss monitors during UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
+        // Outside-click always closes — no hasActiveSheet guard.
+        // If a sheet was open, savedNavState == .settings so re-open restores it.
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] event in
             guard let self, let popover = self.popover else { return }
-            guard !self.hasActiveSheet else { return }
             let loc = event.locationInWindow
             let screenLoc = event.window?.convertToScreen(
                 NSRect(origin: loc, size: .zero)
             ).origin ?? loc
             guard let popoverWindow = popover.contentViewController?.view.window else { return }
-            if !popoverWindow.frame.contains(screenLoc) { self.closePanel() }
+            // Also allow clicks inside any sheet window attached to the popover.
+            let sheetWindows = popoverWindow.sheets
+            let inSheet = sheetWindows.contains { $0.frame.contains(screenLoc) }
+            if !popoverWindow.frame.contains(screenLoc) && !inSheet {
+                self.closePanel()
+            }
         }
 
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
