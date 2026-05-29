@@ -15,7 +15,7 @@ import SwiftUI
 // ❌ NEVER add a second navigation method elsewhere.
 // ❌ NEVER call navigate(to:) from a SwiftUI view — use callbacks only.
 // ❌ NEVER read panel.wantsKey — KeyablePanel is no longer used.
-// ❌ makeKeyForTextInput() is now AppDelegate.makeKeyForTextInput() which calls
+// ❌ makeKeyForTextInput() is AppDelegate.makeKeyForTextInput() which calls
 //   NSApp.activate(ignoringOtherApps: true).
 
 /// Extension adding navigation functionality to AppDelegate.
@@ -29,15 +29,15 @@ extension AppDelegate {
             store: observable,
             onStepTap: { [weak self] job, step in
                 guard let self else { return }
-                self.savedNavState = .stepLog(jobId: job.id, stepIndex: step.number - 1)
-                self.navigate(to: self.wrapEnv(StepLogView(
-                    jobId: job.id,
-                    initialStepIndex: step.number - 1,
+                self.savedNavState = .stepLog(job, step)
+                self.navigate(to: self.wrapEnv(PanelContainerView(content: StepLogView(
+                    job: job,
+                    step: step,
                     onBack: { [weak self] in
                         self?.savedNavState = nil
                         self?.navigate(to: self?.mainView() ?? AnyView(EmptyView()))
                     }
-                )))
+                ))))
             },
             onSelectSettings: { [weak self] in self?.navigateToSettings() }
         )
@@ -70,18 +70,20 @@ extension AppDelegate {
     /// Returns the correct view for a saved nav state, or nil if stale.
     func validatedView(for state: NavState) -> AnyView? {
         switch state {
+        case .main:
+            return mainView()
         case .settings:
             return settingsView()
-        case .stepLog(let jobId, let stepIndex):
-            guard RunnerStore.shared.jobs.contains(where: { $0.id == jobId }) else { return nil }
-            return wrapEnv(StepLogView(
-                jobId: jobId,
-                initialStepIndex: stepIndex,
+        case .stepLog(let job, let step):
+            guard RunnerStore.shared.jobs.contains(where: { $0.id == job.id }) else { return nil }
+            return wrapEnv(PanelContainerView(content: StepLogView(
+                job: job,
+                step: step,
                 onBack: { [weak self] in
                     self?.savedNavState = nil
                     self?.navigate(to: self?.mainView() ?? AnyView(EmptyView()))
                 }
-            ))
+            )))
         }
     }
 }

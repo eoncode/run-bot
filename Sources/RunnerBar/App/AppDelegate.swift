@@ -102,8 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Sheet guard
+    // NOTE: internal (not private) — accessed from AppDelegate+PanelSetup.swift
+    // in NSPopoverDelegate.popoverShouldClose(_:).
     /// Returns true when a SwiftUI sheet is currently presented over the popover.
-    private var hasActiveSheet: Bool {
+    var hasActiveSheet: Bool {
         guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
         return !popoverWindow.sheets.isEmpty
     }
