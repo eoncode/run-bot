@@ -4,78 +4,103 @@ import AppKit
 import Combine
 import SwiftUI
 
-// MARK: - NSPanel architecture note
+// MARK: - NSPopover architecture note
 //
-// ⚠️ NSPanel (Pattern 2 from #377) is used instead of NSPopover to prevent
-// lateral panel jumps on content-size changes. See ARCHITECTURE.md §Panel Lifecycle.
+// ⚠️ NSPopover is used instead of NSPanel as of fix/#1017.
 //
-// HOW THE PANEL WORKS:
-// 1. Panel is a borderless, non-activating NSPanel.
-// 2. Position is computed from status button's window frame (screen coords):
-//      statusItemRect = button.window!.frame   ← already in screen coords
-//      panelX = statusItemRect.midX - contentW/2   ← re-centred each resize
-//      panelTopY = statusItemRect.minY - gap       ← locked at open time
-//      y (frame origin) = max(visibleFrame.minY, panelTopY - totalH) ← clamped
-//              ❌ NEVER re-derive panelTopY from statusItemRect inside
-//                 resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
-//      panelH  = clampedContentH + arrowHeight
-// 3. arrowX = statusItemRect.midX - panel.frame.minX
-//    ❌ NEVER use convertToScreen(button.frame) — button.frame is button-local.
-// 4. sizingOptions = .preferredContentSize: KVO on preferredContentSize
-//    → resizeAndRepositionPanel() → setFrame(). Zero jump.
-// 5. Dismiss: NSEvent global monitor + NSWorkspace app-switch notification.
+// WHY NSPopover instead of NSPanel:
+// NSPanel with custom CAShapeLayer masking or cornerRadius+masksToBounds
+// loses its rounded corners whenever a SwiftUI .sheet is presented as a
+// child NSWindow. AppKit's sheet attachment path modifies the parent
+// window's CALayer tree, discarding any mask or masksToBounds we set.
+// NSPopover uses NSPopoverWindowFrame, a dedicated window class whose chrome
+// is drawn by the window-server compositor — completely unaffected by sheet
+// attachment. Rounded corners survive .sheet natively.
 //
-// CHROME DIMENSIONS (match NSPopover exactly):
-//   arrowHeight = 9pt, arrowWidth = 30pt, cornerRadius = 10pt
+// HOW THE POPOVER WORKS:
+// 1. NSPopover with animates=false, behavior=.applicationDefined.
+// 2. Shown via popover.show(relativeTo: button.bounds, of: button,
+//    preferredEdge: .minY) — anchors to the status bar button once on open.
+//    The arrow anchor is determined by positioningRect+view at show() time
+//    and is NOT moved when contentSize is updated later.
+// 3. Size is driven by KVO on NSHostingController.preferredContentSize.
+//    Both width AND height are updated via popover.contentSize.
+//    ⚠️ Do NOT call popover.show() again on resize — that re-anchors and jumps.
+//    Updating contentSize alone resizes in place with the arrow fixed.
+// 4. Width is clamped to [minWidth..maxWidth] from screen bounds.
+// 5. Dismiss: popover.performClose(nil) or NSEvent global monitor
+//    + NSWorkspace app-switch notification (same as before).
 //
-// WIDTH: Content-driven via preferredContentSize.width.
-// SwiftUI views declare their own minWidth or idealWidth — NO shared fixed width.
-// resizeAndRepositionPanel() clamps to [minWidth..maxWidth] and re-centres
-// the panel under the status button.
+// TEXT INPUT:
+// NSPopover windows are key-capable natively. NSApp.activate() is
+// sufficient to allow TextFields to receive first-responder.
 //
-// INITIAL WIDTH (openPanel):
-// initPanelWidth is the fallback frame width used for the initial open before
-// SwiftUI has measured anything. 320 is a compact default.
-// ❌ NEVER set initPanelWidth > maxWidth.
-// ❌ NEVER restore initPanelWidth to 600.
+// LATERAL JUMP PREVENTION:
+// Only update contentSize — never re-call popover.show() on resize.
+// Updating contentSize repositions the popover body but keeps the arrow
+// anchored to the original positioningRect on the status bar button.
 //
 // PANELVISIBILITYSTATE:
-// panelVisibilityState.isOpen mirrors panelIsOpen. Injected via wrapEnv().
+// panelVisibilityState.isOpen is set in openPanel()/closePanel()/hidePanel().
 // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
-// ❌ NEVER pass as a plain Bool prop to PanelMainView.
 // See ARCHITECTURE.md §panelVisibilityState.
-
-// NOTE: KeyablePanel is defined in KeyablePanel.swift (internal access level).
-// It must NOT be private or fileprivate — AppDelegate+Navigation.swift accesses
-// `panel: KeyablePanel?` from a separate file. See ARCHITECTURE.md §KeyablePanel.
+//
+// SHEET STATE ACROSS HIDE/SHOW:
+// When the user taps outside while a sheet is open, hidePanel() is called.
+// Goal: re-opening the status bar icon should show settings WITH the sheet.
+//
+// How this works:
+// - hidePanel() does NOT call dismissSheets() and does NOT reset rootView.
+//   NSPopover's performClose() closes the NSPopoverWindowFrame and all its
+//   child windows (including the sheet NSWindow) together. They are removed
+//   from screen but the NSHostingController and its SwiftUI tree remain alive.
+//   SwiftUI @State (editingRunner, showAddScopeSheet, etc.) is preserved inside
+//   the hosting controller's view because the hosting controller itself is never
+//   destroyed or replaced.
+// - On re-open, openPanel() calls popover.show() which re-attaches the same
+//   NSHostingController. SwiftUI sees the existing state, the binding is still
+//   true, and re-presents the sheet automatically.
+//
+// closePanel() IS different: it is called when the user explicitly closes
+// (e.g. pressing Escape, or navigating back). In that case we DO reset rootView
+// to mainView() so the next open starts fresh at the main view.
+//
+// ❌ NEVER add dismissSheets() to hidePanel() — it destroys sheet @State.
+// ❌ NEVER reset hostingController.rootView inside hidePanel().
+// ❌ NEVER add a validatedView(for: .settings) navigate() call inside openPanel()
+//    when the current rootView is already SettingsView — it replaces the live
+//    view with a new struct and resets all @State.
 
 // MARK: - AppDelegate
 
 // ⚠️ @MainActor isolation — see ARCHITECTURE.md §@MainActor isolation.
 // ❌ NEVER remove @MainActor from this class declaration.
-// ❌ NEVER remove `nonisolated` from enrichStepsIfNeeded.
 /// Manages AppDelegate state and behaviour.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    // NOTE: The properties and methods below are `internal` (not `private`) because
-    // Swift `private` does not cross file boundaries. AppDelegate+Navigation.swift
-    // requires read/write access to all of them. Do not widen beyond `internal`.
+    // NOTE: Properties are `internal` (not `private`) because Swift `private`
+    // does not cross file boundaries. AppDelegate+Navigation.swift requires
+    // read/write access to all of them.
 
     /// The statusItem property.
-    var statusItem: NSStatusItem?           // internal: required for AppDelegate+Navigation
-    /// The panel property.
-    var panel: KeyablePanel?               // internal: required for AppDelegate+Navigation
+    var statusItem: NSStatusItem?
+    /// The popover replacing the old KeyablePanel.
+    var popover: NSPopover?
     /// The hostingController property.
-    var hostingController: NSHostingController<AnyView>? // internal: required for AppDelegate+Navigation
+    var hostingController: NSHostingController<AnyView>?
     /// The observable constant.
-    let observable = RunnerViewModel()      // internal: required for AppDelegate+Navigation
+    let observable = RunnerViewModel()
     /// The savedNavState property.
-    var savedNavState: NavState?           // internal: required for AppDelegate+Navigation
-    /// The panelIsOpen property.
-    var panelIsOpen = false                // internal: required for AppDelegate+Navigation
+    var savedNavState: NavState?
+    /// Sheet state that must survive transient popover hides.
+    let panelSheetState = PanelSheetState()
+    /// Mirrors popover.isShown — kept for compatibility with navigation code.
+    var panelIsOpen = false
+    /// Tracks a transient hide that preserved an active AppKit sheet session.
+    var preservedSheetWindowHide = false
 
     /// The eventMonitor property.
-    var eventMonitor: Any?                 // internal: required for AppDelegate+Navigation
+    var eventMonitor: Any?
     /// The sizeObservation property.
     var sizeObservation: NSKeyValueObservation?
     /// The workspaceObserver property.
@@ -83,71 +108,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The cancellables property.
     var cancellables = Set<AnyCancellable>()
 
-    /// Top anchor (screen coords) captured once in openPanel().
-    /// ❌ NEVER re-derive inside resizeAndRepositionPanel() — see ARCHITECTURE.md §Panel Lifecycle.
-    var panelTopY: CGFloat?                // internal: required for AppDelegate+Navigation
-
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
-    // ❌ NEVER remove. ❌ NEVER remove from wrapEnv(). ❌ NEVER pass as plain Bool to PanelMainView.
     /// The panelVisibilityState constant.
-    let panelVisibilityState = PanelVisibilityState() // internal: required for AppDelegate+Navigation
+    let panelVisibilityState = PanelVisibilityState()
 
-    /// Lower bound for panel content width (clamp floor in resizeAndRepositionPanel).
+    /// Minimum popover content width.
     static let minWidth: CGFloat = 280
 
-    /// The screen the status item lives on.
-    var statusItemScreen: NSScreen {       // internal: required for AppDelegate+Navigation
-        statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+    /// Maximum popover content width (90% of screen).
+    var maxWidth: CGFloat {
+        min(900, statusItemScreen.visibleFrame.width * 0.9)
     }
 
-    /// The maxWidth property.
-    var maxWidth: CGFloat {                // internal: required for AppDelegate+Navigation
-        let screenMax = statusItemScreen.visibleFrame.width * 0.9
-        return min(900, screenMax)
-    }
-
-    /// The maxHeight property.
-    var maxHeight: CGFloat {               // internal: required for AppDelegate+Navigation
+    /// Maximum popover height (85% of visible screen).
+    var maxHeight: CGFloat {
         statusItemScreen.visibleFrame.height * 0.85
     }
 
-    /// The gap constant.
-    static let gap: CGFloat = 2
-
-    /// Initial panel width used before SwiftUI has measured content.
-    static let initPanelWidth: CGFloat = 320
+    /// The screen the status item lives on.
+    var statusItemScreen: NSScreen {
+        statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+    }
 
     // MARK: - Sheet guard
-    //
-    // SwiftUI .sheet() attaches as a child NSWindow to the panel (panel.sheets).
-    // Clicks inside the sheet land outside the panel frame, which would normally
-    // trigger the global mouse-down monitor and call closePanel() immediately.
-    // ❌ NEVER remove this check from the eventMonitor block.
-    // ⚠️ Do NOT use this guard in workspaceObserver — app-switching must always
-    // hide the panel, even when a sheet is open. See #1015.
-    /// Returns true when a SwiftUI sheet is currently presented over the panel.
-    private var hasActiveSheet: Bool {
-        guard let panel else { return false }
-        return !panel.sheets.isEmpty
+    /// Returns true when a SwiftUI sheet is currently presented over the popover.
+    var hasActiveSheet: Bool {
+        guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
+        return !popoverWindow.sheets.isEmpty
     }
 
     // MARK: - Environment injection
 
-    // Regression guard — see ARCHITECTURE.md §panelVisibilityState and §wrapEnv.
-    // ❌ NEVER bypass. ❌ NEVER remove .environmentObject(panelVisibilityState).
     // swiftlint:disable:next missing_docs
-    func wrapEnv<V: View>(_ view: V) -> AnyView { // internal: required for AppDelegate+Navigation
+    func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(panelVisibilityState))
     }
 
     // MARK: - App lifecycle
 
-    /// Called before applicationDidFinishLaunching.
-    /// Sets activation policy to .regular during UI tests so XCTest can see
-    /// all windows and elements in the AX tree — LSUIElement apps run as
-    /// .runningBackground and their windows are invisible to XCTest by default.
-    /// Must be in applicationWillFinishLaunching (not DidFinish) so the policy
-    /// is set before XCTest's automation session handshake completes.
+    /// Sets activation policy during UI tests so XCTest can see windows.
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard ProcessInfo.processInfo.environment["UI_TESTING"] != nil else { return }
         NSApp.setActivationPolicy(.regular)
@@ -164,10 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
     }
 
-    // MARK: - OAuth URL callback (#326)
-    //
-    // Handles the runnerbar://oauth/callback?code=... redirect from GitHub.
-    // Searches the full urls array — see ARCHITECTURE.md §OAuth URL handling.
+    // MARK: - OAuth URL callback
 
     /// Performs the application operation.
     func application(_ _: NSApplication, open urls: [URL]) {
@@ -176,111 +172,139 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OAuthService.shared.handleCallback(url)
     }
 
-    // MARK: - Panel resize
+    // MARK: - Popover resize
 
-    // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
-    // ❌ NEVER re-derive panelTopY here. ❌ NEVER call from a background thread.
-    //
-    // UI_TESTING note: in UI tests button.window is nil (no real menu-bar backing
-    // window). The guard below falls back to a centred rect on the main screen so
-    // the panel is positioned on-screen and XCTest's AX server can find it in
-    // app.windows. ❌ NEVER remove the button.window fallback.
     // swiftlint:disable:next missing_docs
-    func resizeAndRepositionPanel() { // internal: required for AppDelegate+Navigation
-        guard panelIsOpen,
-              let panel,
-              let button = statusItem?.button,
-              let topY = panelTopY else { return }
-
-        let preferred = hostingController?.preferredContentSize ?? CGSize(width: Self.initPanelWidth, height: 300)
-
-        let contentW = min(max(preferred.width, Self.minWidth), maxWidth)
-        let contentH = min(max(preferred.height, 60), maxHeight)
-        let totalH = contentH
-
-        // In UI tests button.window is nil — fall back to centred position on main screen.
-        // ❌ NEVER remove this fallback — required for testPanelOpensAndShowsWorkflowsSection.
-        let statusItemRect: NSRect
-        if let windowFrame = button.window?.frame {
-            statusItemRect = windowFrame
-        } else {
-            let screen = NSScreen.main ?? NSScreen.screens[0]
-            let sf = screen.visibleFrame
-            statusItemRect = NSRect(
-                x: sf.midX - contentW / 2,
-                y: sf.maxY,
-                width: contentW,
-                height: 0
-            )
+    func resizeAndRepositionPanel() {
+        guard panelIsOpen, let popover, let controller = hostingController else { return }
+        let preferred = controller.preferredContentSize
+        guard preferred.height > 0 else { return }
+        let newW = min(max(preferred.width > 0 ? preferred.width : Self.minWidth, Self.minWidth), maxWidth)
+        let newH = min(max(preferred.height, 60), maxHeight)
+        let currentSize = popover.contentSize
+        if abs(currentSize.width - newW) > 1 || abs(currentSize.height - newH) > 1 {
+            popover.contentSize = NSSize(width: newW, height: newH)
         }
-
-        let visibleFrame = statusItemScreen.visibleFrame
-        let posX = min(max(statusItemRect.midX - contentW / 2, visibleFrame.minX + 8), visibleFrame.maxX - contentW - 8)
-        let rawPosY = topY - totalH
-        let posY = max(rawPosY, visibleFrame.minY)
-
-        panel.setFrame(NSRect(x: posX, y: posY, width: contentW, height: totalH),
-                       display: true, animate: false)
     }
 
     // MARK: - Navigation
 
-    // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
-    // ❌ NEVER remove the resizeAndRepositionPanel() call from this method.
     // swiftlint:disable:next missing_docs
-    func navigate(to view: AnyView) { // internal: required for AppDelegate+Navigation
+    func navigate(to view: AnyView) {
         hostingController?.rootView = view
         resizeAndRepositionPanel()
     }
 
     // MARK: - Make key for text input
 
-    // See KeyablePanel.swift for the full explanation.
-    // ❌ NEVER call this for views that have no text input (main, step log).
-    /// Performs the makeKeyForTextInput operation.
-    func makeKeyForTextInput() { // internal: required for AppDelegate+Navigation
-        panel?.wantsKey = true
-        panel?.makeKeyAndOrderFront(nil)
+    /// Promotes the app to key so TextFields in the popover receive input.
+    func makeKeyForTextInput() {
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Dismiss
 
-    /// Performs the closePanel operation.
+    /// Closes the popover explicitly (Escape / back navigation / manual close).
+    /// Resets rootView to main so next open starts fresh.
+    /// ❌ Do NOT call this from outside-tap / workspace-switch — use hidePanel().
     func closePanel() {
         guard panelIsOpen else { return }
-        panel?.wantsKey = false
-        panel?.orderOut(nil)
+        popover?.performClose(nil)
+        preservedSheetWindowHide = false
         panelIsOpen = false
-        panelTopY = nil
         panelVisibilityState.isOpen = false
         removeEventMonitor()
         removeWorkspaceObserver()
-        // Nav-state persistence — see ARCHITECTURE.md §Nav-state persistence.
-        // ❌ NEVER replace hostingController?.rootView = mainView() with a no-op stub.
+        savedNavState = nil
+        panelSheetState.clearRunnerSheet()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let preserved = self.savedNavState
             self.hostingController?.rootView = self.mainView()
-            self.savedNavState = preserved
         }
     }
 
-    /// Hides the panel without resetting the view hierarchy. (#1015)
-    /// Used by workspaceObserver when the user switches to another app.
-    /// Preserves hostingController.rootView so the sheet/popover is restored
-    /// intact when the user taps the status bar icon again.
-    /// ❌ NEVER call from togglePanel() — use closePanel() for explicit dismissal.
+    /// Hides the popover on outside-tap or workspace app-switch.
+    ///
+    /// Intentionally does NOT call dismissSheets() and does NOT reset rootView.
+    /// The NSHostingController and its SwiftUI @State (including any open sheet
+    /// bindings) remain alive. On re-open, popover.show() reattaches the same
+    /// controller and SwiftUI re-presents the sheet automatically.
+    ///
+    /// ❌ NEVER add dismissSheets() here.
+    /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
         guard panelIsOpen else { return }
-        panel?.wantsKey = false
-        panel?.orderOut(nil)
+        panelSheetState.captureTransientHideState()
+        // ❌ Set isTransientHide = true BEFORE isOpen = false.
+        // PanelContainerView.onChange fires synchronously when isOpen changes.
+        // If isTransientHide is not already true at that point, onChange will
+        // incorrectly clear isSheetActive, causing the dim-overlay animation to
+        // replay on the next restore even though the sheet never closed.
+        // See PanelVisibilityState.isTransientHide for the full lifecycle.
+        panelVisibilityState.isTransientHide = true
+
+        if hidePopoverWindowsPreservingSheets() {
+            panelIsOpen = false
+            panelVisibilityState.isOpen = false
+            removeEventMonitor()
+            removeWorkspaceObserver()
+            return
+        }
+
+        popover?.performClose(nil)
         panelIsOpen = false
-        panelTopY = nil
         panelVisibilityState.isOpen = false
         removeEventMonitor()
         removeWorkspaceObserver()
-        // Intentionally does NOT reset hostingController.rootView.
-        // openPanel() restores the current view via savedNavState on next open.
+    }
+
+    /// Orders the popover and attached sheet windows out without closing them.
+    ///
+    /// Closing an NSPopover while an attached SwiftUI sheet is open can detach
+    /// the visible sheet while leaving the parent content in AppKit's disabled
+    /// sheet-modal state. Ordering the existing windows out preserves the live
+    /// sheet session so re-opening can order the same windows back in.
+    @discardableResult
+    func hidePopoverWindowsPreservingSheets() -> Bool {
+        guard hasActiveSheet,
+              let popoverWindow = popover?.contentViewController?.view.window
+        else { return false }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            popoverWindow.orderOut(nil)
+        }
+        preservedSheetWindowHide = true
+        return true
+    }
+
+    /// Restores windows hidden by `hidePopoverWindowsPreservingSheets()`.
+    @discardableResult
+    func restorePopoverWindowsPreservingSheetsIfNeeded() -> Bool {
+        guard preservedSheetWindowHide,
+              let popoverWindow = popover?.contentViewController?.view.window
+        else { return false }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            popoverWindow.orderFront(nil)
+        }
+        preservedSheetWindowHide = false
+        return true
+    }
+
+    /// Makes the lazy NSPopover backing window key immediately after show/restore.
+    ///
+    /// The native Liquid Glass chrome resolves differently while the popover
+    /// window is inactive. A user click makes the window key and restores the
+    /// desired dark glass look; doing it immediately avoids the grey first-open
+    /// state without adding tint, overlays, or extra `show()` calls.
+    func makePopoverWindowKeyIfPossible() {
+        guard let popoverWindow = popover?.contentViewController?.view.window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        popoverWindow.makeKey()
     }
 
     /// Performs the removeEventMonitor operation.
@@ -298,8 +322,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Toggle
 
-    // internal (not private) so AppDelegate+StatusItem.swift can reference
-    // it via #selector(togglePanel) from a separate file.
     /// Performs the togglePanel operation.
     @objc func togglePanel() {
         if panelIsOpen {
@@ -311,88 +333,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Open
 
-    /// Performs the openPanel operation.
-    ///
-    /// When `UI_TESTING=1` is set, `button.window` is nil because the app runs
-    /// as `.regular` activation policy (no real menu-bar backing window). In that
-    /// case we fall back to a centred position on the main screen.
-    ///
-    /// Panel window level is handled once in setupPanel() — .floating for UI
-    /// tests, .popUpMenu for production. Do not set panel.level here.
-    ///
-    /// The global NSEvent monitor and NSWorkspace app-switch observer are skipped
-    /// during UI tests: XCTest synthesises mouse events as global NSEvents, which
-    /// the monitor misinterprets as outside-clicks, immediately calling closePanel()
-    /// before the click reaches its target inside the panel.
-    /// ❌ NEVER install the event monitor or workspace observer when UI_TESTING is set.
+    /// Shows the popover anchored to the status bar button.
+    /// ⚠️ show() is called ONCE per open. Resize is done via contentSize only.
     func openPanel() {
-        guard let button = statusItem?.button, let panel else { return }
+        guard let button = statusItem?.button, let popover else { return }
 
-        // In UI tests button.window is nil (no real menu-bar backing window), so
-        // we fall back to a centred rect on the main screen.
-        let statusItemRect: NSRect
-        if let windowFrame = button.window?.frame {
-            statusItemRect = windowFrame
-        } else {
-            let screen = NSScreen.main ?? NSScreen.screens[0]
-            let sf = screen.visibleFrame
-            statusItemRect = NSRect(
-                x: sf.midX - Self.initPanelWidth / 2,
-                y: sf.maxY,
-                width: Self.initPanelWidth,
-                height: 0
-            )
-        }
-
-        log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
+        log("AppDelegate › openPanel — seeding observable")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
 
         panelIsOpen = true
         panelVisibilityState.isOpen = true
-        panelTopY = statusItemRect.minY - Self.gap
 
-        let initW = Self.initPanelWidth
-        let initH: CGFloat = 300 + arrowHeight
-        let posX = statusItemRect.midX - initW / 2
-        let posY = statusItemRect.minY - initH - Self.gap
-
-        panel.setFrame(
-            NSRect(x: posX, y: posY, width: initW, height: initH),
-            display: false, animate: false
-        )
-
-        // (arrow removed — plain rounded panel, no chrome)
-        // Use wantsKey + makeKeyAndOrderFront to guarantee the panel receives
-        // keyboard events on first open, preventing grey cold-open regression.
-        // ❌ NEVER revert to orderFront(nil) — grey cold-open regression (#892).
-        // If you are an agent or human, DO NOT REMOVE THIS COMMENT.
-        panel.wantsKey = true
-        panel.makeKeyAndOrderFront(nil)
+        if !restorePopoverWindowsPreservingSheetsIfNeeded() {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+        makePopoverWindowKeyIfPossible()
         resizeAndRepositionPanel()
 
-        if let saved = savedNavState, let restored = validatedView(for: saved) {
-            navigate(to: restored)
+        // Only navigate if we have a saved state AND the current rootView is
+        // NOT already showing that view (i.e. we came from closePanel/mainView reset,
+        // not from hidePanel which preserves rootView).
+        // We detect "already correct" by checking savedNavState against the
+        // current rootView identity via a flag set in navigate(to:).
+        // Simpler approach: only navigate when savedNavState is set AND
+        // hasActiveSheet is false (if sheet is open, rootView is correct already).
+        if let saved = savedNavState, !hasActiveSheet {
+            if let restored = validatedView(for: saved) {
+                navigate(to: restored)
+            }
         }
 
-        // Skip dismiss monitors during UI tests.
-        // XCTest synthetic global mouse events are misread as outside-clicks by the
-        // monitor, causing closePanel() to fire before the click reaches its target.
-        // ❌ NEVER install these monitors when UI_TESTING is set.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.preservedSheetWindowHide else { return }
+            self.panelSheetState.restoreTransientHideStateIfNeeded()
+        }
+
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] event in
-            guard let self, let panel = self.panel else { return }
-            // ❌ NEVER remove the hasActiveSheet guard — sheets attach as child
-            // windows; clicks inside them land outside the panel frame and would
-            // otherwise trigger a spurious closePanel().
-            guard !self.hasActiveSheet else { return }
+            guard let self, let popover = self.popover else { return }
             let loc = event.locationInWindow
             let screenLoc = event.window?.convertToScreen(
                 NSRect(origin: loc, size: .zero)
             ).origin ?? loc
-            if !panel.frame.contains(screenLoc) { self.closePanel() }
+            guard let popoverWindow = popover.contentViewController?.view.window else { return }
+            let sheetWindows = popoverWindow.sheets
+            let inSheet = sheetWindows.contains { $0.frame.contains(screenLoc) }
+            if !popoverWindow.frame.contains(screenLoc) && !inSheet {
+                self.hidePanel()
+            }
         }
 
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -401,10 +392,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            // #1015: No hasActiveSheet guard here — app-switching must always hide
-            // the panel, even when a sheet is open. hidePanel() preserves view state
-            // so the sheet/popover is restored when the user taps the status bar again.
-            // ⚠️ Do NOT add hasActiveSheet guard back here. See issue #1015.
             if NSRunningApplication.current != NSWorkspace.shared.frontmostApplication {
                 Task { @MainActor [weak self] in self?.hidePanel() }
             }

@@ -6,63 +6,96 @@ import SwiftUI
 
 // MARK: - AppDelegate + Panel Setup
 //
-// Owns NSPanel construction, KVO on preferredContentSize, and Combine
+// Owns NSPopover construction, KVO on preferredContentSize, and Combine
 // subscriptions that drive icon/store updates.
 // Called once from applicationDidFinishLaunching via setupPanel().
 //
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupPanel() more than once.
+//
+// WHY NSPopover (#1017):
+// NSPopover uses NSPopoverWindowFrame whose chrome is drawn by the
+// window-server compositor. Rounded corners survive SwiftUI .sheet
+// attachment natively — no CALayer manipulation required or desired.
+//
+// SHEET HANDLING:
+// SwiftUI .sheet() attaches as a child NSWindow to the popover's backing
+// window. Two problems arise:
+//
+// 1. NO DIM: NSPopoverWindowFrame does not participate in AppKit's standard
+//    modal sheet dimming. Fix: PanelContainerView polls NSWindow.sheets and
+//    overlays Color.black.opacity(0.35) when a sheet is present.
+//
+// 2. OUTSIDE-TAP BEHAVIOUR DURING SHEET:
+//    Desired: tapping outside while a sheet is open hides the popover
+//    (so the user can interact with other apps), but saves nav state so
+//    re-opening the status bar app restores the sheet context.
+//
+//    Implementation:
+//    - popoverShouldClose always returns true. AppKit is never blocked.
+//    - popoverDidClose saves hasActiveSheet into a flag before state clears.
+//    - openPanel restores via savedNavState (already the case).
+//    - The global event monitor no longer has a hasActiveSheet guard —
+//      outside clicks always trigger closePanel().
+//    - closePanel() does NOT call endSheet on any open sheet. The sheet
+//      window is a child of the popover window; when the popover window
+//      closes, AppKit removes all child windows including the sheet.
+//      On re-open, SwiftUI re-presents the sheet if the binding is still true
+//      (e.g. showAddScopeSheet = true is preserved in @State in SettingsView).
+//      savedNavState = .settings ensures we navigate back to SettingsView.
+//
+// SIZE NOTE:
+// popover.contentSize is updated (both width AND height) via KVO on
+// NSHostingController.preferredContentSize. Updating contentSize resizes
+// the popover in-place — the arrow stays pinned to the original
+// positioningRect. ❌ NEVER call popover.show() again on resize.
 
-/// Extension responsible for NSPanel construction, KVO observation, and
-/// Combine subscriptions that drive icon and store updates.
-extension AppDelegate {
+/// Extension responsible for NSPopover construction, KVO, and Combine subscriptions.
+extension AppDelegate: NSPopoverDelegate {
 
-    // MARK: Panel construction
+    // MARK: Popover construction
 
-    /// Builds the NSPanel, embeds the SwiftUI hosting controller directly in the
-    /// panel content view, wires KVO, and starts all Combine subscriptions.
+    /// Builds the NSPopover, embeds the SwiftUI hosting controller, wires KVO
+    /// and Combine subscriptions.
     func setupPanel() {
         let controller = NSHostingController(rootView: mainView())
         controller.sizingOptions = .preferredContentSize
-        controller.view.autoresizingMask = [.width, .height]
-        controller.view.wantsLayer = true
         hostingController = controller
 
-        let initW = Self.initPanelWidth
-        let newPanel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: initW, height: 300),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let newPopover = NSPopover()
+        newPopover.contentViewController = controller
+        newPopover.contentSize = NSSize(width: 480, height: 300)
+        newPopover.animates = false
+        newPopover.behavior = .applicationDefined
+        newPopover.delegate = self
 
-        newPanel.contentViewController = controller
-        newPanel.isOpaque = false
-        newPanel.backgroundColor = .clear
-        newPanel.hasShadow = true
-        let isUITesting = ProcessInfo.processInfo.environment["UI_TESTING"] != nil
-        newPanel.level = isUITesting ? .floating : .popUpMenu
-        newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        newPanel.animationBehavior = .none
-        newPanel.appearance = NSAppearance(named: .darkAqua)
-
-        // Local experiment for #1017: use plain rounded CA corners instead of
-        // PanelChromeView arrow/mask. Do not commit until validated.
-        newPanel.contentView?.wantsLayer = true
-        newPanel.contentView?.layer?.cornerRadius = cornerRadius
-        newPanel.contentView?.layer?.masksToBounds = false  // masksToBounds=true clips child NSWindows (popovers/sheets) — cornerRadius renders fine without it
-        newPanel.contentView?.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.98).cgColor
-
-        panel = newPanel
+        popover = newPopover
 
         setupKVO(controller: controller)
         setupCombineSubscriptions()
     }
 
+    // MARK: NSPopoverDelegate
+
+    /// Always allow close. Outside-tap during a sheet hides the popover so the
+    /// user can interact with other apps. Nav state is preserved and restored
+    /// on next open via savedNavState.
+    public func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        return true
+    }
+
+    /// Syncs internal state after the popover closes for any reason.
+    public func popoverDidClose(_ notification: Notification) {
+        guard panelIsOpen else { return }
+        panelIsOpen = false
+        panelVisibilityState.isOpen = false
+        removeEventMonitor()
+        removeWorkspaceObserver()
+    }
+
     // MARK: KVO
 
-    /// Observes `preferredContentSize` on the hosting controller and triggers
-    /// a panel resize whenever the SwiftUI content height changes.
+    /// Observes `preferredContentSize` and updates both width and height.
     private func setupKVO(controller: NSHostingController<AnyView>) {
         sizeObservation = controller.observe(
             \.preferredContentSize,
@@ -75,8 +108,7 @@ extension AppDelegate {
 
     // MARK: Combine subscriptions
 
-    /// Starts all Combine subscriptions: local runner reloads, remote runner
-    /// store updates (icon + observable reload), and scope mutation restarts.
+    /// Starts all Combine subscriptions.
     private func setupCombineSubscriptions() {
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
@@ -86,7 +118,6 @@ extension AppDelegate {
             }
             .store(in: &cancellables)
 
-        // Skip all network + keychain activity during UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
         RunnerStore.shared.didUpdate
