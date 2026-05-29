@@ -11,26 +11,29 @@ import SwiftUI
 // in AppKit's standard modal sheet dimming path. When a SwiftUI .sheet is
 // presented, the parent popover content is NOT dimmed by the system.
 //
-// FIX: We observe popoverWindow.sheets via a Timer-based poll (the only
+// FIX: We observe the hosting NSWindow.sheets via a Timer-based poll (the only
 // reliable way without subclassing NSWindow) and overlay a semi-transparent
-// black rectangle when sheets are present. This exactly matches what the
-// system sheet dimming looks like on NSPanel.
+// black rectangle when sheets are present. The observed window is captured from
+// this view hierarchy, not from NSApp.windows, so stale hidden popover windows
+// cannot leave an invisible click-blocking overlay behind after a transient hide.
 //
 // ❌ NEVER remove the overlay — without it the popover content is fully
 //    interactive behind an open sheet, which is confusing and buggy.
 // ❌ NEVER use GeometryReader here — it fights NSPopover's sizing.
-// ❌ NEVER use .allowsHitTesting(false) on the overlay — it must block
-//    interaction with the dimmed content below.
 
 /// Wraps popover content and dims it when a SwiftUI sheet is active.
 struct PanelContainerView<Content: View>: View {
     let content: Content
     @State private var isSheetActive = false
+    @State private var hostWindow: NSWindow?
+    @State private var pollTimer: Timer?
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
 
     var body: some View {
         ZStack {
             content
+            WindowReader(window: $hostWindow)
+                .frame(width: 0, height: 0)
             if isSheetActive {
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
@@ -42,7 +45,13 @@ struct PanelContainerView<Content: View>: View {
         .onAppear { startPolling() }
         .onDisappear { stopPolling() }
         .onChange(of: panelVisibilityState.isOpen) { _, open in
-            if open { startPolling() } else { stopPolling(); isSheetActive = false }
+            if open {
+                isSheetActive = false
+                startPolling()
+            } else {
+                stopPolling()
+                isSheetActive = false
+            }
         }
     }
 
@@ -51,22 +60,41 @@ struct PanelContainerView<Content: View>: View {
     // NSWindow.sheets is the authoritative source. We poll it because
     // there is no KVO-observable property or notification for sheet attachment
     // on NSPopoverWindowFrame without subclassing.
-    private var pollTimer: Timer? { nil } // stored via class wrapper below
-    @State private var _timer: Timer?
-
     private func startPolling() {
         stopPolling()
-        _timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             Task { @MainActor in
-                let window = NSApp.windows.first { $0.className.contains("NSPopover") }
-                let hasSheets = !(window?.sheets.isEmpty ?? true)
-                if hasSheets != isSheetActive { isSheetActive = hasSheets }
+                guard panelVisibilityState.isOpen,
+                      let window = hostWindow,
+                      window.isVisible
+                else {
+                    if isSheetActive { isSheetActive = false }
+                    return
+                }
+
+                let hasVisibleSheet = window.sheets.contains { $0.isVisible }
+                if hasVisibleSheet != isSheetActive { isSheetActive = hasVisibleSheet }
             }
         }
     }
 
     private func stopPolling() {
-        _timer?.invalidate()
-        _timer = nil
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+}
+
+/// Reports the NSWindow that hosts this SwiftUI view hierarchy.
+private struct WindowReader: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { window = view.window }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { window = nsView.window }
     }
 }

@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let observable = RunnerViewModel()
     /// The savedNavState property.
     var savedNavState: NavState?
+    /// Sheet state that must survive transient popover hides.
+    let panelSheetState = PanelSheetState()
     /// Mirrors popover.isShown — kept for compatibility with navigation code.
     var panelIsOpen = false
 
@@ -211,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         removeEventMonitor()
         removeWorkspaceObserver()
         savedNavState = nil
+        panelSheetState.clearRunnerSheet()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.hostingController?.rootView = self.mainView()
@@ -228,11 +231,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
         guard panelIsOpen else { return }
+        panelSheetState.captureTransientHideState()
+
+        if hidePopoverWindowsPreservingSheets() {
+            panelIsOpen = false
+            panelVisibilityState.isOpen = false
+            removeEventMonitor()
+            removeWorkspaceObserver()
+            return
+        }
+
         popover?.performClose(nil)
         panelIsOpen = false
         panelVisibilityState.isOpen = false
         removeEventMonitor()
         removeWorkspaceObserver()
+    }
+
+    /// Orders the popover and attached sheet windows out without closing them.
+    ///
+    /// Closing an NSPopover while an attached SwiftUI sheet is open can detach
+    /// the visible sheet while leaving the parent content in AppKit's disabled
+    /// sheet-modal state. Ordering the existing windows out preserves the live
+    /// sheet session so re-opening can order the same windows back in.
+    @discardableResult
+    func hidePopoverWindowsPreservingSheets() -> Bool {
+        guard hasActiveSheet,
+              let popoverWindow = popover?.contentViewController?.view.window
+        else { return false }
+
+        popoverWindow.sheets.forEach { $0.orderOut(nil) }
+        popoverWindow.orderOut(nil)
+        return true
+    }
+
+    /// Restores windows hidden by `hidePopoverWindowsPreservingSheets()`.
+    @discardableResult
+    func restorePopoverWindowsPreservingSheetsIfNeeded() -> Bool {
+        guard let popover,
+              popover.isShown,
+              let popoverWindow = popover.contentViewController?.view.window
+        else { return false }
+
+        popoverWindow.orderFrontRegardless()
+        popoverWindow.sheets.forEach { $0.orderFrontRegardless() }
+        return true
     }
 
     /// Performs the removeEventMonitor operation.
@@ -287,6 +330,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let restored = validatedView(for: saved) {
                 navigate(to: restored)
             }
+        }
+
+        restorePopoverWindowsPreservingSheetsIfNeeded()
+
+        DispatchQueue.main.async { [weak self] in
+            self?.panelSheetState.restoreTransientHideStateIfNeeded()
         }
 
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
