@@ -18,11 +18,13 @@ import SwiftUI
 // window-server compositor. Rounded corners survive SwiftUI .sheet
 // attachment natively — no CALayer manipulation required or desired.
 //
-// WIDTH NOTE:
-// popover.contentSize.width is always Self.popoverWidth (480pt).
-// ❌ NEVER update contentSize.width after the popover is shown.
-// Doing so causes the popover to jump laterally (re-anchors from center).
-// Only contentSize.height is updated dynamically via KVO.
+// SIZE NOTE:
+// popover.contentSize is updated (both width AND height) via KVO on
+// NSHostingController.preferredContentSize. The initial size below is
+// a placeholder; it is overwritten immediately after show() by
+// resizeAndRepositionPanel(). Updating contentSize resizes the popover
+// in-place — the arrow stays pinned to the original positioningRect.
+// ❌ NEVER call popover.show() again on resize — that re-anchors and jumps.
 
 /// Extension responsible for NSPopover construction, KVO, and Combine subscriptions.
 extension AppDelegate {
@@ -38,12 +40,11 @@ extension AppDelegate {
 
         let newPopover = NSPopover()
         newPopover.contentViewController = controller
-        newPopover.contentSize = NSSize(width: Self.popoverWidth, height: 300)
-        // animates = false prevents the popover size-change animation from
-        // producing a visible jump when height updates via KVO.
+        // Placeholder size — overwritten by resizeAndRepositionPanel() after show().
+        newPopover.contentSize = NSSize(width: 480, height: 300)
+        // animates = false prevents size-change animation on KVO updates.
         newPopover.animates = false
         // .applicationDefined: we manage show/hide ourselves via togglePanel().
-        // This gives us full control and prevents accidental auto-close.
         newPopover.behavior = .applicationDefined
 
         popover = newPopover
@@ -54,8 +55,8 @@ extension AppDelegate {
 
     // MARK: KVO
 
-    /// Observes `preferredContentSize` and updates popover HEIGHT only.
-    /// Width is never changed — lateral jump prevention.
+    /// Observes `preferredContentSize` and updates both width and height.
+    /// Updating contentSize alone resizes in-place without moving the arrow anchor.
     private func setupKVO(controller: NSHostingController<AnyView>) {
         sizeObservation = controller.observe(
             \.preferredContentSize,
