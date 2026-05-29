@@ -20,33 +20,29 @@ import SwiftUI
 // HOW THE POPOVER WORKS:
 // 1. NSPopover with animates=false, behavior=.applicationDefined.
 // 2. Shown via popover.show(relativeTo: button.bounds, of: button,
-//    preferredEdge: .minY) — anchors to the status bar button.
+//    preferredEdge: .minY) — anchors to the status bar button once on open.
+//    The arrow anchor is determined by positioningRect+view at show() time
+//    and is NOT moved when contentSize is updated later.
 // 3. Size is driven by KVO on NSHostingController.preferredContentSize.
-//    ⚠️ WIDTH IS FIXED at popoverWidth. Only height changes.
-//    Changing width on a visible NSPopover causes it to jump laterally
-//    (re-anchoring from center). We prevent this by always using
-//    popoverWidth regardless of SwiftUI's reported width.
-// 4. Dismiss: popover.performClose(nil) or NSEvent global monitor
+//    Both width AND height are updated via popover.contentSize.
+//    ⚠️ Do NOT call popover.show() again on resize — that re-anchors and jumps.
+//    Updating contentSize alone resizes in place with the arrow fixed.
+// 4. Width is clamped to [minWidth..maxWidth] from screen bounds.
+// 5. Dismiss: popover.performClose(nil) or NSEvent global monitor
 //    + NSWorkspace app-switch notification (same as before).
 //
 // TEXT INPUT:
-// NSPopover windows are key-capable natively. For views that have
-// TextFields, call NSApp.activate(ignoringOtherApps: true) before
-// navigation — this promotes the popover to key window.
-// ❌ NEVER call panel.makeKeyAndOrderFront(nil) — panel no longer exists.
+// NSPopover windows are key-capable natively. NSApp.activate() is
+// sufficient to allow TextFields to receive first-responder.
 //
-// WIDTH CONTRACT:
-// popoverWidth is the single fixed width for the popover.
-// SwiftUI views declare their own minWidth/idealWidth but the popover
-// contentSize.width is always locked to popoverWidth.
-// ❌ NEVER update contentSize.width on resize — lateral jump regression.
-// ❌ NEVER set popoverWidth > 900.
-// ❌ NEVER set popoverWidth < 280.
+// LATERAL JUMP PREVENTION:
+// Only update contentSize — never re-call popover.show() on resize.
+// Updating contentSize repositions the popover body but keeps the arrow
+// anchored to the original positioningRect on the status bar button.
 //
 // PANELVISIBILITYSTATE:
-// panelVisibilityState.isOpen is driven by NSPopoverDelegate callbacks.
+// panelVisibilityState.isOpen is set in openPanel()/closePanel()/hidePanel().
 // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
-// ❌ NEVER pass as a plain Bool prop to PanelMainView.
 // See ARCHITECTURE.md §panelVisibilityState.
 
 // MARK: - AppDelegate
@@ -84,17 +80,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var cancellables = Set<AnyCancellable>()
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
-    // ❌ NEVER remove. ❌ NEVER remove from wrapEnv(). ❌ NEVER pass as plain Bool to PanelMainView.
     /// The panelVisibilityState constant.
     let panelVisibilityState = PanelVisibilityState()
 
-    /// Fixed popover width. Width never changes on a visible popover — lateral jump prevention.
-    /// ❌ NEVER update contentSize.width after initial show.
-    static let popoverWidth: CGFloat = 480
+    /// Minimum popover content width.
+    static let minWidth: CGFloat = 280
+
+    /// Maximum popover content width (90% of screen).
+    var maxWidth: CGFloat {
+        min(900, statusItemScreen.visibleFrame.width * 0.9)
+    }
 
     /// Maximum popover height (85% of visible screen).
     var maxHeight: CGFloat {
-        (statusItemScreen.visibleFrame.height * 0.85)
+        statusItemScreen.visibleFrame.height * 0.85
     }
 
     /// The screen the status item lives on.
@@ -103,13 +102,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Sheet guard
-    //
-    // SwiftUI .sheet() attaches as a child NSWindow to the popover's window.
-    // Clicks inside the sheet land outside the popover frame, which would
-    // trigger the global mouse-down monitor and call closePanel() immediately.
-    // ❌ NEVER remove this check from the eventMonitor block.
-    // ⚠️ Do NOT use this guard in workspaceObserver — app-switching must always
-    // hide the panel, even when a sheet is open. See #1015.
     /// Returns true when a SwiftUI sheet is currently presented over the popover.
     private var hasActiveSheet: Bool {
         guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
@@ -118,8 +110,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Environment injection
 
-    // Regression guard — see ARCHITECTURE.md §panelVisibilityState and §wrapEnv.
-    // ❌ NEVER bypass. ❌ NEVER remove .environmentObject(panelVisibilityState).
     // swiftlint:disable:next missing_docs
     func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(panelVisibilityState))
@@ -144,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupPanel()
     }
 
-    // MARK: - OAuth URL callback (#326)
+    // MARK: - OAuth URL callback
 
     /// Performs the application operation.
     func application(_ _: NSApplication, open urls: [URL]) {
@@ -155,17 +145,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Popover resize
 
-    // Regression guard — see ARCHITECTURE.md §Panel Lifecycle.
-    // ❌ WIDTH IS NEVER CHANGED HERE — only height. Lateral jump prevention.
+    // ⚠️ Only updates contentSize — never calls popover.show() again.
+    // Updating contentSize resizes the popover in place; the arrow stays
+    // anchored to the original positioningRect. Calling show() again would
+    // re-anchor and cause a lateral jump.
     // swiftlint:disable:next missing_docs
     func resizeAndRepositionPanel() {
         guard panelIsOpen, let popover, let controller = hostingController else { return }
         let preferred = controller.preferredContentSize
         guard preferred.height > 0 else { return }
+        let newW = min(max(preferred.width > 0 ? preferred.width : Self.minWidth, Self.minWidth), maxWidth)
         let newH = min(max(preferred.height, 60), maxHeight)
-        // Only update if height actually changed to avoid redundant layout passes.
-        if abs(popover.contentSize.height - newH) > 1 {
-            popover.contentSize = NSSize(width: Self.popoverWidth, height: newH)
+        let currentSize = popover.contentSize
+        // Only update if size actually changed to avoid redundant layout passes.
+        if abs(currentSize.width - newW) > 1 || abs(currentSize.height - newH) > 1 {
+            popover.contentSize = NSSize(width: newW, height: newH)
         }
     }
 
@@ -179,10 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Make key for text input
 
-    // NSPopover windows are key-capable natively. Activating the app is
-    // sufficient to allow TextFields to receive first-responder.
-    // ❌ NEVER call panel.makeKeyAndOrderFront — panel no longer exists.
-    /// Promotes the popover window to key so TextFields receive input.
+    /// Promotes the app to key so TextFields in the popover receive input.
     func makeKeyForTextInput() {
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -242,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Open
 
     /// Shows the popover anchored to the status bar button.
+    /// ⚠️ show() is called ONCE per open. Resize is done via contentSize only.
     func openPanel() {
         guard let button = statusItem?.button, let popover else { return }
 
@@ -251,17 +243,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelIsOpen = true
         panelVisibilityState.isOpen = true
 
-        // Set initial contentSize before show to avoid the popover appearing
-        // at a wrong size for one frame. Width is always locked.
-        let initH: CGFloat = 300
-        popover.contentSize = NSSize(width: Self.popoverWidth, height: initH)
-
+        // Show the popover. The arrow anchors to button.bounds here and
+        // is never moved again — subsequent contentSize changes resize
+        // the body but keep the arrow pinned.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
         // Activate so TextFields can receive input immediately.
         NSApp.activate(ignoringOtherApps: true)
 
-        // Resize to actual SwiftUI content size after show.
+        // Update to actual SwiftUI content size after show.
         resizeAndRepositionPanel()
 
         if let saved = savedNavState, let restored = validatedView(for: saved) {
@@ -275,8 +265,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] event in
             guard let self, let popover = self.popover else { return }
-            // ❌ NEVER remove the hasActiveSheet guard — sheets attach as child
-            // windows; clicks inside them would otherwise trigger closePanel().
             guard !self.hasActiveSheet else { return }
             let loc = event.locationInWindow
             let screenLoc = event.window?.convertToScreen(
