@@ -75,6 +75,10 @@ struct SettingsView: View {
     /// Non-nil when the last commit attempt produced errors; forwarded into `RunnerDetailPopover`.
     @State private var commitError: String?
 
+    // MARK: - Panel visibility (injected via environment)
+    /// Injected by AppDelegate via wrapEnv(). Used to observe dismissSheetsTrigger.
+    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+
     /// The appVersion property.
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -107,6 +111,18 @@ struct SettingsView: View {
         .frame(idealWidth: 480, maxWidth: .infinity)
         .onAppear(perform: onAppearAction)
         .onChange(of: localRunnerStore.isScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
+        // MARK: Sheet dismiss trigger (#1017)
+        // AppDelegate toggles panelVisibilityState.dismissSheetsTrigger before
+        // calling performClose(). We nil all sheet bindings here so SwiftUI
+        // removes the sheet NSWindow cleanly before the popover closes.
+        // ❌ NEVER remove this observer.
+        .onChange(of: panelVisibilityState.dismissSheetsTrigger) { _, _ in
+            showAddRunnerSheet = false
+            showAddScopeSheet = false
+            selectedScopeEntry = nil
+            editingRunner = nil
+            runnerPendingRemoval = nil
+        }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
         .sheet(isPresented: $showAddScopeSheet) { AddScopeSheet(isPresented: $showAddScopeSheet) }
         .sheet(item: $selectedScopeEntry) { entry in
@@ -120,7 +136,7 @@ struct SettingsView: View {
             )
         }
         .modifier(removalAlertModifier)
-        // #1001: runner editing sheet (was .popover — converted to .sheet to match ScopeEditSheet)
+        // #1001: runner editing sheet
         .sheet(item: $editingRunner) { runner in
             runnerEditingPopover(runner: runner)
         }
@@ -138,10 +154,6 @@ struct SettingsView: View {
                 guard !isCommitting else { return }
                 isCommitting = true
                 commitError = nil
-                // Build original from disk so the dirty-check in commitRunnerEdit
-                // compares against actual persisted values, not model defaults.
-                // (#1001 fix: was RunnerEditDraft(runner: runner) which left
-                // autoUpdate=true and proxy fields empty regardless of disk state.)
                 var original = RunnerEditDraft(runner: runner)
                 if let installPath = runner.installPath {
                     original.load(installPath: installPath)
@@ -323,11 +335,7 @@ struct SettingsView: View {
             Toggle("", isOn: Binding(
                 get: { runner.isRunning },
                 set: { isOn in
-                    if isOn {
-                        performResume(runner: runner)
-                    } else {
-                        performStop(runner: runner)
-                    }
+                    if isOn { performResume(runner: runner) } else { performStop(runner: runner) }
                 }
             ))
             .toggleStyle(.switch)
@@ -433,9 +441,7 @@ struct SettingsView: View {
                     .font(.caption).foregroundColor(Color.rbTextSecondary)
                     .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
             } else {
-                ForEach(scopeStore.entries) { entry in
-                    scopeRow(entry)
-                }
+                ForEach(scopeStore.entries) { entry in scopeRow(entry) }
             }
         }
     }
@@ -651,9 +657,7 @@ struct SettingsView: View {
     }
 
     /// Performs the signOutOfGitHub operation.
-    private func signOutOfGitHub() {
-        OAuthService.shared.signOut()
-    }
+    private func signOutOfGitHub() { OAuthService.shared.signOut() }
 
     /// Performs the performRemoval operation.
     private func performRemoval() {
