@@ -192,11 +192,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelVisibilityState.isOpen = false
         removeEventMonitor()
         removeWorkspaceObserver()
-        // Only reset rootView to main if no sheet-related nav state to preserve.
-        // If savedNavState == .settings the user was in settings (possibly with a
-        // sheet open). We keep the hostingController rootView as-is so that when
-        // the popover re-shows the sheet @State is still alive.
-        if savedNavState == nil || savedNavState == .main {
+        // NavState has associated values so cannot conform to Equatable automatically.
+        // Use `if case` pattern matching instead of `==`.
+        // Only reset rootView to main when there is no preserved nav state,
+        // or when the state is .main itself.
+        let shouldReset: Bool = {
+            guard let state = savedNavState else { return true }
+            if case .main = state { return true }
+            return false
+        }()
+        if shouldReset {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.hostingController?.rootView = self.mainView()
