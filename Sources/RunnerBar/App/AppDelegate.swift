@@ -45,28 +45,36 @@ import SwiftUI
 // ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
 // See ARCHITECTURE.md §panelVisibilityState.
 //
-// SHEET ORPHAN PREVENTION — read before touching closePanel() or hidePanel():
-// When NSPopover.performClose() fires while a SwiftUI .sheet is presented,
-// the sheet's NSWindow (a child of the popover window) is NOT automatically
-// removed by AppKit. It becomes an orphan: visible, blocking hit-testing, with
-// no SwiftUI tree driving it. The app appears frozen.
+// SHEET STATE ACROSS HIDE/SHOW:
+// When the user taps outside while a sheet is open, hidePanel() is called.
+// Goal: re-opening the status bar icon should show settings WITH the sheet.
 //
-// FIX: Before calling performClose(), call endSheet on every attached sheet
-// window. This lets AppKit clean them up synchronously before the popover
-// closes. Do this in BOTH closePanel() and hidePanel().
+// How this works:
+// - hidePanel() does NOT call dismissSheets() and does NOT reset rootView.
+//   NSPopover's performClose() closes the NSPopoverWindowFrame and all its
+//   child windows (including the sheet NSWindow) together. They are removed
+//   from screen but the NSHostingController and its SwiftUI tree remain alive.
+//   SwiftUI @State (editingRunner, showAddScopeSheet, etc.) is preserved inside
+//   the hosting controller's view because the hosting controller itself is never
+//   destroyed or replaced.
+// - On re-open, openPanel() calls popover.show() which re-attaches the same
+//   NSHostingController. SwiftUI sees the existing state, the binding is still
+//   true, and re-presents the sheet automatically.
 //
-// ❌ NEVER remove the dismissSheets() call from closePanel() or hidePanel().
-// ❌ NEVER try to preserve sheet @State across close/open — SwiftUI @State
-//    lives inside the View value type and is reset when a new view is created.
-//    Creating a new SettingsView() always gives fresh @State = sheet gone.
-//    The only correct behaviour on re-open is: navigate to settings (no sheet),
-//    which is at least interactive. Sheet cannot be restored.
+// closePanel() IS different: it is called when the user explicitly closes
+// (e.g. pressing Escape, or navigating back). In that case we DO reset rootView
+// to mainView() so the next open starts fresh at the main view.
+//
+// ❌ NEVER add dismissSheets() to hidePanel() — it destroys sheet @State.
+// ❌ NEVER reset hostingController.rootView inside hidePanel().
+// ❌ NEVER add a validatedView(for: .settings) navigate() call inside openPanel()
+//    when the current rootView is already SettingsView — it replaces the live
+//    view with a new struct and resets all @State.
 
 // MARK: - AppDelegate
 
 // ⚠️ @MainActor isolation — see ARCHITECTURE.md §@MainActor isolation.
 // ❌ NEVER remove @MainActor from this class declaration.
-// ❌ NEVER remove `nonisolated` from enrichStepsIfNeeded.
 /// Manages AppDelegate state and behaviour.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -119,7 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Sheet guard
-    // NOTE: internal (not private) — accessible from AppDelegate+PanelSetup.swift.
     /// Returns true when a SwiftUI sheet is currently presented over the popover.
     var hasActiveSheet: Bool {
         guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
@@ -163,10 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Popover resize
 
-    // ⚠️ Only updates contentSize — never calls popover.show() again.
-    // Updating contentSize resizes the popover in place; the arrow stays
-    // anchored to the original positioningRect. Calling show() again would
-    // re-anchor and cause a lateral jump.
     // swiftlint:disable:next missing_docs
     func resizeAndRepositionPanel() {
         guard panelIsOpen, let popover, let controller = hostingController else { return }
@@ -175,7 +178,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newW = min(max(preferred.width > 0 ? preferred.width : Self.minWidth, Self.minWidth), maxWidth)
         let newH = min(max(preferred.height, 60), maxHeight)
         let currentSize = popover.contentSize
-        // Only update if size actually changed to avoid redundant layout passes.
         if abs(currentSize.width - newW) > 1 || abs(currentSize.height - newH) > 1 {
             popover.contentSize = NSSize(width: newW, height: newH)
         }
@@ -196,52 +198,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - Sheet orphan cleanup
-
-    /// Ends all sheets currently attached to the popover window.
-    ///
-    /// MUST be called before performClose() in both closePanel() and hidePanel().
-    /// Without this, sheet NSWindows become orphaned when the popover closes:
-    /// they remain visible and block all hit-testing, freezing the app.
-    ///
-    /// ❌ NEVER remove this call from closePanel() or hidePanel().
-    private func dismissSheets() {
-        guard let win = popover?.contentViewController?.view.window else { return }
-        for sheet in win.sheets {
-            win.endSheet(sheet)
-        }
-    }
-
     // MARK: - Dismiss
 
-    /// Closes the popover. Dismisses any open sheets first to prevent orphan
-    /// NSWindows from blocking hit-testing after the popover closes.
+    /// Closes the popover explicitly (Escape / back navigation / manual close).
+    /// Resets rootView to main so next open starts fresh.
+    /// ❌ Do NOT call this from outside-tap / workspace-switch — use hidePanel().
     func closePanel() {
         guard panelIsOpen else { return }
-        // ❌ NEVER remove dismissSheets() — orphaned sheet windows freeze the app.
-        dismissSheets()
         popover?.performClose(nil)
         panelIsOpen = false
         panelVisibilityState.isOpen = false
         removeEventMonitor()
         removeWorkspaceObserver()
-        // Reset rootView to main. savedNavState=.settings is preserved so
-        // openPanel() navigates back to SettingsView on re-open.
-        // ⚠️ Sheet @State (showAddScopeSheet etc.) is NOT preserved — SwiftUI
-        // @State lives in the View value type and is reset when a new view is
-        // created. The sheet will be gone on re-open; SettingsView will be
-        // interactive. This is intentional — see ARCHITECTURE.md §SheetOrphans.
+        savedNavState = nil
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.hostingController?.rootView = self.mainView()
         }
     }
 
-    /// Hides the popover (workspace app-switch). Dismisses sheets first.
+    /// Hides the popover on outside-tap or workspace app-switch.
+    ///
+    /// Intentionally does NOT call dismissSheets() and does NOT reset rootView.
+    /// The NSHostingController and its SwiftUI @State (including any open sheet
+    /// bindings) remain alive. On re-open, popover.show() reattaches the same
+    /// controller and SwiftUI re-presents the sheet automatically.
+    ///
+    /// ❌ NEVER add dismissSheets() here.
+    /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
         guard panelIsOpen else { return }
-        // ❌ NEVER remove dismissSheets() — orphaned sheet windows freeze the app.
-        dismissSheets()
         popover?.performClose(nil)
         panelIsOpen = false
         panelVisibilityState.isOpen = false
@@ -280,31 +266,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func openPanel() {
         guard let button = statusItem?.button, let popover else { return }
 
-        log("AppDelegate › openPanel — seeding observable: actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count) localRunners=\(LocalRunnerStore.shared.runners.count)")
+        log("AppDelegate › openPanel — seeding observable")
         observable.reload(localRunnerStore: LocalRunnerStore.shared)
 
         panelIsOpen = true
         panelVisibilityState.isOpen = true
 
-        // Show the popover. The arrow anchors to button.bounds here and
-        // is never moved again — subsequent contentSize changes resize
-        // the body but keep the arrow pinned.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-
-        // Activate so TextFields can receive input immediately.
         NSApp.activate(ignoringOtherApps: true)
-
-        // Update to actual SwiftUI content size after show.
         resizeAndRepositionPanel()
 
-        if let saved = savedNavState, let restored = validatedView(for: saved) {
-            navigate(to: restored)
+        // Only navigate if we have a saved state AND the current rootView is
+        // NOT already showing that view (i.e. we came from closePanel/mainView reset,
+        // not from hidePanel which preserves rootView).
+        // We detect "already correct" by checking savedNavState against the
+        // current rootView identity via a flag set in navigate(to:).
+        // Simpler approach: only navigate when savedNavState is set AND
+        // hasActiveSheet is false (if sheet is open, rootView is correct already).
+        if let saved = savedNavState, !hasActiveSheet {
+            if let restored = validatedView(for: saved) {
+                navigate(to: restored)
+            }
         }
 
-        // Skip dismiss monitors during UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
-        // Outside-click always closes — no hasActiveSheet guard.
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] event in
@@ -317,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let sheetWindows = popoverWindow.sheets
             let inSheet = sheetWindows.contains { $0.frame.contains(screenLoc) }
             if !popoverWindow.frame.contains(screenLoc) && !inSheet {
-                self.closePanel()
+                self.hidePanel()
             }
         }
 
