@@ -23,12 +23,18 @@ import SwiftUI
 
 /// Wraps popover content and dims it when a SwiftUI sheet is active.
 struct PanelContainerView<Content: View>: View {
+    /// The child view to wrap.
     let content: Content
+    /// Whether a sheet is currently active over the popover.
     @State private var isSheetActive = false
+    /// The NSWindow hosting this view hierarchy.
     @State private var hostWindow: NSWindow?
+    /// Timer used to poll NSWindow.sheets.
     @State private var pollTimer: Timer?
+    /// Tracks panel open/close state to start and stop polling.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
 
+    /// The body property.
     var body: some View {
         ZStack {
             content
@@ -60,6 +66,7 @@ struct PanelContainerView<Content: View>: View {
     // NSWindow.sheets is the authoritative source. We poll it because
     // there is no KVO-observable property or notification for sheet attachment
     // on NSPopoverWindowFrame without subclassing.
+    /// Starts a repeating timer to poll NSWindow.sheets.
     private func startPolling() {
         stopPolling()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
@@ -78,6 +85,7 @@ struct PanelContainerView<Content: View>: View {
         }
     }
 
+    /// Stops and invalidates the polling timer.
     private func stopPolling() {
         pollTimer?.invalidate()
         pollTimer = nil
@@ -86,14 +94,17 @@ struct PanelContainerView<Content: View>: View {
 
 /// Reports the NSWindow that hosts this SwiftUI view hierarchy.
 private struct WindowReader: NSViewRepresentable {
+    /// Binding updated with the host NSWindow.
     @Binding var window: NSWindow?
 
+    /// Creates the underlying NSView and reports its window.
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         DispatchQueue.main.async { window = view.window }
         return view
     }
 
+    /// Updates the window binding when the view's window changes.
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async { window = nsView.window }
     }

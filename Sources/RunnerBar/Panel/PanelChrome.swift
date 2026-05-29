@@ -1,4 +1,5 @@
-// PanelChrome.swift — DELETED
+// PanelChrome.swift
+// RunnerBar
 // This file has been intentionally emptied as part of fix/#1017.
 // PanelChromeView and the CAShapeLayer arrow/mask approach have been removed.
 // Native NSPanel rounded corners (window-server level) are used instead.

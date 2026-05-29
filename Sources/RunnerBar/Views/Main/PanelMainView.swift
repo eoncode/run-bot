@@ -31,15 +31,22 @@ struct PanelMainView: View {
     let onSelectSettings: () -> Void
     /// The panelVisibilityState property.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    /// Whether the user has a stored GitHub token.
     @State private var isAuthenticated = (githubToken() != nil)
+    /// View model for CPU/memory stats displayed in the header.
     @StateObject private var systemStats = SystemStatsViewModel()
+    /// Number of workflow rows currently shown.
     @State private var visibleCount: Int = 10
+    /// Increments every second to drive relative-time label refreshes.
     @State private var displayTick: Int = 0
+    /// Timer that fires displayTick increments.
     @State private var displayTickTimer: Timer?
+    /// Maximum scroll height for the actions section (80% of screen height).
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
 
+    /// Local runners currently active in an in-progress workflow.
     private var activeLocalRunners: [RunnerModel] {
         guard store.actions.contains(where: { $0.groupStatus == .inProgress }) else { return [] }
         let activeNamesFromJobs = Set(
@@ -56,6 +63,7 @@ struct PanelMainView: View {
         }
     }
 
+    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelHeaderView(
@@ -93,6 +101,7 @@ struct PanelMainView: View {
         .onChange(of: store.actions) { _, _ in visibleCount = 10 }
     }
 
+    /// Scrollable container for the actions section.
     private var actionsSectionScrollable: some View {
         ScrollView(.vertical, showsIndicators: true) {
             actionsSectionContent
@@ -100,6 +109,7 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
 
+    /// Content of the actions section including workflow rows and load-more.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -118,6 +128,7 @@ struct PanelMainView: View {
         .padding(.vertical, 4)
     }
 
+    /// Button to load the next batch of workflow rows.
     @ViewBuilder private var loadMoreButton: some View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
@@ -130,6 +141,7 @@ struct PanelMainView: View {
         }
     }
 
+    /// Starts the 1-second timer that increments displayTick.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
         displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -137,19 +149,19 @@ struct PanelMainView: View {
         }
     }
 
+    /// Invalidates and clears the displayTick timer.
     private func stopDisplayTickTimer() {
         displayTickTimer?.invalidate()
         displayTickTimer = nil
     }
 
+    /// Banner shown when the GitHub API rate limit is active.
     private var rateLimitBanner: some View {
         _ = displayTick // swiftlint:disable:this redundant_discardable_let
         let countdownLabel: String
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
-            if remaining < 1 { countdownLabel = "resuming\u{2026}" }
-            else if remaining < 60 { countdownLabel = "resets in \(Int(remaining))s" }
-            else {
+            if remaining < 1 { countdownLabel = "resuming\u{2026}" } else if remaining < 60 { countdownLabel = "resets in \(Int(remaining))s" } else {
                 let mins = Int(remaining) / 60; let secs = Int(remaining) % 60
                 countdownLabel = String(format: "resets in %dm %02ds", mins, secs)
             }
@@ -161,6 +173,7 @@ struct PanelMainView: View {
         .padding(.horizontal, 12).padding(.vertical, 4)
     }
 
+    /// Opens the GitHub PAT documentation page in the default browser.
     private func signInWithGitHub() {
         let urlString = "\(GitHubConstants.base)/en/authentication/"
             + "keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
