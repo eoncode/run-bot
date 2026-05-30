@@ -10,12 +10,12 @@ import Combine
 
 final class RunnerViewModel: ObservableObject {
     // MARK: - Shared singleton
-    static let shared = RunnerViewModel()
+    @MainActor static let shared = RunnerViewModel()
 
     // MARK: - Published state
     @Published var runners: [RunnerModel] = []
-    @Published var jobs: [JobModel] = []
-    @Published var actions: [ActionModel] = []
+    @Published var jobs: [ActiveJob] = []
+    @Published var actions: [WorkflowActionGroup] = []
     @Published var localRunners: [RunnerModel] = []
     @Published var isRateLimited: Bool = false
     @Published var rateLimitResetDate: Date?
@@ -29,14 +29,12 @@ final class RunnerViewModel: ObservableObject {
         let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
         log("RunnerViewModel › reload — actions=\(store.actions.count) jobs=\(store.jobs.count) runners=\(store.runners.count) localRunners=\(localStore.runners.count)")
-        withAnimation(nil) {
-            runners = store.runners
-            jobs = store.jobs
-            actions = store.actions
-            localRunners = localStore.runners
-            isRateLimited = store.isRateLimited
-            rateLimitResetDate = store.rateLimitResetDate
-        }
+        runners = store.runners
+        jobs = store.jobs
+        actions = store.actions
+        localRunners = localStore.runners
+        isRateLimited = store.isRateLimited
+        rateLimitResetDate = store.rateLimitResetDate
         localStore.refresh()
     }
 }

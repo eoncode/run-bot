@@ -16,7 +16,7 @@ import Combine
 
 final class LocalRunnerStore: ObservableObject {
     // MARK: - Shared singleton
-    static let shared = LocalRunnerStore()
+    @MainActor static let shared = LocalRunnerStore()
 
     // MARK: - Published state
     @Published private(set) var runners: [RunnerModel] = []
@@ -38,6 +38,37 @@ final class LocalRunnerStore: ObservableObject {
         runnerIndex[name] = installPath
         persistIndex()
         log("LocalRunnerStore > register — '\(name)' at \(installPath)")
+    }
+
+    // MARK: - Convenience API (called by views)
+
+    func isTracked(runnerName: String) -> Bool {
+        runnerIndex[runnerName] != nil
+    }
+
+    func add(runnerName: String, installPath: String) {
+        register(name: runnerName, installPath: installPath)
+    }
+
+    func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
+        DispatchQueue.main.async {
+            guard let idx = self.runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
+            self.runners[idx].isRunning = isRunning
+        }
+    }
+
+    func setLifecycleWarning(_ runnerName: String, warning: String?) {
+        DispatchQueue.main.async {
+            guard let idx = self.runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
+            self.runners[idx].lifecycleWarning = warning
+        }
+    }
+
+    func optimisticallyRemove(_ runnerName: String) {
+        unregister(name: runnerName)
+        DispatchQueue.main.async {
+            self.runners.removeAll { $0.runnerName == runnerName }
+        }
     }
 
     func unregister(name: String) {
@@ -149,6 +180,7 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         agentId: json?.agentId,
         workFolder: json?.workFolder,
         installPath: installPath,
+        isRunning: false,
         platform: json?.platform,
         platformArchitecture: json?.platformArchitecture,
         agentVersion: json?.agentVersion,

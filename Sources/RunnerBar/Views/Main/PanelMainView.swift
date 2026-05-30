@@ -52,7 +52,7 @@ struct PanelMainView: View {
         let activeNamesFromJobs = Set(
             store.jobs.filter { $0.status == .inProgress }.compactMap { $0.runnerName }
         )
-        let busyRunners = store.runners.filter { $0.busy }
+        let busyRunners = store.runners.filter { $0.isBusy }
         let busyIds = Set(busyRunners.compactMap { $0.id })
         let busyNames = Set(busyRunners.map { $0.name })
         return store.localRunners.filter { local in
