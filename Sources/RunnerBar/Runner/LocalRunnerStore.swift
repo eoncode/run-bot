@@ -157,12 +157,23 @@ final class LocalRunnerStore: ObservableObject {
 
 /// Reads `installPath/.runner` JSON and builds a RunnerModel.
 /// Returns nil if the file is missing — runner may have been uninstalled outside the app.
+///
+/// The GitHub Actions runner agent writes .runner files with a UTF-8 BOM (0xEF 0xBB 0xBF).
+/// Swift's JSONDecoder does not strip BOMs and silently returns nil for the entire decode.
+/// We strip the BOM from the raw Data before passing it to the decoder.
+///
+/// The agent also writes "gitHubUrl" in camelCase; the CodingKey must match exactly
+/// since JSONDecoder is case-sensitive.
 private func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
     let jsonURL = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
-    guard let data = try? Data(contentsOf: jsonURL) else {
+    guard var data = try? Data(contentsOf: jsonURL) else {
         log("LocalRunnerStore > runnerModelFromIndex — no .runner at \(installPath), skipping \(name)")
         return nil
     }
+    // Strip UTF-8 BOM (0xEF 0xBB 0xBF) — runner agent writes BOM-prefixed JSON on all platforms.
+    // JSONDecoder is not BOM-aware and silently fails the entire decode if the BOM is present.
+    let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+    if data.prefix(3).elementsEqual(bom) { data = data.dropFirst(3) }
     struct RunnerJSON: Decodable {
         let gitHubUrl: String?
         let agentId: Int?
@@ -172,7 +183,7 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         let agentVersion: String?
         let ephemeral: Bool?
         enum CodingKeys: String, CodingKey {
-            case gitHubUrl            = "GitHubUrl"
+            case gitHubUrl            = "gitHubUrl"           // camelCase — matches runner agent output
             case agentId              = "AgentId"
             case workFolder           = "WorkFolder"
             case platform             = "Platform"
