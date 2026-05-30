@@ -46,7 +46,7 @@ private struct TreeLineLeader: View {
 
 // MARK: - JobRunnerTypeIcon
 /// Small SF Symbol indicating whether a job runs on a self-hosted (local) or
-/// GitHub-hosted (cloud) runner. Derived from the job’s runner name.
+/// GitHub-hosted (cloud) runner. Derived from the job's runner name.
 private struct JobRunnerTypeIcon: View {
     /// The runner name string from the job, used to detect self-hosted runners.
     let runnerName: String?
@@ -196,8 +196,8 @@ private struct JobRowCard: View {
     }
     /// Job header row.
     ///
-    /// Column order (#985):
-    /// graph-dot · runner-type-icon · job-id · job-name · [progress bar] · steps/total · elapsed
+    /// Column order (#1037):
+    /// graph-dot · runner-type-icon · job-name · job-id · [progress bar] · steps/total · elapsed
     private var jobHeader: some View {
         Button {
             guard totalSteps > 0 else { return }
@@ -206,17 +206,17 @@ private struct JobRowCard: View {
             HStack(spacing: 6) {
                 DonutStatusView(status: status, progress: job.progressFraction ?? 0, size: 10)
                 JobRunnerTypeIcon(runnerName: job.runnerName)
-                Text("#\(job.id)")
-                    .font(DesignTokens.Fonts.mono)
-                    .foregroundColor(Color.rbTextTertiary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
                 Text(job.name)
                     .font(DesignTokens.Fonts.mono)
                     .foregroundColor(job.isDimmed ? Color.rbTextTertiary : Color.rbTextSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
+                Text("#\(job.id)")
+                    .font(DesignTokens.Fonts.mono)
+                    .foregroundColor(Color.rbTextTertiary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 4)
                 if job.status == .inProgress {
                     JobInlineProgress(progress: job.progressFraction ?? 0)
