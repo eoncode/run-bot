@@ -11,7 +11,7 @@ import Foundation
 //
 // Polling:
 //   • refresh() is called by RunnerViewModel on every displayTick (≈1 Hz).
-//   • The heavy work (disk I/O + API calls) runs on a detached Task / background thread.
+//   • The heavy work (disk I/O + API calls) runs on a background queue.
 //   • isScanning prevents concurrent refreshes.
 
 /// Owns the list of locally-installed GitHub Actions runner agents.
@@ -37,7 +37,7 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Init
     /// Initialises the store and loads the persisted runner index from UserDefaults.
-    init() {
+    private init() {
         loadIndex()
     }
 
@@ -63,18 +63,21 @@ final class LocalRunnerStore: ObservableObject {
     }
 
     /// Immediately reflects a start/stop action in the UI before the next refresh cycle.
+    /// Already runs on the main actor via @MainActor class isolation.
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
         runners[idx].isRunning = isRunning
     }
 
     /// Sets or clears the lifecycle warning badge for a runner (e.g. "Failed to connect").
+    /// Already runs on the main actor via @MainActor class isolation.
     func setLifecycleWarning(_ runnerName: String, warning: String?) {
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
         runners[idx].lifecycleWarning = warning
     }
 
     /// Removes a runner from both the index and the published list immediately.
+    /// Already runs on the main actor via @MainActor class isolation.
     func optimisticallyRemove(_ runnerName: String) {
         unregister(name: runnerName)
         runners.removeAll { $0.runnerName == runnerName }
@@ -102,12 +105,12 @@ final class LocalRunnerStore: ObservableObject {
     // MARK: - Refresh
 
     /// Hydrates runners from disk, marks live launchctl services, then enriches via GitHub API.
-    /// Called on the main actor; heavy work is dispatched to a background task internally.
+    /// Must be called on the main actor; heavy work is dispatched to a background queue internally.
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
         let index = runnerIndex
-        Task.detached(priority: .userInitiated) { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
             // 1. Hydrate from installPath/.runner JSON
@@ -123,7 +126,7 @@ final class LocalRunnerStore: ObservableObject {
             // 3. Enrich via GitHub API
             let enriched = RunnerStatusEnricher.shared.enrich(runners: hydrated)
 
-            await MainActor.run {
+            DispatchQueue.main.async {
                 self.runners = enriched.sorted { $0.runnerName < $1.runnerName }
                 self.isScanning = false
                 log("LocalRunnerStore > refresh() main — done. runners.count=\(self.runners.count)")
