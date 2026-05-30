@@ -57,7 +57,7 @@ final class LocalRunnerStore: ObservableObject {
     private func loadIndex() {
         runnerIndex = UserDefaults.standard
             .dictionary(forKey: Self.indexKey) as? [String: String] ?? [:]
-        log("LocalRunnerStore > loadIndex — \(runnerIndex.count) entry(ies)")
+        log("LocalRunnerStore > loadIndex — \(runnerIndex.count) entry(ies): \(runnerIndex)")
     }
 
     private func persistIndex() {
@@ -83,11 +83,17 @@ final class LocalRunnerStore: ObservableObject {
             // 1. Hydrate from installPath/.runner JSON
             var hydrated: [RunnerModel] = index.compactMap { runnerModelFromIndex(name: $0.key, installPath: $0.value) }
             log("LocalRunnerStore > refresh() background — hydrated \(hydrated.count) runner(s)")
+            for r in hydrated {
+                log("LocalRunnerStore > hydrated: name='\(r.runnerName)' gitHubUrl=\(r.gitHubUrl ?? "NIL") agentId=\(r.agentId.map(String.init) ?? "nil") platform=\(r.platform ?? "nil") arch=\(r.platformArchitecture ?? "nil") installPath=\(r.installPath ?? "nil")")
+            }
 
             // 2. Mark live services via launchctl
             let liveLabels = scanLiveServices()
+            log("LocalRunnerStore > liveLabels from launchctl: \(liveLabels.sorted())")
             for idx in hydrated.indices {
+                let wasRunning = hydrated[idx].isRunning
                 hydrated[idx].isRunning = liveLabels.contains { $0.contains(hydrated[idx].runnerName) }
+                log("LocalRunnerStore > isRunning '\(hydrated[idx].runnerName)': \(wasRunning) → \(hydrated[idx].isRunning)")
             }
 
             // 3. Enrich via GitHub API
@@ -108,6 +114,9 @@ final class LocalRunnerStore: ObservableObject {
                 self.runners = enriched.sorted { $0.runnerName < $1.runnerName }
                 self.isScanning = false
                 log("LocalRunnerStore > refresh() main — done. runners.count=\(self.runners.count)")
+                for r in self.runners {
+                    log("LocalRunnerStore > final runner: name='\(r.runnerName)' platform=\(r.platform ?? "nil") arch=\(r.platformArchitecture ?? "nil") status=\(r.githubStatus ?? "nil") busy=\(r.isBusy) labels=\(r.labels)")
+                }
             }
         }
     }
@@ -157,12 +166,45 @@ final class LocalRunnerStore: ObservableObject {
 
 /// Reads `installPath/.runner` JSON and builds a RunnerModel.
 /// Returns nil if the file is missing — runner may have been uninstalled outside the app.
+///
+/// The GitHub Actions runner agent writes .runner files with a UTF-8 BOM (0xEF 0xBB 0xBF).
+/// Swift's JSONDecoder does not strip BOMs and silently returns nil for the entire decode.
+/// We strip the BOM from the raw Data before passing it to the decoder.
+///
+/// The agent also writes "gitHubUrl" in camelCase; the CodingKey must match exactly
+/// since JSONDecoder is case-sensitive.
 private func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
     let jsonURL = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
-    guard let data = try? Data(contentsOf: jsonURL) else {
-        log("LocalRunnerStore > runnerModelFromIndex — no .runner at \(installPath), skipping \(name)")
+    log("runnerModelFromIndex — reading '\(jsonURL.path)' for runner '\(name)'")
+    guard var data = try? Data(contentsOf: jsonURL) else {
+        log("runnerModelFromIndex — ⚠️ no .runner file at '\(jsonURL.path)', skipping '\(name)'")
         return nil
     }
+    log("runnerModelFromIndex — read \(data.count) bytes for '\(name)'")
+
+    // Log first 8 bytes as hex to detect BOM and other encoding issues
+    let hexBytes = data.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
+    log("runnerModelFromIndex — first 8 bytes of '\(name)': [\(hexBytes)]")
+
+    // Strip UTF-8 BOM (0xEF 0xBB 0xBF) — runner agent writes BOM-prefixed JSON on all platforms.
+    // JSONDecoder is not BOM-aware and silently fails the entire decode if the BOM is present.
+    let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+    let hadBOM = data.prefix(3).elementsEqual(bom)
+    if hadBOM {
+        data = data.dropFirst(3)
+        log("runnerModelFromIndex — BOM stripped for '\(name)', \(data.count) bytes remain")
+    } else {
+        log("runnerModelFromIndex — no BOM for '\(name)'")
+    }
+
+    // Log raw JSON string (first 400 chars) so we can see the actual keys
+    if let raw = String(data: data, encoding: .utf8) {
+        let preview = raw.count > 400 ? String(raw.prefix(400)) + "…" : raw
+        log("runnerModelFromIndex — JSON preview for '\(name)': \(preview)")
+    } else {
+        log("runnerModelFromIndex — ⚠️ data is not valid UTF-8 for '\(name)'")
+    }
+
     struct RunnerJSON: Decodable {
         let gitHubUrl: String?
         let agentId: Int?
@@ -172,16 +214,42 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         let agentVersion: String?
         let ephemeral: Bool?
         enum CodingKeys: String, CodingKey {
-            case gitHubUrl            = "GitHubUrl"
-            case agentId              = "AgentId"
-            case workFolder           = "WorkFolder"
-            case platform             = "Platform"
-            case platformArchitecture = "PlatformArchitecture"
-            case agentVersion         = "AgentVersion"
-            case ephemeral            = "Ephemeral"
+            case gitHubUrl            = "gitHubUrl"
+            case agentId              = "agentId"
+            case workFolder           = "workFolder"
+            case platform             = "platform"
+            case platformArchitecture = "platformArchitecture"
+            case agentVersion         = "agentVersion"
+            case ephemeral            = "ephemeral"
         }
     }
+
+    // Use JSONSerialization to cross-check the actual keys in the file
+    // before we attempt typed decoding — this tells us if keys are missing
+    // or under different casings than our CodingKeys expect.
+    if let rawDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        log("runnerModelFromIndex — raw JSON keys for '\(name)': \(rawDict.keys.sorted())")
+        let keysOfInterest = ["gitHubUrl", "GitHubUrl", "githuburl", "github_url",
+                              "AgentId", "agentId", "agent_id",
+                              "Platform", "platform",
+                              "PlatformArchitecture", "platformArchitecture", "platform_architecture",
+                              "WorkFolder", "workFolder"]
+        for key in keysOfInterest {
+            if let val = rawDict[key] {
+                log("runnerModelFromIndex — '\(name)' has key '\(key)' = \(val)")
+            }
+        }
+    } else {
+        log("runnerModelFromIndex — ⚠️ JSONSerialization failed for '\(name)'")
+    }
+
     let json = try? JSONDecoder().decode(RunnerJSON.self, from: data)
+    if json == nil {
+        log("runnerModelFromIndex — ⚠️ JSONDecoder returned nil for '\(name)' (decode failed silently)")
+    } else {
+        log("runnerModelFromIndex — decoded for '\(name)': gitHubUrl=\(json?.gitHubUrl ?? "nil") agentId=\(json?.agentId.map(String.init) ?? "nil") platform=\(json?.platform ?? "nil") arch=\(json?.platformArchitecture ?? "nil") workFolder=\(json?.workFolder ?? "nil")")
+    }
+
     return RunnerModel(
         runnerName: name,
         gitHubUrl: json?.gitHubUrl,
