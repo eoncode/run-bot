@@ -41,7 +41,7 @@ final class OAuthService {
     /// The redirectURI constant.
     private let redirectURI = "runnerbar://oauth/callback"
     /// The scopes constant.
-    private let scopes = "repo read:org manage_runners:org"
+    private let scopes = "repo read:org admin:org manage_runners:org workflow gist"
 
     // MARK: - OAuth endpoint constants
     /// The authorizeURL constant.
