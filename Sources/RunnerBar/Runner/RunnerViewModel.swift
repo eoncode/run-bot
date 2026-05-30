@@ -13,7 +13,7 @@ final class RunnerViewModel: ObservableObject {
     @MainActor static let shared = RunnerViewModel()
 
     // MARK: - Published state
-    @Published var runners: [RunnerModel] = []
+    @Published var runners: [Runner] = []
     @Published var jobs: [ActiveJob] = []
     @Published var actions: [WorkflowActionGroup] = []
     @Published var localRunners: [RunnerModel] = []
@@ -25,6 +25,7 @@ final class RunnerViewModel: ObservableObject {
 
     // MARK: - Reload
 
+    @MainActor
     func reload() {
         let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
