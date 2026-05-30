@@ -172,16 +172,19 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         let agentVersion: String?
         let ephemeral: Bool?
         enum CodingKeys: String, CodingKey {
-            case gitHubUrl            = "GitHubUrl"
-            case agentId              = "AgentId"
-            case workFolder           = "WorkFolder"
-            case platform             = "Platform"
-            case platformArchitecture = "PlatformArchitecture"
-            case agentVersion         = "AgentVersion"
-            case ephemeral            = "Ephemeral"
+            case gitHubUrl            = "gitHubUrl"
+            case agentId              = "agentId"
+            case workFolder           = "workFolder"
+            case platform             = "platform"
+            case platformArchitecture = "platformArchitecture"
+            case agentVersion         = "agentVersion"
+            case ephemeral            = "ephemeral"
         }
     }
-    let json = try? JSONDecoder().decode(RunnerJSON.self, from: data)
+    // The GitHub Actions runner agent writes .runner files with a UTF-8 BOM on some macOS
+    // installs. Swift's JSONDecoder does not strip the BOM, causing a silent decode failure.
+    let strippedData = data.strippingUTF8BOM()
+    let json = try? JSONDecoder().decode(RunnerJSON.self, from: strippedData)
     return RunnerModel(
         runnerName: name,
         gitHubUrl: json?.gitHubUrl,
@@ -230,5 +233,15 @@ private func applyMetrics(_ enriched: inout [RunnerModel]) {
         guard enriched[idx].isRunning, let installPath = enriched[idx].installPath else { continue }
         enriched[idx].metrics = metricsForRunner(installPath: installPath)
         log("LocalRunnerStore > applyMetrics — \(enriched[idx].runnerName): \(String(describing: enriched[idx].metrics))")
+    }
+}
+
+// MARK: - Data + BOM
+
+private extension Data {
+    /// Returns a copy of the data with the UTF-8 BOM (0xEF 0xBB 0xBF) stripped if present.
+    func strippingUTF8BOM() -> Data {
+        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+        return starts(with: bom) ? dropFirst(3) : self
     }
 }
