@@ -45,7 +45,7 @@ public struct RunnerStatusEnricher: Sendable {
         var scopeToRunnerIndices: [String: [Int]] = [:]
         for (idx, runner) in runners.enumerated() {
             guard let url = runner.gitHubUrl else {
-                print("[Enricher] SKIP '\(runner.runnerName)' — gitHubUrl is nil, platform/arch cannot be enriched")
+                log("[Enricher] SKIP '\(runner.runnerName)' — gitHubUrl is nil, platform/arch cannot be enriched")
                 continue
             }
             scopeToRunnerIndices[url, default: []].append(idx)
@@ -87,7 +87,7 @@ public struct RunnerStatusEnricher: Sendable {
                 continue
             }
             // No match — warn so it's visible in logs without flooding every cycle.
-            print("[Enricher] NO MATCH for '\(name)' — available API names: \(nameToAPI.keys.sorted()) gitHubUrl=\(result[idx].gitHubUrl ?? "NIL")")
+            log("[Enricher] NO MATCH for '\(name)' — available API names: \(nameToAPI.keys.sorted()) gitHubUrl=\(result[idx].gitHubUrl ?? "NIL")")
         }
         return result
     }
@@ -127,29 +127,29 @@ public struct RunnerStatusEnricher: Sendable {
             let endpoint = "\(baseEndpoint)?per_page=\(perPage)&page=\(page)"
             guard let data = ghAPI(endpoint),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                print("[Enricher] fetchRunnersForScope \(scopeURL) page \(page) — ghAPI returned nil or JSON parse failed")
+                log("[Enricher] fetchRunnersForScope \(scopeURL) page \(page) — ghAPI returned nil or JSON parse failed")
                 break
             }
             let totalCount = json["total_count"] as? Int ?? -1
             guard let pageRunners = json["runners"] as? [[String: Any]] else {
-                print("[Enricher] fetchRunnersForScope \(scopeURL) page \(page) — 'runners' key missing or wrong type. total_count=\(totalCount) top-level keys=\(json.keys.sorted())")
+                log("[Enricher] fetchRunnersForScope \(scopeURL) page \(page) — 'runners' key missing or wrong type. total_count=\(totalCount) top-level keys=\(json.keys.sorted())")
                 break
             }
-            print("[Enricher] fetchRunnersForScope \(scopeURL) page \(page) returned \(pageRunners.count) runners (total_count=\(totalCount))")
+            log("[Enricher] fetchRunnersForScope \(scopeURL) page \(page) returned \(pageRunners.count) runners (total_count=\(totalCount))")
             for r in pageRunners {
                 let name = r["name"] as? String ?? "<unnamed>"
                 let id = r["id"] as? Int ?? -1
                 let status = r["status"] as? String ?? "?"
                 let busy = r["busy"] as? Bool ?? false
                 let labels = (r["labels"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
-                print("[Enricher] fetchRunnersForScope \(scopeURL) runner name=\(name) id=\(id) status=\(status) busy=\(busy) labels=\(labels)")
+                log("[Enricher] fetchRunnersForScope \(scopeURL) runner name=\(name) id=\(id) status=\(status) busy=\(busy) labels=\(labels)")
             }
             allRunners.append(contentsOf: pageRunners)
             guard pageRunners.count == perPage else { break }
             page += 1
         } while true
 
-        print("[Enricher] fetchRunnersForScope \(scopeURL) total collected \(allRunners.count) runners")
+        log("[Enricher] fetchRunnersForScope \(scopeURL) total collected \(allRunners.count) runners")
         return allRunners
     }
 
