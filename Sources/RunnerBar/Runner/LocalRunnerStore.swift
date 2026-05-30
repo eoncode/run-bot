@@ -89,7 +89,7 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Refresh
 
-    func refresh() {
+    @MainActor func refresh() {
         guard !isScanning else { return }
         isScanning = true
         let index = runnerIndex
