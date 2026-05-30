@@ -16,11 +16,17 @@ import Foundation
 //   4. Second pass: apply enrichment from the dictionary.
 //
 // This preserves the original 1–N API-calls-per-poll-cycle behaviour and routes
-// through ghAPI so ghIsRateLimited is honoured and the gh-CLI fallback is available.
+// through ghAPI so the gh-CLI fallback is available.
 //
 // NOTE: ghAPI returns Data?. fetchRunnersForScope decodes it via JSONSerialization
 // rather than casting directly — a direct `as? [String: Any]` cast from Data? always
 // fails at runtime because Data and Dictionary are unrelated types.
+//
+// NOTE: fetchRunnersForScope intentionally does NOT check ghIsRateLimited before
+// calling ghAPI. The transport layer (GitHubURLSessionTransport) is the single
+// source of truth for rate-limit state. A permission 403 on an org-scope endpoint
+// must NOT prevent a subsequent repo-scope fetch from running — the two scopes use
+// independent API paths and may have different token permissions.
 //
 // All methods are synchronous and blocking — always call from a background thread.
 /// A value type representing RunnerStatusEnricher.
@@ -124,17 +130,17 @@ public struct RunnerStatusEnricher: Sendable {
 
     /// Fetches the **complete** runner list for a scope URL via ghAPI, paginating
     /// through all pages (per_page=100) until exhausted.
-    /// Returns an empty array on failure or when rate-limited.
+    /// Returns an empty array on failure.
     ///
     /// GitHub's default page size is 30. Without explicit pagination any org/repo
     /// with more than 30 runners would silently lose enrichment for runners beyond
     /// the first page. Using per_page=100 (the API maximum) minimises round-trips.
+    ///
+    /// NOTE: This method intentionally does NOT gate on ghIsRateLimited. A permission
+    /// 403 on one scope (e.g. org) must not block a repo-scope fetch from running.
+    /// The transport layer handles real rate-limits; duplicating the check here causes
+    /// false skips when scopes are fetched sequentially and an org 403 fires first.
     private func fetchRunnersForScope(_ scopeURL: String) -> [[String: Any]] {
-        guard !ghIsRateLimited else {
-            print("[Enricher] fetchRunnersForScope('\(scopeURL)') — RATE LIMITED, skipping")
-            return []
-        }
-
         let stripped = scopeURL.replacingOccurrences(of: "https://github.com/", with: "")
         let parts = stripped.split(separator: "/").map(String.init)
         print("[Enricher] fetchRunnersForScope — scopeURL='\(scopeURL)' stripped='\(stripped)' parts=\(parts)")
@@ -158,10 +164,6 @@ public struct RunnerStatusEnricher: Sendable {
         let perPage = 100
 
         repeat {
-            guard !ghIsRateLimited else {
-                print("[Enricher] fetchRunnersForScope — RATE LIMITED mid-pagination, stopping")
-                break
-            }
             let endpoint = "\(baseEndpoint)?per_page=\(perPage)&page=\(page)"
             print("[Enricher] fetchRunnersForScope — requesting page \(page): \(endpoint)")
 
