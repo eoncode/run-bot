@@ -128,7 +128,7 @@ private struct RunnerMetricsBadge: View {
         .padding(.vertical, 4)
         .statPillBackground()
     }
-    /// Renders a single label + value pair inside the badge.
+    /// Renders a single label + value pair inside the badge.
     private func metricItem(label: String, value: String) -> some View {
         HStack(spacing: 3) {
             Text(label)
@@ -197,10 +197,14 @@ struct PanelLocalRunnerRow: View {
     /// Builds a normalised subtitle string from architecture and platform fields.
     /// Returns nil when both are absent so the caller can hide the tokens entirely.
     private func runnerSubtitle(_ runner: RunnerModel) -> String? {
-        let arch = runner.platformArchitecture.map { normaliseArch($0) }
-        let os = runner.platform.map { normalisePlatform($0) }
+        let rawArch = runner.platformArchitecture
+        let rawOS = runner.platform
+        let arch = rawArch.map { normaliseArch($0) }
+        let os = rawOS.map { normalisePlatform($0) }
         let parts = [arch, os].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        let result = parts.isEmpty ? nil : parts.joined(separator: " · ")
+        print("[SubtitleDebug#1029] '\(runner.runnerName)' rawArch=\(rawArch ?? "nil") rawOS=\(rawOS ?? "nil") → subtitle=\(result ?? "nil (hidden)")")
+        return result
     }
     /// Normalises raw architecture strings. Maps "ARM64"→"arm64", "X64"→"x64", "X86"→"x86".
     private func normaliseArch(_ raw: String) -> String {
@@ -329,7 +333,7 @@ struct ActionRowView: View {
             .glassCard(cornerRadius: RBRadius.card)
     }
 
-    /// Sets the initial expand state based on the row’s current status on first appearance.
+    /// Sets the initial expand state based on the row's current status on first appearance.
     private func applyInitialExpandState() {
         let status = rowStatus
         previousStatus = status
@@ -470,7 +474,7 @@ struct ActionRowView: View {
 private struct RowTapModifier: ViewModifier {
     /// The jobs to inspect before allowing expansion.
     let jobs: [ActiveJob]
-    /// Binding to the parent row’s expand state.
+    /// Binding to the parent row's expand state.
     @Binding var expandState: Bool?
     /// Current display status of the row.
     let rowStatus: RBStatus

@@ -41,7 +41,10 @@ public struct RunnerStatusEnricher: Sendable {
         // Step 1: collect unique scope URLs and the runners belonging to each.
         var scopeToRunnerIndices: [String: [Int]] = [:]
         for (idx, runner) in runners.enumerated() {
-            guard let url = runner.gitHubUrl else { continue }
+            guard let url = runner.gitHubUrl else {
+                print("[Enricher#1029] SKIP \(runner.runnerName) — gitHubUrl is nil, platform/arch cannot be enriched")
+                continue
+            }
             scopeToRunnerIndices[url, default: []].append(idx)
         }
 
@@ -50,6 +53,7 @@ public struct RunnerStatusEnricher: Sendable {
         var nameToAPI: [String: [String: Any]] = [:]
         for scopeURL in scopeToRunnerIndices.keys {
             let fetched = fetchRunnersForScope(scopeURL)
+            print("[Enricher#1029] scope=\(scopeURL) → fetched \(fetched.count) runners from API")
             for apiRunner in fetched {
                 if let name = apiRunner["name"] as? String {
                     nameToAPI[name] = apiRunner
@@ -60,7 +64,10 @@ public struct RunnerStatusEnricher: Sendable {
         // Step 3: apply enrichment in a second pass.
         var result = runners
         for idx in result.indices {
-            guard let api = nameToAPI[result[idx].runnerName] else { continue }
+            guard let api = nameToAPI[result[idx].runnerName] else {
+                print("[Enricher#1029] NO API MATCH for runner '\(result[idx].runnerName)' — platform/arch will stay nil")
+                continue
+            }
             result[idx] = applyEnrichment(to: result[idx], from: api)
         }
         return result
@@ -76,7 +83,10 @@ public struct RunnerStatusEnricher: Sendable {
     /// with more than 30 runners would silently lose enrichment for runners beyond
     /// the first page. Using per_page=100 (the API maximum) minimises round-trips.
     private func fetchRunnersForScope(_ scopeURL: String) -> [[String: Any]] {
-        guard !ghIsRateLimited else { return [] }
+        guard !ghIsRateLimited else {
+            print("[Enricher#1029] Rate-limited — skipping fetch for \(scopeURL)")
+            return []
+        }
 
         let parts = scopeURL
             .replacingOccurrences(of: "https://github.com/", with: "")
@@ -106,7 +116,10 @@ public struct RunnerStatusEnricher: Sendable {
             // ghAPI returns Data?; decode via JSONSerialization before casting.
             guard let data = ghAPI(endpoint),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let pageRunners = json["runners"] as? [[String: Any]] else { break }
+                  let pageRunners = json["runners"] as? [[String: Any]] else {
+                print("[Enricher#1029] Failed to decode API response for endpoint: \(endpoint)")
+                break
+            }
 
             allRunners.append(contentsOf: pageRunners)
 
@@ -140,6 +153,8 @@ public struct RunnerStatusEnricher: Sendable {
             let l = label.lowercased()
             return l == "arm64" || l == "x64" || l == "x86" || l == "aarch64"
         })
+
+        print("[Enricher#1029] '\(runner.runnerName)' effectiveLabels=\(effectiveLabels) labelNamesFromAPI=\(labelNames) runnerLabelsOnDisk=\(runner.labels) → platform=\(platform ?? "nil") arch=\(platformArchitecture ?? "nil")")
 
         return RunnerModel(
             id: runner.id,
