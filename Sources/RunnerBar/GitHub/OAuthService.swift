@@ -56,9 +56,8 @@ final class OAuthService {
     /// - `workflow`: Required to trigger and re-run workflow runs via the API.
     ///   Without this, dispatch and re-run actions fail with 403 even when `repo`
     ///   is present.
-    /// - `gist`: Required by some GitHub CLI (`gh`) operations used internally via
-    ///   `GitHubCLITransport`. Absent from the token, `gh` prompts for re-auth
-    ///   interactively, breaking headless CLI calls.
+    /// - `gist`: Required by some legacy GitHub operations. Absent from the token,
+    ///   GitHub prompts for re-auth interactively.
     ///
     /// Previously only `repo` and `read:org` were requested. The additional scopes
     /// were added because org-runner listing and workflow dispatch were returning 403
