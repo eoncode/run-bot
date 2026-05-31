@@ -162,10 +162,13 @@ public enum JobConclusion: Hashable, Sendable {
 
     /// Returns `true` for terminal failure-like conclusions that should trigger alerts.
     ///
-    /// - Note: `.cancelled` and `.skipped` are intentionally excluded. Both are
-    ///   user-initiated or dependency-driven outcomes — not CI failures. Treating
-    ///   them as failures would trigger the failure hook for routine branch
-    ///   cancellations and conditional-skip patterns.
+    /// - Note: `.cancelled` and `.skipped` are intentionally excluded — both are
+    ///   user-initiated or dependency-driven outcomes, not CI errors. Treating them
+    ///   as failures would trigger the failure hook for routine branch cancellations
+    ///   and conditional-skip patterns.
+    /// - Note: `.neutral` is also excluded — it represents an inconclusive outcome
+    ///   with no definitive pass/fail signal, not an error condition. Same class of
+    ///   outcome as `.skipped`: informational, not actionable.
     public var isFailure: Bool {
         switch self {
         case .failure, .timedOut, .startupFailure, .actionRequired: return true

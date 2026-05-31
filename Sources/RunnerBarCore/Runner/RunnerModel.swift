@@ -21,6 +21,7 @@ import Foundation
 ///   properties that prevent the compiler from synthesising `Sendable` conformance
 ///   automatically. All mutations occur on `@MainActor` in practice (via
 ///   `LocalRunnerStore` and `RunnerStatusEnricher`), making this safe.
+///   TODO: Remove `@unchecked` once all mutable properties are actor-isolated or `let`.
 /// - SeeAlso: `Runner`, `RunnerStatus`, `RunnerStatusEnricher`, `LocalRunnerStore`
 public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
     // MARK: Stored Properties
@@ -152,11 +153,16 @@ public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
     ///
     /// - Note: Evaluated in priority order: lifecycle warning → local running
     ///   state → GitHub API status.
+    /// - Note: `.running` and `.githubOnline` are deliberately distinct cases:
+    ///   `.running` means the local agent process is up (green dot);
+    ///   `.githubOnline` means the process is *not* running locally but GitHub
+    ///   still reports it as reachable (yellow dot). Collapsing these two cases
+    ///   would silently break dot-colour semantics.
     private var resolvedState: ResolvedState {
         if lifecycleWarning != nil { return .warning }
         if isRunning { return (isBusy || githubStatus == .busy) ? .busy : .running }
         switch githubStatus {
-        case .online:  return .idle
+        case .online:  return .githubOnline
         case .busy:    return .busy
         default:       return .offline
         }
@@ -171,7 +177,10 @@ public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
         /// Runner is local-process-running but not executing a job.
         case running
         /// Runner is not running locally but the GitHub API reports it as online.
-        case idle
+        ///
+        /// Distinct from `.running`: the local agent process is absent, so the
+        /// dot colour is yellow (idle) rather than green (active process).
+        case githubOnline
         /// Runner is offline from GitHub's perspective and not running locally.
         case offline
     }
@@ -187,22 +196,22 @@ public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
     /// - `"offline"` — runner is not reachable.
     public var displayStatus: String {
         switch resolvedState {
-        case .warning:  return lifecycleWarning ?? "error"
-        case .busy:     return "busy"
-        case .running:  return "running"
-        case .idle:     return "online"
-        case .offline:  return "offline"
+        case .warning:     return lifecycleWarning!  // resolvedState only reaches .warning when lifecycleWarning != nil
+        case .busy:        return "busy"
+        case .running:     return "running"
+        case .githubOnline: return "online"
+        case .offline:     return "offline"
         }
     }
 
     /// Dot colour category used by `SettingsView.localRunnerDotColor(for:)`.
     public var statusColor: StatusColor {
         switch resolvedState {
-        case .warning:  return .offline
-        case .busy:     return .busy
-        case .running:  return .running
-        case .idle:     return .idle
-        case .offline:  return .offline
+        case .warning:     return .offline
+        case .busy:        return .busy
+        case .running:     return .running
+        case .githubOnline: return .idle
+        case .offline:     return .offline
         }
     }
 

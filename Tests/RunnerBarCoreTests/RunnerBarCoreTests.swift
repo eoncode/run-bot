@@ -211,6 +211,96 @@ final class RunnerModelDisplayStatusTests: XCTestCase {
     }
 }
 
+// MARK: - RunnerModel.statusColor
+
+final class RunnerModelStatusColorTests: XCTestCase {
+
+    private func makeRunner(
+        isRunning: Bool,
+        isBusy: Bool = false,
+        githubStatus: RunnerStatus = .online,
+        lifecycleWarning: String? = nil
+    ) -> RunnerModel {
+        RunnerModel(
+            runnerName: "test-runner",
+            gitHubUrl: nil,
+            agentId: nil,
+            workFolder: nil,
+            installPath: "/tmp/runner",
+            isRunning: isRunning,
+            githubStatus: githubStatus,
+            isBusy: isBusy,
+            lifecycleWarning: lifecycleWarning
+        )
+    }
+
+    /// Verifies that a running, non-busy runner gets the .running dot colour.
+    func testStatusColorRunning() {
+        XCTAssertEqual(makeRunner(isRunning: true).statusColor, .running)
+    }
+
+    /// Verifies that a running and busy runner gets the .busy dot colour.
+    func testStatusColorBusy() {
+        XCTAssertEqual(makeRunner(isRunning: true, isBusy: true).statusColor, .busy)
+    }
+
+    /// Verifies that a non-running runner that GitHub reports as online gets the .idle dot colour.
+    func testStatusColorGithubOnlineIsIdle() {
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .online).statusColor, .idle)
+    }
+
+    /// Verifies that a non-running runner with an offline GitHub status gets the .offline dot colour.
+    func testStatusColorOffline() {
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .offline).statusColor, .offline)
+    }
+
+    /// Verifies that a lifecycle warning maps to the .offline dot colour.
+    func testStatusColorLifecycleWarning() {
+        XCTAssertEqual(makeRunner(isRunning: true, lifecycleWarning: "restart failed").statusColor, .offline)
+    }
+
+    /// Verifies that an unknown GitHub status (not running locally) maps to .offline.
+    func testStatusColorUnknownGithubStatus() {
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .unknown("draining")).statusColor, .offline)
+    }
+}
+
+// MARK: - Runner.displayStatus
+
+final class RunnerDisplayStatusTests: XCTestCase {
+
+    private func makeRunner(status: RunnerStatus, busy: Bool = false, metrics: RunnerMetrics? = nil) -> Runner {
+        Runner(id: 1, name: "r", status: status, busy: busy, metrics: metrics)
+    }
+
+    /// Verifies that an offline runner returns "offline".
+    func testOfflineReturnsOffline() {
+        XCTAssertEqual(makeRunner(status: .offline).displayStatus, "offline")
+    }
+
+    /// Verifies that an unknown status returns "offline" (not idle/active).
+    func testUnknownReturnsOffline() {
+        XCTAssertEqual(makeRunner(status: .unknown("draining")).displayStatus, "offline")
+    }
+
+    /// Verifies that an online, non-busy runner with no metrics returns the idle placeholder.
+    func testOnlineIdleNoMetrics() {
+        XCTAssertEqual(makeRunner(status: .online, busy: false).displayStatus, "idle (CPU: — MEM: —)")
+    }
+
+    /// Verifies that an online, busy runner with metrics returns the active format.
+    func testOnlineBusyWithMetrics() {
+        let m = RunnerMetrics(cpu: 45.0, mem: 12.3)
+        XCTAssertEqual(makeRunner(status: .online, busy: true, metrics: m).displayStatus, "active (CPU: 45.0% MEM: 12.3%)")
+    }
+
+    /// Verifies that a busy status (from API) is treated same as online for display.
+    func testBusyStatusShowsActiveWithMetrics() {
+        let m = RunnerMetrics(cpu: 80.0, mem: 50.0)
+        XCTAssertEqual(makeRunner(status: .busy, busy: true, metrics: m).displayStatus, "active (CPU: 80.0% MEM: 50.0%)")
+    }
+}
+
 // MARK: - RunnerMetrics
 
 final class RunnerMetricsTests: XCTestCase {
@@ -414,10 +504,7 @@ final class PollResultBuilderTests: XCTestCase {
             snapPrev: [:],
             snapCache: [:],
             fetchJobs: { [liveJob] },
-            backfill: { _ in
-                // No backfill needed for this test — step-log fetching
-                // is exercised by integration tests, not unit tests.
-            }
+            backfill: { _ in }
         )
         XCTAssertTrue(result.display.contains(where: { $0.id == 99 }))
     }
@@ -429,9 +516,7 @@ final class PollResultBuilderTests: XCTestCase {
             snapPrev: [:],
             snapCache: [:],
             fetchJobs: { [doneJob] },
-            backfill: { _ in
-                // No backfill needed — completed job already has full data.
-            }
+            backfill: { _ in }
         )
         XCTAssertTrue(result.newCache.keys.contains(42))
         XCTAssertEqual(result.newCache[42]?.isDimmed, true)
@@ -440,14 +525,11 @@ final class PollResultBuilderTests: XCTestCase {
     /// Verifies that a job that was live in the previous poll but is absent from fetchJobs is moved to the cache as vanished.
     func testBuildJobStateVanishedLiveJobAppearsInCache() {
         let prev = ActiveJob(id: 11, name: "Old", status: "in_progress")
-        // Job 11 was live last poll but fetchJobs returns nothing this poll
         let result = PollResultBuilder.buildJobState(
             snapPrev: [11: prev],
             snapCache: [:],
             fetchJobs: { [] },
-            backfill: { _ in
-                // No backfill needed — vanished job has no new data to fetch.
-            }
+            backfill: { _ in }
         )
         XCTAssertNotNil(result.newCache[11], "Vanished live job should appear in cache")
         XCTAssertEqual(result.newCache[11]?.status, "completed")

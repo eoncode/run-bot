@@ -53,24 +53,23 @@ public struct Runner: Codable, Identifiable {
     /// Excludes `metrics` from JSON decoding — it is assigned locally after fetch,
     /// not returned by the GitHub API.
     enum CodingKeys: String, CodingKey {
-        /// Maps to the `id` JSON key.
-        case id
-        /// Maps to the `name` JSON key.
-        case name
-        /// Maps to the `status` JSON key.
-        case status
-        /// Maps to the `busy` JSON key.
-        case busy
+        case id, name, status, busy
     }
 
     /// A single-line status string for display in the runner list row.
     ///
+    /// Returns `"offline"` for both `.offline` and any `.unknown` status value,
+    /// since an unrecognised API status should not be displayed as idle or active.
+    ///
     /// Possible formats:
-    /// - `"offline"` — runner is not connected
+    /// - `"offline"` — runner is not connected or status is unrecognised
     /// - `"idle (CPU: — MEM: —)"` — online but no matching process found
     /// - `"active (CPU: 12.3% MEM: 4.5%)"` — online and executing a job
     public var displayStatus: String {
-        guard status != .offline else { return "offline" }
+        switch status {
+        case .offline, .unknown: return "offline"
+        default: break
+        }
         let label = busy ? "active" : "idle"
         guard let m = metrics else { return "\(label) (CPU: \u{2014} MEM: \u{2014})" }
         let cpu = String(format: "%.1f", m.cpu)
