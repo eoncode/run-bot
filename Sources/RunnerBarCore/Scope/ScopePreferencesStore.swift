@@ -1,6 +1,5 @@
 // ScopePreferencesStore.swift
 // RunnerBarCore
-// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - ScopePreferencesStore
@@ -133,7 +132,7 @@ public enum ScopePreferencesStore {
             .flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// Persists the local repository path used for this scope's failure hook.
+    /// Persists the local repository path used for this scope’s failure hook.
     public static func setLocalRepoPath(_ path: String?, for scope: String) {
         let trimmed = path?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let value = trimmed, !value.isEmpty {
@@ -164,7 +163,8 @@ public enum ScopePreferencesStore {
 
     // MARK: - Cleanup (#505)
 
-    /// Removes all per-scope keys for `scope` from `UserDefaults`.
+    /// Removes all per-scope `UserDefaults` keys for the given scope.
+    /// Call from `ScopeStore.remove(id:)` to avoid orphaned data accumulating.
     public static func cleanUp(scope: String) {
         let fields = [
             "alias",
