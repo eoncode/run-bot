@@ -647,7 +647,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
         case .completed:  runStatus = "completed"
         }
         let resolvedJobStatus: JobStatus = jobStatus ?? JobStatus(rawString: runStatus)
-        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed ? JobConclusion(rawValue: conclusion) : nil
+        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed ? JobConclusion(rawString: conclusion) : nil
         let job = ActiveJob(
             id: runID * 10,
             name: "job",
