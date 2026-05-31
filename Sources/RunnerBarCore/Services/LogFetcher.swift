@@ -4,12 +4,21 @@ import Foundation
 import os
 
 // MARK: - Filesystem path constants
-/// The unzipBinaryPath constant.
+
+/// Absolute path to the system `unzip` binary, always present on macOS.
 private let unzipBinaryPath = "/usr/bin/unzip"
 
-/// Fetches raw bytes from a GitHub API endpoint via URLSession.
-/// Log endpoints 302-redirect to S3; URLSession follows the redirect automatically.
-/// Returns nil when no token is available or the request fails.
+// MARK: - Transport shim
+
+/// Fetches raw bytes from a GitHub API endpoint via the configured transport.
+///
+/// Delegates to `ghRawTransport()` so the underlying mechanism (URLSession or
+/// `gh` CLI) can be swapped without touching call sites.
+/// Log endpoints 302-redirect to S3; the transport follows the redirect automatically.
+/// - Parameter endpoint: A relative GitHub REST path, e.g. `"repos/owner/repo/actions/jobs/123/logs"`.
+/// - Parameter timeout: Reserved for transport implementations that support request timeouts.
+///   The current transport shim does not consume this value.
+/// - Returns: Raw response bytes, or `nil` when no token is available or the request fails.
 private func ghRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     ghRawTransport()(endpoint)
 }
@@ -17,7 +26,15 @@ private func ghRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
 // MARK: - Job log (plain text, 1 call)
 
 /// Fetches the full plain-text log for a single job.
-/// `/actions/jobs/{id}/logs` 302-redirects to a short-lived S3 URL; gh follows it.
+///
+/// `/actions/jobs/{id}/logs` 302-redirects to a short-lived S3 URL; the transport follows it.
+/// Returns `nil` when `scope` is not in `owner/repo` form, the request fails,
+/// or the response body looks like a JSON error object (starts with `"{"`)
+///
+/// - Parameters:
+///   - jobID: The GitHub Actions job ID.
+///   - scope: The `owner/repo` string identifying the repository.
+/// - Returns: Plain-text log content, or `nil` on failure.
 public func fetchJobLog(jobID: Int, scope: String) -> String? {
     guard scope.contains("/") else { return nil }
     guard let data = ghRaw("repos/\(scope)/actions/jobs/\(jobID)/logs"),
@@ -29,7 +46,17 @@ public func fetchJobLog(jobID: Int, scope: String) -> String? {
 // MARK: - Action logs (ZIP per run, N calls)
 
 /// Fetches and concatenates all job logs for every run in a group.
-/// Each run: 1 API call → ZIP → extract → read .txt files.
+///
+/// Issues one API call per run in parallel on `DispatchQueue.global(qos: .userInitiated)`.
+/// Each call retrieves a ZIP archive, extracts all `.txt` log files via `unzipLogs(_:)`,
+/// and appends the results to a shared accumulator guarded by `OSAllocatedUnfairLock`.
+/// The final output is sorted by filename for stable ordering when names are unique.
+///
+/// This function is synchronous: it blocks the calling thread until all per-run fetches
+/// complete. Do not call from the main thread for groups with many runs or slow connections.
+/// - Parameter group: The `WorkflowActionGroup` whose runs should be fetched.
+/// - Returns: A single concatenated string with `=== <name> ===` section headers,
+///   or `nil` if `scope` is invalid, `runs` is empty, or all fetches fail.
 public func fetchActionLogs(group: WorkflowActionGroup) -> String? {
     let scope = group.repo
     guard scope.contains("/") else { return nil }
@@ -58,6 +85,15 @@ public func fetchActionLogs(group: WorkflowActionGroup) -> String? {
 // MARK: - ZIP extraction (uses /usr/bin/unzip — always available on macOS)
 
 /// Extracts all `.txt` files from a ZIP blob and returns `(name, text)` pairs.
+///
+/// Writes the ZIP to a unique temporary directory, runs `/usr/bin/unzip -q`,
+/// then enumerates the output directory for `.txt` files. The temporary directory
+/// is always removed on return via `defer`.
+/// - Parameter zipData: Raw ZIP archive bytes as returned by the GitHub logs API.
+/// - Returns: An array of `(name, text)` tuples where `name` is the archive-relative
+///   path without the `.txt` extension (e.g. `"1_Build"` for `1_Build.txt`) and
+///   `text` is the file content. Returns `[]` if the write, unzip, or enumeration
+///   step fails.
 public func unzipLogs(_ zipData: Data) -> [(name: String, text: String)] {
     let fileManager = FileManager.default
     let tmp = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
