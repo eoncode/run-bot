@@ -131,21 +131,16 @@ public struct PollResultBuilder {
         let liveIDs = Set(liveGroups.map { $0.id })
         let now = Date()
         var newCache = evictFreshShas(from: snapGroupCache, freshGroups: allFetched)
-        // IMPORTANT: populate newSeenGroupIDs from doneGroups BEFORE calling
-        // freezeVanishedGroups, so a group present in both paths fires the hook
-        // exactly once (freezeVanishedGroups checks seenGroupIDs before firing).
         var newSeenGroupIDs = snapSeenGroupIDs
         for group in doneGroups {
-            // isNew is now keyed off seenGroupIDs, not the display cache.
-            // This prevents re-notification when a group is evicted from
-            // snapGroupCache by trimGroupCache (capped at groupCacheLimit = 30)
-            // but is still present in GitHub's completed-runs feed.
+            // isNew is keyed off seenGroupIDs, not the display cache, to prevent
+            // re-notification when a group is evicted from snapGroupCache by trimGroupCache.
             let isNew = !newSeenGroupIDs.contains(group.id)
             let runSummary = group.runs.map { "\($0.id):\($0.conclusion ?? "nil")" }.joined(separator: ", ")
             log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]")
             if isNew {
                 let scope = scopeFromGroup(group)
-                log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → fireFailureHook scope=\(scope)")
+                log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → scope=\(scope)")
                 // Only fire the failure hook when the group actually failed.
                 // Success/cancelled/skipped completions must not trigger an alert.
                 let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
@@ -207,8 +202,6 @@ public struct PollResultBuilder {
                 name: job.name,
                 htmlUrl: job.htmlUrl,
                 status: .completed,
-                // Fall back to .cancelled — a job that vanished without a conclusion
-                // was most likely cancelled or disconnected, not successfully completed.
                 conclusion: job.conclusion ?? .cancelled,
                 isDimmed: true,
                 runnerName: job.runnerName,
