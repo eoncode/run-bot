@@ -50,9 +50,9 @@ public struct Runner: Codable, Identifiable {
         self.metrics = metrics
     }
 
-    /// Excludes `metrics` from JSON decoding — it is assigned locally after fetch,
-    /// not returned by the GitHub API.
-    enum CodingKeys: String, CodingKey {
+    // Excludes `metrics` from JSON decoding — it is assigned locally after fetch,
+    // not returned by the GitHub API.
+    private enum CodingKeys: String, CodingKey {
         case id, name, status, busy
     }
 
