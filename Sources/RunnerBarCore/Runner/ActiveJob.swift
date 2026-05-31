@@ -1,6 +1,5 @@
 // ActiveJob.swift
 // RunnerBarCore
-// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - Top-level job
@@ -27,6 +26,10 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     /// The name of the runner that executed (or is executing) this job.
     public let runnerName: String?
     /// The repo or org scope string this job belongs to.
+    ///
+    /// - Note: Always `nil` at decode time — scope is not part of the GitHub API job payload.
+    ///   `RunnerStore` injects the correct scope after fetch via `ActiveJob` mutation.
+    ///   Do not attempt to derive scope from runner name or URL here.
     public let scope: String?
 
     // MARK: Timing
@@ -111,12 +114,19 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
 
 /// A single step within an `ActiveJob`.
 public struct JobStep: Identifiable, Equatable, Sendable {
+    /// Step ID — equals `number` since GitHub steps have no separate stable ID.
     public let id: Int
+    /// Display name of the step.
     public let name: String
+    /// Typed lifecycle status.
     public let status: JobStatus
+    /// Typed conclusion (nil while the step is still running).
     public let conclusion: JobConclusion?
+    /// UTC time the step started executing.
     public let startedAt: Date?
+    /// UTC time the step finished (nil while running).
     public let completedAt: Date?
+    /// 1-based position of this step within its parent job.
     public let number: Int
 
     public init(
@@ -166,19 +176,30 @@ public struct JobStep: Identifiable, Equatable, Sendable {
 // MARK: - API payload (Decodable)
 
 /// Raw API payload decoded from `/actions/runs/{id}/jobs` responses.
+///
 /// Uses a custom `init(from:)` so that a missing `steps` key decodes as `[]`
 /// rather than throwing — the GitHub API omits `steps` for jobs that have not
 /// yet started (e.g. queued jobs in a matrix).
 public struct JobPayload: Decodable, Sendable {
+    /// GitHub job ID.
     public let id: Int
+    /// Display name of the job.
     public let name: String
+    /// Lifecycle status string as returned by the API.
     public let status: JobStatus
+    /// Conclusion string (nil while running).
     public let conclusion: JobConclusion?
+    /// ISO 8601 start timestamp string.
     public let startedAt: String?
+    /// ISO 8601 completion timestamp string.
     public let completedAt: String?
+    /// ISO 8601 creation/queue timestamp string.
     public let createdAt: String?
+    /// GitHub web URL for this job run.
     public let htmlUrl: String?
+    /// Name of the runner that executed this job.
     public let runnerName: String?
+    /// Ordered step payloads (empty for jobs not yet started).
     public let steps: [StepPayload]
 
     enum CodingKeys: String, CodingKey {
@@ -207,11 +228,17 @@ public struct JobPayload: Decodable, Sendable {
 
 /// Raw API payload for a single job step.
 public struct StepPayload: Decodable, Sendable {
+    /// Display name of the step.
     public let name: String
+    /// Lifecycle status.
     public let status: JobStatus
+    /// Conclusion (nil while running).
     public let conclusion: JobConclusion?
+    /// 1-based step number within its parent job.
     public let number: Int
+    /// ISO 8601 start timestamp string.
     public let startedAt: String?
+    /// ISO 8601 completion timestamp string.
     public let completedAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -223,15 +250,19 @@ public struct StepPayload: Decodable, Sendable {
 
 /// Wraps the top-level JSON object returned by `/actions/runs/{id}/jobs`.
 public struct JobsResponse: Decodable, Sendable {
+    /// The list of jobs for this workflow run.
     public let jobs: [JobPayload]
 }
-// swiftlint:enable missing_docs
 
 // MARK: - Factory
 
 /// Converts a raw `JobPayload` into a fully-typed `ActiveJob`.
+///
 /// This is the single canonical factory — both `WorkflowActionGroupFetch` and
 /// `GitHub.swift` delegate here. Do not duplicate this logic elsewhere.
+///
+/// - Note: `scope` is always set to `nil` here because scope is not present in
+///   the GitHub API job payload. Callers in `RunnerStore` inject scope after fetch.
 public func makeActiveJob(
     from payload: JobPayload,
     iso: ISO8601DateFormatter,

@@ -1,31 +1,37 @@
 // AggregateStatus.swift
-// RunnerBar
+// RunnerBarCore
+
 // MARK: - AggregateStatus
 
-/// Enumerates possible values for AggregateStatus.
+/// The overall connectivity state of the runner fleet, derived by `RunnerStore.aggregateStatus`.
+///
+/// Drives the status-bar dot colour and the menu-bar SF Symbol:
+/// - `allOnline`  → green dot / filled circle  (every runner online or busy)
+/// - `someOffline` → yellow dot / half-filled circle (mixed)
+/// - `allOffline`  → dark dot  / empty circle   (no runners reachable)
 public enum AggregateStatus {
-    /// The `allOnline` case.
+    /// Every runner in the fleet is `.online` or `.busy`.
     case allOnline
-    /// The `someOffline` case.
+    /// At least one runner is offline while at least one is online or busy.
     case someOffline
-    /// The `allOffline` case.
+    /// Every runner in the fleet is `.offline` (or the fleet is empty).
     case allOffline
 
-    /// The dot property.
+    /// Emoji dot used in the menu-bar title string.
     public var dot: String {
         switch self {
-        case .allOnline:  return "🟢"
+        case .allOnline:   return "🟢"
         case .someOffline: return "🟡"
-        case .allOffline: return "⚫"
+        case .allOffline:  return "⚫"
         }
     }
 
-    /// The symbolName property.
+    /// SF Symbol name used for the status-bar icon.
     public var symbolName: String {
         switch self {
-        case .allOnline:  return "circle.fill"
+        case .allOnline:   return "circle.fill"
         case .someOffline: return "circle.lefthalf.filled"
-        case .allOffline: return "circle"
+        case .allOffline:  return "circle"
         }
     }
 }

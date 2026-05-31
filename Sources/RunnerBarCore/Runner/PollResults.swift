@@ -1,5 +1,5 @@
 // PollResults.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - Poll result value types
@@ -8,7 +8,7 @@ import Foundation
 public struct JobPollResult {
     /// Jobs to display in the popover (in_progress → queued → cached done).
     public let display: [ActiveJob]
-    /// Updated completed-job cache, trimmed to jobCacheLimit entries.
+    /// Updated completed-job cache, trimmed to `PollResultBuilder.jobCacheLimit` entries.
     public let newCache: [Int: ActiveJob]
     /// Live-job snapshot for the next poll's diff.
     public let newPrevLive: [Int: ActiveJob]
@@ -18,7 +18,7 @@ public struct JobPollResult {
 public struct GroupPollResult {
     /// Action groups to display in the popover.
     public let display: [WorkflowActionGroup]
-    /// Updated group cache, trimmed to groupCacheLimit entries.
+    /// Updated group cache, trimmed to `PollResultBuilder.groupCacheLimit` entries.
     public let newGroupCache: [String: WorkflowActionGroup]
     /// Live-group snapshot for the next poll's diff.
     public let newPrevLiveGroups: [String: WorkflowActionGroup]
