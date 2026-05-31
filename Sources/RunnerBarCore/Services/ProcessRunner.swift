@@ -27,11 +27,11 @@ import Foundation
 /// approach guarantees termination within `timeout` seconds even in that case.
 /// Do NOT replace this with a bare `waitUntilExit()` call.
 public enum ProcessRunner {
-    /// A value type representing Result.
+    /// The collected output and exit status from a subprocess invocation.
     public struct Result {
-        /// The data constant.
+        /// Collected stdout bytes, or `nil` if the process failed to launch or produced no output.
         public let data: Data?
-        /// The exitCode constant.
+        /// Process exit code. `Int32.max` indicates a launch failure rather than a process exit.
         public let exitCode: Int32
         /// Convenience: decoded UTF-8 string of `data`, or empty string.
         public var output: String { data.flatMap { String(data: $0, encoding: .utf8) } ?? "" }
