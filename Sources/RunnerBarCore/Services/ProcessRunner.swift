@@ -7,7 +7,7 @@ import Foundation
 /// Shared primitive for launching subprocesses with streaming output,
 /// optional stdin, optional working directory, and a DispatchWorkItem timeout.
 ///
-/// Both `runRegistrationCommand` and `runScriptWithOutput`
+/// Both `runGHProcess` (GitHubCLITransport) and `runScriptWithOutput`
 /// (RunnerLifecycleService) are thin wrappers around this type.
 ///
 /// ## Migration note (from Shell.swift — deleted in #956)
