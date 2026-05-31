@@ -45,6 +45,7 @@ final class ActiveJobElapsedTests: XCTestCase {
 
     /// Verifies that an in-progress job falls back to createdAt when startedAt is nil (still queued/assigning).
     func testElapsedInProgressFallsBackToCreatedAt() {
+        // When startedAt is nil (still queued/assigning), elapsed uses createdAt
         let created = Date(timeIntervalSinceNow: -60)
         let job = ActiveJob(id: 1, name: "J", status: "in_progress", createdAt: created)
         let mins = Int(job.elapsed.prefix(2))!
@@ -76,6 +77,7 @@ final class JobStepElapsedTests: XCTestCase {
 
     /// Verifies that a step with nil start and end dates returns "00:00".
     func testElapsedNilDatesReturnsZero() {
+        // Both nil → Date() - Date() ≈ 0
         let step = JobStep(id: 1, name: "S", status: "in_progress")
         XCTAssertEqual(step.elapsed, "00:00")
     }
@@ -94,46 +96,55 @@ final class JobStepElapsedTests: XCTestCase {
 
 final class ActiveJobIsLocalRunnerTests: XCTestCase {
 
+    /// Verifies that isLocalRunner returns nil when a job has no runner name.
     func testIsLocalRunnerNilWhenNoRunnerName() {
         let job = ActiveJob(id: 1, name: "J", status: "queued")
         XCTAssertNil(job.isLocalRunner)
     }
 
+    /// Verifies that a GitHub-hosted Ubuntu runner is not considered local.
     func testIsLocalRunnerFalseForUbuntuHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "ubuntu-latest")
         XCTAssertEqual(job.isLocalRunner, false)
     }
 
+    /// Verifies that a GitHub-hosted macOS runner is not considered local.
     func testIsLocalRunnerFalseForMacOSHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "macos-14")
         XCTAssertEqual(job.isLocalRunner, false)
     }
 
+    /// Verifies that a GitHub-hosted Windows runner is not considered local.
     func testIsLocalRunnerFalseForWindowsHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "windows-2022")
         XCTAssertEqual(job.isLocalRunner, false)
     }
 
+    /// Verifies that a buildjet-hosted runner is not considered local.
     func testIsLocalRunnerFalseForBuildjetHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "buildjet-4vcpu-ubuntu-2204")
         XCTAssertEqual(job.isLocalRunner, false)
     }
 
+    /// Verifies that a depot-hosted runner is not considered local.
     func testIsLocalRunnerFalseForDepotHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "depot-ubuntu-22.04")
         XCTAssertEqual(job.isLocalRunner, false)
     }
 
+    /// Verifies that a runner named "GitHub Actions 12" (hosted by GitHub) is not considered local.
     func testIsLocalRunnerFalseForGitHubActionsHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "GitHub Actions 12")
         XCTAssertEqual(job.isLocalRunner, false)
     }
 
+    /// Verifies that an arbitrary self-hosted runner name is identified as local.
     func testIsLocalRunnerTrueForSelfHosted() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "my-mac-mini")
         XCTAssertEqual(job.isLocalRunner, true)
     }
 
+    /// Verifies that a custom-named runner (e.g., "office-m2-runner") is identified as local.
     func testIsLocalRunnerTrueForCustomName() {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "office-m2-runner")
         XCTAssertEqual(job.isLocalRunner, true)
@@ -147,7 +158,7 @@ final class RunnerModelDisplayStatusTests: XCTestCase {
     private func makeRunner(
         isRunning: Bool,
         isBusy: Bool = false,
-        githubStatus: String = "online",
+        githubStatus: RunnerStatus = .online,
         lifecycleWarning: String? = nil
     ) -> RunnerModel {
         RunnerModel(
@@ -163,33 +174,130 @@ final class RunnerModelDisplayStatusTests: XCTestCase {
         )
     }
 
+    /// Verifies that a running runner displays "running" status.
     func testDisplayStatusRunning() {
         XCTAssertEqual(makeRunner(isRunning: true).displayStatus, "running")
     }
 
+    /// Verifies that a runner with isBusy = true displays "busy" status (dead-branch fix for #773).
     func testDisplayStatusBusy() {
         XCTAssertEqual(makeRunner(isRunning: true, isBusy: true).displayStatus, "busy")
     }
 
+    /// Verifies that a non-running runner with GitHub status .online displays "online".
     func testDisplayStatusOnline() {
-        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: "online").displayStatus, "online")
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .online).displayStatus, "online")
     }
 
+    /// Verifies that a non-running runner with GitHub status .offline displays "offline".
     func testDisplayStatusOffline() {
-        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: "offline").displayStatus, "offline")
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .offline).displayStatus, "offline")
     }
 
+    /// Verifies that a lifecycle warning overrides the running/busy status.
     func testDisplayStatusLifecycleWarningTakesPriority() {
         let runner = makeRunner(isRunning: true, lifecycleWarning: "update required")
         XCTAssertEqual(runner.displayStatus, "update required")
     }
 
+    /// Verifies that a non-running runner with GitHub status .busy displays "busy".
     func testDisplayStatusBusyGithubStatusWhenNotRunning() {
-        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: "busy").displayStatus, "busy")
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .busy).displayStatus, "busy")
     }
 
+    /// Verifies that a non-running runner with an unknown GitHub status defaults to "offline".
     func testDisplayStatusDefaultsToOfflineForUnknownStatus() {
-        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: "unknown").displayStatus, "offline")
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .unknown("draining")).displayStatus, "offline")
+    }
+}
+
+// MARK: - RunnerModel.statusColor
+
+final class RunnerModelStatusColorTests: XCTestCase {
+
+    private func makeRunner(
+        isRunning: Bool,
+        isBusy: Bool = false,
+        githubStatus: RunnerStatus = .online,
+        lifecycleWarning: String? = nil
+    ) -> RunnerModel {
+        RunnerModel(
+            runnerName: "test-runner",
+            gitHubUrl: nil,
+            agentId: nil,
+            workFolder: nil,
+            installPath: "/tmp/runner",
+            isRunning: isRunning,
+            githubStatus: githubStatus,
+            isBusy: isBusy,
+            lifecycleWarning: lifecycleWarning
+        )
+    }
+
+    /// Verifies that a running, non-busy runner gets the .running dot colour.
+    func testStatusColorRunning() {
+        XCTAssertEqual(makeRunner(isRunning: true).statusColor, .running)
+    }
+
+    /// Verifies that a running and busy runner gets the .busy dot colour.
+    func testStatusColorBusy() {
+        XCTAssertEqual(makeRunner(isRunning: true, isBusy: true).statusColor, .busy)
+    }
+
+    /// Verifies that a non-running runner that GitHub reports as online gets the .idle dot colour.
+    func testStatusColorGithubOnlineIsIdle() {
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .online).statusColor, .idle)
+    }
+
+    /// Verifies that a non-running runner with an offline GitHub status gets the .offline dot colour.
+    func testStatusColorOffline() {
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .offline).statusColor, .offline)
+    }
+
+    /// Verifies that a lifecycle warning maps to the .offline dot colour.
+    func testStatusColorLifecycleWarning() {
+        XCTAssertEqual(makeRunner(isRunning: true, lifecycleWarning: "restart failed").statusColor, .offline)
+    }
+
+    /// Verifies that an unknown GitHub status (not running locally) maps to .offline.
+    func testStatusColorUnknownGithubStatus() {
+        XCTAssertEqual(makeRunner(isRunning: false, githubStatus: .unknown("draining")).statusColor, .offline)
+    }
+}
+
+// MARK: - Runner.displayStatus
+
+final class RunnerDisplayStatusTests: XCTestCase {
+
+    private func makeRunner(status: RunnerStatus, busy: Bool = false, metrics: RunnerMetrics? = nil) -> Runner {
+        Runner(id: 1, name: "r", status: status, busy: busy, metrics: metrics)
+    }
+
+    /// Verifies that an offline runner returns "offline".
+    func testOfflineReturnsOffline() {
+        XCTAssertEqual(makeRunner(status: .offline).displayStatus, "offline")
+    }
+
+    /// Verifies that an unknown status returns "offline" (not idle/active).
+    func testUnknownReturnsOffline() {
+        XCTAssertEqual(makeRunner(status: .unknown("draining")).displayStatus, "offline")
+    }
+
+    /// Verifies that an online, non-busy runner with no metrics returns the idle placeholder.
+    func testOnlineIdleNoMetrics() {
+        XCTAssertEqual(makeRunner(status: .online, busy: false).displayStatus, "idle (CPU: — MEM: —)")
+    }
+
+    /// Verifies that an online, busy runner with metrics returns the active format.
+    func testOnlineBusyWithMetrics() {
+        let m = RunnerMetrics(cpu: 45.0, mem: 12.3)
+        XCTAssertEqual(makeRunner(status: .online, busy: true, metrics: m).displayStatus, "active (CPU: 45.0% MEM: 12.3%)")
+    }
+
+    /// Verifies that a busy status (from API) is treated same as online for display.
+    func testBusyStatusShowsActiveWithMetrics() {
+        let m = RunnerMetrics(cpu: 80.0, mem: 50.0)
+        XCTAssertEqual(makeRunner(status: .busy, busy: true, metrics: m).displayStatus, "active (CPU: 80.0% MEM: 50.0%)")
     }
 }
 
@@ -197,18 +305,21 @@ final class RunnerModelDisplayStatusTests: XCTestCase {
 
 final class RunnerMetricsTests: XCTestCase {
 
+    /// Verifies that two RunnerMetrics with identical CPU and memory values are considered equal.
     func testEquatableSameValues() {
         let a = RunnerMetrics(cpu: 12.5, mem: 3.0)
         let b = RunnerMetrics(cpu: 12.5, mem: 3.0)
         XCTAssertEqual(a, b)
     }
 
+    /// Verifies that two RunnerMetrics with different CPU values are considered not equal.
     func testEquatableDifferentCPU() {
         let a = RunnerMetrics(cpu: 10.0, mem: 3.0)
         let b = RunnerMetrics(cpu: 20.0, mem: 3.0)
         XCTAssertNotEqual(a, b)
     }
 
+    /// Verifies that two RunnerMetrics with different memory values are considered not equal.
     func testEquatableDifferentMem() {
         let a = RunnerMetrics(cpu: 10.0, mem: 1.0)
         let b = RunnerMetrics(cpu: 10.0, mem: 2.0)
@@ -220,26 +331,32 @@ final class RunnerMetricsTests: XCTestCase {
 
 final class AggregateStatusTests: XCTestCase {
 
+    /// Verifies that allOnline status returns the green circle dot character.
     func testDotAllOnline() {
         XCTAssertEqual(AggregateStatus.allOnline.dot, "🟢")
     }
 
+    /// Verifies that someOffline status returns the yellow circle dot character.
     func testDotSomeOffline() {
         XCTAssertEqual(AggregateStatus.someOffline.dot, "🟡")
     }
 
+    /// Verifies that allOffline status returns the black circle dot character.
     func testDotAllOffline() {
         XCTAssertEqual(AggregateStatus.allOffline.dot, "⚫")
     }
 
+    /// Verifies that allOnline status maps to the SF Symbol "circle.fill".
     func testSymbolNameAllOnline() {
         XCTAssertEqual(AggregateStatus.allOnline.symbolName, "circle.fill")
     }
 
+    /// Verifies that someOffline status maps to the SF Symbol "circle.lefthalf.filled".
     func testSymbolNameSomeOffline() {
         XCTAssertEqual(AggregateStatus.someOffline.symbolName, "circle.lefthalf.filled")
     }
 
+    /// Verifies that allOffline status maps to the SF Symbol "circle".
     func testSymbolNameAllOffline() {
         XCTAssertEqual(AggregateStatus.allOffline.symbolName, "circle")
     }
@@ -251,6 +368,7 @@ final class PollResultBuilderTests: XCTestCase {
 
     // MARK: trimJobCache
 
+    /// Verifies that trimJobCache removes the oldest completed job entries when the cache exceeds the given limit.
     func testTrimJobCacheRemovesOldestWhenOverLimit() {
         var cache: [Int: ActiveJob] = [
             1: ActiveJob(id: 1, name: "A", status: "completed", completedAt: Date(timeIntervalSinceReferenceDate: 100)),
@@ -263,6 +381,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertNil(cache[1], "Oldest entry should be evicted")
     }
 
+    /// Verifies that trimJobCache does nothing when the cache is already under the limit.
     func testTrimJobCacheNoopWhenUnderLimit() {
         var cache: [Int: ActiveJob] = [
             1: ActiveJob(id: 1, name: "A", status: "completed"),
@@ -274,6 +393,7 @@ final class PollResultBuilderTests: XCTestCase {
 
     // MARK: buildJobDisplay
 
+    /// Verifies that buildJobDisplay places live (in-progress) jobs before cached (completed) jobs in the display list.
     func testBuildJobDisplayLiveJobsFirst() {
         let live: [ActiveJob] = [
             ActiveJob(id: 10, name: "Live", status: "in_progress")
@@ -286,11 +406,13 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertTrue(display.contains(where: { $0.id == 20 }))
     }
 
+    /// Verifies that buildJobDisplay returns an empty array when both live and cache are empty.
     func testBuildJobDisplayEmptyLiveAndCacheIsEmpty() {
         let display = PollResultBuilder.buildJobDisplay(live: [], cache: [:])
         XCTAssertTrue(display.isEmpty)
     }
 
+    /// Verifies that live jobs beyond jobCacheLimit (3) are NOT silently dropped (bug fix for #776).
     func testBuildJobDisplayDoesNotCapLiveJobsAtCacheLimit() {
         let live: [ActiveJob] = (1...5).map {
             ActiveJob(id: $0, name: "Job \($0)", status: "in_progress")
@@ -299,6 +421,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertEqual(display.count, 5, "All 5 live jobs should appear; jobCacheLimit must not truncate live jobs")
     }
 
+    /// Verifies that the total display list is capped at jobDisplayLimit (8).
     func testBuildJobDisplayCapsAtJobDisplayLimit() {
         let live: [ActiveJob] = (1...8).map {
             ActiveJob(id: $0, name: "Job \($0)", status: "in_progress")
@@ -314,6 +437,7 @@ final class PollResultBuilderTests: XCTestCase {
 
     // MARK: applyVanishedJobs
 
+    /// Verifies that a job present in the previous snapshot but missing from live results is moved to the cache with "completed" status and dimmed.
     func testApplyVanishedJobsMovesVanishedJobToCache() {
         let vanished = ActiveJob(id: 55, name: "Vanished", status: "in_progress")
         var cache: [Int: ActiveJob] = [:]
@@ -329,6 +453,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertEqual(cache[55]?.conclusion, "success", "Missing conclusion defaults to success")
     }
 
+    /// Verifies that an existing cached entry for a vanished job is not overwritten by the vanish logic.
     func testApplyVanishedJobsDoesNotOverwriteExistingCacheEntry() {
         let vanished = ActiveJob(id: 55, name: "Vanished", status: "in_progress")
         let existing = ActiveJob(id: 55, name: "Vanished", status: "completed",
@@ -343,6 +468,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertEqual(cache[55]?.conclusion, "failure", "Existing cache entry must not be overwritten")
     }
 
+    /// Verifies that jobs still present in the live list are NOT moved to the cache.
     func testApplyVanishedJobsIgnoresStillLiveJobs() {
         let job = ActiveJob(id: 77, name: "StillLive", status: "in_progress")
         var cache: [Int: ActiveJob] = [:]
@@ -355,6 +481,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertNil(cache[77], "Live job must not be moved to cache")
     }
 
+    /// Verifies that a vanished job with an existing conclusion (e.g., "failure") preserves that conclusion in the cache.
     func testApplyVanishedJobsPreservesExistingConclusion() {
         let vanished = ActiveJob(id: 88, name: "Done", status: "completed",
                                  conclusion: "failure")
@@ -370,6 +497,7 @@ final class PollResultBuilderTests: XCTestCase {
 
     // MARK: buildJobState
 
+    /// Verifies that a live job from fetchJobs appears in the display list of the returned job state.
     func testBuildJobStateLiveJobAppearsInDisplay() {
         let liveJob = ActiveJob(id: 99, name: "CI", status: "in_progress")
         let result = PollResultBuilder.buildJobState(
@@ -381,6 +509,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertTrue(result.display.contains(where: { $0.id == 99 }))
     }
 
+    /// Verifies that a completed job from fetchJobs is moved to the cache and marked as dimmed.
     func testBuildJobStateCompletedJobMovesToCache() {
         let doneJob = ActiveJob(id: 42, name: "Deploy", status: "completed", conclusion: "success")
         let result = PollResultBuilder.buildJobState(
@@ -393,6 +522,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertEqual(result.newCache[42]?.isDimmed, true)
     }
 
+    /// Verifies that a job that was live in the previous poll but is absent from fetchJobs is moved to the cache as vanished.
     func testBuildJobStateVanishedLiveJobAppearsInCache() {
         let prev = ActiveJob(id: 11, name: "Old", status: "in_progress")
         let result = PollResultBuilder.buildJobState(
@@ -433,6 +563,65 @@ final class PollResultBuilderTests: XCTestCase {
         PollResultBuilder.trimSeenGroupIDs(&ids, limit: limit)
         XCTAssertEqual(ids.count, limit,
             "Set well over limit must trim to exactly limit entries")
+    }
+}
+
+// MARK: - JobStatus.isActive
+
+final class JobStatusIsActiveTests: XCTestCase {
+
+    /// Verifies that queued, inProgress, waiting, requested, and pending are all active.
+    func testActiveStatuses() {
+        XCTAssertTrue(JobStatus.queued.isActive)
+        XCTAssertTrue(JobStatus.inProgress.isActive)
+        XCTAssertTrue(JobStatus.waiting.isActive)
+        XCTAssertTrue(JobStatus.requested.isActive)
+        XCTAssertTrue(JobStatus.pending.isActive)
+    }
+
+    /// Verifies that completed is not active.
+    func testCompletedIsNotActive() {
+        XCTAssertFalse(JobStatus.completed.isActive)
+    }
+
+    /// Verifies that an unknown status is treated as inactive to avoid infinite polling.
+    func testUnknownIsNotActive() {
+        XCTAssertFalse(JobStatus.unknown("draining").isActive)
+    }
+}
+
+// MARK: - JobConclusion.isFailure
+
+final class JobConclusionIsFailureTests: XCTestCase {
+
+    /// Verifies that failure, timedOut, startupFailure, and actionRequired are failures.
+    func testFailureConclusions() {
+        XCTAssertTrue(JobConclusion.failure.isFailure)
+        XCTAssertTrue(JobConclusion.timedOut.isFailure)
+        XCTAssertTrue(JobConclusion.startupFailure.isFailure)
+        XCTAssertTrue(JobConclusion.actionRequired.isFailure)
+    }
+
+    /// Verifies that success and neutral are not failures.
+    func testNonFailureConclusions() {
+        XCTAssertFalse(JobConclusion.success.isFailure)
+        XCTAssertFalse(JobConclusion.neutral.isFailure)
+        XCTAssertFalse(JobConclusion.stale.isFailure)
+    }
+
+    /// Verifies that cancelled is not a failure — it is user-initiated, not a CI error.
+    func testCancelledIsNotFailure() {
+        XCTAssertFalse(JobConclusion.cancelled.isFailure)
+    }
+
+    /// Verifies that skipped is not a failure — it is a dependency-driven outcome, not a CI error.
+    func testSkippedIsNotFailure() {
+        XCTAssertFalse(JobConclusion.skipped.isFailure)
+    }
+
+    /// Verifies that an unknown conclusion is not treated as a failure.
+    func testUnknownIsNotFailure() {
+        XCTAssertFalse(JobConclusion.unknown("neutral_extended").isFailure)
     }
 }
 
@@ -502,6 +691,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
         )
     }
 
+    /// Verifies that an in-progress group appears as a live (non-dimmed) display row.
     func testInProgressGroupAppearsLiveInDisplay() {
         let liveGroup = makeGroup(id: 600, sha: "ddeeff", groupStatus: .inProgress, jobStatus: .inProgress)
 
@@ -540,7 +730,6 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
 
     /// fireFailureHook must NOT re-fire when the group ID is already in snapSeenGroupIDs,
     /// even if it has been evicted from snapGroupCache by trimGroupCache.
-    /// This is the regression test for the CodeAnt cache-eviction re-fire bug.
     func testFireFailureHookNotCalledWhenGroupAlreadySeenEvenIfEvictedFromCache() {
         let completedGroup = makeGroup(id: 800, sha: "445566", groupStatus: .completed, isDimmed: true)
         var hookCallCount = 0
