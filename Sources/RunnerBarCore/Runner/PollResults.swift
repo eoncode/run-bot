@@ -13,7 +13,7 @@ public struct JobPollResult {
     /// Live-job snapshot for the next poll's diff.
     public let newPrevLive: [Int: ActiveJob]
 
-    /// Creates a new `JobPollResult`.
+    /// Creates a `JobPollResult` with all fields.
     /// - Parameters:
     ///   - display: Jobs to show in the popover.
     ///   - newCache: Updated completed-job cache.
@@ -23,6 +23,9 @@ public struct JobPollResult {
         self.newCache = newCache
         self.newPrevLive = newPrevLive
     }
+
+    // swiftlint:disable:next missing_docs
+    init() { display = []; newCache = [:]; newPrevLive = [:] }
 }
 
 /// Result returned by `PollResultBuilder.buildGroupState`.
@@ -34,7 +37,7 @@ public struct GroupPollResult {
     /// Live-group snapshot for the next poll's diff.
     public let newPrevLiveGroups: [String: WorkflowActionGroup]
 
-    /// Creates a new `GroupPollResult`.
+    /// Creates a `GroupPollResult` with all fields.
     /// - Parameters:
     ///   - display: Groups to show in the popover.
     ///   - newGroupCache: Updated group cache.
@@ -44,4 +47,7 @@ public struct GroupPollResult {
         self.newGroupCache = newGroupCache
         self.newPrevLiveGroups = newPrevLiveGroups
     }
+
+    // swiftlint:disable:next missing_docs
+    init() { display = []; newGroupCache = [:]; newPrevLiveGroups = [:] }
 }
