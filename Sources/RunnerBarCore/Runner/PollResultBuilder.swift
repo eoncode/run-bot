@@ -136,6 +136,10 @@ public struct PollResultBuilder {
         // exactly once (freezeVanishedGroups checks seenGroupIDs before firing).
         var newSeenGroupIDs = snapSeenGroupIDs
         for group in doneGroups {
+            // isNew is now keyed off seenGroupIDs, not the display cache.
+            // This prevents re-notification when a group is evicted from
+            // snapGroupCache by trimGroupCache (capped at groupCacheLimit = 30)
+            // but is still present in GitHub's completed-runs feed.
             let isNew = !newSeenGroupIDs.contains(group.id)
             let runSummary = group.runs.map { "\($0.id):\($0.conclusion ?? "nil")" }.joined(separator: ", ")
             log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]")
