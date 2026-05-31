@@ -300,10 +300,15 @@ func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
             return
         }
         guard let http = response as? HTTPURLResponse else { return }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
+            return
+        }
         guard (200..<300).contains(http.statusCode) else {
             logErrorBody(data, endpoint: urlString, status: http.statusCode)
             return
         }
+        clearRateLimitIfNeeded()
         result.withLock { $0 = data }
     }.resume()
     sem.wait()
@@ -343,10 +348,15 @@ func urlSessionPost(_ endpoint: String, body: Data? = nil, timeout: TimeInterval
             return
         }
         guard let http = response as? HTTPURLResponse else { return }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
+            return
+        }
         guard (200..<300).contains(http.statusCode) else {
             logErrorBody(data, endpoint: urlString, status: http.statusCode)
             return
         }
+        clearRateLimitIfNeeded()
         result.withLock { $0 = data ?? Data() }
         log("urlSessionPost › \(endpoint) → \(http.statusCode)")
     }.resume()
@@ -380,10 +390,15 @@ func urlSessionPut(_ endpoint: String, body: Data, timeout: TimeInterval = 30) -
             return
         }
         guard let http = response as? HTTPURLResponse else { return }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
+            return
+        }
         guard (200..<300).contains(http.statusCode) else {
             logErrorBody(data, endpoint: urlString, status: http.statusCode)
             return
         }
+        clearRateLimitIfNeeded()
         result.withLock { $0 = data }
         log("urlSessionPut › \(endpoint) → \(http.statusCode)")
     }.resume()
@@ -416,8 +431,13 @@ func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) -> Bool {
             return
         }
         guard let http = response as? HTTPURLResponse else { return }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
+            return
+        }
         let ok = (200..<300).contains(http.statusCode)
         if !ok { logErrorBody(data, endpoint: urlString, status: http.statusCode) }
+        if ok { clearRateLimitIfNeeded() }
         success.withLock { $0 = ok }
         log("urlSessionDelete › \(endpoint) → \(http.statusCode)")
     }.resume()
