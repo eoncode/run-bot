@@ -557,4 +557,3 @@ func cancelRun(runID: Int, scope: String) -> Bool {
     log("cancelRun › run=\(runID) scope=\(scope) success=\(result)")
     return result
 }
-TEST
