@@ -1,10 +1,11 @@
 // PollResultBuilder.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - PollResultBuilder
 
 /// Pure state-building logic extracted from RunnerStore.
+///
 /// All methods are static and operate only on data passed as parameters.
 /// Fetch / API side-effects are injected as closures so this type is
 /// independently unit-testable without a RunnerStore instance.
@@ -24,6 +25,12 @@ public struct PollResultBuilder {
 
     /// Maximum number of completed groups retained in the group cache.
     public static let groupCacheLimit = 30
+
+    /// Maximum number of groups shown in the panel UI (live + cached combined).
+    ///
+    /// Analogous to `jobDisplayLimit` — separates *retention* from *visibility*.
+    /// Prevents the panel flooding with up to `groupCacheLimit` (30) stale entries.
+    public static let groupDisplayLimit = 10
 
     /// Maximum number of group IDs retained in the seen-IDs set.
     ///
@@ -61,7 +68,7 @@ public struct PollResultBuilder {
                 name: job.name,
                 htmlUrl: job.htmlUrl,
                 status: .completed,
-                conclusion: job.conclusion ?? .success,
+                conclusion: job.conclusion ?? .cancelled,
                 isDimmed: true,
                 runnerName: job.runnerName,
                 scope: job.scope,
@@ -95,7 +102,7 @@ public struct PollResultBuilder {
     ///     Survives `trimGroupCache` eviction so the hook cannot re-fire for old groups.
     ///   - fetchGroups: Closure that fetches live groups for every active scope.
     ///   - scopeFromGroup: Closure that derives a scope string from a WorkflowActionGroup.
-    ///   - fireFailureHook: Closure invoked the first time a group is seen as completed.
+    ///   - fireFailureHook: Closure invoked the first time a group transitions to a failure conclusion.
     ///   - enrichJobs: Closure that enriches a job list from the job cache.
     ///
     /// - Important: `doneGroups` inserts into `newSeenGroupIDs` **before**
@@ -127,17 +134,21 @@ public struct PollResultBuilder {
         // exactly once (freezeVanishedGroups checks seenGroupIDs before firing).
         var newSeenGroupIDs = snapSeenGroupIDs
         for group in doneGroups {
-            // isNew is now keyed off seenGroupIDs, not the display cache.
-            // This prevents re-notification when a group is evicted from
-            // snapGroupCache by trimGroupCache (capped at groupCacheLimit = 30)
-            // but is still present in GitHub's completed-runs feed.
+            // isNew is keyed off seenGroupIDs, not the display cache, to prevent
+            // re-notification when a group is evicted from snapGroupCache by trimGroupCache
+            // (capped at groupCacheLimit = 30) but is still present in GitHub's feed.
             let isNew = !newSeenGroupIDs.contains(group.id)
             let runSummary = group.runs.map { "\($0.id):\($0.conclusion ?? "nil")" }.joined(separator: ", ")
             log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]")
             if isNew {
                 let scope = scopeFromGroup(group)
-                log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → fireFailureHook scope=\(scope)")
-                fireFailureHook(group, scope)
+                log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → scope=\(scope)")
+                // Only fire the failure hook when the group actually failed.
+                // Success/cancelled/skipped completions must not trigger an alert.
+                let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
+                if isFailure {
+                    fireFailureHook(group, scope)
+                }
                 newSeenGroupIDs.insert(group.id)
             }
             var dimmed = group
@@ -176,6 +187,10 @@ public struct PollResultBuilder {
     // MARK: - Job helpers
 
     /// Moves jobs that vanished from the live feed into the completed-job cache.
+    ///
+    /// A job vanishes when it disappears from the API response without transitioning
+    /// through a `completed` status — most commonly a cancellation or runner disconnect.
+    /// Falls back to `.cancelled` (not `.success`) when no conclusion is available.
     public static func applyVanishedJobs(
         snapPrev: [Int: ActiveJob],
         liveIDs: Set<Int>,
@@ -189,7 +204,7 @@ public struct PollResultBuilder {
                 name: job.name,
                 htmlUrl: job.htmlUrl,
                 status: .completed,
-                conclusion: job.conclusion ?? .success,
+                conclusion: job.conclusion ?? .cancelled,
                 isDimmed: true,
                 runnerName: job.runnerName,
                 scope: job.scope,
@@ -249,6 +264,10 @@ public struct PollResultBuilder {
     /// Freezes action groups that were live in the previous poll but have since
     /// vanished from the live feed (i.e. completed without appearing in fetchGroups).
     ///
+    /// Only fires `fireFailureHook` for groups that are unseen and have a genuine
+    /// failure conclusion (`failure` or `timed_out`). Successful or cancelled
+    /// vanished groups are cached and dimmed without triggering an alert.
+    ///
     /// - Important: Both `snapPrev` and the `cache` parameter are keyed by
     ///   `WorkflowActionGroup.id`, **not** by `headSha`. `liveIDs` must also be a
     ///   `Set<String>` of `WorkflowActionGroup.id` values for the containment check to
@@ -271,8 +290,13 @@ public struct PollResultBuilder {
             }
             if !seenGroupIDs.contains(groupID) && cache[groupID] == nil {
                 let scope = scopeFromGroup(group)
-                log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen → fireFailureHook scope=\(scope)")
-                fireFailureHook(group, scope)
+                // Only alert on genuine failures — do not fire for successful or
+                // cancelled groups that vanished from the live feed normally.
+                let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
+                if isFailure {
+                    log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+failure → fireFailureHook scope=\(scope)")
+                    fireFailureHook(group, scope)
+                }
             }
             var frozen = group
             frozen.isDimmed = true
@@ -318,6 +342,9 @@ public struct PollResultBuilder {
     }
 
     /// Builds the ordered group display list from live groups and the completed cache.
+    ///
+    /// Display order: in-progress → queued → cached (most-recently-completed first).
+    /// Capped at `groupDisplayLimit` — analogous to `jobDisplayLimit` for jobs.
     public static func buildGroupDisplay(
         live: [WorkflowActionGroup],
         cache: [String: WorkflowActionGroup]
@@ -330,9 +357,9 @@ public struct PollResultBuilder {
                 > ($1.lastJobCompletedAt ?? $1.createdAt ?? .distantPast)
         }
         var display: [WorkflowActionGroup] = []
-        for grp in inProgress where display.count < groupCacheLimit                               { display.append(grp) }
-        for grp in queued     where display.count < groupCacheLimit                               { display.append(grp) }
-        for grp in cached     where display.count < groupCacheLimit && !liveIDs.contains(grp.id) { display.append(grp) }
+        for grp in inProgress where display.count < groupDisplayLimit                               { display.append(grp) }
+        for grp in queued     where display.count < groupDisplayLimit                               { display.append(grp) }
+        for grp in cached     where display.count < groupDisplayLimit && !liveIDs.contains(grp.id) { display.append(grp) }
         return display
     }
 }

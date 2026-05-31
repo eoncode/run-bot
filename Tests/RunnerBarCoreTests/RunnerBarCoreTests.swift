@@ -437,7 +437,8 @@ final class PollResultBuilderTests: XCTestCase {
 
     // MARK: applyVanishedJobs
 
-    /// Verifies that a job present in the previous snapshot but missing from live results is moved to the cache with "completed" status and dimmed.
+    /// Verifies that a job present in the previous snapshot but missing from live results is moved to the cache
+    /// with "completed" status, dimmed, and `.cancelled` conclusion (no API conclusion = cancelled, not success).
     func testApplyVanishedJobsMovesVanishedJobToCache() {
         let vanished = ActiveJob(id: 55, name: "Vanished", status: "in_progress")
         var cache: [Int: ActiveJob] = [:]
@@ -450,7 +451,7 @@ final class PollResultBuilderTests: XCTestCase {
         XCTAssertNotNil(cache[55], "Vanished job should be added to cache")
         XCTAssertEqual(cache[55]?.status, "completed")
         XCTAssertEqual(cache[55]?.isDimmed, true)
-        XCTAssertEqual(cache[55]?.conclusion, "success", "Missing conclusion defaults to success")
+        XCTAssertEqual(cache[55]?.conclusion, "cancelled", "Missing conclusion defaults to cancelled")
     }
 
     /// Verifies that an existing cached entry for a vanished job is not overwritten by the vanish logic.
@@ -635,6 +636,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
         id runID: Int,
         sha: String,
         groupStatus: GroupStatus = .completed,
+        conclusion: String = "failure",
         jobStatus: JobStatus? = nil,
         isDimmed: Bool = false
     ) -> WorkflowActionGroup {
@@ -645,7 +647,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
         case .completed:  runStatus = "completed"
         }
         let resolvedJobStatus: JobStatus = jobStatus ?? JobStatus(rawString: runStatus)
-        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed ? .success : nil
+        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed ? JobConclusion(rawString: conclusion) : nil
         let job = ActiveJob(
             id: runID * 10,
             name: "job",
@@ -658,7 +660,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
             title: "commit message",
             headBranch: "main",
             repo: "owner/repo",
-            runs: [WorkflowRunRef(id: runID, name: "CI", status: runStatus, conclusion: jobConclusion.map { $0.rawValue }, htmlUrl: nil)],
+            runs: [WorkflowRunRef(id: runID, name: "CI", status: runStatus, conclusion: resolvedJobStatus == .completed ? conclusion : nil, htmlUrl: nil)],
             jobs: [job],
             firstJobStartedAt: Date(timeIntervalSinceReferenceDate: 0),
             lastJobCompletedAt: resolvedJobStatus == .completed ? Date(timeIntervalSinceReferenceDate: 60) : nil,
@@ -670,7 +672,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
 
     /// Regression test for #1041: completed-only group must land in cache, not live display.
     func testCompletedOnlyGroupIsRoutedToCacheNotLive() {
-        let completedGroup = makeGroup(id: 500, sha: "aabbcc", groupStatus: .completed)
+        let completedGroup = makeGroup(id: 500, sha: "aabbcc", groupStatus: .completed, conclusion: "failure")
 
         let result = PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
@@ -710,28 +712,46 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
         )
     }
 
-    /// fireFailureHook must fire exactly once for a newly-completed group.
-    func testFireFailureHookCalledOnceForNewCompletedGroup() {
-        let completedGroup = makeGroup(id: 700, sha: "112233", groupStatus: .completed)
+    /// fireFailureHook must fire exactly once for a newly-completed failed group.
+    func testFireFailureHookCalledOnceForNewFailedGroup() {
+        let failedGroup = makeGroup(id: 700, sha: "112233", groupStatus: .completed, conclusion: "failure")
         var hookCallCount = 0
 
         _ = PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
             snapSeenGroupIDs: [],
-            fetchGroups: { _ in [completedGroup] },
+            fetchGroups: { _ in [failedGroup] },
             scopeFromGroup: { $0.repo },
             fireFailureHook: { _, _ in hookCallCount += 1 },
             enrichJobs: { $0 }
         )
 
-        XCTAssertEqual(hookCallCount, 1, "fireFailureHook must fire exactly once for a new completed group")
+        XCTAssertEqual(hookCallCount, 1, "fireFailureHook must fire exactly once for a new failed group")
+    }
+
+    /// fireFailureHook must NOT fire for a successfully completed group.
+    func testFireFailureHookNotCalledForSuccessGroup() {
+        let successGroup = makeGroup(id: 750, sha: "aabbdd", groupStatus: .completed, conclusion: "success")
+        var hookCallCount = 0
+
+        _ = PollResultBuilder.buildGroupState(
+            snapPrevGroups: [:],
+            snapGroupCache: [:],
+            snapSeenGroupIDs: [],
+            fetchGroups: { _ in [successGroup] },
+            scopeFromGroup: { $0.repo },
+            fireFailureHook: { _, _ in hookCallCount += 1 },
+            enrichJobs: { $0 }
+        )
+
+        XCTAssertEqual(hookCallCount, 0, "fireFailureHook must not fire for a successful group")
     }
 
     /// fireFailureHook must NOT re-fire when the group ID is already in snapSeenGroupIDs,
     /// even if it has been evicted from snapGroupCache by trimGroupCache.
     func testFireFailureHookNotCalledWhenGroupAlreadySeenEvenIfEvictedFromCache() {
-        let completedGroup = makeGroup(id: 800, sha: "445566", groupStatus: .completed, isDimmed: true)
+        let completedGroup = makeGroup(id: 800, sha: "445566", groupStatus: .completed, conclusion: "failure", isDimmed: true)
         var hookCallCount = 0
 
         _ = PollResultBuilder.buildGroupState(
@@ -752,7 +772,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
     func testPreviouslyLiveGroupSelfHealsAfterCompletion() {
         let sha = "cafe01"
         let liveGroup      = makeGroup(id: 901, sha: sha, groupStatus: .inProgress, jobStatus: .inProgress)
-        let completedGroup = makeGroup(id: 901, sha: sha, groupStatus: .completed)
+        let completedGroup = makeGroup(id: 901, sha: sha, groupStatus: .completed, conclusion: "failure")
 
         let result = PollResultBuilder.buildGroupState(
             snapPrevGroups: [liveGroup.id: liveGroup],
@@ -818,21 +838,21 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
     /// This test locks in that behaviour so any future change (e.g. switching to a
     /// persisted seen-set) is intentional and visible in the diff.
     func testEvictedGroupIDRefiresHookOnNextPoll() {
-        let completedGroup = makeGroup(id: 1001, sha: "dead01", groupStatus: .completed)
+        let failedGroup = makeGroup(id: 1001, sha: "dead01", groupStatus: .completed, conclusion: "failure")
         var hookCallCount = 0
 
         _ = PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
             snapSeenGroupIDs: [],         // evicted — ID is gone
-            fetchGroups: { _ in [completedGroup] },
+            fetchGroups: { _ in [failedGroup] },
             scopeFromGroup: { $0.repo },
             fireFailureHook: { _, _ in hookCallCount += 1 },
             enrichJobs: { $0 }
         )
 
         XCTAssertEqual(hookCallCount, 1,
-            "A group whose ID was evicted from seenGroupIDs must re-fire the hook — known limitation")
+            "A failed group whose ID was evicted from seenGroupIDs must re-fire the hook — known limitation")
     }
 
     /// A group present in both the fetched completed list (doneGroups) and snapPrevGroups
@@ -844,7 +864,7 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
     func testDoneGroupsSeenBeforeFreezeVanishedGroupsPreventsDoubleFire() {
         let sha = "ff0011"
         let liveVersion      = makeGroup(id: 1002, sha: sha, groupStatus: .inProgress, jobStatus: .inProgress)
-        let completedVersion = makeGroup(id: 1002, sha: sha, groupStatus: .completed)
+        let completedVersion = makeGroup(id: 1002, sha: sha, groupStatus: .completed, conclusion: "failure")
         var hookCallCount = 0
 
         _ = PollResultBuilder.buildGroupState(
@@ -858,6 +878,6 @@ final class PollResultBuilderGroupStateTests: XCTestCase {
         )
 
         XCTAssertEqual(hookCallCount, 1,
-            "Group in both doneGroups and snapPrevGroups must fire the hook exactly once")
+            "Failed group in both doneGroups and snapPrevGroups must fire the hook exactly once")
     }
 }
