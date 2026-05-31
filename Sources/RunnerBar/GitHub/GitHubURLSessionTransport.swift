@@ -142,9 +142,9 @@ private func clearRateLimitIfNeeded() {
 }
 
 /// Logs the response body (up to 400 chars) for non-2xx responses.
-private func logErrorBody(_  Data?, endpoint: String, status: Int) {
+private func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
     guard let data, !data.isEmpty else { return }
-    let body = String( data, encoding: .utf8) ?? "<non-UTF8, \(data.count)b>"
+    let body = String(data: data, encoding: .utf8) ?? "<non-UTF8, \(data.count)b>"
     let preview = body.count > 400 ? String(body.prefix(400)) + "…" : body
     log("URLSessionTransport › \(endpoint) status=\(status) body: \(preview)")
 }
@@ -152,7 +152,7 @@ private func logErrorBody(_  Data?, endpoint: String, status: Int) {
 /// Handles a 403/429 HTTP response, setting rate-limit state when appropriate.
 private func handleRateLimitResponse(
     statusCode: Int,
-    _  Data?,
+    _ data: Data?,
     response: HTTPURLResponse,
     endpoint: String
 ) {
@@ -489,7 +489,7 @@ func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String
         let labels: [Label]
     }
     guard let resp = try? JSONDecoder().decode(LabelsResponse.self, from: outData) else {
-        let raw = String( outData, encoding: .utf8) ?? ""
+        let raw = String(data: outData, encoding: .utf8) ?? ""
         log("patchRunnerLabels › decode failed raw=\(raw.prefix(200))")
         return nil
     }
