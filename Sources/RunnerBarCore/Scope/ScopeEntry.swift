@@ -1,5 +1,6 @@
 // ScopeEntry.swift
 // RunnerBarCore
+// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - ScopeEntry

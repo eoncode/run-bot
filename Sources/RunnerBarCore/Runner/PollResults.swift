@@ -1,10 +1,10 @@
 // PollResults.swift
 // RunnerBarCore
+// swiftlint:disable missing_docs
 import Foundation
 
 // MARK: - Poll result value types
 
-// swiftlint:disable missing_docs
 /// Result returned by `PollResultBuilder.buildJobState`.
 public struct JobPollResult {
     /// Jobs to display in the popover (in_progress → queued → cached done).
@@ -60,4 +60,3 @@ public struct GroupPollResult {
         self.newSeenGroupIDs = newSeenGroupIDs
     }
 }
-// swiftlint:enable missing_docs
