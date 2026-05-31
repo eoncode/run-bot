@@ -68,8 +68,6 @@ public struct PollResultBuilder {
                 name: job.name,
                 htmlUrl: job.htmlUrl,
                 status: .completed,
-                // Preserve the API conclusion. Fall back to .cancelled (not .success) for
-                // jobs that completed without a conclusion — most likely interrupted/cancelled.
                 conclusion: job.conclusion ?? .cancelled,
                 isDimmed: true,
                 runnerName: job.runnerName,
@@ -131,10 +129,14 @@ public struct PollResultBuilder {
         let liveIDs = Set(liveGroups.map { $0.id })
         let now = Date()
         var newCache = evictFreshShas(from: snapGroupCache, freshGroups: allFetched)
+        // IMPORTANT: populate newSeenGroupIDs from doneGroups BEFORE calling
+        // freezeVanishedGroups, so a group present in both paths fires the hook
+        // exactly once (freezeVanishedGroups checks seenGroupIDs before firing).
         var newSeenGroupIDs = snapSeenGroupIDs
         for group in doneGroups {
             // isNew is keyed off seenGroupIDs, not the display cache, to prevent
-            // re-notification when a group is evicted from snapGroupCache by trimGroupCache.
+            // re-notification when a group is evicted from snapGroupCache by trimGroupCache
+            // (capped at groupCacheLimit = 30) but is still present in GitHub's feed.
             let isNew = !newSeenGroupIDs.contains(group.id)
             let runSummary = group.runs.map { "\($0.id):\($0.conclusion ?? "nil")" }.joined(separator: ", ")
             log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]")
