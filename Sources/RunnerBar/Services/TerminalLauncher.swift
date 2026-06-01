@@ -2,8 +2,6 @@
 // RunnerBar
 import Foundation
 
-// MARK: - TerminalLauncher
-
 /// Opens a Terminal.app window and runs a shell command via AppleScript (`do script`).
 ///
 /// Uses `NSAppleScript` — requires no entitlements on an unsandboxed app.
