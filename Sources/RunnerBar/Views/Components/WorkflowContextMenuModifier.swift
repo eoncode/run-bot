@@ -20,6 +20,7 @@ private func copyToPasteboard(_ text: String) {
 /// cancel (in_progress only), copy log (always),
 /// show workflow file on GitHub (always), show GitHub SHA (always).
 private struct WorkflowContextMenuModifier: ViewModifier {
+    /// The workflow action group this context menu operates on.
     let group: WorkflowActionGroup
 
     /// Attaches the workflow context menu to the given content view.
@@ -27,6 +28,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         content.contextMenu { menuItems }
     }
 
+    /// The context menu buttons for this workflow row.
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = group.groupStatus == .completed
@@ -111,7 +113,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 /// Actions: re-run job (concluded only), cancel (in_progress only),
 /// copy log (always), show job on GitHub (always).
 private struct JobContextMenuModifier: ViewModifier {
+    /// The job this context menu operates on.
     let job: ActiveJob
+    /// The parent workflow action group, used for cancel (which targets run IDs).
     let group: WorkflowActionGroup
 
     /// Attaches the job context menu to the given content view.
@@ -119,6 +123,7 @@ private struct JobContextMenuModifier: ViewModifier {
         content.contextMenu { menuItems }
     }
 
+    /// The context menu buttons for this job row.
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
@@ -199,7 +204,9 @@ extension View {
 ///
 /// Actions: copy step name, view step log.
 private struct StepContextMenuModifier: ViewModifier {
+    /// The step this context menu operates on.
     let step: JobStep
+    /// Called when the user selects "View Log" from the context menu.
     let onTap: () -> Void
 
     /// Attaches the step context menu to the given content view.
