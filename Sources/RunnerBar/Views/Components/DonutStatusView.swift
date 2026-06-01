@@ -20,6 +20,7 @@ import SwiftUI
 /// ❌ NEVER remove the repeatForever animation — it is the liveness indicator.
 /// ❌ NEVER start the rotation for non-.inProgress states — it wastes CPU/GPU.
 struct DonutStatusView: View {
+    /// The workflow/job status this donut reflects.
     let status: RBStatus
     /// Progress fraction 0.0–1.0 for in-progress state.
     /// Drives `displayProgress` via `withAnimation(.easeInOut)` on every change.
@@ -34,10 +35,12 @@ struct DonutStatusView: View {
     /// `progress` change so the arc trim interpolates smoothly rather than jumping.
     @State private var displayProgress: Double = 0
 
+    /// Stroke width derived from the outer diameter (11% of `size`).
     private var strokeWidth: CGFloat { size * 0.11 }
     /// Inner ring diameter derived from the outer size. // periphery:ignore
     private var innerSize: CGFloat { size * 0.82 }
 
+    /// The SwiftUI body — switches between in-progress, terminal, and queued ring views.
     var body: some View {
         ZStack {
             switch status {

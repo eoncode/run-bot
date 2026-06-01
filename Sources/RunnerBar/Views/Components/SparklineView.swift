@@ -14,6 +14,7 @@ struct SparklineView: View {
     /// Current value used to determine the theme color (0–100).
     let currentPct: Double
 
+    /// The SwiftUI body — renders a gradient fill path and a stroke polyline.
     var body: some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         GeometryReader { geo in
