@@ -8,7 +8,7 @@ import Foundation
 /// Persists general app settings to UserDefaults.
 @MainActor
 final class AppPreferencesStore: ObservableObject {
-    /// Shared singleton instance.
+    /// Shared singleton — use this instead of calling init directly.
     static let shared = AppPreferencesStore()
 
     /// UserDefaults key constants used by `AppPreferencesStore`.
@@ -23,6 +23,11 @@ final class AppPreferencesStore: ObservableObject {
     static let pollingRange: ClosedRange<Int> = 10 ... 300
 
     /// How often (in seconds) RunnerBar polls GitHub. Clamped to 10–300 s.
+    ///
+    /// Setting this property out-of-range triggers a second `didSet` call with
+    /// the clamped value — this re-entrancy is intentional and safe because
+    /// `AppPreferencesStore` is `@MainActor`-isolated (all mutations are serialised
+    /// on the main queue, so the recursive assignment cannot interleave).
     @Published var pollingInterval: Int {
         didSet {
             let clamped = pollingInterval.clamped(to: Self.pollingRange)
@@ -35,7 +40,10 @@ final class AppPreferencesStore: ObservableObject {
     }
 
     /// Whether to show dimmed (offline/idle) runners in the runners list.
-    /// Retained for backwards compat but no longer surfaced in the UI (#510).
+    ///
+    /// Retained for UserDefaults backwards-compatibility only — no longer surfaced
+    /// in the UI (#510). Do not remove: removing would break the stored key for
+    /// users upgrading from older versions.
     @Published var showDimmedRunners: Bool {
         didSet { UserDefaults.standard.set(showDimmedRunners, forKey: Key.showDimmedRunners) }
     }
@@ -57,9 +65,10 @@ final class AppPreferencesStore: ObservableObject {
 
 // MARK: - Comparable+clamped
 
-/// Extension adding functionality to `Comparable`.
+/// Constrains a `Comparable` value to a closed range, returning `lowerBound`
+/// when the value is below the range and `upperBound` when it is above.
 private extension Comparable {
-    /// Clamps the value to the given closed range.
+    /// Returns the value clamped to `range`, i.e. `max(lowerBound, min(self, upperBound))`.
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
