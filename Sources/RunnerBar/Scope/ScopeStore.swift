@@ -28,7 +28,9 @@ final class ScopeStore: ObservableObject {
     let didMutate = PassthroughSubject<Void, Never>()
 
     /// All scope entries, persisted as JSON in `UserDefaults`.
-    /// `private(set)` — mutate only via `add(_:)`, `remove(id:)`, and `setEnabled(_:_:)`.
+    /// `private(set)` — mutate only through the designated methods on this type
+    /// (`add(_:)`, `remove(id:)`, `setEnabled(_:_:)`). `load()` via `init()` is
+    /// the only other write path; it assigns during initialisation only.
     @Published private(set) var entries: [ScopeEntry] = []
 
     /// Scopes that are currently enabled — used by `RunnerStore` for polling.
@@ -110,7 +112,8 @@ final class ScopeStore: ObservableObject {
         didMutate.send()
     }
 
-    /// Toggles the `isEnabled` flag for the entry with the given ID.
+    /// Toggles the `isEnabled` flag for the entry with the given ID and
+    /// persists the change to `UserDefaults` immediately.
     /// Does NOT send `didMutate` — enable/disable is not a structural change.
     ///
     /// `ScopeEntry` is a struct, so `entries[idx].isEnabled = enabled` replaces
