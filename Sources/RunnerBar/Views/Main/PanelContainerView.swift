@@ -98,6 +98,12 @@ struct PanelContainerView<Content: View>: View {
     /// onChange and the timer know NOT to clear isSheetActive.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
 
+    /// Creates a `PanelContainerView` wrapping the given content.
+    /// - Parameter content: The child view to wrap inside the dim-overlay container.
+    init(content: Content) {
+        self.content = content
+    }
+
     /// The view body — ZStack of content, invisible WindowReader, and conditional dim overlay.
     var body: some View {
         ZStack {
