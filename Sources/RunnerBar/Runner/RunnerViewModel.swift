@@ -35,6 +35,7 @@ final class RunnerViewModel: ObservableObject {
     // MARK: - Dependency injection (for tests)
     /// Override to inject a test double instead of `LocalRunnerStore.shared`.
     /// `nil` in production — `reload()` falls back to `LocalRunnerStore.shared` when this is `nil`.
+    /// Tests **must** set this to avoid leaking into the shared production store.
     /// - Note: Because the class is `@MainActor`, this property must be set from a `@MainActor`
     ///   context in tests (e.g. `@MainActor func testFoo()` or `await MainActor.run { ... }`).
     var localRunnerStore: LocalRunnerStore?
