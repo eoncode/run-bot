@@ -63,16 +63,6 @@ curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 
 ---
 
-## GitHub OAuth & Privacy
-
-RunnerBar uses a classic GitHub OAuth token. See **[docs/PRIVACY.md](docs/PRIVACY.md)** for the full breakdown of:
-- Which scopes are requested and exactly why
-- How and where your token is stored (macOS Keychain)
-- What data is stored locally (UserDefaults)
-- Network activity (only `api.github.com`)
-
----
-
 ## Docs
 
 - [DEVELOPMENT.md](docs/DEVELOPMENT.md) — build and run locally
