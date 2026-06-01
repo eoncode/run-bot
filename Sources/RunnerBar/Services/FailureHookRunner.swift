@@ -7,13 +7,14 @@ import RunnerBarCore
 
 /// Fires the per-scope failure-hook terminal command when a `WorkflowActionGroup` transitions to failure.
 ///
-/// Resolves `$LOCAL_PATH` from `ScopePreferencesStore` (see #546), fetches failed job/step details
-/// on a background thread before building `$FAILURE_LOG` (see #552), and applies an optional
-/// branch filter before firing (see #560).
+/// Feature introduced in #544. Resolves `$LOCAL_PATH` from `ScopePreferencesStore` (see #546),
+/// fetches failed job/step details on a background thread before building `$FAILURE_LOG` (see #552),
+/// and applies an optional branch filter before firing (see #560).
 ///
-/// Called from `RunnerStoreState.buildGroupState` when a group is newly completed
-/// with a failure conclusion. Resolves all `$TOKEN` variables then opens Terminal.app
-/// via `TerminalLauncher` (AppleScript `do script`) so the command runs visibly.
+/// Called indirectly from `RunnerStore.buildGroupState` (see `RunnerPollState.swift`)
+/// via `PollResultBuilder.buildGroupState`'s `fireFailureHook` closure parameter.
+/// Resolves all `$TOKEN` variables via `resolveTokens(_:group:scope:jobs:)` then opens
+/// Terminal.app via `TerminalLauncher` (AppleScript `do script`) so the command runs visibly.
 ///
 /// **Token resolution contract:**
 /// ALL tokens are resolved in Swift before the command string is passed to
@@ -70,10 +71,10 @@ enum FailureHookRunner {
             return
         }
         log("FailureHookRunner › ALL CHECKS PASSED — dispatching background task for scope=\(scope) groupID=\(group.id)")
-        // TODO: #1077 — migrate off DispatchQueue.global to structured concurrency
+        // TODO: #1077 — migrate off DispatchQueue.global to structured concurrency (async/await + Task)
         DispatchQueue.global(qos: .utility).async {
             log("FailureHookRunner › background thread START — fetching failed jobs for groupID=\(group.id)")
-            let jobs = fetchFailedJobs(group: group, scope: scope) // fetchFailedJobs defined below
+            let jobs = fetchFailedJobs(group: group, scope: scope)
             log("FailureHookRunner › background thread — fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
             let resolved = resolveTokens(command, group: group, scope: scope, jobs: jobs)
             log("FailureHookRunner › background thread — resolved command (first 300): \(resolved.prefix(300))")
@@ -110,8 +111,9 @@ enum FailureHookRunner {
 
     /// Fetches jobs (with steps) and raw log tail for all failed runs in the group.
     /// Blocking — must be called from a background thread.
-    /// - Note: `fetchJobLog` is defined in `RunnerBarCore/API/JobLogFetcher`.
-    ///         `ghAPI` is defined in `RunnerBarCore/API/GHAPIClient`.
+    /// - Note: `fetchJobLog` → `RunnerBarCore/Services/LogFetcher.swift`.
+    ///         `ghAPI` → `RunnerBarCore/GitHub/GitHubTransportShim.swift` (shim),
+    ///                   `RunnerBar/GitHub/GitHubURLSessionTransport.swift` (app target).
     private static func fetchFailedJobs(group: WorkflowActionGroup, scope: String) -> [FailedJobResult] {
         var result: [FailedJobResult] = []
         var seenIDs = Set<Int>()
