@@ -1,6 +1,5 @@
 // RunnerEditCommit.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import Foundation
 import RunnerBarCore
 
@@ -15,14 +14,12 @@ enum CommitResult {
 
     /// `true` when the result has no errors.
     var isSuccess: Bool {
-        if case .success = self { return true }
-        return false
+        if case .success = self { true } else { false }
     }
 
     /// Convenience accessor for the error messages, empty on success.
     var errors: [String] {
-        if case .failure(let msgs) = self { return msgs }
-        return []
+        if case .failure(let msgs) = self { msgs } else { [] }
     }
 }
 
@@ -32,11 +29,15 @@ enum CommitResult {
 ///
 /// Commit order:
 /// 1. Labels (GitHub API) — if changed and agentId + scope are available.
-///    Aborts before touching disk if this step fails.
+///    Aborts the entire commit (returns early) if the API call fails.
+///    If agentId/scope are unavailable, appends an error and continues to local writes.
 /// 2. Runner JSON — workFolder + disableUpdate in one read-modify-write.
 /// 3. Proxy files — `.proxy` and `.proxycredentials` only when changed.
 ///
-/// Always dispatches `completion` on the main queue.
+/// Runs on a background `userInitiated` queue. Always dispatches `completion`
+/// on the main queue via `DispatchQueue.main.async` (compatible with the surrounding
+/// GCD context — do not replace with `await MainActor.run` without migrating the
+/// entire function to async/await first).
 func commitRunnerEdit(
     runner: RunnerModel,
     draft: RunnerEditDraft,
@@ -62,10 +63,12 @@ func commitRunnerEdit(
                 }
                 log("commitRunnerEdit › labels patched ok")
             } else {
+                // agentId or gitHubUrl unavailable — cannot call the API.
+                // Non-fatal: append an error and continue with local file writes
+                // so workFolder/proxy changes are not silently discarded.
                 let msg = "Cannot save labels: missing agent ID or GitHub URL"
                 log("commitRunnerEdit › \(msg)")
                 errors.append(msg)
-                // Non-fatal for local writes; continue
             }
         }
 
@@ -79,6 +82,8 @@ func commitRunnerEdit(
                 return
             }
             log("commitRunnerEdit › patching .runner JSON installPath=\(installPath)")
+            // patches uses [String: Any] to support mixed String + Bool values
+            // in a single JSON read-modify-write pass.
             let jsonOk = patchRunnerJSONMulti(
                 installPath: installPath,
                 patches: [
@@ -133,14 +138,14 @@ private func finalize(_ errors: [String], _ completion: @escaping @MainActor (Co
 }
 
 /// Reads the `.runner` JSON at `installPath`, merges all `patches` in one pass, and writes back.
-/// Accepts mixed `String` and `Bool` values via `Any`.
+/// `patches` accepts mixed `String` and `Bool` values via `Any` — this is intentional to allow
+/// updating both `workFolder` (String) and `disableUpdate` (Bool) in a single read-modify-write.
 private func patchRunnerJSONMulti(installPath: String, patches: [String: Any]) -> Bool {
-    let path = installPath + "/.runner"
-    let url = URL(fileURLWithPath: path)
+    let url = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
     guard let data = try? Data(contentsOf: url),
           var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
-        log("patchRunnerJSONMulti › failed to read \(path)")
+        log("patchRunnerJSONMulti › failed to read \(url.path)")
         return false
     }
     for (key, value) in patches { json[key] = value }
@@ -150,7 +155,7 @@ private func patchRunnerJSONMulti(installPath: String, patches: [String: Any]) -
     }
     do {
         try newData.write(to: url, options: .atomic)
-        log("patchRunnerJSONMulti › wrote keys=\(patches.keys.sorted()) to \(path)")
+        log("patchRunnerJSONMulti › wrote keys=\(patches.keys.sorted()) to \(url.path)")
         return true
     } catch {
         log("patchRunnerJSONMulti › write error: \(error)")
@@ -159,43 +164,56 @@ private func patchRunnerJSONMulti(installPath: String, patches: [String: Any]) -
 }
 
 /// Writes (or removes) `.proxy` and `.proxycredentials` files at `installPath`.
+/// Removes the file when the relevant field is empty; writes otherwise.
 private func writeProxyFiles(installPath: String, url: String, user: String, password: String) -> Bool {
     var ok = true
-    let proxyFilePath = installPath + "/.proxy"
-    let credPath = installPath + "/.proxycredentials"
+    let base = URL(fileURLWithPath: installPath)
+    let proxyURL = base.appendingPathComponent(".proxy")
+    let credURL = base.appendingPathComponent(".proxycredentials")
 
-    // .proxy
+    // .proxy — contains the raw proxy URL on a single line
     do {
         if url.isEmpty {
-            if FileManager.default.fileExists(atPath: proxyFilePath) {
-                try FileManager.default.removeItem(atPath: proxyFilePath)
+            do {
+                try FileManager.default.removeItem(at: proxyURL)
                 log("writeProxyFiles › removed .proxy")
+            } catch let err as NSError where err.code == NSFileNoSuchFileError {
+                // file already absent — no-op
+            } catch {
+                log("writeProxyFiles › failed to remove .proxy: \(error)")
+                ok = false
             }
         } else {
-            try url.write(toFile: proxyFilePath, atomically: true, encoding: .utf8)
+            try url.write(to: proxyURL, atomically: true, encoding: .utf8)
             log("writeProxyFiles › wrote .proxy")
         }
     } catch {
+        // only reached on write failure (the remove path has its own inner do/catch)
         log("writeProxyFiles › .proxy error: \(error)")
         ok = false
     }
 
-    // .proxycredentials
+    // .proxycredentials — two-line format: line 1 = username, line 2 = password
     do {
         if user.isEmpty && password.isEmpty {
-            if FileManager.default.fileExists(atPath: credPath) {
-                try FileManager.default.removeItem(atPath: credPath)
+            do {
+                try FileManager.default.removeItem(at: credURL)
                 log("writeProxyFiles › removed .proxycredentials")
+            } catch let err as NSError where err.code == NSFileNoSuchFileError {
+                // file already absent — no-op
+            } catch {
+                log("writeProxyFiles › failed to remove .proxycredentials: \(error)")
+                ok = false
             }
         } else {
-            try "\(user)\n\(password)".write(toFile: credPath, atomically: true, encoding: .utf8)
+            try "\(user)\n\(password)".write(to: credURL, atomically: true, encoding: .utf8)
             log("writeProxyFiles › wrote .proxycredentials")
         }
     } catch {
+        // only reached on write failure (the remove path has its own inner do/catch)
         log("writeProxyFiles › .proxycredentials error: \(error)")
         ok = false
     }
 
     return ok
 }
-// swiftlint:enable missing_docs

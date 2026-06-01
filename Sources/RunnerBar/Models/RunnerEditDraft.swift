@@ -1,6 +1,5 @@
 // RunnerEditDraft.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import Foundation
 import RunnerBarCore
 
@@ -36,15 +35,14 @@ struct RunnerEditDraft: Equatable {
     /// Seeds the draft from `runner` model values. Call `load(installPath:)` afterwards
     /// to override with on-disk values (auto-update, proxy) once the view appears.
     init(runner: RunnerModel) {
+        // Filter out GitHub-managed system labels that are automatically assigned
+        // by the runner registration process and should never be user-editable.
+        // GitHub injects these as exact discrete tokens: self-hosted, x64, arm64,
+        // linux, macos, windows. Exact Set membership is used (not substring matching)
+        // so custom labels like "linux-ci" or "arm64-large" are preserved.
+        let systemLabels: Set<String> = ["self-hosted", "x64", "arm64", "linux", "macos", "windows"]
         self.labelsText = runner.labels
-            .filter { label in
-                !["self-hosted"].contains(label)
-                    && !label.lowercased().contains("x64")
-                    && !label.lowercased().contains("arm64")
-                    && !label.lowercased().contains("linux")
-                    && !label.lowercased().contains("macos")
-                    && !label.lowercased().contains("windows")
-            }
+            .filter { !systemLabels.contains($0.lowercased()) }
             .joined(separator: ", ")
         self.workFolder = runner.workFolder ?? "_work"
         self.autoUpdate = true
@@ -91,14 +89,14 @@ struct RunnerEditDraft: Equatable {
 
     // MARK: - Private disk helpers
 
-    /// Reads and parses the `.runner` JSON at `installPath`, applies `autoUpdate`
-    /// and `workFolder` to the draft, and returns the raw dictionary so callers
-    /// can extract additional fields (e.g. `platform`, `agentVersion`) without a
-    /// second read of the same file.
+    /// Reads and parses the `.runner` JSON at `installPath`, applies `autoUpdate` and
+    /// `workFolder` to the draft, and returns the raw dictionary for callers that need
+    /// additional fields (e.g. `platform`, `agentVersion`) without a second file read.
+    /// The return value may be discarded if only the draft side-effects are needed.
     @discardableResult
     mutating func loadRunnerJSON(installPath: String) -> [String: Any]? {
-        let path = installPath + "/.runner"
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        let url = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
+        guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         let disableUpdate = json["disableUpdate"] as? Bool ?? false
@@ -109,18 +107,24 @@ struct RunnerEditDraft: Equatable {
         return json
     }
 
+    /// Reads `.proxy` and `.proxycredentials` at `installPath` and applies values to the draft.
+    /// `.proxy` — single line containing the raw proxy URL.
+    /// `.proxycredentials` — two-line format: line 1 = username, line 2 = password.
+    /// Missing files leave the corresponding draft fields as empty strings.
     private mutating func loadProxy(installPath: String) {
-        let proxyFilePath = installPath + "/.proxy"
-        proxyUrl = (try? String(contentsOfFile: proxyFilePath, encoding: .utf8))
+        let base = URL(fileURLWithPath: installPath)
+        let proxyURL = base.appendingPathComponent(".proxy")
+        let credURL = base.appendingPathComponent(".proxycredentials")
+
+        proxyUrl = (try? String(contentsOf: proxyURL, encoding: .utf8))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
 
-        let credPath = installPath + "/.proxycredentials"
-        if let credContent = try? String(contentsOfFile: credPath, encoding: .utf8) {
+        if let credContent = try? String(contentsOf: credURL, encoding: .utf8) {
             let lines = credContent.components(separatedBy: "\n")
             proxyUser = lines.first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-            proxyPassword = lines.dropFirst().first
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            proxyPassword = lines.indices.contains(1)
+                ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
         }
     }
 }
-// swiftlint:enable missing_docs
