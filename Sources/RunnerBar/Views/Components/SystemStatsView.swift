@@ -111,6 +111,7 @@ struct SparklineMetricView: View {
     }
 
     /// Color shifts green → orange → red as `currentPct` crosses 60 and 85.
+    /// - SeeAlso: `SparklineView.themeColor` uses the same 60/85 breakpoints.
     var labelColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }
@@ -140,6 +141,8 @@ struct DiskPillBadge: View {
             .fixedSize()
     }
 
+    /// Pill foreground and tint color based on free disk percentage.
+    /// Mirrors the danger/warning/success thresholds used by `DiskPillBadge`'s type doc.
     private var pillColor: Color {
         if freePct < 15 { return .rbDanger }
         if freePct < 40 { return .rbWarning }

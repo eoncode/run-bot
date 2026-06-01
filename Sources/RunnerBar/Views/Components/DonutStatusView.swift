@@ -21,11 +21,17 @@ import SwiftUI
 /// ❌ NEVER start the rotation for non-.inProgress states — it wastes CPU/GPU.
 struct DonutStatusView: View {
     let status: RBStatus
-    /// Progress fraction 0.0–1.0 for in-progress state. Ignored for other states.
+    /// Progress fraction 0.0–1.0 for in-progress state.
+    /// Drives `displayProgress` via `withAnimation(.easeInOut)` on every change.
+    /// Ignored for non-`.inProgress` states.
     var progress: Double = 0
+    /// Outer ring diameter in points.
     var size: CGFloat = 16
 
+    /// Current rotation angle for the shimmer ring; driven by `startRotationIfNeeded()`.
     @State private var rotationAngle: Double = 0
+    /// Animated copy of `progress` — updated via `withAnimation(.easeInOut)` on every
+    /// `progress` change so the arc trim interpolates smoothly rather than jumping.
     @State private var displayProgress: Double = 0
 
     private var strokeWidth: CGFloat { size * 0.11 }

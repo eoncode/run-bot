@@ -37,6 +37,7 @@ struct SparklineView: View {
 
     // MARK: - Helpers
     /// Color shifts green → orange → red as `currentPct` crosses 60 and 85.
+    /// - SeeAlso: `SparklineMetricView.labelColor` uses the same 60/85 breakpoints.
     private var themeColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }
