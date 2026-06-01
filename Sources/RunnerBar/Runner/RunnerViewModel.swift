@@ -6,14 +6,18 @@ import Foundation
 // MARK: - RunnerViewModel
 //
 // Bridges RunnerStore + LocalRunnerStore into @Published properties consumed by SwiftUI views.
-// reload() is called on every displayTick (≈1 Hz) from the panel view.
+// reload() is driven by the displayTick timer in PanelMainView (≈1 Hz).
 
 /// Bridges `RunnerStore` and `LocalRunnerStore` into `@Published` properties consumed by SwiftUI views.
-/// `reload()` is called on every display tick (≈1 Hz) from the panel view.
+///
+/// `reload()` is called on every display tick (≈1 Hz) by `PanelMainView`'s timer subscriber.
+/// The entire class is `@MainActor` because all `@Published` mutations and reads must happen
+/// on the main thread to satisfy SwiftUI's rendering requirements.
+@MainActor
 final class RunnerViewModel: ObservableObject {
     // MARK: - Shared singleton
     /// The app-wide singleton. Always accessed on the main actor.
-    @MainActor static let shared = RunnerViewModel()
+    static let shared = RunnerViewModel()
 
     // MARK: - Published state
     /// GitHub API-backed runners for the authenticated user's repos and orgs.
@@ -31,12 +35,15 @@ final class RunnerViewModel: ObservableObject {
 
     // MARK: - Dependency injection (for tests)
     /// Override to inject a test double instead of `LocalRunnerStore.shared`.
+    /// `nil` in production — `reload()` falls back to `LocalRunnerStore.shared` when this is `nil`.
     var localRunnerStore: LocalRunnerStore?
 
     // MARK: - Reload
 
-    /// Copies the latest state from `RunnerStore` and `LocalRunnerStore` into published view model properties.
-    @MainActor
+    /// Copies the latest state from `RunnerStore` and `LocalRunnerStore` into the published properties.
+    ///
+    /// Called on every display tick (≈1 Hz) from `PanelMainView`. Also calls `LocalRunnerStore.refresh()`
+    /// to trigger a re-scan of locally-installed runner agents.
     func reload() {
         let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
