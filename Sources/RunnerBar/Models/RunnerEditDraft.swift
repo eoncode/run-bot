@@ -37,17 +37,12 @@ struct RunnerEditDraft: Equatable {
     init(runner: RunnerModel) {
         // Filter out GitHub-managed system labels that are automatically assigned
         // by the runner registration process and should never be user-editable.
-        // These include the OS/arch labels GitHub injects: self-hosted, x64, arm64,
-        // linux, macos, windows. Only custom labels survive this filter.
+        // GitHub injects these as exact discrete tokens: self-hosted, x64, arm64,
+        // linux, macos, windows. Exact Set membership is used (not substring matching)
+        // so custom labels like "linux-ci" or "arm64-large" are preserved.
+        let systemLabels: Set<String> = ["self-hosted", "x64", "arm64", "linux", "macos", "windows"]
         self.labelsText = runner.labels
-            .filter { label in
-                label != "self-hosted"
-                    && !label.lowercased().contains("x64")
-                    && !label.lowercased().contains("arm64")
-                    && !label.lowercased().contains("linux")
-                    && !label.lowercased().contains("macos")
-                    && !label.lowercased().contains("windows")
-            }
+            .filter { !systemLabels.contains($0.lowercased()) }
             .joined(separator: ", ")
         self.workFolder = runner.workFolder ?? "_work"
         self.autoUpdate = true
