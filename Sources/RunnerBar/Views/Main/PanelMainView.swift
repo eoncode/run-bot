@@ -2,6 +2,7 @@
 // RunnerBar
 import RunnerBarCore
 import SwiftUI
+
 // REGRESSION GUARD — DO NOT REMOVE - see regression history (ref #52 #54 #57 #375 #376 #377)
 //
 // ARCHITECTURE: NSPopover + sizingOptions=.preferredContentSize
@@ -21,6 +22,7 @@ import SwiftUI
 //
 // NSPopover provides its own glass chrome automatically.
 // ❌ NEVER add .background() or NSVisualEffectView at this level.
+
 /// Root panel view rendered inside the NSPopover.
 /// Composes the header stats bar, local runner rows, and the scrollable
 /// workflow actions section. Owns the 1-second `displayTick` timer used
@@ -44,6 +46,7 @@ struct PanelMainView: View {
     @State private var displayTick: Int = 0
     /// Timer that fires displayTick increments.
     @State private var displayTickTimer: Timer?
+
     /// Maximum scroll height for the actions section (80% of screen height).
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
@@ -56,17 +59,17 @@ struct PanelMainView: View {
             store.jobs.filter { $0.status == .inProgress }.compactMap { $0.runnerName }
         )
         let busyRunners = store.runners.filter { $0.busy }
-        let busyIds = Set(busyRunners.compactMap { $0.id })
-        let busyNames = Set(busyRunners.map { $0.name })
+        let busyIds     = Set(busyRunners.compactMap { $0.id })
+        let busyNames   = Set(busyRunners.map { $0.name })
         return store.localRunners.filter { local in
             if activeNamesFromJobs.contains(local.runnerName) { return true }
-            if let aid = local.agentId, busyIds.contains(aid) { return true }
-            if busyNames.contains(local.runnerName) { return true }
+            if let aid = local.agentId, busyIds.contains(aid)  { return true }
+            if busyNames.contains(local.runnerName)            { return true }
             return false
         }
     }
 
-    /// The body property.
+    /// Root body — header, optional rate-limit banner, local runner rows, and the scrollable actions section.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelHeaderView(
@@ -104,7 +107,7 @@ struct PanelMainView: View {
         .onChange(of: store.actions) { _, _ in visibleCount = 10 }
     }
 
-    /// Scrollable container for the actions section.
+    /// Scrollable container for the actions section, capped at `screenScrollMaxHeight`.
     private var actionsSectionScrollable: some View {
         ScrollView(.vertical, showsIndicators: true) {
             actionsSectionContent
@@ -112,7 +115,7 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
 
-    /// Content of the actions section including workflow rows and load-more.
+    /// Content of the actions section including workflow rows and the load-more button.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -131,7 +134,7 @@ struct PanelMainView: View {
         .padding(.vertical, 4)
     }
 
-    /// Button to load the next batch of workflow rows.
+    /// Button to reveal the next batch of up to 10 workflow rows.
     @ViewBuilder private var loadMoreButton: some View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
@@ -144,7 +147,7 @@ struct PanelMainView: View {
         }
     }
 
-    /// Starts the 1-second timer that increments displayTick.
+    /// Starts the 1-second repeating timer that increments `displayTick`.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
         displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -152,7 +155,7 @@ struct PanelMainView: View {
         }
     }
 
-    /// Invalidates and clears the displayTick timer.
+    /// Invalidates and nils the `displayTick` timer.
     private func stopDisplayTickTimer() {
         displayTickTimer?.invalidate()
         displayTickTimer = nil
@@ -164,11 +167,17 @@ struct PanelMainView: View {
         let countdownLabel: String
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
-            if remaining < 1 { countdownLabel = "resuming\u{2026}" } else if remaining < 60 { countdownLabel = "resets in \(Int(remaining))s" } else {
+            if remaining < 1 {
+                countdownLabel = "resuming\u{2026}"
+            } else if remaining < 60 {
+                countdownLabel = "resets in \(Int(remaining))s"
+            } else {
                 let mins = Int(remaining) / 60; let secs = Int(remaining) % 60
                 countdownLabel = String(format: "resets in %dm %02ds", mins, secs)
             }
-        } else { countdownLabel = "pausing polls" }
+        } else {
+            countdownLabel = "pausing polls"
+        }
         return HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.yellow).font(.caption)
             Text("GitHub rate limit reached — \(countdownLabel)").font(.caption).foregroundColor(.secondary)
