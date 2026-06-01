@@ -94,12 +94,10 @@ struct RunnerEditDraft: Equatable {
 
     // MARK: - Private disk helpers
 
-    /// Reads and parses the `.runner` JSON at `installPath` and applies
-    /// `autoUpdate` and `workFolder` to the draft.
-    /// Returns the raw JSON dictionary so callers can extract additional fields
-    /// (e.g. `platform`, `agentVersion`) without a second file read.
-    /// The `@discardableResult` is intentional — most call sites only need the
-    /// side-effects; the dictionary is available for callers that need extra fields.
+    /// Reads and parses the `.runner` JSON at `installPath`, applies `autoUpdate` and
+    /// `workFolder` to the draft, and returns the raw dictionary for callers that need
+    /// additional fields (e.g. `platform`, `agentVersion`) without a second file read.
+    /// The return value may be discarded if only the draft side-effects are needed.
     @discardableResult
     mutating func loadRunnerJSON(installPath: String) -> [String: Any]? {
         let url = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")

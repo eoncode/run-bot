@@ -184,11 +184,11 @@ private func writeProxyFiles(installPath: String, url: String, user: String, pas
                 ok = false
             }
         } else {
-            try url.write(to: proxyURL, atomically: true, encoding: .utf8) // write failure caught below
+            try url.write(to: proxyURL, atomically: true, encoding: .utf8)
             log("writeProxyFiles › wrote .proxy")
         }
     } catch {
-        // write failure — removeItem errors are handled by the inner catch above
+        // only reached on write failure (the remove path has its own inner do/catch)
         log("writeProxyFiles › .proxy error: \(error)")
         ok = false
     }
@@ -206,11 +206,11 @@ private func writeProxyFiles(installPath: String, url: String, user: String, pas
                 ok = false
             }
         } else {
-            try "\(user)\n\(password)".write(to: credURL, atomically: true, encoding: .utf8) // write failure caught below
+            try "\(user)\n\(password)".write(to: credURL, atomically: true, encoding: .utf8)
             log("writeProxyFiles › wrote .proxycredentials")
         }
     } catch {
-        // write failure — removeItem errors are handled by the inner catch above
+        // only reached on write failure (the remove path has its own inner do/catch)
         log("writeProxyFiles › .proxycredentials error: \(error)")
         ok = false
     }
