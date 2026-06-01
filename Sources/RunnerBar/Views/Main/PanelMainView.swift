@@ -47,6 +47,17 @@ struct PanelMainView: View {
     /// Timer that fires displayTick increments.
     @State private var displayTickTimer: Timer?
 
+    /// Creates a `PanelMainView`.
+    /// - Parameters:
+    ///   - store: The view model driving runner and workflow data.
+    ///   - onStepTap: Closure called when the user taps a step row.
+    ///   - onSelectSettings: Closure called when the user taps the settings gear button.
+    init(store: RunnerViewModel, onStepTap: @escaping (ActiveJob, JobStep) -> Void, onSelectSettings: @escaping () -> Void) {
+        self.store = store
+        self.onStepTap = onStepTap
+        self.onSelectSettings = onSelectSettings
+    }
+
     /// Maximum scroll height for the actions section (80% of screen height).
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80

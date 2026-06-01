@@ -37,7 +37,7 @@ struct DonutStatusView: View {
 
     /// Stroke width derived from the outer diameter (11% of `size`).
     private var strokeWidth: CGFloat { size * 0.11 }
-    /// Inner ring diameter derived from the outer size. // periphery:ignore
+    /// Inner ring diameter derived from `size` (82% of the outer diameter).
     private var innerSize: CGFloat { size * 0.82 }
 
     /// Creates a `DonutStatusView`.
