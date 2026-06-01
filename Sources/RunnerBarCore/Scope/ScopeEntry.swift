@@ -17,6 +17,7 @@ public struct ScopeEntry: Identifiable, Codable, Equatable, Hashable, Sendable {
     /// remove the existing entry and add a new one via `ScopeStore`.
     public let scope: String
     /// When `false`, `RunnerStore` skips this scope during polling.
+    /// `var`: toggled by `ScopeStore.setEnabled(_:_:)` — the only intended mutation site.
     public var isEnabled: Bool
 
     /// Creates a new `ScopeEntry` with a fresh random `id`.
