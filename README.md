@@ -64,19 +64,22 @@ curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 
 ## GitHub OAuth Permissions
 
-RunnerBar uses a classic OAuth token. The following scopes are requested and are all load-bearing:
+RunnerBar uses a classic GitHub OAuth token. Every scope below is required by a specific feature — nothing is requested speculatively.
 
-| Scope | Why it's needed |
-|---|---|
-| `repo` | Read workflow runs, jobs, steps, and logs across private repositories |
-| `read:org` | Discover which organisations the authenticated user belongs to |
-| `admin:org` | Call `GET /orgs/{org}/actions/runners` to fetch org-level runner labels (e.g. `arm64`, `macOS`) and managing org runners. Required for classic OAuth tokens — `manage_runners:org` alone is only sufficient for fine-grained PATs |
-| `manage_runners:org` | Forward-compatibility: GitHub is migrating runner APIs to require this scope for fine-grained tokens; included so the token stays valid as GitHub enforces newer auth requirements |
-| `workflow` | Trigger re-run, re-run failed, and cancel actions on workflow runs |
 
-> **Note:** `admin:org` is not a broad privilege grab. It is the documented requirement for classic OAuth tokens when calling org-runner endpoints. See [GitHub docs](https://docs.github.com/en/rest/actions/self-hosted-runners).
+| Scope | What it enables in RunnerBar |
+| :-- | :-- |
+| `repo` | Shows live workflow runs, jobs, steps, and logs for your **private** repositories. Without this, only public repo runs are visible. |
+| `read:org` | Discovers which organisations your account belongs to, so RunnerBar can list workflows across all your org repos — not just personal ones. |
+| `admin:org` | Required to **add and remove self-hosted runners** at the org level. RunnerBar calls GitHub's runner registration-token and remove-token endpoints, and can deregister a runner directly via the API when the local `config.sh` script is unavailable. This is the only scope that covers these write operations on classic tokens. |
+| `manage_runners:org` | Included for forward-compatibility. GitHub is migrating runner management APIs to require this scope for fine-grained tokens. Requesting it now ensures the token stays valid as GitHub enforces the newer auth model. |
+| `workflow` | Powers the **Re-run**, **Re-run failed**, and **Cancel** buttons in the popover. These actions require an explicit write scope — read-only tokens will silently fail. |
 
----
+### Why `admin:org` is not a broad privilege
+
+`admin:org` sounds alarming, but RunnerBar uses it for a narrow set of runner lifecycle calls only: fetching a short-lived registration token, fetching a removal token, and deleting a runner by ID. No org membership, billing, settings, or secrets are accessed. GitHub does not offer a narrower scope for these operations on classic OAuth tokens — `manage_runners:org` only covers them for fine-grained PATs.
+
+> **Why not a fine-grained PAT?** Fine-grained tokens do not yet support all Actions and runner management endpoints RunnerBar depends on. Classic OAuth is currently the only option that covers the full feature set.
 
 ## Docs
 
