@@ -4,13 +4,12 @@ import Combine
 import Foundation
 
 // MARK: - RunnerViewModel
-//
-// Bridges RunnerStore + LocalRunnerStore into @Published properties consumed by SwiftUI views.
-// reload() is driven by the displayTick timer in PanelMainView (≈1 Hz).
 
 /// Bridges `RunnerStore` and `LocalRunnerStore` into `@Published` properties consumed by SwiftUI views.
 ///
-/// `reload()` is called on every display tick (≈1 Hz) by `PanelMainView`'s timer subscriber.
+/// `reload()` is triggered by Combine sinks in `AppDelegate+PanelSetup` — one on
+/// `RunnerStore.didUpdate` and one on `LocalRunnerStore.$runners` — so the view model
+/// stays in sync whenever either store publishes new data.
 /// The entire class is `@MainActor` because all `@Published` mutations and reads must happen
 /// on the main thread to satisfy SwiftUI's rendering requirements.
 @MainActor
@@ -36,14 +35,17 @@ final class RunnerViewModel: ObservableObject {
     // MARK: - Dependency injection (for tests)
     /// Override to inject a test double instead of `LocalRunnerStore.shared`.
     /// `nil` in production — `reload()` falls back to `LocalRunnerStore.shared` when this is `nil`.
+    /// - Note: Because the class is `@MainActor`, this property must be set from a `@MainActor`
+    ///   context in tests (e.g. `@MainActor func testFoo()` or `await MainActor.run { ... }`).
     var localRunnerStore: LocalRunnerStore?
 
     // MARK: - Reload
 
     /// Copies the latest state from `RunnerStore` and `LocalRunnerStore` into the published properties.
     ///
-    /// Called on every display tick (≈1 Hz) from `PanelMainView`. Also calls `LocalRunnerStore.refresh()`
-    /// to trigger a re-scan of locally-installed runner agents.
+    /// Called by Combine sinks in `AppDelegate+PanelSetup` — one on `RunnerStore.didUpdate`
+    /// and one on `LocalRunnerStore.$runners`. Also calls `LocalRunnerStore.refresh()` to
+    /// trigger a re-scan of locally-installed runner agents.
     func reload() {
         let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
