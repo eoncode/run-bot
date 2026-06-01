@@ -8,7 +8,7 @@ import Foundation
 /// Persists notification preferences to UserDefaults.
 @MainActor
 final class NotificationPreferences: ObservableObject {
-    /// The shared constant.
+    /// Shared singleton — use this instead of calling init directly.
     static let shared = NotificationPreferences()
 
     /// UserDefaults key constants.
@@ -31,18 +31,21 @@ final class NotificationPreferences: ObservableObject {
 
     /// Private initialiser — use `shared`.
     private init() {
-        NotificationPreferences.register(defaults: .standard)
+        NotificationPreferences.register(into: .standard)
         notifyOnSuccess = UserDefaults.standard.bool(forKey: Key.notifyOnSuccess)
         notifyOnFailure = UserDefaults.standard.bool(forKey: Key.notifyOnFailure)
     }
 
     /// Registers factory defaults so that `bool(forKey:)` returns the intended
-    /// value on first launch without requiring a `object(forKey:) == nil` guard.
+    /// value on first launch without requiring an `object(forKey:) == nil` guard.
     ///
     /// Call once at app startup (e.g. from `applicationDidFinishLaunching`) and
     /// again in unit tests before exercising notification logic.
-    static func register(defaults: UserDefaults) {
-        defaults.register(defaults: [
+    ///
+    /// - Parameter store: The `UserDefaults` instance to register defaults into.
+    ///   Pass `.standard` for production; pass a suite instance in tests.
+    static func register(into store: UserDefaults) {
+        store.register(defaults: [
             Key.notifyOnSuccess: true,
             Key.notifyOnFailure: true,
         ])
