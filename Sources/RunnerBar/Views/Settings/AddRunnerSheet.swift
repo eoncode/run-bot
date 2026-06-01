@@ -32,7 +32,7 @@ private enum GitHubURIs {
 /// `~/Library/LaunchAgents/actions.runner.<owner>.<repo>.<name>.plist` directly
 /// via FileManager, and registers the runner in `LocalRunnerStore`.
 ///
-/// Requires a GitHub token for "Add new" (OAuth sign-in, GH_TOKEN, or GITHUB_TOKEN).
+/// Requires a GitHub token for “Add new” (OAuth sign-in, GH_TOKEN, or GITHUB_TOKEN).
 struct AddRunnerSheet: View {
     /// The isPresented property.
     @Binding var isPresented: Bool
@@ -112,11 +112,11 @@ struct AddRunnerSheet: View {
     @State private var detectedName = ""
     /// GitHub URL parsed from the `.runner` JSON inside `existingDir`.
     @State private var detectedGitHubURL = ""
-    /// Shown when the selected folder has no valid `.runner` file or it can't be parsed.
+    /// Shown when the selected folder has no valid `.runner` file or it can’t be parsed.
     @State private var existingError: String?
     /// Editable fallback shown when `.runner` JSON has no `gitHubUrl` (rare, org-scoped runners).
     @State private var githubURLOverride = ""
-    /// Whether a runner with this name is already in LocalRunnerStore's index.
+    /// Whether a runner with this name is already in LocalRunnerStore’s index.
     @State private var isDuplicate = false
 
     // MARK: - Body
@@ -156,7 +156,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Add New Form Body
 
-    /// Form fields shown when the user selects the "Add new" mode:
+    /// Form fields shown when the user selects the “Add new” mode:
     /// scope picker, repo/org selector, token field, runner name, and install path.
     @ViewBuilder
     private var addNewFormBody: some View {
@@ -271,7 +271,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Add Pre-Existing Form Body
 
-    /// Form fields shown when the user selects the "Add pre-existing" mode:
+    /// Form fields shown when the user selects the “Add pre-existing” mode:
     /// folder picker, detected runner name, and GitHub URL display/override.
     @ViewBuilder
     private var addExistingFormBody: some View {
@@ -418,7 +418,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Helpers (Add new)
 
-    /// The effectiveScope property.
+    /// The currently selected scope string (repo or org depending on `scopeType`).
     private var effectiveScope: String { scopeType == .repo ? selectedRepo : selectedOrg }
 
     /// Returns `true` when the chosen install directory already contains a `.runner` file,
@@ -456,7 +456,7 @@ struct AddRunnerSheet: View {
             && !effectiveGitHubURL.isEmpty
     }
 
-    /// Checks whether the runner name is already tracked in LocalRunnerStore's index.
+    /// Checks whether the runner name is already tracked in LocalRunnerStore’s index.
     private func checkDuplicate(runnerName: String) -> Bool {
         LocalRunnerStore.shared.isTracked(runnerName: runnerName)
     }
@@ -495,8 +495,11 @@ struct AddRunnerSheet: View {
             return
         }
 
+        /// Minimal payload decoded from the `.runner` JSON file inside the install directory.
         struct RunnerJSON: Decodable {
+            /// The GitHub repository or org URL the runner is registered to.
             let gitHubUrl: String?
+            /// The runner’s registered name.
             let runnerName: String?
         }
 
@@ -538,7 +541,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - State reset helpers
 
-    /// Resets all "Add new" form fields to their default values.
+    /// Resets all “Add new” form fields to their default values.
     private func resetAddNewState() {
         runnerName       = ""
         labelsText       = "self-hosted,macOS"
@@ -556,7 +559,7 @@ struct AddRunnerSheet: View {
         }
     }
 
-    /// Clears all "Add pre-existing" detection state so a fresh folder can be picked.
+    /// Clears all “Add pre-existing” detection state so a fresh folder can be picked.
     private func resetExistingState() {
         existingDir       = ""
         detectedName      = ""
@@ -568,7 +571,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Scopes loader
 
-    /// Fetches the user's repos and organisations on a background thread.
+    /// Fetches the user’s repos and organisations on a background thread.
     private func loadScopes() {
         isLoadingScopes = true
         Task.detached(priority: .userInitiated) {
@@ -665,7 +668,7 @@ struct AddRunnerSheet: View {
                 await MainActor.run {
                     isRegistering = false
                     if currentScopeType == .org {
-                        errorMessage = "Not authorised to register org-level runners. Ensure your token has the 'manage_runners:org' scope, or sign in via the GitHub button in Settings."
+                        errorMessage = "Not authorised to register org-level runners. Ensure your token has the ‘manage_runners:org’ scope, or sign in via the GitHub button in Settings."
                     } else {
                         errorMessage = "Could not get a registration token. Ensure a valid token is available via OAuth sign-in, or the GH_TOKEN / GITHUB_TOKEN environment variable."
                     }
@@ -812,14 +815,25 @@ private func fetchRunnerDownloadURL() -> String? {
         log("fetchRunnerDownloadURL › failed to fetch release JSON")
         return nil
     }
+    /// Minimal asset entry from the GitHub releases API response.
     struct Asset: Decodable {
+        /// The asset filename (e.g. `actions-runner-osx-arm64-2.x.x.tar.gz`).
         let name: String
+        /// The direct download URL for this asset.
         let browserDownloadUrl: String
+        /// Maps snake_case JSON keys to camelCase Swift properties.
         enum CodingKeys: String, CodingKey {
-            case name; case browserDownloadUrl = "browser_download_url"
+            /// Maps `name` — passthrough.
+            case name
+            /// Maps `browser_download_url` to `browserDownloadUrl`.
+            case browserDownloadUrl = "browser_download_url"
         }
     }
-    struct Release: Decodable { let assets: [Asset] }
+    /// Minimal release payload from the GitHub releases API — only assets are needed.
+    struct Release: Decodable {
+        /// The list of downloadable assets attached to this release.
+        let assets: [Asset]
+    }
     guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
         log("fetchRunnerDownloadURL › decode failed")
         return nil

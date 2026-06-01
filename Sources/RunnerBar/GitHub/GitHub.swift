@@ -27,7 +27,7 @@ private struct SendableFormatter: @unchecked Sendable {
     /// The internal formatter instance.
     let iso = ISO8601DateFormatter()
 }
-/// Lock for the formatter.
+/// Lock for the shared ISO-8601 date formatter.
 private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
 
 /// Fetches all active (in-progress and queued) jobs for a given scope.
@@ -40,7 +40,6 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     var runIDs: [Int] = []
     var seenRunIDs = Set<Int>()
 
-    /// Returns the API endpoint for workflow runs filtered by the given status.
     func runsEndpoint(status: String) -> String {
         "\(scope.apiPrefix)/actions/runs?status=\(status)&per_page=50"
     }
@@ -79,9 +78,9 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
 private struct WorkflowRunsResponse: Codable {
     /// The list of workflow runs returned by the API.
     let workflowRuns: [WorkflowRun]
-    /// Maps the snake_case API key to the camelCase Swift property.
+    /// Maps the snake_case `workflow_runs` key to the camelCase Swift property.
     enum CodingKeys: String, CodingKey {
-        /// The workflowRuns coding key.
+        /// Maps `workflow_runs` JSON key to `workflowRuns`.
         case workflowRuns = "workflow_runs"
     }
 }
@@ -127,7 +126,7 @@ func fetchUserOrgs() -> [String] {
     guard let data = ghAPIPaginated("/user/orgs?per_page=100") else { return [] }
     /// Minimal org payload — only the login name is needed.
     struct Org: Decodable {
-        /// The organisation's GitHub login handle.
+        /// The organisation’s GitHub login name.
         let login: String
     }
     guard let orgs = try? JSONDecoder().decode([Org].self, from: data) else { return [] }
@@ -139,11 +138,11 @@ func fetchUserRepos() -> [String] {
     guard let data = ghAPIPaginated("/user/repos?per_page=100&sort=updated") else { return [] }
     /// Minimal repo payload — only the full name is needed.
     struct Repo: Decodable {
-        /// The repository's full name in `owner/repo` format.
+        /// The repository’s full name in `owner/repo` format.
         let fullName: String
-        /// Maps the snake_case API key to the camelCase Swift property.
+        /// Maps the snake_case `full_name` key to the camelCase Swift property.
         enum CodingKeys: String, CodingKey {
-            /// The fullName coding key.
+            /// Maps `full_name` JSON key to `fullName`.
             case fullName = "full_name"
         }
     }
@@ -224,8 +223,8 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) -> Str
     return parseStepLog(raw, stepNumber: stepNumber)
 }
 
-/// Resolves the 302 redirect from the GitHub logs endpoint, then fetches the raw log body from S3.
-/// Returns `nil` if step 1 does not yield a `Location` header.
+/// Step 1+2: resolve the 302 redirect then fetch the raw log body.
+/// Returns `nil` if step 1 does not yield a Location header.
 private func fetchStepLogViaURLSession(endpoint: String, token: String) -> String? {
     let urlString = endpoint.hasPrefix("http")
         ? endpoint
