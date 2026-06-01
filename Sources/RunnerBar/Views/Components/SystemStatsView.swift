@@ -4,13 +4,13 @@ import RunnerBarCore
 import SwiftUI
 
 // MARK: - SystemStatsView
+
 // periphery:ignore
 /// Full-page system stats view shown in the settings panel.
 struct SystemStatsView: View {
-    /// The viewModel property.
+    /// The view model providing live CPU, memory, and disk stats.
     @StateObject private var viewModel = SystemStatsViewModel()
-
-    /// The body property.
+    /// The SwiftUI body — renders a vertical list of labelled stat rows.
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("System Stats")
@@ -42,6 +42,7 @@ struct SystemStatsView: View {
 }
 
 // MARK: - GlassBadgeContainer
+
 /// A stable glass wrapper for live-updating chip content (CPU, MEM, DISK chips only).
 ///
 /// macOS 26+: uses `GlassEffectContainer { content.glassButton() }` — identical
@@ -57,7 +58,7 @@ struct GlassBadgeContainer<Content: View>: View {
     /// The live-updating chip content rendered in the foreground.
     @ViewBuilder let content: () -> Content
 
-    /// The body property.
+    /// The SwiftUI body — renders glass on macOS 26+, plain background on earlier versions.
     var body: some View {
         if #available(macOS 26, *) {
             GlassEffectContainer {
@@ -83,6 +84,7 @@ struct GlassBadgeContainer<Content: View>: View {
 }
 
 // MARK: - SparklineMetricView
+
 /// A single header metric chip: label + inline sparkline + monospaced value,
 /// all in one horizontal row -- matching the reference compact header design.
 ///
@@ -90,16 +92,15 @@ struct GlassBadgeContainer<Content: View>: View {
 ///
 /// Do NOT restore the VStack layout -- it makes the header ~70pt tall.
 struct SparklineMetricView: View {
-    /// The label constant.
+    /// The short uppercase label displayed to the left of the sparkline (e.g. "CPU", "MEM").
     let label: String
-    /// The value constant.
+    /// The formatted value string displayed to the right of the sparkline.
     let value: String
-    /// The history constant.
+    /// Ring-buffer history of samples (0–100) ordered oldest → newest, used to draw the sparkline.
     let history: [Double]
-    /// The currentPct constant.
+    /// Current value (0–100) used to derive `labelColor`.
     let currentPct: Double
-
-    /// The body property.
+    /// The SwiftUI body — renders label, sparkline, and value in a horizontal stack.
     var body: some View {
         HStack(spacing: 5) {
             Text(label)
@@ -118,7 +119,8 @@ struct SparklineMetricView: View {
         .fixedSize()
     }
 
-    /// The labelColor property.
+    /// Color shifts green → orange → red as `currentPct` crosses 60 and 85.
+    /// - SeeAlso: `SparklineView.themeColor` uses the same 60/85 breakpoints.
     var labelColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }
@@ -127,17 +129,17 @@ struct SparklineMetricView: View {
 }
 
 // MARK: - DiskPillBadge
+
 /// Compact pill showing disk FREE percentage.
 ///
 /// Color thresholds (based on free space, not used):
-/// - `freePct < 15` → `rbDanger`  (disk nearly full)
+/// - `freePct < 15` → `rbDanger` (disk nearly full)
 /// - `freePct < 40` → `rbWarning` (disk getting full)
 /// - `freePct >= 40` → `rbSuccess` (plenty of space)
 struct DiskPillBadge: View {
-    /// The freePct constant.
+    /// Free disk space as a percentage (0–100).
     let freePct: Double
-
-    /// The body property.
+    /// The SwiftUI body — renders a styled percentage pill.
     var body: some View {
         Text(String(format: "%.0f%% free", freePct))
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
@@ -150,7 +152,8 @@ struct DiskPillBadge: View {
             .fixedSize()
     }
 
-    /// The pillColor property.
+    /// Pill foreground and tint color based on free disk percentage.
+    /// Mirrors the danger/warning/success thresholds used by `DiskPillBadge`'s type doc.
     private var pillColor: Color {
         if freePct < 15 { return .rbDanger }
         if freePct < 40 { return .rbWarning }
@@ -159,16 +162,15 @@ struct DiskPillBadge: View {
 }
 
 // MARK: - HeaderStatsBar
-// Compact single-row stats header: CPU | MEM | DISK [pill] as inline chips.
-//
-// Accepts an existing SystemStatsViewModel so it shares the sampler
-// already running in PopoverMainView — no second timer is created.
-/// A value type representing HeaderStatsBar.
-struct HeaderStatsBar: View {
-    /// The statsVM property.
-    @ObservedObject var statsVM: SystemStatsViewModel
 
-    /// The body property.
+/// Compact single-row stats bar: CPU | MEM | DISK inline chips for the panel header.
+///
+/// Accepts an existing `SystemStatsViewModel` so it shares the sampler
+/// already running in `PopoverMainView` — no second timer is created.
+struct HeaderStatsBar: View {
+    /// The view model supplying live CPU, memory, and disk stats.
+    @ObservedObject var statsVM: SystemStatsViewModel
+    /// The SwiftUI body — renders CPU, MEM, and DISK chips separated by thin dividers.
     var body: some View {
         HStack(spacing: RBSpacing.md) {
             let cpuPct = statsVM.stats.cpuPct
@@ -180,13 +182,11 @@ struct HeaderStatsBar: View {
                     currentPct: cpuPct
                 )
             }
-
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
-
             let memTotal = statsVM.stats.memTotalGB
-            let memUsed = statsVM.stats.memUsedGB
-            let memPct = memTotal > 0 ? memUsed / memTotal * 100 : 0.0
+            let memUsed  = statsVM.stats.memUsedGB
+            let memPct   = memTotal > 0 ? memUsed / memTotal * 100 : 0.0
             GlassBadgeContainer {
                 SparklineMetricView(
                     label: "MEM",
@@ -195,13 +195,11 @@ struct HeaderStatsBar: View {
                     currentPct: memPct
                 )
             }
-
             Color.secondary.opacity(0.3)
                 .frame(width: 1, height: 14)
-
             HStack(spacing: RBSpacing.xs) {
-                let diskTotal = statsVM.stats.diskTotalGB
-                let diskUsed = statsVM.stats.diskUsedGB
+                let diskTotal   = statsVM.stats.diskTotalGB
+                let diskUsed    = statsVM.stats.diskUsedGB
                 let diskUsedPct = diskTotal > 0 ? diskUsed / diskTotal * 100 : 0.0
                 GlassBadgeContainer {
                     SparklineMetricView(
@@ -218,7 +216,6 @@ struct HeaderStatsBar: View {
                 }
             }
             .fixedSize()
-
             Spacer()
         }
         .padding(.horizontal, RBSpacing.md)

@@ -4,7 +4,7 @@
 //
 // NOTE: These credentials are intentionally committed to the repository.
 // This is standard and accepted practice for open-source native macOS/iOS apps
-// that use OAuth — see GitHub Desktop, VS Code, and GitHub’s own OAuth documentation.
+// that use OAuth — see GitHub Desktop, VS Code, and GitHub's own OAuth documentation.
 //
 // A client_secret in an open-source native app binary is NOT a security vulnerability:
 // the binary itself is publicly distributable, the secret cannot be “hidden”, and
@@ -35,7 +35,9 @@
 // client_secret in a native binary is effectively public regardless. Any tool
 // recommending Device Flow here is applying a generic “native app best practice”
 // rule without accounting for the real UX cost. This choice is intentional.
-/// Backwards-compatible alias for OAuth app credentials used by older call sites.
+
+/// OAuth app credentials bundled with the native binary.
+/// See the block comment above for why committing these is safe and intentional.
 enum Secrets {
     /// Public client identifier for the registered GitHub OAuth app.
     static let clientID = "Ov23linOj2gogHg7LdFd"

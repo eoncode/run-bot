@@ -495,8 +495,11 @@ struct AddRunnerSheet: View {
             return
         }
 
+        /// Minimal `.runner` JSON payload — only name and GitHub URL are needed.
         struct RunnerJSON: Decodable {
+            /// The URL of the GitHub repo or org this runner is registered to.
             let gitHubUrl: String?
+            /// The registered runner name.
             let runnerName: String?
         }
 
@@ -812,14 +815,25 @@ private func fetchRunnerDownloadURL() -> String? {
         log("fetchRunnerDownloadURL › failed to fetch release JSON")
         return nil
     }
+    /// Minimal GitHub release asset payload.
     struct Asset: Decodable {
+        /// The asset file name.
         let name: String
+        /// The direct download URL for this asset.
         let browserDownloadUrl: String
+        /// Maps snake_case API keys to camelCase Swift properties.
         enum CodingKeys: String, CodingKey {
-            case name; case browserDownloadUrl = "browser_download_url"
+            /// The name coding key.
+            case name
+            /// The browserDownloadUrl coding key.
+            case browserDownloadUrl = "browser_download_url"
         }
     }
-    struct Release: Decodable { let assets: [Asset] }
+    /// Minimal GitHub release payload — only assets are needed.
+    struct Release: Decodable {
+        /// The list of release assets.
+        let assets: [Asset]
+    }
     guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
         log("fetchRunnerDownloadURL › decode failed")
         return nil

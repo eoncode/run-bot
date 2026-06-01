@@ -14,7 +14,7 @@ struct SparklineView: View {
     /// Current value used to determine the theme color (0–100).
     let currentPct: Double
 
-    /// The body property.
+    /// The SwiftUI body — renders a gradient fill path and a stroke polyline.
     var body: some View {
         // swiftlint:disable:next multiple_closures_with_trailing_closure
         GeometryReader { geo in
@@ -37,7 +37,8 @@ struct SparklineView: View {
     }
 
     // MARK: - Helpers
-    /// The themeColor property.
+    /// Color shifts green → orange → red as `currentPct` crosses 60 and 85.
+    /// - SeeAlso: `SparklineMetricView.labelColor` uses the same 60/85 breakpoints.
     private var themeColor: Color {
         if currentPct > 85 { return .rbDanger }
         if currentPct > 60 { return .rbWarning }
