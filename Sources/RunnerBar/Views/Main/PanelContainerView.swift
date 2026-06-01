@@ -98,6 +98,7 @@ struct PanelContainerView<Content: View>: View {
     /// onChange and the timer know NOT to clear isSheetActive.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
 
+    /// Root view: stacks `content`, the zero-size `WindowReader`, and the optional dim overlay.
     var body: some View {
         ZStack {
             content

@@ -54,6 +54,7 @@ final class SystemStatsViewModel: ObservableObject {
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
+    /// Creates a new instance; all properties are default-initialised.
     init() {
         // No custom initialisation needed; all properties have defaults.
     }

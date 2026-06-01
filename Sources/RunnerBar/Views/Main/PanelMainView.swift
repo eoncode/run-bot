@@ -23,10 +23,13 @@ import SwiftUI
 // ❌ NEVER add .background() or NSVisualEffectView at this level.
 /// Root panel view rendered inside the NSPopover.
 struct PanelMainView: View {
+    /// The view model driving workflow and runner data displayed in the panel.
     @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row.
     let onStepTap: (ActiveJob, JobStep) -> Void
+    /// Called when the user taps the settings button in the panel header.
     let onSelectSettings: () -> Void
+    /// Tracks panel open/close state; injected via the environment.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
     /// Whether the user has a stored GitHub token.
     @State private var isAuthenticated = (githubToken() != nil)
