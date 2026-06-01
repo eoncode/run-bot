@@ -7,8 +7,10 @@ import SwiftUI
 // periphery:ignore
 /// Full-page system stats view shown in the settings panel.
 struct SystemStatsView: View {
+    /// The view model supplying live system statistics.
     @StateObject private var viewModel = SystemStatsViewModel()
 
+    /// The view body.
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("System Stats")
@@ -55,6 +57,7 @@ struct GlassBadgeContainer<Content: View>: View {
     /// The live-updating chip content rendered in the foreground.
     @ViewBuilder let content: () -> Content
 
+    /// The view body.
     var body: some View {
         if #available(macOS 26, *) {
             GlassEffectContainer {
@@ -87,11 +90,16 @@ struct GlassBadgeContainer<Content: View>: View {
 ///
 /// Do NOT restore the VStack layout -- it makes the header ~70pt tall.
 struct SparklineMetricView: View {
+    /// The metric label (e.g. "CPU", "MEM", "DISK").
     let label: String
+    /// The formatted value string displayed to the right of the sparkline.
     let value: String
+    /// Historical sample values for the sparkline bars.
     let history: [Double]
+    /// The current percentage used to choose the label colour.
     let currentPct: Double
 
+    /// The view body.
     var body: some View {
         HStack(spacing: 5) {
             Text(label)
@@ -127,8 +135,10 @@ struct SparklineMetricView: View {
 /// - `freePct < 40` → `rbWarning` (disk getting full)
 /// - `freePct >= 40` → `rbSuccess` (plenty of space)
 struct DiskPillBadge: View {
+    /// Free disk percentage (0–100) used to drive colour and label.
     let freePct: Double
 
+    /// The view body.
     var body: some View {
         Text(String(format: "%.0f%% free", freePct))
             .font(.system(size: 9, weight: .semibold, design: .monospaced))
@@ -159,6 +169,7 @@ struct HeaderStatsBar: View {
     /// The view model supplying live CPU, memory, and disk stats.
     @ObservedObject var statsVM: SystemStatsViewModel
 
+    /// The view body.
     var body: some View {
         HStack(spacing: RBSpacing.md) {
             let cpuPct = statsVM.stats.cpuPct
