@@ -5,8 +5,11 @@ import RunnerBarCore
 import SwiftUI
 
 // MARK: - Pasteboard helper
-/// Copies `text` to the general pasteboard on the main thread.
-/// Extracted to avoid duplicated clipboard-write blocks across context menu modifiers.
+/// Copies `text` to the general pasteboard.
+/// Must be called on the main thread. Callers already on `MainActor` (e.g. button
+/// closures in `StepContextMenuModifier`) can call this directly and synchronously.
+/// Off-thread callers (e.g. after `fetchActionLogs`) should use `await MainActor.run`.
+@MainActor
 private func copyToPasteboard(_ text: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
@@ -38,7 +41,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         let isLive      = group.groupStatus == .inProgress
 
         // Re-run failed
-        // TODO: #1077 migrate to async/await once ghPost is async
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -51,7 +54,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         .disabled(!isConcluded)
 
         // Re-run all
-        // TODO: #1077 migrate to async/await once ghPost is async
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -64,7 +67,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         .disabled(!isConcluded)
 
         // Cancel
-        // TODO: #1077 migrate to async/await once cancelRun is async
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating cancelRun to async/await will unblock the cooperative thread pool
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -134,7 +137,7 @@ private struct JobContextMenuModifier: ViewModifier {
         let isLive      = job.status == "in_progress"
 
         // Re-run job
-        // TODO: #1077 migrate to async/await once ghPost is async
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
         Button {
             let scope = group.repo
             let jobID = job.id
@@ -147,7 +150,7 @@ private struct JobContextMenuModifier: ViewModifier {
         .disabled(!isConcluded)
 
         // Cancel — ActiveJob has no runId; cancel all runs in the parent group
-        // TODO: #1077 migrate to async/await once cancelRun is async
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating cancelRun to async/await will unblock the cooperative thread pool
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
