@@ -4,8 +4,6 @@
 import RunnerBarCore
 import SwiftUI
 
-// swiftlint:disable missing_docs
-
 // MARK: - Pasteboard helper
 /// Copies `text` to the general pasteboard on the main thread.
 /// Extracted to avoid duplicated clipboard-write blocks across context menu modifiers.
@@ -177,14 +175,17 @@ private struct JobContextMenuModifier: ViewModifier {
 
 // MARK: - View extensions
 extension View {
+    /// Attaches a workflow-level right-click context menu (re-run, cancel, copy log, open on GitHub).
     func workflowContextMenu(group: WorkflowActionGroup) -> some View {
         modifier(WorkflowContextMenuModifier(group: group))
     }
 
+    /// Attaches a job-level right-click context menu (re-run, cancel, copy log, open on GitHub).
     func jobContextMenu(job: ActiveJob, group: WorkflowActionGroup) -> some View {
         modifier(JobContextMenuModifier(job: job, group: group))
     }
 
+    /// Attaches a step-level right-click context menu (copy step name, view log).
     func stepContextMenu(step: JobStep, onTap: @escaping () -> Void) -> some View {
         modifier(StepContextMenuModifier(step: step, onTap: onTap))
     }
@@ -209,4 +210,3 @@ private struct StepContextMenuModifier: ViewModifier {
         }
     }
 }
-// swiftlint:enable missing_docs

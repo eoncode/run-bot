@@ -8,7 +8,6 @@ import RunnerBarCore
 // MARK: - RingBuffer
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {
-    /// The storage property.
     private var storage: [Double]
 
     /// Creates a new instance.
@@ -41,22 +40,18 @@ final class SystemStatsViewModel: ObservableObject {
     /// Rolling 60-sample history for disk-usage sparkline charts.
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
 
-    /// The timer property.
     /// Safety: only mutated on MainActor (start/stop). Captured as a local `let` in
     /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
     /// must be called on the thread that installed the timer (main run loop).
     nonisolated(unsafe) private var timer: Timer?
-    /// The prevCPUInfo property.
     /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
-    /// The prevNumCPUInfo property.
     /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
-    /// Creates a new instance.
     init() {
         // No custom initialisation needed; all properties have defaults.
     }
@@ -116,6 +111,7 @@ final class SystemStatsViewModel: ObservableObject {
 
     // MARK: CPU (Mach host_processor_info)
     // swiftlint:disable:next function_body_length
+    // Mach host_processor_info diff loop — cannot be extracted without losing clarity.
     /// Reads per-core tick counts via `host_processor_info` and returns the
     /// aggregate CPU utilisation as a percentage (0–100).
     /// Diffs against the previous sample stored in `prevCPUInfo`; returns `0` on the first call.
