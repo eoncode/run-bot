@@ -2,7 +2,6 @@
 // RunnerBar
 import RunnerBarCore
 import SwiftUI
-
 // REGRESSION GUARD — DO NOT REMOVE - see regression history (ref #52 #54 #57 #375 #376 #377)
 //
 // ARCHITECTURE: NSPopover + sizingOptions=.preferredContentSize
@@ -22,11 +21,7 @@ import SwiftUI
 //
 // NSPopover provides its own glass chrome automatically.
 // ❌ NEVER add .background() or NSVisualEffectView at this level.
-
 /// Root panel view rendered inside the NSPopover.
-/// Composes the header stats bar, local runner rows, and the scrollable
-/// workflow actions section. Owns the 1-second `displayTick` timer used
-/// to drive live relative-time label refreshes across all `ActionRowView` instances.
 struct PanelMainView: View {
     /// The view model driving runner and workflow data.
     @ObservedObject var store: RunnerViewModel
@@ -47,24 +42,49 @@ struct PanelMainView: View {
     /// Timer that fires displayTick increments.
     @State private var displayTickTimer: Timer?
 
+    /// Creates a `PanelMainView`.
+    /// - Parameters:
+    ///   - store: The view model driving runner and workflow data.
+    ///   - onStepTap: Closure called when the user taps a step row.
+    ///   - onSelectSettings: Closure called when the user taps the settings gear button.
+    init(
+        store: RunnerViewModel,
+        onStepTap: @escaping (ActiveJob, JobStep) -> Void,
+        onSelectSettings: @escaping () -> Void
+    ) {
+        _store = ObservedObject(wrappedValue: store)
+        self.onStepTap = onStepTap
+        self.onSelectSettings = onSelectSettings
+    }
+
     /// Maximum scroll height for the actions section (80% of screen height).
     private var screenScrollMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) * 0.80
     }
 
-    /// Local runners currently active in an in-progress workflow.
+    /// Local runners that are currently executing a job in an in-progress workflow group.
+    ///
+    /// Three-pass match required because the relationship between local runners and
+    /// GitHub Actions jobs is not guaranteed to be 1:1 by a shared ID:
+    ///   1. runnerName match — most reliable when the job's runner label equals the
+    ///      local runner's name (self-hosted label set on the runner at registration).
+    ///   2. agentId match — falls back to the numeric agent ID when names differ
+    ///      (e.g. renamed runner, label mismatch).
+    ///   3. busyNames match — last resort using the runner API's `name` field, which
+    ///      may differ from the job's runner label in multi-runner environments.
+    /// All three are needed; collapsing them loses coverage for legitimate edge cases.
     private var activeLocalRunners: [RunnerModel] {
         guard store.actions.contains(where: { $0.groupStatus == .inProgress }) else { return [] }
         let activeNamesFromJobs = Set(
             store.jobs.filter { $0.status == .inProgress }.compactMap { $0.runnerName }
         )
         let busyRunners = store.runners.filter { $0.busy }
-        let busyIds     = Set(busyRunners.compactMap { $0.id })
-        let busyNames   = Set(busyRunners.map { $0.name })
+        let busyIds = Set(busyRunners.compactMap { $0.id })
+        let busyNames = Set(busyRunners.map { $0.name })
         return store.localRunners.filter { local in
             if activeNamesFromJobs.contains(local.runnerName) { return true }
-            if let aid = local.agentId, busyIds.contains(aid)  { return true }
-            if busyNames.contains(local.runnerName)            { return true }
+            if let aid = local.agentId, busyIds.contains(aid) { return true }
+            if busyNames.contains(local.runnerName) { return true }
             return false
         }
     }
@@ -104,6 +124,9 @@ struct PanelMainView: View {
         .onChange(of: panelVisibilityState.isOpen) { _, open in
             if open { systemStats.start() } else { systemStats.stop() }
         }
+        // TODO: visibleCount resets on every actions identity change, including poll
+        // updates that don't change the list length. This snaps the user back to 10
+        // rows mid-scroll. Should reset only when store.actions.count decreases.
         .onChange(of: store.actions) { _, _ in visibleCount = 10 }
     }
 
@@ -135,6 +158,7 @@ struct PanelMainView: View {
     }
 
     /// Button to reveal the next batch of up to 10 workflow rows.
+    /// Hidden when all workflows are already visible.
     @ViewBuilder private var loadMoreButton: some View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
@@ -148,6 +172,8 @@ struct PanelMainView: View {
     }
 
     /// Starts the 1-second repeating timer that increments `displayTick`.
+    /// Calls `stopDisplayTickTimer()` first to avoid duplicate timers.
+    /// SwiftUI view structs cannot form retain cycles, so no `[weak self]` capture is needed.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
         displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -161,9 +187,13 @@ struct PanelMainView: View {
         displayTickTimer = nil
     }
 
-    /// Banner shown when the GitHub API rate limit is active.
+    /// Rate-limit warning banner showing a countdown to API reset.
+    ///
+    /// Reads `displayTick` as a SwiftUI dependency so the countdown label
+    /// refreshes every second without an explicit `@Published` on the formatted string.
     private var rateLimitBanner: some View {
         _ = displayTick // swiftlint:disable:this redundant_discardable_let
+        // Forces re-evaluation on each displayTick without capturing the value.
         let countdownLabel: String
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
@@ -175,9 +205,7 @@ struct PanelMainView: View {
                 let mins = Int(remaining) / 60; let secs = Int(remaining) % 60
                 countdownLabel = String(format: "resets in %dm %02ds", mins, secs)
             }
-        } else {
-            countdownLabel = "pausing polls"
-        }
+        } else { countdownLabel = "pausing polls" }
         return HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.yellow).font(.caption)
             Text("GitHub rate limit reached — \(countdownLabel)").font(.caption).foregroundColor(.secondary)

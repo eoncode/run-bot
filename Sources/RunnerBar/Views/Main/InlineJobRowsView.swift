@@ -1,8 +1,17 @@
 // InlineJobRowsView.swift
 // RunnerBar
-// swiftlint:disable redundant_discardable_let
 import RunnerBarCore
 import SwiftUI
+
+// MARK: - Set toggle helper
+/// Set mutation helpers used internally by `InlineJobRowsView`.
+private extension Set {
+    /// Removes `member` if present; inserts it if absent.
+    mutating func toggle(_ member: Element) {
+        if contains(member) { remove(member) } else { insert(member) }
+    }
+}
+
 // MARK: - TreeLineLeader
 /// Vertical tree-connector line drawn to the left of a job or step row.
 /// Renders a straight bar with an elbow arrow at the bottom for the last item.
@@ -19,7 +28,7 @@ private struct TreeLineLeader: View {
     private let elbowWidth: CGFloat = 10
     /// Size of the arrowhead at the elbow tip.
     private let arrowSize: CGFloat = 4
-    /// The body property.
+    /// Draws the vertical bar and elbow arrow using a `Canvas`.
     var body: some View {
         Canvas { ctx, size in
             let midY = size.height / 2
@@ -50,7 +59,7 @@ private struct TreeLineLeader: View {
 private struct JobRunnerTypeIcon: View {
     /// The runner name string from the job, used to detect self-hosted runners.
     let runnerName: String?
-    /// The body property.
+    /// Renders a desktop or cloud SF Symbol based on the runner type.
     var body: some View {
         let isLocal = runnerName?.lowercased().contains("self-hosted") == true
         Image(systemName: isLocal ? "desktopcomputer" : "cloud")
@@ -65,7 +74,7 @@ private struct JobRunnerTypeIcon: View {
 private struct JobInlineProgress: View {
     /// Completion fraction in the range 0.0–1.0.
     let progress: Double
-    /// The body property.
+    /// Renders a capsule progress bar proportional to `progress`.
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -98,7 +107,7 @@ private struct StepRowView: View {
     // Step leader indent = 44 - 35 = 9.
     /// Horizontal indent aligning the step tree bar under the job status dot.
     private let dotIndent: CGFloat = 9
-    /// The body property.
+    /// Lays out the tree connector and step content side by side.
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             TreeLineLeader(isLast: isLast, indent: dotIndent)
@@ -180,7 +189,7 @@ private struct JobRowCard: View {
     private var completedSteps: Int {
         job.steps.filter { $0.conclusion != nil || $0.status == .completed }.count
     }
-    /// The body property.
+    /// Renders the job tree connector, card header, and optional expanded step list.
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             TreeLineLeader(isLast: isLast && !isExpanded, indent: dotIndent)
@@ -280,7 +289,7 @@ struct InlineJobRowsView: View {
     @State private var expandedJobIDs: Set<Int> = []
     /// A stable snapshot of `tick` captured at view evaluation time, used to key job row identity.
     private var tickSnapshot: Int { tick }
-    /// The body property.
+    /// Renders the list of job cards, gated on the panel being open.
     var body: some View {
         Group {
             if panelVisibilityState.isOpen {
@@ -293,13 +302,7 @@ struct InlineJobRowsView: View {
                             isLast: index == jobs.count - 1,
                             group: group,
                             isExpanded: expandedJobIDs.contains(job.id),
-                            onToggle: {
-                                if expandedJobIDs.contains(job.id) {
-                                    expandedJobIDs.remove(job.id)
-                                } else {
-                                    expandedJobIDs.insert(job.id)
-                                }
-                            },
+                            onToggle: { expandedJobIDs.toggle(job.id) },
                             onStepTap: { step in onStepTap(job, step) }
                         )
                         .id("\(job.id)-\(tickSnapshot)")
@@ -311,7 +314,10 @@ struct InlineJobRowsView: View {
             }
         }
     }
-    /// Resolves the display status for a single job.
+    // TODO: jobStatus(for:) duplicates conclusion→RBStatus mapping that also exists in
+    // ActionRowView. Consider moving to an extension on ActiveJob or RBStatus in a future
+    // logic-pass batch so both call sites share one source of truth.
+    /// Resolves the display ``RBStatus`` for a single job from its conclusion and status fields.
     private func jobStatus(for job: ActiveJob) -> RBStatus {
         if let conclusion = job.conclusion {
             switch conclusion {
@@ -328,4 +334,3 @@ struct InlineJobRowsView: View {
         }
     }
 }
-// swiftlint:enable redundant_discardable_let

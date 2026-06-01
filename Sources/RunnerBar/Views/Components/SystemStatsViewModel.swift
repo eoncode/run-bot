@@ -8,7 +8,7 @@ import RunnerBarCore
 // MARK: - RingBuffer
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {
-    /// The storage property.
+    /// Backing array storing samples in insertion order.
     private var storage: [Double]
 
     /// Creates a new instance.
@@ -41,22 +41,23 @@ final class SystemStatsViewModel: ObservableObject {
     /// Rolling 60-sample history for disk-usage sparkline charts.
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
 
-    /// The timer property.
     /// Safety: only mutated on MainActor (start/stop). Captured as a local `let` in
     /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
     /// must be called on the thread that installed the timer (main run loop).
     nonisolated(unsafe) private var timer: Timer?
-    /// The prevCPUInfo property.
+    /// Previous `processor_info_array_t` sample, retained between `sampleCPU()` calls to
+    /// compute per-core deltas. Freed in `deinit` via `vm_deallocate`.
     /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
-    /// The prevNumCPUInfo property.
+    /// Entry count of the `prevCPUInfo` buffer, required by `vm_deallocate` for correct
+    /// deallocation size. Updated atomically alongside `prevCPUInfo` in `sampleCPU()`.
     /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
-    /// Creates a new instance.
+    /// Creates a new instance; all properties are default-initialised.
     init() {
         // No custom initialisation needed; all properties have defaults.
     }
@@ -116,6 +117,7 @@ final class SystemStatsViewModel: ObservableObject {
 
     // MARK: CPU (Mach host_processor_info)
     // swiftlint:disable:next function_body_length
+    // Mach host_processor_info diff loop — cannot be extracted without losing clarity.
     /// Reads per-core tick counts via `host_processor_info` and returns the
     /// aggregate CPU utilisation as a percentage (0–100).
     /// Diffs against the previous sample stored in `prevCPUInfo`; returns `0` on the first call.
@@ -196,6 +198,8 @@ final class SystemStatsViewModel: ObservableObject {
     // MARK: Disk (FileManager)
     /// Reads total and free bytes for the root volume via `FileManager` and returns used/total in GB.
     /// - Returns: `(used, total)` in GB, or `(0, 0)` if the file-system query fails.
+    /// - Note: Casts to `Int64`; safe for volumes up to ~9.2 EB. If Apple Silicon Macs ever
+    ///   ship volumes exceeding `Int64.max`, migrate to `UInt64` casts here.
     private func sampleDisk() -> (used: Double, total: Double) {
         guard
             let attrs = try? FileManager.default.attributesOfFileSystem(forPath: Self.rootVolumePath),
