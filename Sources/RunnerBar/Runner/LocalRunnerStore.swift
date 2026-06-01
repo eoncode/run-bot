@@ -4,19 +4,12 @@ import Combine
 import Foundation
 
 // MARK: - LocalRunnerStore
-//
-// Owns the list of locally-installed GitHub Actions runner agents.
-// Hydrates from installPath/.runner JSON, marks live services via launchctl,
-// then enriches with GitHub API data (status, busy, labels, group).
-//
-// Polling:
-//   • refresh() is called by RunnerViewModel on every displayTick (≈1 Hz).
-//   • The heavy work (disk I/O + API calls) runs on a background queue.
-//   • isScanning prevents concurrent refreshes.
 
 /// Owns the list of locally-installed GitHub Actions runner agents.
 /// Hydrates from `installPath/.runner` JSON, marks live services via launchctl,
 /// then enriches with GitHub API data (status, busy, labels, group).
+/// A single refresh cycle runs at a time; `isScanning` reflects in-flight state
+/// to views and prevents concurrent refreshes.
 @MainActor
 final class LocalRunnerStore: ObservableObject {
     // MARK: - Shared singleton
@@ -58,6 +51,8 @@ final class LocalRunnerStore: ObservableObject {
     }
 
     /// Registers a new runner by name and install path.
+    /// Convenience alias for `register(name:installPath:)` with view-friendly parameter labels
+    /// so SwiftUI call sites read `store.add(runnerName: x, installPath: y)` naturally.
     func add(runnerName: String, installPath: String) {
         register(name: runnerName, installPath: installPath)
     }
@@ -105,11 +100,20 @@ final class LocalRunnerStore: ObservableObject {
     // MARK: - Refresh
 
     /// Hydrates runners from disk, marks live launchctl services, then enriches via GitHub API.
+    ///
+    /// Called by `RunnerViewModel.reload()`, which is triggered by Combine sinks in
+    /// `AppDelegate+PanelSetup` (on `RunnerStore.didUpdate` and `LocalRunnerStore.$runners`).
     /// Must be called on the main actor; heavy work is dispatched to a background queue internally.
+    /// `isScanning` guards against concurrent refresh cycles — a new call is a no-op while one
+    /// is already in flight.
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
         let index = runnerIndex
+        // ⚠️ DispatchQueue.global + DispatchQueue.main.async: safe today but a Swift 6 migration
+        // candidate — tracked in #1077. Replace with a plain Task { } launched from this
+        // @MainActor context: background work runs off-actor during `await`, and the
+        // continuation returns to @MainActor automatically — no Task.detached needed.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
 
