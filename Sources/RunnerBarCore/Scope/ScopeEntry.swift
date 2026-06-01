@@ -9,7 +9,7 @@ import Foundation
 /// `scope` is either `"owner/repo"` (repository) or `"myorg"` (organisation).
 /// `isEnabled` controls whether `RunnerStore` polls this scope; disabled scopes
 /// are retained in the list but silently skipped during fetch.
-public struct ScopeEntry: Identifiable, Codable, Equatable, Hashable {
+public struct ScopeEntry: Identifiable, Codable, Equatable, Hashable, Sendable {
     /// Stable identity for use in SwiftUI lists and `Codable` round-trips.
     public let id: UUID
     /// The GitHub scope string — either `"owner/repo"` or an org name.
