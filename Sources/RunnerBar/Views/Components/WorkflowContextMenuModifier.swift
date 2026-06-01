@@ -13,19 +13,24 @@ private func copyToPasteboard(_ text: String) {
 }
 
 // MARK: - WorkflowContextMenuModifier
-/// `ViewModifier` that attaches a workflow-level right-click context menu to an `ActionRowView`.
-/// Actions: re-run failed, re-run all (concluded only); cancel (in-progress only);
-/// copy log, show workflow on GitHub, show commit on GitHub (always).
+// Adds a right-click context menu to an ActionRowView (workflow level).
+// Actions mirror those in ActionDetailView's header bar:
+//   re-run failed (concluded only)
+//   re-run all (concluded only)
+//   cancel (in_progress only)
+//   copy log (always)
+//   show workflow file on GitHub (always, opens first run's html_url)
+//   show GitHub SHA (always, opens commit)
 private struct WorkflowContextMenuModifier: ViewModifier {
     /// The workflow action group this menu acts on.
     let group: WorkflowActionGroup
 
-    /// Wraps `content` in a `contextMenu` populated by `menuItems`.
+    /// Wraps `content` with a right-click context menu.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
     }
 
-    /// Menu item views for the workflow-level context menu.
+    /// Context menu items for workflow-level actions.
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = group.groupStatus == .completed
@@ -108,21 +113,19 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 }
 
 // MARK: - JobContextMenuModifier
-/// `ViewModifier` that attaches a job-level right-click context menu to a `JobRowCard`.
-/// Actions: re-run job (concluded only); cancel (in-progress only); copy log;
-/// show job on GitHub (always).
+// Adds a right-click context menu to a JobRowCard (job level).
 private struct JobContextMenuModifier: ViewModifier {
-    /// The individual job this menu acts on.
+    /// The job this menu acts on.
     let job: ActiveJob
-    /// The parent workflow action group, used for cancel and scope resolution.
+    /// The parent workflow action group, used for run-level cancel.
     let group: WorkflowActionGroup
 
-    /// Wraps `content` in a `contextMenu` populated by `menuItems`.
+    /// Wraps `content` with a right-click context menu.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
     }
 
-    /// Menu item views for the job-level context menu.
+    /// Context menu items for job-level actions.
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
@@ -183,7 +186,6 @@ private struct JobContextMenuModifier: ViewModifier {
 }
 
 // MARK: - View extensions
-/// Convenience modifiers for attaching workflow, job, and step context menus to any `View`.
 extension View {
     /// Attaches a workflow-level right-click context menu (re-run, cancel, copy log, open on GitHub).
     func workflowContextMenu(group: WorkflowActionGroup) -> some View {
@@ -202,15 +204,13 @@ extension View {
 }
 
 // MARK: - StepContextMenuModifier
-/// `ViewModifier` that attaches a step-level right-click context menu.
-/// Actions: copy step name; view log (via `onTap`).
 private struct StepContextMenuModifier: ViewModifier {
-    /// The step whose name can be copied and whose log can be viewed.
+    /// The step this menu acts on.
     let step: JobStep
-    /// Called when the user selects "View Log" from the context menu.
+    /// Called when the user selects "View Log".
     let onTap: () -> Void
 
-    /// Wraps `content` in a `contextMenu` with copy-name and view-log actions.
+    /// Wraps `content` with a right-click context menu for step-level actions.
     func body(content: Content) -> some View {
         content.contextMenu {
             Button {

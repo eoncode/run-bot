@@ -23,13 +23,13 @@ import SwiftUI
 // ❌ NEVER add .background() or NSVisualEffectView at this level.
 /// Root panel view rendered inside the NSPopover.
 struct PanelMainView: View {
-    /// The view model driving workflow and runner data displayed in the panel.
+    /// The view model driving runner and workflow data.
     @ObservedObject var store: RunnerViewModel
     /// Called when user taps a step row.
     let onStepTap: (ActiveJob, JobStep) -> Void
-    /// Called when the user taps the settings button in the panel header.
+    /// Called when the user taps the settings gear button.
     let onSelectSettings: () -> Void
-    /// Tracks panel open/close state; injected via the environment.
+    /// Panel open/close and transient-hide state from the environment.
     @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
     /// Whether the user has a stored GitHub token.
     @State private var isAuthenticated = (githubToken() != nil)
@@ -73,6 +73,7 @@ struct PanelMainView: View {
         }
     }
 
+    /// Root body — header, optional rate-limit banner, local runner rows, and the scrollable actions section.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelHeaderView(
@@ -113,7 +114,7 @@ struct PanelMainView: View {
         .onChange(of: store.actions) { _, _ in visibleCount = 10 }
     }
 
-    /// Scrollable container for the actions section.
+    /// Scrollable container for the actions section, capped at `screenScrollMaxHeight`.
     private var actionsSectionScrollable: some View {
         ScrollView(.vertical, showsIndicators: true) {
             actionsSectionContent
@@ -121,7 +122,7 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
 
-    /// Content of the actions section including workflow rows and load-more.
+    /// Content of the actions section including workflow rows and the load-more button.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -140,7 +141,7 @@ struct PanelMainView: View {
         .padding(.vertical, 4)
     }
 
-    /// Button to load the next batch of workflow rows.
+    /// Button to reveal the next batch of up to 10 workflow rows.
     @ViewBuilder private var loadMoreButton: some View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
@@ -153,8 +154,8 @@ struct PanelMainView: View {
         }
     }
 
-    /// Starts the 1-second timer that increments `displayTick`.
-    /// SwiftUI view structs cannot form retain cycles, so no [weak self] capture is needed.
+    /// Starts the 1-second repeating timer that increments `displayTick`.
+    /// SwiftUI view structs cannot form retain cycles, so no `[weak self]` capture is needed.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
         displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -162,7 +163,7 @@ struct PanelMainView: View {
         }
     }
 
-    /// Invalidates and clears the displayTick timer.
+    /// Invalidates and nils the `displayTick` timer.
     private func stopDisplayTickTimer() {
         displayTickTimer?.invalidate()
         displayTickTimer = nil
