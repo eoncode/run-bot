@@ -14,9 +14,9 @@ final class AppPreferencesStore: ObservableObject {
     /// UserDefaults key constants used by `AppPreferencesStore`.
     private enum Key {
         /// Key for the polling interval setting.
-        static let pollingInterval    = "settings.pollingInterval"
+        static let pollingInterval   = "settings.pollingInterval"
         /// Key for the show-dimmed-runners toggle.
-        static let showDimmedRunners  = "settings.showDimmedRunners"
+        static let showDimmedRunners = "settings.showDimmedRunners"
     }
 
     /// Valid range for the polling interval in seconds. Minimum 10 s, maximum 300 s.
@@ -49,17 +49,21 @@ final class AppPreferencesStore: ObservableObject {
     }
 
     /// Private initialiser — use `shared`.
+    ///
+    /// Registers factory defaults first so both `integer(forKey:)` and `bool(forKey:)`
+    /// return the intended values on first launch without requiring `object(forKey:) == nil`
+    /// guards. This matches the pattern used by `NotificationPreferences`.
     private init() {
+        // #511: Default polling interval changed from 30 s to 15 s for more
+        // responsive monitoring. Registered here so UserDefaults returns 15
+        // on first launch rather than 0.
+        UserDefaults.standard.register(defaults: [
+            Key.pollingInterval:   15,
+            Key.showDimmedRunners: true,
+        ])
         let stored = UserDefaults.standard.integer(forKey: Key.pollingInterval)
-        // #511: Default changed from 30 s to 15 s for more responsive monitoring.
-        let raw = stored > 0 ? stored : 15
-        pollingInterval = raw.clamped(to: Self.pollingRange)
-
-        if UserDefaults.standard.object(forKey: Key.showDimmedRunners) == nil {
-            showDimmedRunners = true
-        } else {
-            showDimmedRunners = UserDefaults.standard.bool(forKey: Key.showDimmedRunners)
-        }
+        pollingInterval   = stored.clamped(to: Self.pollingRange)
+        showDimmedRunners = UserDefaults.standard.bool(forKey: Key.showDimmedRunners)
     }
 }
 
