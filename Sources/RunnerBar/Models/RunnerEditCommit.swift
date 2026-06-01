@@ -14,14 +14,12 @@ enum CommitResult {
 
     /// `true` when the result has no errors.
     var isSuccess: Bool {
-        if case .success = self { return true }
-        return false
+        if case .success = self { true } else { false }
     }
 
     /// Convenience accessor for the error messages, empty on success.
     var errors: [String] {
-        if case .failure(let msgs) = self { return msgs }
-        return []
+        if case .failure(let msgs) = self { msgs } else { [] }
     }
 }
 
@@ -143,12 +141,11 @@ private func finalize(_ errors: [String], _ completion: @escaping @MainActor (Co
 /// `patches` accepts mixed `String` and `Bool` values via `Any` — this is intentional to allow
 /// updating both `workFolder` (String) and `disableUpdate` (Bool) in a single read-modify-write.
 private func patchRunnerJSONMulti(installPath: String, patches: [String: Any]) -> Bool {
-    let path = installPath + "/.runner"
-    let url = URL(fileURLWithPath: path)
+    let url = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
     guard let data = try? Data(contentsOf: url),
           var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else {
-        log("patchRunnerJSONMulti › failed to read \(path)")
+        log("patchRunnerJSONMulti › failed to read \(url.path)")
         return false
     }
     for (key, value) in patches { json[key] = value }
@@ -158,7 +155,7 @@ private func patchRunnerJSONMulti(installPath: String, patches: [String: Any]) -
     }
     do {
         try newData.write(to: url, options: .atomic)
-        log("patchRunnerJSONMulti › wrote keys=\(patches.keys.sorted()) to \(path)")
+        log("patchRunnerJSONMulti › wrote keys=\(patches.keys.sorted()) to \(url.path)")
         return true
     } catch {
         log("patchRunnerJSONMulti › write error: \(error)")
@@ -170,18 +167,17 @@ private func patchRunnerJSONMulti(installPath: String, patches: [String: Any]) -
 /// Removes the file when the relevant field is empty; writes otherwise.
 private func writeProxyFiles(installPath: String, url: String, user: String, password: String) -> Bool {
     var ok = true
-    let proxyFilePath = installPath + "/.proxy"
-    let credPath = installPath + "/.proxycredentials"
+    let base = URL(fileURLWithPath: installPath)
+    let proxyURL = base.appendingPathComponent(".proxy")
+    let credURL = base.appendingPathComponent(".proxycredentials")
 
     // .proxy — contains the raw proxy URL on a single line
     do {
         if url.isEmpty {
-            if FileManager.default.fileExists(atPath: proxyFilePath) {
-                try FileManager.default.removeItem(atPath: proxyFilePath)
-                log("writeProxyFiles › removed .proxy")
-            }
+            try? FileManager.default.removeItem(at: proxyURL)
+            log("writeProxyFiles › removed .proxy")
         } else {
-            try url.write(toFile: proxyFilePath, atomically: true, encoding: .utf8)
+            try url.write(to: proxyURL, atomically: true, encoding: .utf8)
             log("writeProxyFiles › wrote .proxy")
         }
     } catch {
@@ -192,12 +188,10 @@ private func writeProxyFiles(installPath: String, url: String, user: String, pas
     // .proxycredentials — two-line format: line 1 = username, line 2 = password
     do {
         if user.isEmpty && password.isEmpty {
-            if FileManager.default.fileExists(atPath: credPath) {
-                try FileManager.default.removeItem(atPath: credPath)
-                log("writeProxyFiles › removed .proxycredentials")
-            }
+            try? FileManager.default.removeItem(at: credURL)
+            log("writeProxyFiles › removed .proxycredentials")
         } else {
-            try "\(user)\n\(password)".write(toFile: credPath, atomically: true, encoding: .utf8)
+            try "\(user)\n\(password)".write(to: credURL, atomically: true, encoding: .utf8)
             log("writeProxyFiles › wrote .proxycredentials")
         }
     } catch {

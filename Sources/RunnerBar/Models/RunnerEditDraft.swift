@@ -41,7 +41,7 @@ struct RunnerEditDraft: Equatable {
         // linux, macos, windows. Only custom labels survive this filter.
         self.labelsText = runner.labels
             .filter { label in
-                !["self-hosted"].contains(label)
+                label != "self-hosted"
                     && !label.lowercased().contains("x64")
                     && !label.lowercased().contains("arm64")
                     && !label.lowercased().contains("linux")
@@ -102,8 +102,8 @@ struct RunnerEditDraft: Equatable {
     /// the return type is preserved for future callers.
     @discardableResult
     mutating func loadRunnerJSON(installPath: String) -> [String: Any]? {
-        let path = installPath + "/.runner"
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        let url = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
+        guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         let disableUpdate = json["disableUpdate"] as? Bool ?? false
@@ -119,16 +119,19 @@ struct RunnerEditDraft: Equatable {
     /// `.proxycredentials` — two-line format: line 1 = username, line 2 = password.
     /// Missing files leave the corresponding draft fields as empty strings.
     private mutating func loadProxy(installPath: String) {
-        let proxyFilePath = installPath + "/.proxy"
-        proxyUrl = (try? String(contentsOfFile: proxyFilePath, encoding: .utf8))
+        let base = URL(fileURLWithPath: installPath)
+        let proxyURL = base.appendingPathComponent(".proxy")
+        let credURL = base.appendingPathComponent(".proxycredentials")
+
+        proxyUrl = (try? String(contentsOf: proxyURL, encoding: .utf8))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
 
-        let credPath = installPath + "/.proxycredentials"
-        if let credContent = try? String(contentsOfFile: credPath, encoding: .utf8) {
+        if let credContent = try? String(contentsOf: credURL, encoding: .utf8) {
             let lines = credContent.components(separatedBy: "\n")
             proxyUser = lines.first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-            proxyPassword = lines.dropFirst().first
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            proxyPassword = lines.indices.contains(1)
+                ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
         }
     }
 }
