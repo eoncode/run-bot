@@ -112,8 +112,12 @@ final class ScopeStore: ObservableObject {
 
     /// Toggles the `isEnabled` flag for the entry with the given ID.
     /// Does NOT send `didMutate` — enable/disable is not a structural change.
-    /// Publishes `objectWillChange` explicitly so `RunnerStore`'s Combine
-    /// subscription triggers a polling restart on toggle.
+    ///
+    /// `ScopeEntry` is a struct, so `entries[idx].isEnabled = enabled` replaces
+    /// the array value and `@Published` fires `objectWillChange` automatically.
+    /// The explicit `objectWillChange.send()` below is a belt-and-suspenders call
+    /// that ensures `RunnerStore`'s Combine subscription triggers a polling restart
+    /// even if the value-type contract changes in future.
     func setEnabled(_ id: UUID, _ enabled: Bool) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].isEnabled = enabled
