@@ -8,6 +8,7 @@ import RunnerBarCore
 // MARK: - RingBuffer
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {
+    /// Backing array storing samples in insertion order.
     private var storage: [Double]
 
     /// Creates a new instance.
@@ -48,6 +49,7 @@ final class SystemStatsViewModel: ObservableObject {
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
     /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
+    /// Tracks the count of the previously sampled `processor_info_array_t` entries.
     nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
