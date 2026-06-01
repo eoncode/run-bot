@@ -53,6 +53,9 @@ struct PanelMainView: View {
     }
 
     /// Local runners currently active in an in-progress workflow.
+    ///
+    /// Matches active job runner names and busy runner IDs/names from `RunnerStore`
+    /// against the local runner list. Empty when no workflows are in progress.
     private var activeLocalRunners: [RunnerModel] {
         guard store.actions.contains(where: { $0.groupStatus == .inProgress }) else { return [] }
         let activeNamesFromJobs = Set(
@@ -115,7 +118,7 @@ struct PanelMainView: View {
         .frame(maxHeight: screenScrollMaxHeight)
     }
 
-    /// Content of the actions section including workflow rows and the load-more button.
+    /// Content of the actions section: workflow rows and the load-more button.
     private var actionsSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeaderLabel(title: "Workflows")
@@ -134,7 +137,8 @@ struct PanelMainView: View {
         .padding(.vertical, 4)
     }
 
-    /// Button to reveal the next batch of up to 10 workflow rows.
+    /// Button that reveals the next batch of up to 10 workflow rows.
+    /// Hidden when all workflows are already visible.
     @ViewBuilder private var loadMoreButton: some View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
@@ -148,6 +152,7 @@ struct PanelMainView: View {
     }
 
     /// Starts the 1-second repeating timer that increments `displayTick`.
+    /// Calls `stopDisplayTickTimer()` first to avoid duplicate timers.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
         displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
@@ -161,7 +166,10 @@ struct PanelMainView: View {
         displayTickTimer = nil
     }
 
-    /// Banner shown when the GitHub API rate limit is active.
+    /// Rate-limit warning banner showing a countdown to API reset.
+    ///
+    /// Reads `displayTick` as a SwiftUI dependency so the countdown label
+    /// refreshes every second without an explicit `@Published` on the formatted string.
     private var rateLimitBanner: some View {
         _ = displayTick // swiftlint:disable:this redundant_discardable_let
         let countdownLabel: String

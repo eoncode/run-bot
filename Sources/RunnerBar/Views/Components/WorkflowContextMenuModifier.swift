@@ -4,8 +4,6 @@
 import RunnerBarCore
 import SwiftUI
 
-// swiftlint:disable missing_docs
-
 // MARK: - Pasteboard helper
 /// Copies `text` to the general pasteboard on the main thread.
 /// Extracted to avoid duplicated clipboard-write blocks across context menu modifiers.
@@ -15,17 +13,16 @@ private func copyToPasteboard(_ text: String) {
 }
 
 // MARK: - WorkflowContextMenuModifier
-// Adds a right-click context menu to an ActionRowView (workflow level).
-// Actions mirror those in ActionDetailView's header bar:
-//   re-run failed (concluded only)
-//   re-run all (concluded only)
-//   cancel (in_progress only)
-//   copy log (always)
-//   show workflow file on GitHub (always, opens first run's html_url)
-//   show GitHub SHA (always, opens commit)
+/// Adds a right-click context menu to an `ActionRowView` (workflow level).
+///
+/// Actions mirror those in `ActionDetailView`'s header bar:
+/// re-run failed (concluded only), re-run all (concluded only),
+/// cancel (in_progress only), copy log (always),
+/// show workflow file on GitHub (always), show GitHub SHA (always).
 private struct WorkflowContextMenuModifier: ViewModifier {
     let group: WorkflowActionGroup
 
+    /// Attaches the workflow context menu to the given content view.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
     }
@@ -109,11 +106,15 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 }
 
 // MARK: - JobContextMenuModifier
-// Adds a right-click context menu to a JobRowCard (job level).
+/// Adds a right-click context menu to a `JobRowCard` (job level).
+///
+/// Actions: re-run job (concluded only), cancel (in_progress only),
+/// copy log (always), show job on GitHub (always).
 private struct JobContextMenuModifier: ViewModifier {
     let job: ActiveJob
     let group: WorkflowActionGroup
 
+    /// Attaches the job context menu to the given content view.
     func body(content: Content) -> some View {
         content.contextMenu { menuItems }
     }
@@ -177,24 +178,31 @@ private struct JobContextMenuModifier: ViewModifier {
 
 // MARK: - View extensions
 extension View {
+    /// Attaches a workflow-level right-click context menu to this view.
     func workflowContextMenu(group: WorkflowActionGroup) -> some View {
         modifier(WorkflowContextMenuModifier(group: group))
     }
 
+    /// Attaches a job-level right-click context menu to this view.
     func jobContextMenu(job: ActiveJob, group: WorkflowActionGroup) -> some View {
         modifier(JobContextMenuModifier(job: job, group: group))
     }
 
+    /// Attaches a step-level right-click context menu to this view.
     func stepContextMenu(step: JobStep, onTap: @escaping () -> Void) -> some View {
         modifier(StepContextMenuModifier(step: step, onTap: onTap))
     }
 }
 
 // MARK: - StepContextMenuModifier
+/// Adds a right-click context menu to a step row.
+///
+/// Actions: copy step name, view step log.
 private struct StepContextMenuModifier: ViewModifier {
     let step: JobStep
     let onTap: () -> Void
 
+    /// Attaches the step context menu to the given content view.
     func body(content: Content) -> some View {
         content.contextMenu {
             Button {
@@ -209,4 +217,3 @@ private struct StepContextMenuModifier: ViewModifier {
         }
     }
 }
-// swiftlint:enable missing_docs

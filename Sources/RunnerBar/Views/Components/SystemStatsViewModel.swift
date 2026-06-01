@@ -41,22 +41,27 @@ final class SystemStatsViewModel: ObservableObject {
     /// Rolling 60-sample history for disk-usage sparkline charts.
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
 
-    /// The timer property.
+    /// Repeating 2-second timer that drives `sample()` calls.
+    ///
     /// Safety: only mutated on MainActor (start/stop). Captured as a local `let` in
     /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
     /// must be called on the thread that installed the timer (main run loop).
     nonisolated(unsafe) private var timer: Timer?
-    /// The prevCPUInfo property.
+
+    /// Previous per-core tick counts from the last `host_processor_info` call.
+    ///
     /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
-    /// The prevNumCPUInfo property.
+
+    /// Element count of the `prevCPUInfo` buffer, needed for `vm_deallocate`.
+    ///
     /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
+
     /// Root volume path used for disk-space queries.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
-    /// Creates a new instance.
     init() {
         // No custom initialisation needed; all properties have defaults.
     }
