@@ -288,8 +288,12 @@ struct AddRunnerSheet: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Choose…") { pickExistingFolder() }
-                        .controlSize(.small)
+                    Button {
+                        pickExistingFolder()
+                    } label: {
+                        Text("Choose…")
+                    }
+                    .controlSize(.small)
                 }
                 .padding(8)
                 .background(Color(nsColor: .windowBackgroundColor))
