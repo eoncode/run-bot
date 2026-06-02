@@ -30,19 +30,29 @@ import SwiftUI
 /// See HEIGHT/WIDTH CONTRACT comments above before making layout changes.
 struct SettingsView: View {
     // MARK: - Inputs
+    /// Callback invoked when the user taps the back button.
     let onBack: () -> Void
+    /// The shared runner view-model; observed for remote runner list updates.
     @ObservedObject var store: RunnerViewModel
 
     // MARK: - Observed stores
+    /// App-wide preferences (notifications, update channel, etc.).
     @ObservedObject private var settings = AppPreferencesStore.shared
+    /// Notification opt-in preferences per scope.
     @ObservedObject private var notifications = NotificationPreferences.shared
+    /// Index of locally-installed self-hosted runners.
     @ObservedObject private var localRunnerStore = LocalRunnerStore.shared
+    /// Registered remote runner scopes (org / repo URLs).
     @ObservedObject private var scopeStore = ScopeStore.shared
 
     // MARK: - Local UI state
+    /// Mirrors `LoginItem.isEnabled`; toggled by the Launch at Login switch.
     @State private var launchAtLogin = LoginItem.isEnabled
+    /// `true` when a valid OAuth token is stored in Keychain.
     @State private var isOAuthAuthenticated = (Keychain.token != nil)
+    /// `true` when a CLI token (GH_TOKEN / GITHUB_TOKEN) is present but no OAuth token.
     @State private var isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
+    /// `true` while the OAuth sign-in flow is in progress.
     @State private var isSigningIn = false
     @State private var hasLoadedOnce = false
     @State private var runnerPendingRemoval: RunnerModel?
@@ -336,7 +346,7 @@ struct SettingsView: View {
     // Current pattern (Task + Task.detached) matches LocalRunnerStore.refresh() as the
     // intermediate step: background work is off-actor, main-actor mutations happen in the
     // Task continuation which returns to @MainActor automatically.
-    private func performResume(runner: RunnerModel) {
+    @MainActor private func performResume(runner: RunnerModel) {
         log("SettingsView > performResume called runner=\(runner.runnerName)")
         LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
         Task {
@@ -358,7 +368,7 @@ struct SettingsView: View {
         }
     }
 
-    private func performStop(runner: RunnerModel) {
+    @MainActor private func performStop(runner: RunnerModel) {
         log("SettingsView > performStop called runner=\(runner.runnerName)")
         LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
         Task {
@@ -631,15 +641,19 @@ struct SettingsView: View {
         OAuthService.shared.signOut()
     }
 
-    private func performRemoval() {
+    @MainActor private func performRemoval() {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil
-        LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
+        removeErrorMessage = nil
         Task {
             let ok = await Task.detached(priority: .userInitiated) {
                 RunnerLifecycleService.shared.remove(runner: runner)
             }.value
-            if !ok { removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs." }
+            if ok {
+                LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
+            } else {
+                removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs."
+            }
             LocalRunnerStore.shared.refresh()
         }
     }
