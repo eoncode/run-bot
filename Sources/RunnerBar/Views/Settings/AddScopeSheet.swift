@@ -92,6 +92,9 @@ struct AddScopeSheet: View {
                         // Reset picker selection to the first item in the new segment (or "" if not
                         // loaded yet). Also clear manualScope so the text field doesn't show stale
                         // input from the previous segment when falling back to manual mode.
+                        // Intentional: any manual text typed in the previous segment is discarded
+                        // on switch. The manual-entry fallback is only reached when the GitHub
+                        // fetch fails, making a stale roundtrip rare in practice.
                         selectedScope = pickerItems.first ?? ""
                         manualScope = ""
                         showScopeSelector = false
@@ -206,6 +209,9 @@ struct AddScopeSheet: View {
     /// Falls back to manual text entry when no token is present or the fetch returns empty results.
     /// Pattern matches `LocalRunnerStore.refresh()`: background work is off-actor via
     /// `Task.detached`, then the `Task` continuation returns to `@MainActor` automatically.
+    /// TODO: fetchUserOrgs() and fetchUserRepos() are called sequentially inside the detached
+    /// task. Total latency is T(orgs) + T(repos). Consider parallel Tasks once the call
+    /// chain supports structured concurrency (#1077).
     @MainActor private func fetchScopeOptions() {
         guard githubToken() != nil else {
             log("AddScopeSheet \u{203a} no token \u{2014} falling back to text field")

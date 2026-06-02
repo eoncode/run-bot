@@ -81,20 +81,18 @@ final class LocalRunnerStore: ObservableObject {
     /// Rolls back an `optimisticallyRemove` by re-registering the runner and restoring it
     /// to the published list. Call this when the underlying removal operation fails.
     /// Already runs on the main actor via @MainActor class isolation.
-    ///
-    /// - Note: If `runner.installPath` is nil the index entry cannot be restored; the runner
-    ///   is still appended to `runners` for immediate UI consistency, but the subsequent
-    ///   `refresh()` call in `performRemoval` will drop it again (index is the source of truth).
-    ///   In practice every runner that reaches the removal flow has an installPath — this
-    ///   guard is a defensive fallback, not an expected code path.
     func optimisticallyRestore(_ runner: RunnerModel) {
         if let installPath = runner.installPath {
             register(name: runner.runnerName, installPath: installPath)
         } else {
-            // Cannot restore index entry without installPath — the runner will disappear
-            // from the UI again once the subsequent refresh() rebuilds from the index.
-            log("LocalRunnerStore > optimisticallyRestore: no installPath for '\(runner.runnerName)' — index entry not restored")
+            // installPath is nil — the index entry cannot be restored, so the subsequent
+            // refresh() call will drop this runner again. Log so the silent failure is
+            // diagnosable. Callers should guard against nil installPath before calling
+            // optimisticallyRemove to avoid reaching this path.
+            log("LocalRunnerStore > optimisticallyRestore: no installPath for \(runner.runnerName) — skipping index restore; runner will be lost after refresh()")
         }
+        // NOTE: runner is appended at the end of the list. refresh() will re-sort
+        // alphabetically on the next cycle, so the temporary ordering is fine.
         if !runners.contains(where: { $0.runnerName == runner.runnerName }) {
             runners.append(runner)
         }
