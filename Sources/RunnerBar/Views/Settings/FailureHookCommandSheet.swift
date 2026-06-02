@@ -63,6 +63,7 @@ struct FailureHookCommandSheet: View {
 
 // MARK: - Subviews
 
+/// View subcomponents: header, editor, pill bar, and footer.
 extension FailureHookCommandSheet {
     /// Header block: sheet title and usage description.
     var headerSection: some View {
@@ -153,6 +154,7 @@ extension FailureHookCommandSheet {
 
 // MARK: - Actions
 
+/// Action handlers: save, test, and variable insertion.
 extension FailureHookCommandSheet {
     /// Persists `commandText` to `ScopePreferencesStore` and dismisses the sheet.
     private func save() {
@@ -224,4 +226,3 @@ struct FlowLayout: Layout {
         }
     }
 }
-

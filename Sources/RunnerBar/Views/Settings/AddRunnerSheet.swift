@@ -34,7 +34,9 @@ private enum GitHubURIs {
 ///
 /// Requires a GitHub token for "Add new" (OAuth sign-in, GH_TOKEN, or GITHUB_TOKEN).
 struct AddRunnerSheet: View {
+    /// Controls whether the sheet is shown.
     @Binding var isPresented: Bool
+    /// Called when registration or import completes successfully.
     let onComplete: () -> Void
 
     // MARK: - Add Mode
@@ -45,9 +47,11 @@ struct AddRunnerSheet: View {
         case addNew      = "Add new"
         /// Imports a runner folder that was configured outside of RunnerBar.
         case addExisting = "Add pre-existing"
+        /// Stable identity backed by `rawValue`.
         var id: String { rawValue }
     }
 
+    /// Whether the user is adding a new runner or importing a pre-existing one.
     @State private var addMode: AddMode = .addNew
 
     // MARK: Scope state (Add new only)
@@ -58,21 +62,32 @@ struct AddRunnerSheet: View {
         case repo = "Repository"
         /// Runner registered at organisation level.
         case org  = "Organisation"
+        /// Stable identity backed by `rawValue`.
         var id: String { rawValue }
     }
 
+    /// Whether the runner is repo-scoped or org-scoped.
     @State private var scopeType: ScopeType = .repo
+    /// Selected repository slug (used when `scopeType == .repo`).
     @State private var selectedRepo = ""
+    /// Selected organisation name (used when `scopeType == .org`).
     @State private var selectedOrg  = ""
+    /// Repository slugs fetched from GitHub for the picker.
     @State private var repos: [String] = []
+    /// Organisation names fetched from GitHub for the picker.
     @State private var orgs:  [String] = []
+    /// `true` while scope options are being fetched from GitHub.
     @State private var isLoadingScopes = false
+    /// `true` while the repository-selector sheet is presented.
     @State private var showRepoSelector = false
+    /// `true` while the organisation-selector sheet is presented.
     @State private var showOrgSelector  = false
 
     // MARK: Runner config state (Add new only)
 
+    /// Display name the runner will register with.
     @State private var runnerName = ""
+    /// Comma-separated label string pre-populated with defaults.
     @State private var labelsText = "self-hosted,macOS"
     /// Default: ~/actions-runner/my-runner — user should rename the last
     /// component to match their runner name. Each runner needs its own folder.
@@ -82,8 +97,11 @@ struct AddRunnerSheet: View {
 
     // MARK: Registration state (Add new only)
 
+    /// `true` while the registration command is running.
     @State private var isRegistering    = false
+    /// Human-readable description of the current registration step.
     @State private var registrationStep = ""
+    /// Non-nil when registration fails; shown as an inline error.
     @State private var errorMessage: String?
 
     // MARK: Pre-existing state (Add pre-existing only)
@@ -103,6 +121,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - Body
 
+    /// Root layout: mode picker, form body, and action bar.
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add runner").font(.headline)

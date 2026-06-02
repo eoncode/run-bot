@@ -54,18 +54,25 @@ struct SettingsView: View {
     @State private var isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
     /// `true` while the OAuth sign-in flow is in progress.
     @State private var isSigningIn = false
+    /// `true` once the initial local runner scan has completed.
     @State private var hasLoadedOnce = false
+    /// The runner awaiting user confirmation before removal.
     @State private var runnerPendingRemoval: RunnerModel?
+    /// Controls presentation of `AddRunnerSheet`.
     @State private var showAddRunnerSheet = false
+    /// Controls presentation of `AddScopeSheet`.
     @State private var showAddScopeSheet = false
     /// #992: The scope entry currently being edited; non-nil while ScopeEditSheet is presented.
     @State private var selectedScopeEntry: ScopeEntry?
+    /// Non-nil when the last removal attempt failed; shown as an alert.
     @State private var removeErrorMessage: String?
     // FIXME: AnyCancellable stored in @State risks silent subscription drop if SwiftUI
     // recreates the view struct and reallocates @State storage. The correct pattern
     // (used by RunnerViewModel) is to hold cancellables as stored properties on a
     // @MainActor class. Tracked for refactor alongside #1077.
+    /// Retains the scope-mutation Combine subscription.
     @State private var scopeMutateCancellable: AnyCancellable?
+    /// Retains the sign-out Combine subscription.
     @State private var signOutCancellable: AnyCancellable?
 
     // MARK: - Popover editing state (#1001)
@@ -77,17 +84,21 @@ struct SettingsView: View {
     @State private var commitError: String?
 
     // MARK: - Computed properties
+    /// Short version string from `CFBundleShortVersionString`.
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
     }
+    /// Build number from `CFBundleVersion`.
     private var appBuild: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
     }
+    /// Alert title incorporating the pending runner name.
     private var removalAlertTitle: String {
         "Remove runner \"\(runnerPendingRemoval?.runnerName ?? "this runner\"")"
     }
 
     // MARK: - Body
+    /// Root layout: fixed header bar above a scrollable sections stack.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
@@ -169,10 +180,12 @@ struct SettingsView: View {
         )
     }
 
+    /// Returns the configured `AddRunnerSheet` for use as a `.sheet` content closure.
     private func addRunnerSheet() -> some View {
         AddRunnerSheet(isPresented: $showAddRunnerSheet) { localRunnerStore.refresh() }
     }
 
+    /// Pre-configured `RemovalAlertModifier` wired to `runnerPendingRemoval`.
     private var removalAlertModifier: RemovalAlertModifier {
         RemovalAlertModifier(
             title: removalAlertTitle,
@@ -186,6 +199,7 @@ struct SettingsView: View {
         )
     }
 
+    /// Vertical stack of all six settings sections.
     private var sectionsStack: some View {
         VStack(alignment: .leading, spacing: 0) {
             localRunnersSection
@@ -203,6 +217,7 @@ struct SettingsView: View {
         .padding(.bottom, 16)
     }
 
+    /// Runs on `.onAppear`: refreshes auth state and starts the scope-mutation listener.
     private func onAppearAction() {
         isOAuthAuthenticated = (Keychain.token != nil)
         isCLIAuthenticated = (Keychain.token == nil && githubToken() != nil)
@@ -224,6 +239,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Header
+    /// Top bar with back button and "Settings" title.
     private var headerBar: some View {
         HStack {
             Button(action: onBack, label: {
@@ -241,6 +257,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Local Runners
+    /// Section header row for the local runners list.
     private var localRunnersSectionHeader: some View {
         HStack {
             Text("Active local runners")
@@ -265,6 +282,7 @@ struct SettingsView: View {
         .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
     }
 
+    /// Scrollable list of locally-installed runners.
     private var localRunnersSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             localRunnersSectionHeader
@@ -285,6 +303,7 @@ struct SettingsView: View {
         }
     }
 
+    /// Full row view for a single local runner, including the detail popover.
     private func localRunnerRow(_ runner: RunnerModel) -> some View {
         Button {
             commitError = nil
@@ -299,6 +318,7 @@ struct SettingsView: View {
         .padding(.horizontal, RBSpacing.xs)
     }
 
+    /// Inner content (status dot, name, start/stop buttons) for a local runner row.
     private func localRunnerRowContent(_ runner: RunnerModel) -> some View {
         let hasWarning = runner.lifecycleWarning != nil
         let displayStatus = runner.displayStatus
@@ -346,6 +366,7 @@ struct SettingsView: View {
     // Current pattern (Task + Task.detached) matches LocalRunnerStore.refresh() as the
     // intermediate step: background work is off-actor, main-actor mutations happen in the
     // Task continuation which returns to @MainActor automatically.
+    /// Optimistically marks the runner as running then delegates to `RunnerLifecycleService`.
     @MainActor private func performResume(runner: RunnerModel) {
         log("SettingsView > performResume called runner=\(runner.runnerName)")
         LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: true)
@@ -368,6 +389,7 @@ struct SettingsView: View {
         }
     }
 
+    /// Optimistically marks the runner as stopped then delegates to `RunnerLifecycleService`.
     @MainActor private func performStop(runner: RunnerModel) {
         log("SettingsView > performStop called runner=\(runner.runnerName)")
         LocalRunnerStore.shared.optimisticallySetRunning(runner.runnerName, isRunning: false)
@@ -389,6 +411,7 @@ struct SettingsView: View {
         }
     }
 
+    /// Maps a runner's `statusColor` to the corresponding design-system `Color`.
     private func localRunnerDotColor(for runner: RunnerModel) -> Color {
         switch runner.statusColor {
         case .running: return Color.rbSuccess
@@ -399,6 +422,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Remote runner scopes
+    /// Section header row for the remote scopes list.
     private var remoteScopesSectionHeader: some View {
         HStack {
             Text("Remote runner scopes")
@@ -416,6 +440,7 @@ struct SettingsView: View {
         .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 2)
     }
 
+    /// Scrollable list of registered remote runner scopes.
     private var remoteScopesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             remoteScopesSectionHeader
@@ -434,6 +459,7 @@ struct SettingsView: View {
         }
     }
 
+    /// Row view for a single remote scope entry.
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
         let displayName = ScopePreferencesStore.displayName(for: entry.scope)
@@ -506,6 +532,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Notifications
+    /// Notification opt-in toggles for each event type.
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -527,6 +554,7 @@ struct SettingsView: View {
     }
 
     // MARK: - General
+    /// General section: launch-at-login toggle, version info, and sign-in controls.
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("General").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -553,6 +581,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Account
+    /// GitHub sign-in / sign-out controls and authentication status.
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Account").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -617,6 +646,7 @@ struct SettingsView: View {
     }
 
     // MARK: - About
+    /// App version, build number, and links to changelog / support.
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("About").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
@@ -630,17 +660,21 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
+    /// Applies or removes the Login Item entry based on `enabled`.
     private func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
 
+    /// Initiates the OAuth sign-in flow via `OAuthService`.
     private func signInWithGitHub() {
         isSigningIn = true
         OAuthService.shared.signIn()
     }
 
+    /// Signs out of GitHub and clears all stored tokens.
     private func signOutOfGitHub() {
         OAuthService.shared.signOut()
     }
 
+    /// Awaits `RunnerLifecycleService.remove` then removes from index on success.
     @MainActor private func performRemoval() {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil

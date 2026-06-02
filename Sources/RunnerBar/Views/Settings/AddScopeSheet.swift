@@ -24,16 +24,26 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 ///
 /// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
 struct AddScopeSheet: View {
+    /// Controls whether the sheet is shown.
     @Binding var isPresented: Bool
 
+        /// Whether the scope is org-level or repo-level.
         @State private var scopeType: ScopeType = .org
+    /// The scope string chosen from the picker.
     @State private var selectedScope: String = ""
+    /// The scope string typed manually.
     @State private var manualScope: String = ""
+    /// Available organisation names fetched from GitHub.
     @State private var orgs: [String] = []
+    /// Available repository names fetched from GitHub.
     @State private var repos: [String] = []
+    /// `true` while org/repo options are being fetched.
     @State private var isFetching = false
+    /// Non-nil when fetching or validation fails.
     @State private var errorMessage: String?
+    /// `true` when the picker is shown instead of the text field.
     @State private var usePicker = false
+    /// `true` while the scope-selector popover is presented.
     @State private var showScopeSelector = false
 
     /// The list of picker options matching the current `scopeType` (orgs or repos).
@@ -50,6 +60,7 @@ struct AddScopeSheet: View {
     /// Guards the Add button: `true` when `effectiveScope` is non-empty.
     private var canAdd: Bool { !effectiveScope.isEmpty }
 
+    /// Root layout: header, form fields, and footer action bar.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Header ─────────────────────────────────────────────────────
