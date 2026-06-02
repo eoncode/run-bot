@@ -679,13 +679,12 @@ struct SettingsView: View {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil
         removeErrorMessage = nil
+        LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
         Task {
             let ok = await Task.detached(priority: .userInitiated) {
                 RunnerLifecycleService.shared.remove(runner: runner)
             }.value
-            if ok {
-                LocalRunnerStore.shared.optimisticallyRemove(runner.runnerName)
-            } else {
+            if !ok {
                 removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs."
             }
             LocalRunnerStore.shared.refresh()

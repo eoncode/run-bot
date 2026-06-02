@@ -27,8 +27,8 @@ struct AddScopeSheet: View {
     /// Controls whether the sheet is shown.
     @Binding var isPresented: Bool
 
-        /// Whether the scope is org-level or repo-level.
-        @State private var scopeType: ScopeType = .org
+    /// Whether the scope is org-level or repo-level.
+    @State private var scopeType: ScopeType = .org
     /// The scope string chosen from the picker.
     @State private var selectedScope: String = ""
     /// The scope string typed manually.

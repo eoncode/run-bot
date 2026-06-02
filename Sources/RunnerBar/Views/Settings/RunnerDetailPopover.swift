@@ -300,7 +300,7 @@ struct RunnerDetailPopover: View {
         case .running: return Color.rbSuccess
         case .busy:    return Color.rbWarning
         case .idle:    return Color.rbTextTertiary
-        default:       return Color.rbDanger
+        case .offline: return Color.rbDanger
         }
     }
 
