@@ -1,6 +1,5 @@
 // RunnerDetailPopover.swift
 // RunnerBar
-// swiftlint:disable missing_docs
 import AppKit
 import RunnerBarCore
 import SwiftUI
@@ -32,7 +31,9 @@ struct RunnerDetailPopover: View {
 
     /// Mutable draft buffering all editable values until OK is tapped.
     @State private var draft: RunnerEditDraft
-    /// Snapshot captured once on appear for dirty-state detection.
+    // Intentionally set twice: seeded in init() from the model, then overwritten in
+    // loadDisplayFields() after disk values are loaded so the dirty-check baseline
+    // reflects actual persisted state rather than the model-only snapshot.
     @State private var originalDraft: RunnerEditDraft
 
     // MARK: - Info fields (read-only, loaded from .runner JSON)
@@ -66,7 +67,6 @@ struct RunnerDetailPopover: View {
 
     // MARK: - Body
 
-    /// Popover layout: header, scrollable content sections, footer.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             popoverHeader
@@ -278,11 +278,9 @@ struct RunnerDetailPopover: View {
                 .lineLimit(2).truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if copyable {
-                // swiftlint:disable:next multiple_closures_with_trailing_closure
-                Button(action: {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(value, forType: .string)
-                }) {
+                Button {
+                    copyToPasteboard(text: value)
+                } label: {
                     Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
                 }
                 .buttonStyle(.plain).help("Copy to clipboard")
@@ -292,14 +290,22 @@ struct RunnerDetailPopover: View {
     }
 
     /// Status indicator colour from runner model.
+    /// Matches the 4-state logic in `SettingsView.localRunnerDotColor(for:)`.
     private func dotColor(for runnerModel: RunnerModel) -> Color {
-        runnerModel.isRunning ? Color.rbSuccess : Color.rbDanger
+        switch runnerModel.statusColor {
+        case .running: return Color.rbSuccess
+        case .busy:    return Color.rbWarning
+        case .idle:    return Color.rbTextTertiary
+        default:       return Color.rbDanger
+        }
     }
 
     // MARK: - On Appear
 
     /// Seeds `displayOsArch` and `displayVersion` from the `.runner` JSON,
     /// and loads disk values into the draft (auto-update, proxy).
+    /// TODO: #1077 — `draft.load(installPath:)` reads `.runner` JSON synchronously on
+    /// `@MainActor`. Migrate to async once the load path is async-capable.
     private func loadDisplayFields() {
         guard let installPath = runner.installPath else { return }
 
@@ -324,4 +330,3 @@ struct RunnerDetailPopover: View {
         }
     }
 }
-// swiftlint:enable missing_docs

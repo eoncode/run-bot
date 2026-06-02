@@ -1,6 +1,5 @@
 // FailureHookCommandSheet.swift
 // RunnerBar
-// swiftlint:disable missing_docs orphaned_doc_comment
 import AppKit
 import RunnerBarCore
 import SwiftUI
@@ -65,6 +64,7 @@ struct FailureHookCommandSheet: View {
 // MARK: - Subviews
 
 extension FailureHookCommandSheet {
+    /// Header block: sheet title and usage description.
     var headerSection: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Failure Hook Command")
@@ -79,6 +79,7 @@ extension FailureHookCommandSheet {
         .padding(.bottom, 10)
     }
 
+    /// Monospaced `TextEditor` bound to `commandText`.
     var editorSection: some View {
         TextEditor(text: $commandText)
             .font(.system(size: 11, design: .monospaced))
@@ -92,6 +93,7 @@ extension FailureHookCommandSheet {
             .padding(.horizontal, 16)
     }
 
+    /// Flow-wrapped pill buttons that append a variable token to `commandText`.
     var pillSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Insert variable at cursor:")
@@ -115,6 +117,7 @@ extension FailureHookCommandSheet {
         .padding(.top, 10)
     }
 
+    /// Cancel / Test / Save action bar.
     var footerSection: some View {
         HStack {
             Spacer()
@@ -151,14 +154,19 @@ extension FailureHookCommandSheet {
 // MARK: - Actions
 
 extension FailureHookCommandSheet {
-    func save() {
+    /// Persists `commandText` to `ScopePreferencesStore` and dismisses the sheet.
+    private func save() {
         log("FailureHookCommandSheet › save — scope=\(scope) commandText='\(commandText.prefix(200))'")
         ScopePreferencesStore.setFailureHookCommand(commandText, for: scope)
         log("FailureHookCommandSheet › save — done, dismissing")
         onDismiss()
     }
 
-    func testCommand() {
+    /// Resolves `$LOCAL_PATH` and `$SCOPE` then opens the command in Terminal.
+    /// NOTE: Only `$LOCAL_PATH` and `$SCOPE` are pre-resolved here; runtime-only tokens
+    /// (`$FAILURE_LOG`, `$BRANCH`, `$RUN_ID`, etc.) are left as-is and will appear
+    /// literally in the terminal window during a test run.
+    private func testCommand() {
         let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = commandText
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
@@ -167,7 +175,10 @@ extension FailureHookCommandSheet {
         TerminalLauncher.open(command: resolved)
     }
 
-    func insertVariable(_ variable: String) {
+    /// Appends `variable` to `commandText`, separated by a space.
+    /// NOTE: `TextEditor` exposes no public cursor-position API on macOS, so the
+    /// token is always appended rather than inserted at the caret.
+    private func insertVariable(_ variable: String) {
         if commandText.isEmpty {
             commandText = variable
         } else {
@@ -181,9 +192,10 @@ extension FailureHookCommandSheet {
 /// A custom `Layout` that wraps child views into rows like a word-wrapped line of text.
 /// Used to arrange variable-insertion pill buttons beneath the command editor.
 struct FlowLayout: Layout {
-    // Horizontal and vertical spacing between child views.
+    /// Horizontal and vertical gap between child views.
     var spacing: CGFloat = 6
 
+    /// Returns the minimum size needed to fit all subviews within `proposal.width`.
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
         let width = proposal.width ?? 400
         var x: CGFloat = 0
@@ -198,6 +210,7 @@ struct FlowLayout: Layout {
         return CGSize(width: width, height: y + rowH)
     }
 
+    /// Places each subview left-to-right, wrapping to a new row when the width is exceeded.
     func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
         var x: CGFloat = bounds.minX
         var y: CGFloat = bounds.minY
@@ -211,4 +224,4 @@ struct FlowLayout: Layout {
         }
     }
 }
-// swiftlint:enable missing_docs orphaned_doc_comment
+

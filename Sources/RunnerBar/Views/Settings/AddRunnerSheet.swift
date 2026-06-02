@@ -34,60 +34,45 @@ private enum GitHubURIs {
 ///
 /// Requires a GitHub token for "Add new" (OAuth sign-in, GH_TOKEN, or GITHUB_TOKEN).
 struct AddRunnerSheet: View {
-    /// The isPresented property.
     @Binding var isPresented: Bool
-    /// The onComplete constant.
     let onComplete: () -> Void
 
     // MARK: - Add Mode
 
     /// Controls which form body is shown in the sheet.
     enum AddMode: String, CaseIterable, Identifiable {
-        /// Coding key for the `addNew` field.
+        /// Onboards a fresh runner via download + registration token.
         case addNew      = "Add new"
-        /// Coding key for the `addExisting` field.
+        /// Imports a runner folder that was configured outside of RunnerBar.
         case addExisting = "Add pre-existing"
-        /// The id property.
         var id: String { rawValue }
     }
 
-    /// The addMode property.
     @State private var addMode: AddMode = .addNew
 
     // MARK: Scope state (Add new only)
 
     /// Determines whether the runner is registered at repo or organisation scope.
     enum ScopeType: String, CaseIterable, Identifiable {
-        /// Coding key for the `repo` field.
+        /// Runner registered to a single repository.
         case repo = "Repository"
-        /// Coding key for the `org` field.
+        /// Runner registered at organisation level.
         case org  = "Organisation"
-        /// The id property.
         var id: String { rawValue }
     }
 
-    /// The scopeType property.
     @State private var scopeType: ScopeType = .repo
-    /// The selectedRepo property.
     @State private var selectedRepo = ""
-    /// The selectedOrg property.
     @State private var selectedOrg  = ""
-    /// The repos property.
     @State private var repos: [String] = []
-    /// The orgs property.
     @State private var orgs:  [String] = []
-    /// The isLoadingScopes property.
     @State private var isLoadingScopes = false
-    /// The showRepoSelector property.
     @State private var showRepoSelector = false
-    /// The showOrgSelector property.
     @State private var showOrgSelector  = false
 
     // MARK: Runner config state (Add new only)
 
-    /// The runnerName property.
     @State private var runnerName = ""
-    /// The labelsText property.
     @State private var labelsText = "self-hosted,macOS"
     /// Default: ~/actions-runner/my-runner — user should rename the last
     /// component to match their runner name. Each runner needs its own folder.
@@ -97,11 +82,8 @@ struct AddRunnerSheet: View {
 
     // MARK: Registration state (Add new only)
 
-    /// The isRegistering property.
     @State private var isRegistering    = false
-    /// The registrationStep property.
     @State private var registrationStep = ""
-    /// The errorMessage property.
     @State private var errorMessage: String?
 
     // MARK: Pre-existing state (Add pre-existing only)
@@ -121,7 +103,6 @@ struct AddRunnerSheet: View {
 
     // MARK: - Body
 
-    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add runner").font(.headline)
@@ -253,8 +234,9 @@ struct AddRunnerSheet: View {
             Button("Cancel") { isPresented = false }
                 .keyboardShortcut(.cancelAction)
                 .disabled(isRegistering)
-            // swiftlint:disable:next multiple_closures_with_trailing_closure
-            Button(action: { Task { await register() } }) {
+            Button {
+                Task { await register() }
+            } label: {
                 if isRegistering {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
@@ -471,8 +453,10 @@ struct AddRunnerSheet: View {
         openPanel.allowsMultipleSelection = false
         openPanel.message = "Select the runner install folder (must contain a .runner file)"
         openPanel.prompt = "Select"
-        guard let window = NSApp.keyWindow else { return }
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
+        guard let window = NSApp.keyWindow else {
+            log("AddRunnerSheet › pickExistingFolder: keyWindow is nil, cannot present panel")
+            return
+        }
         openPanel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = openPanel.url else { return }
             handlePickedFolder(url)
@@ -746,7 +730,6 @@ struct AddRunnerSheet: View {
         task.standardError  = pipe
         nonisolated(unsafe) var outputData = Data()
         let lock = NSLock()
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
@@ -757,8 +740,7 @@ struct AddRunnerSheet: View {
             log("runRegistrationCommand › launch error: \(error)")
             return 1
         }
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
-        let timeoutItem = DispatchWorkItem { task.terminate() }
+        let timeoutItem = DispatchWorkItem { [weak task] in task?.terminate() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
         task.waitUntilExit()
         timeoutItem.cancel()
@@ -780,8 +762,7 @@ struct AddRunnerSheet: View {
             log("runSimpleProcess › \(executable) launch error: \(error)")
             return 1
         }
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
-        let timeoutItem = DispatchWorkItem { task.terminate() }
+        let timeoutItem = DispatchWorkItem { [weak task] in task?.terminate() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
         task.waitUntilExit()
         timeoutItem.cancel()
@@ -810,6 +791,8 @@ private func fetchRunnerDownloadURL() -> String? {
     let assetName = "actions-runner-osx-\(assetArch)"
     log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
 
+    // TODO: #1077 — `Data(contentsOf:)` performs a synchronous network request.
+    // Replace with an async URLSession call once the call-site is async-capable.
     guard let url  = URL(string: GitHubURIs.apiRunnerLatest),
           let data = try? Data(contentsOf: url) else {
         log("fetchRunnerDownloadURL › failed to fetch release JSON")
