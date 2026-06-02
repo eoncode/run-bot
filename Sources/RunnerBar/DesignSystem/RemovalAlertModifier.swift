@@ -4,9 +4,10 @@ import SwiftUI
 
 // MARK: - RemovalAlertModifier
 
-/// `ViewModifier` that encapsulates the runner-removal confirmation alert.
-/// Extracted from `SettingsView.body` to satisfy `function_body_length`
-/// and `file_length` limits.
+/// Confirmation alert for runner removal.
+/// Shows authentication-aware message text: authenticated users see the `svc.sh`/`config.sh`
+/// command summary; unauthenticated users see the `gh auth login` sign-in instructions.
+/// `onConfirm` is called on destructive confirmation; `onCancel` on dismissal.
 struct RemovalAlertModifier: ViewModifier {
     /// The alert title string.
     let title: String
@@ -21,7 +22,6 @@ struct RemovalAlertModifier: ViewModifier {
 
     /// Wraps `content` with a runner-removal confirmation alert.
     func body(content: Content) -> some View {
-        // swiftlint:disable:next multiple_closures_with_trailing_closure
         content.alert(title, isPresented: $isPresented) {
             Button("Cancel", role: .cancel) { onCancel() }
             Button("Remove", role: .destructive) { onConfirm() }
