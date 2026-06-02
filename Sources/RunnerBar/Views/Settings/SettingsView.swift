@@ -676,7 +676,8 @@ struct SettingsView: View {
         OAuthService.shared.signOut()
     }
 
-    /// Awaits `RunnerLifecycleService.remove` then removes from index on success.
+    /// Optimistically removes the runner from the index then delegates to `RunnerLifecycleService`.
+    /// Rolls back the optimistic removal and surfaces an error message on failure.
     @MainActor private func performRemoval() {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil
@@ -687,6 +688,7 @@ struct SettingsView: View {
                 RunnerLifecycleService.shared.remove(runner: runner)
             }.value
             if !ok {
+                LocalRunnerStore.shared.optimisticallyRestore(runner)
                 removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs."
             }
             LocalRunnerStore.shared.refresh()

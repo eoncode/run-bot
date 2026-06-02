@@ -78,6 +78,18 @@ final class LocalRunnerStore: ObservableObject {
         runners.removeAll { $0.runnerName == runnerName }
     }
 
+    /// Rolls back an `optimisticallyRemove` by re-registering the runner and restoring it
+    /// to the published list. Call this when the underlying removal operation fails.
+    /// Already runs on the main actor via @MainActor class isolation.
+    func optimisticallyRestore(_ runner: RunnerModel) {
+        if let installPath = runner.installPath {
+            register(name: runner.runnerName, installPath: installPath)
+        }
+        if !runners.contains(where: { $0.runnerName == runner.runnerName }) {
+            runners.append(runner)
+        }
+    }
+
     /// Removes the index entry for `name` and persists the updated index.
     func unregister(name: String) {
         runnerIndex.removeValue(forKey: name)
