@@ -51,10 +51,16 @@ struct AddScopeSheet: View {
         scopeType == .org ? orgs : repos
     }
 
-    /// The scope string that will be saved: the selected picker value when `usePicker` is true,
-    /// otherwise the trimmed manual text-field input.
+    /// `true` only when picker mode is active **and** the current segment has items.
+    /// Prevents `effectiveScope` from reading `selectedScope` when the active segment is empty.
+    private var usesPickerForCurrentScope: Bool {
+        usePicker && !pickerItems.isEmpty
+    }
+
+    /// The scope string that will be saved: the selected picker value when the current segment
+    /// has picker items, otherwise the trimmed manual text-field input.
     private var effectiveScope: String {
-        usePicker ? selectedScope : manualScope.trimmingCharacters(in: .whitespacesAndNewlines)
+        usesPickerForCurrentScope ? selectedScope : manualScope.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Guards the Add button: `true` when `effectiveScope` is non-empty.
@@ -102,7 +108,7 @@ struct AddScopeSheet: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 6)
-                        } else if usePicker && !pickerItems.isEmpty {
+                        } else if usesPickerForCurrentScope {
                             // ── Searchable sheet trigger ─────────────────────
                             Button(action: { showScopeSelector = true }) {
                                 HStack {

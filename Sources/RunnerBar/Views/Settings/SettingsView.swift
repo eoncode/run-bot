@@ -94,7 +94,8 @@ struct SettingsView: View {
     }
     /// Alert title incorporating the pending runner name.
     private var removalAlertTitle: String {
-        "Remove runner \"\(runnerPendingRemoval?.runnerName ?? "this runner\"")"
+        let name = runnerPendingRemoval?.runnerName ?? "this runner"
+        return "Remove runner \"\(name)\"?"
     }
 
     // MARK: - Body
@@ -119,7 +120,8 @@ struct SettingsView: View {
         .onDisappear {
             // Clear the singleton closure so a future SettingsView instance can claim it.
             // Without this, the last-opened instance permanently owns onCompletion.
-            OAuthService.shared.onCompletion = nil
+            // Guard: do not clear while an OAuth flow is in progress — the callback must land.
+            if !isSigningIn { OAuthService.shared.onCompletion = nil }
         }
         .onChange(of: localRunnerStore.isScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
