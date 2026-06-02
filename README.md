@@ -17,9 +17,9 @@
 
 **AI Reviewers**
 
-[![Greptile](https://img.shields.io/badge/AI%20Review-Greptile-6C47FF?logo=githubcopilot&logoColor=white)](https://greptile.com)
-[![CodeRabbit](https://img.shields.io/badge/AI%20Review-CodeRabbit-FF6B35?logo=rabbit&logoColor=white)](https://coderabbit.ai)
-[![Octopus Review](https://img.shields.io/badge/AI%20Review-Octopus-00B4D8?logo=octopusdeploy&logoColor=white)](https://octopusreview.com)
+[![Greptile](https://img.shields.io/badge/🦎%20AI%20Review-Greptile-6C47FF?logoColor=white)](https://greptile.com)
+[![CodeRabbit](https://img.shields.io/coderabbit/prs/github/eoncode/runner-bar?style=flat&label=🐰%20CodeRabbit%20Reviews)](https://coderabbit.ai)
+[![Octopus Review](https://img.shields.io/badge/🐙%20AI%20Review-Octopus-00B4D8?logoColor=white)](https://octopusreview.com)
 
 **Code Quality**
 
