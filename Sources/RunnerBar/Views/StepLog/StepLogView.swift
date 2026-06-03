@@ -223,4 +223,76 @@ struct StepLogView: View {
         let scope: String = {
             let primary = repoScopeForFetch
             if !primary.isEmpty { return primary }
-  
+            return ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
+        }()
+        Task.detached(priority: .userInitiated) {
+            let text = fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
+            await MainActor.run {
+                logText = text ?? ""
+                isLoading = false
+                onLogLoaded?()
+            }
+        }
+    }
+}
+
+// MARK: - Derived helpers
+/// Derived helper properties for `StepLogView` (status labels, colors, time formatting).
+extension StepLogView {
+    /// Repo slug derived from `job.htmlUrl`, e.g. `"owner/repo"`.
+    var repoSlug: String {
+        let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
+        guard parts.count >= 5 else { return "\u{2014}" }
+        let owner = parts[3]; let repo = parts[4]
+        return (owner.isEmpty || repo.isEmpty) ? "\u{2014}" : "\(owner)/\(repo)"
+    }
+
+    /// Repo scope string (`owner/repo`) derived from `job.htmlUrl` for use in API fetch calls.
+    var repoScopeForFetch: String {
+        let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
+        guard parts.count >= 5 else { return "" }
+        let owner = parts[3]; let repo = parts[4]
+        return (owner.isEmpty || repo.isEmpty) ? "" : "\(owner)/\(repo)"
+    }
+
+    /// Step conclusion label with icon, or live/queued status.
+    var stepStatusLabel: String {
+        switch step.conclusion {
+        case "success": return "\u{2713} success"
+        case "failure": return "\u{2717} failure"
+        case "skipped": return "\u{2298} skipped"
+        case "cancelled": return "\u{2298} cancelled"
+        default: return step.status == "in_progress" ? "\u{25B6} running" : "\u{00B7} queued"
+        }
+    }
+
+    /// Colour used to render `stepStatusLabel` based on conclusion or live status.
+    var stepStatusColor: Color {
+        switch step.conclusion {
+        case "success": return Color.rbSuccess
+        case "failure": return Color.rbDanger
+        case "skipped", "cancelled": return Color.rbTextSecondary
+        default: return step.status == "in_progress" ? Color.rbWarning : Color.rbTextSecondary
+        }
+    }
+
+    /// Formatted start time, or `"\u{2014}"` if unavailable.
+    var startLabel: String {
+        guard let dateValue = step.startedAt else { return "\u{2014}" }
+        return Self.timeFmt.string(from: dateValue)
+    }
+
+    /// Formatted end time, or `"\u{2014}"` if unavailable.
+    var endLabel: String {
+        guard let dateValue = step.completedAt else {
+            return step.status == "in_progress" ? "running\u{2026}" : "\u{2014}"
+        }
+        return Self.timeFmt.string(from: dateValue)
+    }
+
+    /// Date string (`yyyy-MM-dd`) for context when the step ran.
+    var dateLabel: String {
+        guard let dateValue = step.startedAt ?? step.completedAt else { return "\u{2014}" }
+        return Self.dateFmt.string(from: dateValue)
+    }
+}
