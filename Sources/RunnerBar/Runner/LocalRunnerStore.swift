@@ -182,6 +182,8 @@ final class LocalRunnerStore: ObservableObject {
     /// Extracted to a constant so SonarCloud does not flag it as a hardcoded URI inline.
     private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
 
+    /// Runs `launchctl list` and filters lines whose label contains `actions.runner`.
+    /// Called on a background queue inside `refresh()` to mark live services.
     private nonisolated func scanLiveServices() -> [String] {
         let result = ProcessRunner.run(
             executableURL: Self.launchctlURL,
