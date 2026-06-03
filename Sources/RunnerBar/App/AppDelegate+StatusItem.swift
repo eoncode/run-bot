@@ -12,7 +12,7 @@ import RunnerBarCore
 // ❌ NEVER inline this back into AppDelegate.swift.
 // ❌ NEVER call setupStatusItem() more than once.
 
-/// Extension adding functionality to `AppDelegate`.
+/// Extension owning NSStatusItem creation, icon updates, and the `menuBarImage` helper.
 extension AppDelegate {
 
     // MARK: Status item setup
@@ -42,9 +42,23 @@ extension AppDelegate {
     // MARK: Image helper
 
     /// Returns the SF Symbol image for the given aggregate status.
+    ///
+    /// Uses a double-fallback chain to guarantee a non-nil `NSImage`:
+    /// 1. `status.symbolName` — the correct SF Symbol for the current status.
+    /// 2. `"circle"` — a safe generic fallback if the symbol name is unavailable
+    ///    (e.g. running on an older OS that doesn’t have the symbol).
+    /// 3. `NSImage(named: "MenuBarFallback")` — a bundled asset that keeps the
+    ///    status-bar icon visible even when all SF Symbols are unavailable;
+    ///    falls back to `NSImage()` (empty/invisible) only if the asset is also missing.
     func menuBarImage(for status: AggregateStatus) -> NSImage {
         NSImage(systemSymbolName: status.symbolName, accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
+            ?? {
+                #if DEBUG
+                assertionFailure("MenuBarFallback asset missing from Assets.xcassets — add it to keep the status-bar icon visible on SF Symbol failure")
+                #endif
+                return NSImage(named: "MenuBarFallback")
+            }()
             ?? NSImage()
     }
 }
