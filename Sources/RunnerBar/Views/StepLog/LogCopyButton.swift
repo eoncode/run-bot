@@ -4,16 +4,14 @@ import AppKit
 import SwiftUI
 
 /// Top-bar copy button shared by ActionDetailView, JobDetailView, and StepLogView.
-/// States: idle (doc.on.doc + "Copy log") → loading (spinner + "Copying…") → done (✓ + "Done", 1.5s) OR failed (✗ + "Failed", 1.5s) → idle
+/// States: idle (doc.on.doc + "Copy log") → loading (spinner + "Copying\u2026") → done (✓ + "Done", 1.5s) OR failed (✗ + "Failed", 1.5s) → idle
 struct LogCopyButton: View {
-    // Called on tap. Pass nil or empty string on failure — button still resets to idle.
-    /// The fetch constant.
+    /// Callback-based fetch. Invoke `completion` with the log text on success,
+    /// or `nil` / empty string on failure — button resets to idle either way.
     let fetch: (@escaping @Sendable (String?) -> Void) -> Void
-    // When true the button is rendered at reduced opacity and cannot be tapped.
-    /// The isDisabled property.
+    /// When `true` the button is rendered at reduced opacity and cannot be tapped.
     var isDisabled: Bool = false
 
-    /// The phase property.
     @State private var phase: Phase = .idle
 
     /// Visual states of the copy button lifecycle.
@@ -28,7 +26,6 @@ struct LogCopyButton: View {
         case failed
     }
 
-    /// The body property.
     var body: some View {
         Group {
             switch phase {
@@ -48,7 +45,7 @@ struct LogCopyButton: View {
             case .loading:
                 HStack(spacing: 4) {
                     ProgressView().controlSize(.mini)
-                    Text("Copying…")
+                    Text("Copying\u2026")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize()
@@ -77,22 +74,20 @@ struct LogCopyButton: View {
         }
     }
 
-    /// Performs the startCopy operation.
     private func startCopy() {
         guard phase == .idle else { return }
         phase = .loading
-        let resetDelay: DispatchTimeInterval = .milliseconds(1500)
         fetch { copyText in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let text = copyText, !text.isEmpty {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     phase = .done
-                    DispatchQueue.main.asyncAfter(deadline: .now() + resetDelay) { phase = .idle }
                 } else {
                     phase = .failed
-                    DispatchQueue.main.asyncAfter(deadline: .now() + resetDelay) { phase = .idle }
                 }
+                try? await Task.sleep(for: .milliseconds(1500))
+                phase = .idle
             }
         }
     }

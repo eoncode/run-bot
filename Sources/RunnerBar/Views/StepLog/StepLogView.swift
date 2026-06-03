@@ -41,7 +41,7 @@ import SwiftUI
 /// Shows the raw log text for a single `JobStep`.
 ///
 /// Placed by `AppDelegate.navigate()` (rootView swap). Fits the fixed popover frame;
-/// `ScrollView` absorbs overflow. Fetches log on `onAppear` via a background thread.
+/// `ScrollView` absorbs overflow. Fetches log on `onAppear` via a background task.
 struct StepLogView: View {
     /// The job that owns this step.
     let job: ActiveJob
@@ -61,24 +61,23 @@ struct StepLogView: View {
     /// True while the background fetch is in-flight.
     @State private var isLoading = true
 
-    // MARK: - Formatters (static to avoid re-allocation)
-    /// The timeFmt constant.
+    // MARK: - Formatters (static to avoid re-allocation per render)
+    /// `HH:mm:ss` — used for start/end time labels in the meta row.
     private static let timeFmt: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
-    /// The dateFmt constant.
+    /// `yyyy-MM-dd` — used for the date label in the meta row.
     private static let dateFmt: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 
-    /// The body property.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Top bar ────────────────────────────────────────────────────────────────────────────
+            // ── Top bar ────────────────────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Button(action: onBack) {
                     HStack(spacing: 3) {
@@ -119,7 +118,7 @@ struct StepLogView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            // ── Step name (large) ────────────────────────────────────────────────────────────────────────────────────
+            // ── Step name (large) ────────────────────────────────────────────────────────────────────────────────────────────
             Text(step.name)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2)
@@ -127,7 +126,7 @@ struct StepLogView: View {
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.bottom, 5)
 
-            // ── Meta rows ──────────────────────────────────────────────────────────────────────────────────────
+            // ── Meta rows ──────────────────────────────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Image(systemName: "briefcase").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(job.name).font(.caption).foregroundColor(Color.rbTextSecondary)
@@ -176,7 +175,7 @@ struct StepLogView: View {
 
             Divider()
 
-            // ── Log — INSIDE ScrollView ──────────────────────────────────────────────────────────────────────────────────
+            // ── Log — INSIDE ScrollView ──────────────────────────────────────────────────────────────────────────────────────────────────────────
             // ⚠️ .frame(maxHeight:) cap is REQUIRED on this ScrollView (ref #370).
             // ❌ NEVER remove .frame(maxHeight:) from this ScrollView.
             ScrollView(.vertical, showsIndicators: true) {
@@ -217,23 +216,17 @@ struct StepLogView: View {
     }
 
     // MARK: - Log loading
-    /// Performs the loadLog operation.
     private func loadLog() {
         isLoading = true
         let jobID = job.id
         let stepNum = step.id
-        let scope: String = {
-            let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
-            if parts.count >= 5 {
-                let owner = parts[3]
-                let repo = parts[4]
-                if !owner.isEmpty && !repo.isEmpty { return "\(owner)/\(repo)" }
-            }
-            return ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
-        }()
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Reuse the repoSlug computed property — avoids duplicating the htmlUrl parse logic.
+        let scope = repoSlug == "—"
+            ? ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
+            : repoSlug
+        Task.detached {
             let text = fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
-            DispatchQueue.main.async {
+            await MainActor.run {
                 logText = text ?? ""
                 isLoading = false
                 onLogLoaded?()
@@ -245,7 +238,7 @@ struct StepLogView: View {
 // MARK: - Derived helpers
 /// Derived helper properties for `StepLogView` (status labels, colors, time formatting).
 extension StepLogView {
-    /// Repo slug derived from job.htmlUrl, e.g. "owner/repo".
+    /// Repo slug derived from job.htmlUrl, e.g. "owner/repo". Returns "\u2014" when unavailable.
     var repoSlug: String {
         let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
         guard parts.count >= 5 else { return "—" }
@@ -274,13 +267,13 @@ extension StepLogView {
         }
     }
 
-    /// Formatted start time, or "—" if unavailable.
+    /// Formatted start time (`HH:mm:ss`), or "\u2014" if unavailable.
     var startLabel: String {
         guard let dateValue = step.startedAt else { return "—" }
         return Self.timeFmt.string(from: dateValue)
     }
 
-    /// Formatted end time, or "—" if unavailable.
+    /// Formatted end time (`HH:mm:ss`), or "\u2014" / "running\u2026" if unavailable.
     var endLabel: String {
         guard let dateValue = step.completedAt else {
             return step.status == "in_progress" ? "running…" : "—"
@@ -288,7 +281,7 @@ extension StepLogView {
         return Self.timeFmt.string(from: dateValue)
     }
 
-    /// Date string (yyyy-MM-dd) for context when the step ran.
+    /// Date string (`yyyy-MM-dd`) for context when the step ran.
     var dateLabel: String {
         guard let dateValue = step.startedAt ?? step.completedAt else { return "—" }
         return Self.dateFmt.string(from: dateValue)
