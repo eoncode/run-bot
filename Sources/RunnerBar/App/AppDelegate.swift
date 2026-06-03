@@ -211,6 +211,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Swaps the hosting controller's `rootView` to `view` and immediately
     /// recalculates the popover size. The popover arrow stays pinned.
     /// ❌ NEVER call this from a SwiftUI view — use callbacks only.
+    ///    Calling directly from a SwiftUI view creates a retain cycle via the
+    ///    closure capture and bypasses the actor-safe callback path.
     func navigate(to view: AnyView) {
         hostingController?.rootView = view
         resizeAndRepositionPanel()
@@ -230,7 +232,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Extracted to eliminate the duplicated 4-line block that existed in
     /// `closePanel()`, `hidePanel()`, and `popoverDidClose()`.
     /// Internal (not private) — called cross-file from AppDelegate+PanelSetup.swift.
-    func tearDownOpenState() {
+    /// ⚠️ Must be called on the main actor. AppDelegate is @MainActor;
+    ///    do not call from background threads or completion handlers.
+    @MainActor func tearDownOpenState() {
         panelIsOpen = false
         panelVisibilityState.isOpen = false
         removeEventMonitor()
