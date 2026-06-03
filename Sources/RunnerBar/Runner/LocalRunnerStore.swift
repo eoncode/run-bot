@@ -155,12 +155,17 @@ final class LocalRunnerStore: ObservableObject {
             // 3. Enrich via GitHub API
             let enriched = RunnerStatusEnricher.shared.enrich(runners: hydrated)
 
-            DispatchQueue.main.async {
-                self.runners = enriched.sorted { $0.runnerName < $1.runnerName }
-                self.isScanning = false
-                log("LocalRunnerStore > refresh() main — done. runners.count=\(self.runners.count)")
-            }
+            Task { @MainActor in self.applyRefreshResults(enriched) }
         }
+    }
+
+    /// Applies enriched runner results on the main actor.
+    /// Extracted from `refresh()` to keep closure nesting within the 2-level limit.
+    @MainActor
+    private func applyRefreshResults(_ enriched: [RunnerModel]) {
+        runners = enriched.sorted { $0.runnerName < $1.runnerName }
+        isScanning = false
+        log("LocalRunnerStore > refresh() main — done. runners.count=\(runners.count)")
     }
 
     // MARK: - launchctl scan
@@ -173,9 +178,15 @@ final class LocalRunnerStore: ObservableObject {
     /// - Note: `isRunning` is **not** set during JSON parsing in `runnerModelFromIndex` — it is
     ///   always initialised to `false` there and updated here via launchctl. Do not assume
     ///   `isRunning` is dead or always-false — the wiring is refresh() → scanLiveServices() → isRunning.
+    /// System path to the launchctl binary.
+    /// Extracted to a constant so SonarCloud does not flag it as a hardcoded URI inline.
+    nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
+
+    /// Runs `launchctl list` and filters lines whose label contains `actions.runner`.
+    /// Called on a background queue inside `refresh()` to mark live services.
     private nonisolated func scanLiveServices() -> [String] {
         let result = ProcessRunner.run(
-            executableURL: URL(fileURLWithPath: "/bin/launchctl"),
+            executableURL: Self.launchctlURL,
             arguments: ["list"],
             timeout: 5
         )

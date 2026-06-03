@@ -29,7 +29,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
     private var menuItems: some View {
         let isConcluded = group.groupStatus == .completed
         let isLive      = group.groupStatus == .inProgress
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
+
+        // Re-run failed
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -38,7 +40,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             }
         } label: { Label("Re-run Failed Jobs", systemImage: "arrow.counterclockwise") }
         .disabled(!isConcluded)
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
+
+        // Re-run all
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -47,7 +51,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             }
         } label: { Label("Re-run All Jobs", systemImage: "arrow.clockwise") }
         .disabled(!isConcluded)
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating cancelRun to async/await will unblock the cooperative thread pool
+
+        // Cancel
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating cancelRun to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -98,7 +104,9 @@ private struct JobContextMenuModifier: ViewModifier {
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
         let isLive      = job.status == "in_progress"
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
+
+        // Re-run job
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope = group.repo
             let jobID = job.id

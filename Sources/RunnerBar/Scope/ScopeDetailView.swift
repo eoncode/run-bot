@@ -317,7 +317,7 @@ extension ScopeEditSheet {
                 .frame(width: 100, alignment: .leading)
                 .fixedSize()
             if isEditingPath {
-                TextField("~/code/org/repo", text: $localRepoPath)
+                TextField("~/code/org/repo", text: $localRepoPath) // NOSONAR — UI placeholder text, not a configurable URI
                     .font(.system(size: 11, design: .monospaced))
                     .textFieldStyle(.plain)
                     .foregroundColor(Color.rbTextPrimary)
@@ -445,7 +445,7 @@ extension ScopeEditSheet {
         } else {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
-        // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+.
+        // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+. // NOSONAR
         // Replace with NSApp.activate() (no argument) once the deployment target allows.
         NSApp.activate(ignoringOtherApps: true)
         picker.begin { response in
