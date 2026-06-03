@@ -237,6 +237,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Internal (not private) — called cross-file from AppDelegate+PanelSetup.swift.
     /// ⚠️ Must be called on the main actor. AppDelegate is @MainActor;
     ///    do not call from background threads or completion handlers.
+    /// Does NOT reset `savedNavState` — callers that want a full close (not a hide)
+    ///    must nil it out themselves (see `closePanel()`).
+    /// Does NOT reset `panelVisibilityState.isTransientHide` — that flag is cleared
+    ///    by `openPanel()` on re-open.
     @MainActor func tearDownOpenState() {
         panelIsOpen = false
         panelVisibilityState.isOpen = false

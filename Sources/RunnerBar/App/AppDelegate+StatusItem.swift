@@ -53,7 +53,12 @@ extension AppDelegate {
     func menuBarImage(for status: AggregateStatus) -> NSImage {
         NSImage(systemSymbolName: status.symbolName, accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
-            ?? NSImage(named: "MenuBarFallback")
+            ?? {
+                #if DEBUG
+                assertionFailure("MenuBarFallback asset missing from Assets.xcassets — add it to keep the status-bar icon visible on SF Symbol failure")
+                #endif
+                return NSImage(named: "MenuBarFallback")
+            }()
             ?? NSImage()
     }
 }
