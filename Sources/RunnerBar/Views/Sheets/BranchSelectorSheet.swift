@@ -207,7 +207,7 @@ extension BranchSelectorSheet {
     /// `branches` / `loadError` / `isLoading` on the MainActor.
     func loadBranches() {
         log("BranchSelectorSheet \u203a loadBranches START scope='\(scope)'")
-        Task.detached {
+        Task.detached(priority: .userInitiated) {
             let names = fetchBranchNames(scope: scope)
             await MainActor.run {
                 if let names, !names.isEmpty {
