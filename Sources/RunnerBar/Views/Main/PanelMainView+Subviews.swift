@@ -151,7 +151,7 @@ private struct RunnerMetricsBadge: View {
 /// fetch cycle, causing rows to be silently swallowed. (#948)
 struct PanelLocalRunnerRow: View {
     /// Maximum number of runner cards shown inline before the overflow label.
-    private let maxVisibleRunners = 3
+    private static let maxVisibleRunners = 3
     /// The list of runners to display.
     let runners: [RunnerModel]
     /// Renders the runner card list, or nothing if `runners` is empty.
@@ -160,9 +160,9 @@ struct PanelLocalRunnerRow: View {
     }
     /// Renders a vertical stack of runner cards, capped at `maxVisibleRunners` with an overflow label.
     @ViewBuilder private func runnerList(_ active: [RunnerModel]) -> some View {
-        ForEach(active.prefix(maxVisibleRunners)) { runner in runnerCard(runner) }
-        if active.count > maxVisibleRunners {
-            Text("+ \(active.count - maxVisibleRunners) more…")
+        ForEach(active.prefix(Self.maxVisibleRunners)) { runner in runnerCard(runner) }
+        if active.count > Self.maxVisibleRunners {
+            Text("+ \(active.count - Self.maxVisibleRunners) more…")
                 .font(.caption2).foregroundColor(.secondary)
                 .padding(.horizontal, DesignTokens.Spacing.rowHPad).padding(.vertical, 2)
         }

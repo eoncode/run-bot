@@ -289,6 +289,7 @@ enum RBFont {
 enum DesignTokens {
     /// Font aliases forwarded from `RBFont`.
     /// - Note: Deprecated — use `RBFont` directly.
+    @available(*, deprecated, renamed: "RBFont")
     enum Fonts {
         /// Monospaced label font — alias for `RBFont.monoSmall`.
         static let monoLabel: Font = RBFont.monoSmall
@@ -297,18 +298,21 @@ enum DesignTokens {
     }
     /// Spacing aliases forwarded from `RBSpacing`.
     /// - Note: Deprecated — use `RBSpacing` directly.
+    @available(*, deprecated, renamed: "RBSpacing")
     enum Spacing {
         /// Horizontal row padding — alias for `RBSpacing.md`.
         static let rowHPad: CGFloat = RBSpacing.md
     }
     /// Radius aliases forwarded from `RBRadius`.
     /// - Note: Deprecated — use `RBRadius` directly.
+    @available(*, deprecated, renamed: "RBRadius")
     enum Radius {
         /// Card corner radius — alias for `RBRadius.card`.
         static let card: CGFloat = RBRadius.card
     }
     /// Color helpers forwarded from the `Color` token extensions.
     /// - Note: Deprecated — use the `Color.rb*` extensions directly.
+    @available(*, deprecated, message: "Use Color.rb* extensions directly.")
     enum Colors {
         /// Returns a traffic-light color based on a usage percentage (0–100).
         /// - Green below 60 %, amber 60–85 %, red above 85 %.
