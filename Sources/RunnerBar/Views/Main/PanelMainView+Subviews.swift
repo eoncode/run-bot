@@ -228,9 +228,9 @@ struct PanelLocalRunnerRow: View {
 /// Row representing one GitHub Actions workflow run.
 /// Tapping expands inline job rows; long-press opens the run URL in Safari.
 ///
-/// macOS 26+: the card background uses `.glassCard()` directly on the VStack,
-/// identical structure to the pre-26 path. Animation is `.easeInOut(duration: 0.15)`
-/// on both paths — matching main branch exactly.
+/// macOS 26+: the card background uses `.glassCard()` inside the shared `rowContainer`
+/// background ZStack, identical structure to the pre-26 path. Animation is
+/// `.easeInOut(duration: 0.15)` on both paths — matching main branch exactly.
 ///
 /// ⚠️ Do NOT add GlassEffectContainer, .glassEffectID, .bouncy, or
 /// .glassEffectTransition — they cause staggered/slow expand animations (#957).
@@ -249,7 +249,7 @@ struct ActionRowView: View {
     var body: some View {
         if #available(macOS 26, *) {
             rowContainer {
-                // macOS 26+: glassCard applied directly; no ZStack needed.
+                // macOS 26+: glassCard rendered as background element inside rowContainer's ZStack.
                 Color.clear.glassCard(cornerRadius: RBRadius.card)
                 statusAccentBar
             }
