@@ -26,7 +26,9 @@ extension AppDelegate {
     /// Builds the root SwiftUI view. PanelContainerView is applied HERE and ONLY here.
     /// When `navigate(to:)` swaps `rootView` to settings or step-log, those views are
     /// placed directly — the PanelContainerView shell is NOT re-applied.
-    /// ❌ NEVER wrap StepLogView or SettingsView in PanelContainerView here —
+    /// Note: `settingsView()` applies its own PanelContainerView (sheets require it),
+    ///    but that is `settingsView()`'s responsibility — not this function's.
+    /// ❌ NEVER re-wrap those views from here —
     ///    nesting causes multiple overlapping dim overlays → gray/black flash.
     func mainView() -> AnyView {
         let inner = PanelMainView(

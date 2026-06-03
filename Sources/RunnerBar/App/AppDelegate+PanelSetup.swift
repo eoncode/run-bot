@@ -85,7 +85,10 @@ extension AppDelegate: NSPopoverDelegate {
     }
 
     /// Syncs internal state after the popover closes for any reason.
-    /// Dedup guard — `popoverDidClose` can fire more than once per close cycle.
+    /// Primary purpose: safety net for OS-initiated closes (e.g. user clicks outside).
+    /// When `closePanel()` or `hidePanel()` drives the close, they call
+    /// `tearDownOpenState()` directly — by the time this fires, `panelIsOpen`
+    /// is already `false` and the guard exits immediately.
     public func popoverDidClose(_ notification: Notification) {
         guard panelIsOpen else { return }
         tearDownOpenState()
