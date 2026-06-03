@@ -17,7 +17,8 @@ final class PanelSheetState: ObservableObject {
     /// The runner currently selected for the runner detail sheet.
     @Published var editingRunner: RunnerModel?
 
-    /// Snapshot captured immediately before a transient hide.
+    /// Backing store for captureTransientHideState() — persists sheet intent
+    /// across NSPopover hide/show cycles. See type doc for NSPopover teardown context.
     private var runnerSheetSnapshot: RunnerModel?
 
     /// Captures the current runner sheet before hiding the popover.
@@ -27,6 +28,7 @@ final class PanelSheetState: ObservableObject {
 
     /// Restores the runner sheet after the popover has been shown again.
     func restoreTransientHideStateIfNeeded() {
+        // Only restore if no sheet is already active — prevents overwriting a concurrently set runner.
         guard editingRunner == nil, let runnerSheetSnapshot else { return }
         editingRunner = runnerSheetSnapshot
     }
