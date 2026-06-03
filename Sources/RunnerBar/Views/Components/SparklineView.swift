@@ -5,9 +5,7 @@ import SwiftUI
 // MARK: - SparklineView
 /// A mini sparkline graph using Path: polyline stroke + gradient fill.
 /// Color shifts green -> orange -> red based on the current value threshold.
-/// Fill uses .opacity(0.85) top -> .opacity(0.05) bottom so it blends in both
-/// light and dark mode -- satisfying Phase 2 transparency spec (#420).
-/// Renders on a transparent background so the glass panel from parent views shows through.
+/// Fill uses `.opacity(0.85)` top -> `.opacity(0.05)` bottom.
 struct SparklineView: View {
     /// History ring buffer -- ordered oldest->newest, values 0-100.
     let history: [Double]

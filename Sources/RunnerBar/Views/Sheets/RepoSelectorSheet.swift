@@ -14,7 +14,7 @@ import SwiftUI
 //     items: repos,
 //     label: "Repository",
 //     onDismiss: { showSheet = false },
-//     onSelect: { selectedRepo = $0 }   // ← do NOT dismiss here; itemRow calls onDismiss
+//     onSelect: { selectedRepo = $0 }   // do NOT dismiss here; itemRow calls onDismiss
 // )
 
 /// Reusable searchable sheet for picking a repository or organisation from a
@@ -27,17 +27,20 @@ struct RepoSelectorSheet: View {
     let label: String
     /// Called on every exit path (selection or cancel).
     let onDismiss: () -> Void
-    /// Called with the selected item string. Do NOT call `onDismiss` here — `itemRow` handles it.
+    /// Called with the selected item string. Do NOT call `onDismiss` here -- `itemRow` handles it.
     let onSelect: (String) -> Void
 
+    /// Current search query; filters `items` into `filtered`.
     @State private var searchText = ""
 
+    /// Items matching `searchText` (case-insensitive); equals `items` when `searchText` is empty.
     private var filtered: [String] {
         searchText.isEmpty
             ? items
             : items.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
 
+    /// Root body -- header, search field, item list, and cancel footer.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerSection
@@ -55,6 +58,7 @@ struct RepoSelectorSheet: View {
 // MARK: - Subviews
 
 extension RepoSelectorSheet {
+    /// Title and subtitle header shown at the top of the sheet.
     var headerSection: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Select \(label)")
@@ -69,12 +73,13 @@ extension RepoSelectorSheet {
         .padding(.bottom, 10)
     }
 
+    /// Search field row with clear button.
     var searchSection: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundColor(Color.rbTextTertiary)
-            TextField("Search \(label.lowercased())s…", text: $searchText)
+            TextField("Search \(label.lowercased())s...", text: $searchText)
                 .font(.system(size: 12))
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {
@@ -97,6 +102,7 @@ extension RepoSelectorSheet {
         .padding(.bottom, 8)
     }
 
+    /// Scrollable item list; shows empty-state messages when `items` or `filtered` is empty.
     @ViewBuilder
     var listSection: some View {
         if items.isEmpty {
@@ -138,11 +144,10 @@ extension RepoSelectorSheet {
         }
     }
 
-    /// Row button for a single item. Calls `onSelect` then `onDismiss` on tap,
-    /// matching the dismiss contract established by `BranchSelectorSheet`.
+    /// Row button for a single item. Calls `onSelect` then `onDismiss` on tap.
     func itemRow(_ item: String) -> some View {
         Button(action: {
-            log("RepoSelectorSheet › selected item='\(item)'")
+            log("RepoSelectorSheet > selected item='\(item)'")
             onSelect(item)
             onDismiss()
         }) {
@@ -164,6 +169,7 @@ extension RepoSelectorSheet {
         .buttonStyle(.plain)
     }
 
+    /// Cancel button footer bar.
     var footerSection: some View {
         HStack {
             Spacer()

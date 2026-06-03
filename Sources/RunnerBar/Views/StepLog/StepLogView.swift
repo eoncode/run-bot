@@ -33,11 +33,8 @@ import SwiftUI
 // ║ ALLOWED UNDER ANY CIRCUMSTANCE. The regression we get when this comment   ║
 // ║ is removed is major major major.                                           ║
 // ╙────────────────────────────────────────────────────────────────────────────╜
-// Phase 5: DesignToken colour sweep — .yellow/.green/.red → rbWarning/rbSuccess/rbDanger;
-//          meta badge backgrounds use Color.rbSurfaceElevated;
-//          log area uses Color.rbSurfaceElevated background;
-//          all .secondary foreground replaced with Color.rbTextSecondary.
-// Phase 7: meta badge backgrounds → .glassCard(cornerRadius: RBRadius.small).
+// Phase 5: DesignToken colour sweep
+// Phase 7: meta badge backgrounds -> .glassCard(cornerRadius: RBRadius.small).
 /// Shows the raw log text for a single `JobStep`.
 ///
 /// Placed by `AppDelegate.navigate()` (rootView swap). Fits the fixed popover frame;
@@ -51,33 +48,33 @@ struct StepLogView: View {
     let onBack: () -> Void
     /// Optional callback fired on the main thread once the async log fetch completes.
     ///
-    /// ❌ NEVER call setFrameSize / contentSize directly from this closure.
+    /// Do NOT call setFrameSize / contentSize directly from this closure.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
     /// is major major major.
     var onLogLoaded: (() -> Void)?
     /// `nil` = not yet fetched; `""` = fetch returned empty; non-empty = log text.
     @State private var logText: String?
-    /// True while the background fetch is in-flight.
+    /// `true` while the background fetch is in-flight.
     @State private var isLoading = true
 
     // MARK: - Formatters (static to avoid re-allocation per render)
-    /// `HH:mm:ss` — used for start/end time labels in the meta row.
+    /// `HH:mm:ss` formatter used for start/end time labels in the meta row.
     private static let timeFmt: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
-    /// `yyyy-MM-dd` — used for the date label in the meta row.
+    /// `yyyy-MM-dd` formatter used for the date label in the meta row.
     private static let dateFmt: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
 
+    /// Root body -- top bar, step name, meta rows, and the capped log scroll view.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Top bar ────────────────────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Button(action: onBack) {
                     HStack(spacing: 3) {
@@ -118,7 +115,6 @@ struct StepLogView: View {
             .padding(.top, 10)
             .padding(.bottom, 4)
 
-            // ── Step name (large) ────────────────────────────────────────────────────────────────────────────────────────────
             Text(step.name)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2)
@@ -126,7 +122,6 @@ struct StepLogView: View {
                 .padding(.horizontal, RBSpacing.md)
                 .padding(.bottom, 5)
 
-            // ── Meta rows ──────────────────────────────────────────────────────────────────────────────────────────────
             HStack(spacing: 6) {
                 Image(systemName: "briefcase").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(job.name).font(.caption).foregroundColor(Color.rbTextSecondary)
@@ -158,13 +153,13 @@ struct StepLogView: View {
                 Image(systemName: "clock").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(startLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("→").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
+                Text("->").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(endLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("·").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
+                Text(".").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(step.elapsed)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("·").font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary)
+                Text(".").font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary)
                 Text(dateLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
                 Spacer()
@@ -175,7 +170,6 @@ struct StepLogView: View {
 
             Divider()
 
-            // ── Log — INSIDE ScrollView ──────────────────────────────────────────────────────────────────────────────────────────────────────────
             // ⚠️ .frame(maxHeight:) cap is REQUIRED on this ScrollView (ref #370).
             // ❌ NEVER remove .frame(maxHeight:) from this ScrollView.
             ScrollView(.vertical, showsIndicators: true) {
@@ -198,7 +192,7 @@ struct StepLogView: View {
                         .padding(.horizontal, RBSpacing.md).padding(.vertical, 8)
                 }
             }
-            // ⚠️ REQUIRED — caps preferredContentSize.height. Prevents panel growing off-screen.
+            // ⚠️ REQUIRED -- caps preferredContentSize.height. Prevents panel growing off-screen.
             // ❌ NEVER remove this modifier.
             .frame(maxHeight: NSScreen.main.map { $0.visibleFrame.height * 0.75 } ?? 600)
         }
@@ -216,12 +210,12 @@ struct StepLogView: View {
     }
 
     // MARK: - Log loading
+    /// Kicks off a background fetch of the step log and publishes the result to `logText`.
     private func loadLog() {
         isLoading = true
         let jobID = job.id
         let stepNum = step.id
-        // Reuse the repoSlug computed property — avoids duplicating the htmlUrl parse logic.
-        let scope = repoSlug == "—"
+        let scope = repoSlug == "-"
             ? ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
             : repoSlug
         Task.detached(priority: .userInitiated) {
@@ -238,26 +232,26 @@ struct StepLogView: View {
 // MARK: - Derived helpers
 /// Derived helper properties for `StepLogView` (status labels, colors, time formatting).
 extension StepLogView {
-    /// Repo slug derived from job.htmlUrl, e.g. "owner/repo". Returns "—" when unavailable.
+    /// Repo slug derived from `job.htmlUrl`, e.g. `"owner/repo"`. Returns `"-"` when unavailable.
     var repoSlug: String {
         let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
-        guard parts.count >= 5 else { return "—" }
+        guard parts.count >= 5 else { return "-" }
         let owner = parts[3]; let repo = parts[4]
-        return (owner.isEmpty || repo.isEmpty) ? "—" : "\(owner)/\(repo)"
+        return (owner.isEmpty || repo.isEmpty) ? "-" : "\(owner)/\(repo)"
     }
 
-    /// Step conclusion label with icon, or live/queued status.
+    /// Step conclusion label with icon, or live/queued status text.
     var stepStatusLabel: String {
         switch step.conclusion {
-        case "success": return "✓ success"
-        case "failure": return "✗ failure"
-        case "skipped": return "⊘ skipped"
-        case "cancelled": return "⊘ cancelled"
-        default: return step.status == "in_progress" ? "▶ running" : "· queued"
+        case "success": return "success"
+        case "failure": return "failure"
+        case "skipped": return "skipped"
+        case "cancelled": return "cancelled"
+        default: return step.status == "in_progress" ? "running" : "queued"
         }
     }
 
-    /// Colour used to render `stepStatusLabel` based on conclusion or live status.
+    /// Color used to render `stepStatusLabel` based on conclusion or live status.
     var stepStatusColor: Color {
         switch step.conclusion {
         case "success": return Color.rbSuccess
@@ -267,23 +261,23 @@ extension StepLogView {
         }
     }
 
-    /// Formatted start time (`HH:mm:ss`), or "—" if unavailable.
+    /// Formatted start time (`HH:mm:ss`), or `"-"` if unavailable.
     var startLabel: String {
-        guard let dateValue = step.startedAt else { return "—" }
+        guard let dateValue = step.startedAt else { return "-" }
         return Self.timeFmt.string(from: dateValue)
     }
 
-    /// Formatted end time (`HH:mm:ss`), or "—" / "running…" if unavailable.
+    /// Formatted end time (`HH:mm:ss`), or `"-"` / `"running..."` if unavailable.
     var endLabel: String {
         guard let dateValue = step.completedAt else {
-            return step.status == "in_progress" ? "running…" : "—"
+            return step.status == "in_progress" ? "running..." : "-"
         }
         return Self.timeFmt.string(from: dateValue)
     }
 
-    /// Date string (`yyyy-MM-dd`) for context when the step ran.
+    /// Date string (`yyyy-MM-dd`) for context on when the step ran.
     var dateLabel: String {
-        guard let dateValue = step.startedAt ?? step.completedAt else { return "—" }
+        guard let dateValue = step.startedAt ?? step.completedAt else { return "-" }
         return Self.dateFmt.string(from: dateValue)
     }
 }
