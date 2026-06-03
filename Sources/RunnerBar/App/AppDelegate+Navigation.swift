@@ -89,8 +89,9 @@ extension AppDelegate {
             // TODO(#1099): This guard checks the live store which is empty until the first
             // poll (~2–5 s after launch). A user who reopens the app quickly after
             // viewing a step log will always fail this guard and land on main instead.
-            // Options: remove the guard and let StepLogView handle a missing-job state,
-            // or persist the last-seen job ID and validate against that.
+            // Preferred fix: let StepLogView render a loading/empty state and remove
+            // this guard. Alternative: persist the last-seen job ID and validate against
+            // that (more state management complexity, better UX correctness).
             guard RunnerStore.shared.jobs.contains(where: { $0.id == job.id }) else { return nil }
             // No PanelContainerView here — StepLogView has no sheets.
             return wrapEnv(StepLogView(

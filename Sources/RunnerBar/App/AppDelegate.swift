@@ -98,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panelSheetState = PanelSheetState()
     /// Mirrors `popover.isShown`. Kept separately because `NSPopover.isShown` is not
     /// reliable immediately after `performClose` — our flag is the source of truth.
+    /// Set to `true` by `openPanel()`, set to `false` by `tearDownOpenState()`.
     var panelIsOpen = false
     /// Set to `true` by `hidePopoverWindowsPreservingSheets()` when the popover window
     /// is hidden without closing, so the sheet NSWindow survives.
@@ -153,6 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Every view produced by a view-factory in AppDelegate+Navigation.swift must
     /// pass through this helper.
     /// ❌ NEVER remove `panelVisibilityState` from the environment injection here.
+    ///    `PanelContainerView` and its dim overlay observe this object;
+    ///    removing it causes a runtime crash on sheet dismissal.
     func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(panelVisibilityState))
     }

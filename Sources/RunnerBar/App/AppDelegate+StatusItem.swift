@@ -47,11 +47,13 @@ extension AppDelegate {
     /// 1. `status.symbolName` — the correct SF Symbol for the current status.
     /// 2. `"circle"` — a safe generic fallback if the symbol name is unavailable
     ///    (e.g. running on an older OS that doesn’t have the symbol).
-    /// 3. `NSImage()` — an empty image as a last resort to avoid a nil crash
-    ///    when assigning to `NSStatusBarButton.image`.
+    /// 3. `NSImage(named: "MenuBarFallback")` — a bundled asset that keeps the
+    ///    status-bar icon visible even when all SF Symbols are unavailable;
+    ///    falls back to `NSImage()` (empty/invisible) only if the asset is also missing.
     func menuBarImage(for status: AggregateStatus) -> NSImage {
         NSImage(systemSymbolName: status.symbolName, accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "circle", accessibilityDescription: nil)
+            ?? NSImage(named: "MenuBarFallback")
             ?? NSImage()
     }
 }
