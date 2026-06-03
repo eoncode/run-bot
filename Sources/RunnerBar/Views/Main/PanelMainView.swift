@@ -110,6 +110,9 @@ struct PanelMainView: View {
         .onChange(of: panelVisibilityState.isOpen) { _, open in
             if open { systemStats.start() } else { systemStats.stop() }
         }
+        // TODO: visibleCount resets on every actions identity change, including poll
+        // updates that don't change the list length. This snaps the user back to 10
+        // rows mid-scroll. Should reset only when store.actions.count decreases.
         .onChange(of: store.actions) { _, _ in visibleCount = 10 }
     }
 
@@ -145,7 +148,7 @@ struct PanelMainView: View {
         let nextBatch = min(10, store.actions.count - visibleCount)
         if nextBatch > 0 {
             Button(action: { visibleCount += nextBatch }) {
-                Text("Load \(nextBatch) more workflows...")
+                Text("Load \(nextBatch) more workflows\u{2026}")
                     .font(.caption).foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
@@ -175,7 +178,7 @@ struct PanelMainView: View {
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
             if remaining < 1 {
-                countdownLabel = "resuming..."
+                countdownLabel = "resuming\u{2026}"
             } else if remaining < 60 {
                 countdownLabel = "resets in \(Int(remaining))s"
             } else {

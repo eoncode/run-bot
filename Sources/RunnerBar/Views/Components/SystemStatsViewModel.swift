@@ -43,10 +43,15 @@ final class SystemStatsViewModel: ObservableObject {
     @Published private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
     /// Rolling 60-sample history for disk-usage sparkline charts.
     @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Repeating 2-second sample timer; only mutated on MainActor.
+    /// Safety: only mutated on MainActor (start/stop). Captured as a local `let` in
+    /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
+    /// must be called on the thread that installed the timer (main run loop).
     nonisolated(unsafe) private var timer: Timer?
+    /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
+    /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     /// Previous `processor_info_array_t` sample retained between `sampleCPU()` calls.
     nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
+    /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     /// Entry count of `prevCPUInfo`, required by `vm_deallocate` for correct deallocation size.
     nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries via `FileManager.attributesOfFileSystem`.
@@ -56,6 +61,8 @@ final class SystemStatsViewModel: ObservableObject {
     init() {}
 
     deinit {
+        // Timer.invalidate() must be called on the thread that installed the timer (main run loop).
+        // deinit is nonisolated in Swift 6 and may run off-main, so we dispatch explicitly.
         let t = timer
         DispatchQueue.main.async { t?.invalidate() }
         deallocPrevCPUInfo()
@@ -107,6 +114,7 @@ final class SystemStatsViewModel: ObservableObject {
 
     // MARK: CPU
     // swiftlint:disable:next function_body_length
+    // Mach host_processor_info diff loop — cannot be extracted without losing clarity.
     /// Reads per-core tick counts via `host_processor_info` and returns aggregate CPU usage (0-100).
     /// Diffs against the previous sample; returns `0` on the first call or if the kernel call fails.
     private func sampleCPU() -> Double {
@@ -171,6 +179,8 @@ final class SystemStatsViewModel: ObservableObject {
     // MARK: Disk
     /// Reads total and free bytes for the root volume and returns used/total in GB.
     /// - Returns: `(used, total)` in GB, or `(0, 0)` if the file-system query fails.
+    /// - Note: Casts to `Int64`; safe for volumes up to ~9.2 EB. If Apple Silicon Macs ever
+    ///   ship volumes exceeding `Int64.max`, migrate to `UInt64` casts here.
     private func sampleDisk() -> (used: Double, total: Double) {
         guard
             let attrs = try? FileManager.default.attributesOfFileSystem(forPath: Self.rootVolumePath),

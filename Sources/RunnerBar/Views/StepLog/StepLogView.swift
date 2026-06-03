@@ -212,13 +212,20 @@ struct StepLogView: View {
     // MARK: - Log loading
     /// Kicks off a background fetch of the step log and publishes the result to `logText`.
     ///
-    /// Fails fast when `repoScopeForFetch` is `""` (missing or malformed `htmlUrl`) to avoid
-    /// querying an unrelated scope from `ScopeStore` in multi-repo setups.
+    /// Uses `repoScopeForFetch` (derived from `job.htmlUrl`) as the primary scope.
+    /// Falls back to the first `owner/repo`-style entry in `ScopeStore.shared.scopes` when
+    /// `htmlUrl` is absent or malformed — preserving the #1106 spec intent so single-repo
+    /// setups continue to work even if the job URL is temporarily unavailable.
     private func loadLog() {
         isLoading = true
         let jobID = job.id
         let stepNum = step.id
-        let scope = repoScopeForFetch
+        let scope: String = {
+            let primary = repoScopeForFetch
+            if !primary.isEmpty { return primary }
+            // Fallback: first scope in ScopeStore that looks like owner/repo.
+            return ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
+        }()
         guard !scope.isEmpty else {
             logText = ""
             isLoading = false
@@ -239,31 +246,31 @@ struct StepLogView: View {
 // MARK: - Derived helpers
 /// Derived helper properties for `StepLogView` (status labels, colors, time formatting).
 extension StepLogView {
+    /// Parses `job.htmlUrl` into an `owner/repo` string.
+    /// Returns `nil` when the URL is absent, has fewer than 5 path components, or either
+    /// component is empty. Use this instead of duplicating the parsing logic in multiple places.
+    private func _parseRepoSlug() -> String? {
+        let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
+        guard parts.count >= 5 else { return nil }
+        let owner = parts[3]; let repo = parts[4]
+        guard !owner.isEmpty, !repo.isEmpty else { return nil }
+        return "\(owner)/\(repo)"
+    }
+
     /// Repo slug derived from `job.htmlUrl` for **display** purposes, e.g. `"owner/repo"`.
     /// Returns `"\u{2014}"` (em dash) when the URL is absent or malformed.
     /// Use `repoScopeForFetch` for network calls.
     var repoSlug: String {
-        let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
-        guard parts.count >= 5 else {
-            log("StepLogView \u{203a} repoSlug: htmlUrl has < 5 parts — '\(job.htmlUrl ?? "nil")'")
-            return "\u{2014}"
-        }
-        let owner = parts[3]; let repo = parts[4]
-        guard !owner.isEmpty, !repo.isEmpty else {
-            log("StepLogView \u{203a} repoSlug: empty owner or repo in '\(job.htmlUrl ?? "")'")
-            return "\u{2014}"
-        }
-        return "\(owner)/\(repo)"
+        if let slug = _parseRepoSlug() { return slug }
+        log("StepLogView \u{203a} repoSlug: could not parse htmlUrl '\(job.htmlUrl ?? "nil")'")
+        return "\u{2014}"
     }
 
     /// Repo slug derived from `job.htmlUrl` for **fetch/network** use.
     /// Returns `""` (empty string) when the URL is absent or malformed,
     /// so callers can guard on `scope.isEmpty` without comparing against a display sentinel.
     private var repoScopeForFetch: String {
-        let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
-        guard parts.count >= 5 else { return "" }
-        let owner = parts[3]; let repo = parts[4]
-        return (owner.isEmpty || repo.isEmpty) ? "" : "\(owner)/\(repo)"
+        return _parseRepoSlug() ?? ""
     }
 
     /// Step conclusion label with icon prefix for at-a-glance visual differentiation.
