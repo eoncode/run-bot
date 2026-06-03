@@ -27,7 +27,7 @@ struct RunnerLifecycleService {
     /// Shared singleton — use this instead of calling init directly.
     static let shared = RunnerLifecycleService()
     /// Private initialiser — use `shared`.
-    private init() {}
+    private init() { /* Singleton — intentionally empty; all state is in instance properties. */ }
 
     // MARK: - Start
 

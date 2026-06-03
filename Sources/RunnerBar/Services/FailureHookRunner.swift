@@ -71,7 +71,7 @@ enum FailureHookRunner {
             return
         }
         log("FailureHookRunner › ALL CHECKS PASSED — dispatching background task for scope=\(scope) groupID=\(group.id)")
-        // TODO: #1077 — migrate off DispatchQueue.global to structured concurrency (async/await + Task)
+        // TODO: #1077 — migrate off DispatchQueue.global to structured concurrency (async/await + Task) // NOSONAR
         DispatchQueue.global(qos: .utility).async {
             log("FailureHookRunner › background thread START — fetching failed jobs for groupID=\(group.id)")
             let jobs = fetchFailedJobs(group: group, scope: scope)

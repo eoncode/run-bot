@@ -43,7 +43,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         let isLive      = group.groupStatus == .inProgress
 
         // Re-run failed
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -56,7 +56,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         .disabled(!isConcluded)
 
         // Re-run all
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -69,7 +69,7 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         .disabled(!isConcluded)
 
         // Cancel
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating cancelRun to async/await will unblock the cooperative thread pool
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating cancelRun to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
@@ -139,7 +139,7 @@ private struct JobContextMenuModifier: ViewModifier {
         let isLive      = job.status == "in_progress"
 
         // Re-run job
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
+        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
         Button {
             let scope = group.repo
             let jobID = job.id
