@@ -155,7 +155,7 @@ final class LocalRunnerStore: ObservableObject {
             // 3. Enrich via GitHub API
             let enriched = RunnerStatusEnricher.shared.enrich(runners: hydrated)
 
-            self.applyRefreshResults(enriched)
+            Task { @MainActor in self.applyRefreshResults(enriched) }
         }
     }
 
@@ -180,7 +180,7 @@ final class LocalRunnerStore: ObservableObject {
     ///   `isRunning` is dead or always-false — the wiring is refresh() → scanLiveServices() → isRunning.
     /// System path to the launchctl binary.
     /// Extracted to a constant so SonarCloud does not flag it as a hardcoded URI inline.
-    private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
+    nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
 
     /// Runs `launchctl list` and filters lines whose label contains `actions.runner`.
     /// Called on a background queue inside `refresh()` to mark live services.
