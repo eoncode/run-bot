@@ -211,13 +211,20 @@ struct StepLogView: View {
 
     // MARK: - Log loading
     /// Kicks off a background fetch of the step log and publishes the result to `logText`.
+    ///
+    /// Fails fast when `repoSlug` is `"-"` (missing `htmlUrl`) to avoid querying
+    /// an unrelated scope from `ScopeStore` in multi-repo setups.
     private func loadLog() {
         isLoading = true
         let jobID = job.id
         let stepNum = step.id
-        let scope = repoSlug == "-"
-            ? ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
-            : repoSlug
+        let scope = repoSlug
+        guard scope != "-" else {
+            logText = ""
+            isLoading = false
+            onLogLoaded?()
+            return
+        }
         Task.detached(priority: .userInitiated) {
             let text = fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
             await MainActor.run {
