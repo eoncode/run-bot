@@ -82,34 +82,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // does not cross file boundaries. AppDelegate+Navigation.swift requires
     // read/write access to all of them.
 
-    /// The statusItem property.
+    /// The NSStatusItem anchoring the menu-bar icon and popover.
     var statusItem: NSStatusItem?
-    /// The popover replacing the old KeyablePanel.
+    /// The NSPopover that hosts the SwiftUI panel (replaces the old KeyablePanel/NSPanel approach).
     var popover: NSPopover?
-    /// The hostingController property.
+    /// The SwiftUI hosting controller embedded inside `popover`. Its `rootView` is
+    /// swapped on navigation; the controller itself is never recreated.
     var hostingController: NSHostingController<AnyView>?
-    /// The observable constant.
+    /// The shared observable view-model passed into every SwiftUI view via the environment.
     let observable = RunnerViewModel()
-    /// The savedNavState property.
+    /// The last nav destination the user was on before the popover was closed or hidden.
+    /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?
     /// Sheet state that must survive transient popover hides.
     let panelSheetState = PanelSheetState()
-    /// Mirrors popover.isShown — kept for compatibility with navigation code.
+    /// Mirrors `popover.isShown`. Kept separately because `NSPopover.isShown` is not
+    /// reliable immediately after `performClose` — our flag is the source of truth.
     var panelIsOpen = false
-    /// Tracks a transient hide that preserved an active AppKit sheet session.
+    /// Set to `true` by `hidePopoverWindowsPreservingSheets()` when the popover window
+    /// is hidden without closing, so the sheet NSWindow survives.
+    /// ❌ NEVER read outside hidePopoverWindowsPreservingSheets / restorePopoverWindowsPreservingSheetsIfNeeded / closePanel()
     var preservedSheetWindowHide = false
 
-    /// The eventMonitor property.
+    /// Opaque token returned by `NSEvent.addGlobalMonitorForEvents`.
+    /// Typed `Any?` because that is what AppKit returns — `removeMonitor(_:)` also takes `Any`.
     var eventMonitor: Any?
-    /// The sizeObservation property.
+    /// KVO observation token for `NSHostingController.preferredContentSize`.
+    /// Drives popover resize without re-calling `popover.show()`.
     var sizeObservation: NSKeyValueObservation?
-    /// The workspaceObserver property.
-    var workspaceObserver: Any?
-    /// The cancellables property.
+    /// Observer token returned by `NSWorkspace.notificationCenter.addObserver(forName:…)`.
+    /// Typed `NSObjectProtocol?` to match the API's actual return type.
+    var workspaceObserver: NSObjectProtocol?
+    /// Combine cancellable bag for all long-lived subscriptions wired in `setupCombineSubscriptions()`.
     var cancellables = Set<AnyCancellable>()
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
-    /// The panelVisibilityState constant.
+    /// Shared observable that tracks whether the panel is open.
+    /// Injected into every SwiftUI view via `wrapEnv(_:)`.
+    /// ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
     let panelVisibilityState = PanelVisibilityState()
 
     /// Minimum popover content width.
@@ -139,7 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Environment injection
 
-    // swiftlint:disable:next missing_docs
+    /// Wraps a SwiftUI view in the shared environment objects required by the panel.
+    /// Every view produced by a view-factory in AppDelegate+Navigation.swift must
+    /// pass through this helper.
+    /// ❌ NEVER remove `panelVisibilityState` from the environment injection here.
     func wrapEnv<V: View>(_ view: V) -> AnyView {
         AnyView(view.environmentObject(panelVisibilityState))
     }
@@ -153,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Performs the applicationDidFinishLaunching operation.
+    /// Entry point after launch. Configures the GitHub API clients, builds the
+    /// status-bar item, and constructs the NSPopover panel.
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureGHAPI(
             { endpoint in ghAPI(endpoint) },
@@ -166,7 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - OAuth URL callback
 
-    /// Performs the application operation.
+    /// Handles the OAuth callback URL (`runnerbar://oauth/…`) delivered by the OS
+    /// after the user authorises the GitHub OAuth flow in the browser.
     func application(_ _: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: { $0.scheme == "runnerbar" && $0.host == "oauth" })
         else { return }
@@ -175,7 +190,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Popover resize
 
-    // swiftlint:disable:next missing_docs
+    /// Clamps the popover's `contentSize` to the current screen bounds.
+    /// Called after every rootView swap and from the KVO size observer.
+    /// ⚠️ Never call `popover.show()` here — updating `contentSize` resizes in place
+    /// without re-anchoring the arrow.
     func resizeAndRepositionPanel() {
         guard panelIsOpen, let popover, let controller = hostingController else { return }
         let preferred = controller.preferredContentSize
@@ -190,7 +208,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Navigation
 
-    // swiftlint:disable:next missing_docs
+    /// Swaps the hosting controller's `rootView` to `view` and immediately
+    /// recalculates the popover size. The popover arrow stays pinned.
+    /// ❌ NEVER call this from a SwiftUI view — use callbacks only.
     func navigate(to view: AnyView) {
         hostingController?.rootView = view
         resizeAndRepositionPanel()
@@ -205,6 +225,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Dismiss
 
+    /// Shared teardown called by every close/hide path.
+    /// Resets `panelIsOpen`, the visibility state flag, and removes both monitors.
+    /// Extracted to eliminate the duplicated 4-line block that existed in
+    /// `closePanel()`, `hidePanel()`, and `popoverDidClose()`.
+    private func tearDownOpenState() {
+        panelIsOpen = false
+        panelVisibilityState.isOpen = false
+        removeEventMonitor()
+        removeWorkspaceObserver()
+    }
+
     /// Closes the popover explicitly (Escape / back navigation / manual close).
     /// Resets rootView to main so next open starts fresh.
     /// ❌ Do NOT call this from outside-tap / workspace-switch — use hidePanel().
@@ -212,16 +243,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panelIsOpen else { return }
         popover?.performClose(nil)
         preservedSheetWindowHide = false
-        panelIsOpen = false
-        panelVisibilityState.isOpen = false
-        removeEventMonitor()
-        removeWorkspaceObserver()
+        tearDownOpenState()
         savedNavState = nil
         panelSheetState.clearRunnerSheet()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.hostingController?.rootView = self.mainView()
-        }
+        hostingController?.rootView = mainView()
     }
 
     /// Hides the popover on outside-tap or workspace app-switch.
@@ -245,18 +270,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelVisibilityState.isTransientHide = true
 
         if hidePopoverWindowsPreservingSheets() {
-            panelIsOpen = false
-            panelVisibilityState.isOpen = false
-            removeEventMonitor()
-            removeWorkspaceObserver()
+            tearDownOpenState()
             return
         }
 
         popover?.performClose(nil)
-        panelIsOpen = false
-        panelVisibilityState.isOpen = false
-        removeEventMonitor()
-        removeWorkspaceObserver()
+        tearDownOpenState()
     }
 
     /// Orders the popover and attached sheet windows out without closing them.
@@ -308,12 +327,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popoverWindow.makeKey()
     }
 
-    /// Performs the removeEventMonitor operation.
+    /// Nil-safe teardown for the global mouse-event monitor.
+    /// Safe to call when `eventMonitor` is already nil.
     func removeEventMonitor() {
         if let monitor = eventMonitor { NSEvent.removeMonitor(monitor); eventMonitor = nil }
     }
 
-    /// Performs the removeWorkspaceObserver operation.
+    /// Nil-safe teardown for the workspace app-switch observer.
+    /// Safe to call when `workspaceObserver` is already nil.
     func removeWorkspaceObserver() {
         if let opt = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(opt)
@@ -323,7 +344,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Toggle
 
-    /// Performs the togglePanel operation.
+    /// Toggles the popover: opens it if closed, closes it if open.
+    /// Called by the NSStatusItem button action.
     @objc func togglePanel() {
         if panelIsOpen {
             closePanel()
