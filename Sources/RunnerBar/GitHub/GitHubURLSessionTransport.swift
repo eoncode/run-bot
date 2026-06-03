@@ -1,5 +1,8 @@
 // GitHubURLSessionTransport.swift
 // RunnerBar
+
+// @preconcurrency suppresses Sendable warnings from pre-Swift-6 Foundation types
+// (URLRequest, URLResponse, Data) used in completion handler closures.
 @preconcurrency import Foundation
 import os
 
@@ -38,6 +41,10 @@ private struct RateLimitState: @unchecked Sendable {
 private let rateLimitLock = OSAllocatedUnfairLock(initialState: RateLimitState())
 
 /// Thread-safe read/write access to the rate-limited flag.
+///
+/// The setter coordinates `isLimited` and `resetDate` within the same critical
+/// section via `scheduleRateLimitReset`, so readers never observe
+/// `isLimited == true` with `resetDate == nil`.
 var ghIsRateLimited: Bool {
     get { rateLimitLock.withLock { $0.isLimited } }
     set {
@@ -59,6 +66,10 @@ var ghRateLimitResetDate: Date? {
 }
 
 /// Schedules an automatic reset of `ghIsRateLimited` to `false`.
+///
+/// Sets `isLimited = true` and `resetDate` together inside the lock before
+/// scheduling the work item, so the `isLimited == true` / `resetDate != nil`
+/// invariant is always satisfied when `handleRateLimitResponse` calls this.
 ///
 /// Uses a cancel-and-replace `DispatchWorkItem` so that multiple concurrent
 /// 403/429 responses never leave more than one pending reset timer in flight.
@@ -103,22 +114,32 @@ private func scheduleRateLimitReset(resetAt: TimeInterval?) {
 
 // MARK: - Request builder
 
-/// Builds a pre-configured URLRequest with standard GitHub API headers.
-private func makeRequest(url: URL, token: String, timeout: TimeInterval) -> URLRequest {
+/// Module-level constant reused by `resolveURL` to avoid allocating a new
+/// `CharacterSet` on every API call and pagination iteration.
+private let slashCharacterSet = CharacterSet(charactersIn: "/")
+
+/// Builds a URLRequest with the standard GitHub API headers shared by all
+/// request types: `Authorization`, `X-GitHub-Api-Version`.
+/// Callers set the `Accept` header for their specific media type.
+private func makeBaseRequest(url: URL, token: String, timeout: TimeInterval) -> URLRequest {
     var req = URLRequest(url: url, timeoutInterval: timeout)
     req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+    return req
+}
+
+/// Builds a pre-configured URLRequest with standard GitHub API headers.
+private func makeRequest(url: URL, token: String, timeout: TimeInterval) -> URLRequest {
+    var req = makeBaseRequest(url: url, token: token, timeout: timeout)
+    req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     return req
 }
 
 /// Builds a URLRequest with `application/vnd.github.v3.raw` Accept header.
 /// Used for log endpoints that 302-redirect to raw S3 content.
 private func makeRawRequest(url: URL, token: String, timeout: TimeInterval) -> URLRequest {
-    var req = URLRequest(url: url, timeoutInterval: timeout)
-    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    var req = makeBaseRequest(url: url, token: token, timeout: timeout)
     req.setValue("application/vnd.github.v3.raw", forHTTPHeaderField: "Accept")
-    req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
     return req
 }
 
@@ -126,7 +147,7 @@ private func makeRawRequest(url: URL, token: String, timeout: TimeInterval) -> U
 private func resolveURL(_ endpoint: String) -> String {
     endpoint.hasPrefix("http")
         ? endpoint
-        : "\(GitHubConstants.apiBase)/\(endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/")))"
+        : "\(GitHubConstants.apiBase)/\(endpoint.trimmingCharacters(in: slashCharacterSet))"
 }
 
 /// Clears the rate-limit flag and cancels any pending reset timer.
@@ -150,6 +171,9 @@ private func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
 }
 
 /// Handles a 403/429 HTTP response, setting rate-limit state when appropriate.
+///
+/// Sets `isLimited = true` and `resetDate` atomically inside `scheduleRateLimitReset`
+/// so that `isLimited == true` with `resetDate == nil` is never observable.
 private func handleRateLimitResponse(
     statusCode: Int,
     _ data: Data?,
@@ -158,11 +182,15 @@ private func handleRateLimitResponse(
 ) {
     let resetTS = response.value(forHTTPHeaderField: "X-RateLimit-Reset")
         .flatMap { TimeInterval($0) }
-    let isRealRateLimit = statusCode == 429
-        || response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0"
+    // Use Int() conversion to tolerate whitespace or non-canonical zero strings
+    // (e.g. " 0", "00") that string equality == "0" would miss.
+    let remaining = response.value(forHTTPHeaderField: "X-RateLimit-Remaining")
+        .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+    let isRealRateLimit = statusCode == 429 || remaining == 0
     if isRealRateLimit {
         logErrorBody(data, endpoint: endpoint, status: statusCode)
         log("URLSessionTransport › ⚠️ rate limited — \(endpoint) status=\(statusCode)")
+        // Write isLimited=true and resetDate in one critical section via scheduleRateLimitReset.
         rateLimitLock.withLock { $0.isLimited = true }
         scheduleRateLimitReset(resetAt: resetTS)
     } else {
@@ -212,16 +240,22 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
 
 /// Fetches all pages of a GitHub API endpoint, concatenating JSON arrays.
 /// Follows the `Link: <url>; rel="next"` header automatically.
+///
+/// Token is re-fetched on every loop iteration so that a sign-out mid-pagination
+/// is detected immediately rather than continuing with a stale credential.
+/// A `401 Unauthorized` response breaks the loop and logs clearly.
+/// A non-array page response (unexpected shape) also breaks the loop with a log.
 /// ⚠️ Must be called from a background thread, never from the main thread.
 func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     dispatchPrecondition(condition: .notOnQueue(.main))
-    guard let token = githubToken() else {
-        log("urlSessionAPIPaginated › no token available")
-        return nil
-    }
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [[String: Any]] = []
     while let urlString = nextURL {
+        // Re-fetch token each iteration so a mid-pagination sign-out is detected early.
+        guard let token = githubToken() else {
+            log("urlSessionAPIPaginated › no token available, stopping pagination")
+            break
+        }
         guard let url = URL(string: urlString) else { break }
         let req = makeRequest(url: url, token: token, timeout: timeout)
         let sem = DispatchSemaphore(value: 0)
@@ -234,6 +268,10 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
                 return
             }
             guard let http = response as? HTTPURLResponse else { return }
+            if http.statusCode == 401 {
+                log("urlSessionAPIPaginated › 401 Unauthorized — token may have been revoked, stopping pagination")
+                return  // pageData stays nil → guard below breaks the loop
+            }
             if http.statusCode == 403 || http.statusCode == 429 {
                 handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
                 return
@@ -250,8 +288,15 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         guard let data = pageData.withLock({ $0 }) else { break }
         if let page = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             allItems.append(contentsOf: page)
+        } else {
+            log("urlSessionAPIPaginated › unexpected non-array response at \(urlString) — stopping pagination")
+            break
         }
         nextURL = extractNextURL(from: linkHeader.withLock({ $0 }))
+    }
+    // Log partial results so callers know the list may be incomplete.
+    if ghIsRateLimited && !allItems.isEmpty {
+        log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
     return try? JSONSerialization.data(withJSONObject: allItems)
@@ -320,6 +365,13 @@ func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
 // MARK: - POST / DELETE / PUT (mutation)
 
 /// Sends a POST to the given GitHub API endpoint. Returns the response body, or nil on failure.
+///
+/// Return value semantics:
+/// - `nil`      — network failure or non-2xx status (request failed).
+/// - `Data()`   — 2xx response with no body (e.g. 204 No Content); treat as success.
+/// - `Data(…)`  — 2xx response with a body; decode as needed.
+///
+/// Callers that decode the response body should guard against empty `Data()` first.
 /// ⚠️ Must be called from a background thread.
 @discardableResult
 func urlSessionPost(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) -> Data? {
@@ -518,25 +570,42 @@ func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String
     return names
 }
 
+// MARK: - Runner token helpers
+
+/// Shared implementation for `fetchRegistrationToken` and `fetchRemovalToken`.
+///
+/// Both functions are structurally identical; this helper keeps any future
+/// change (retry logic, timeout, error format) in one place.
+///
+/// - Parameters:
+///   - type: The token endpoint suffix, e.g. `"registration-token"` or `"remove-token"`.
+///   - scope: The parsed `Scope` value providing the API prefix.
+///   - logPrefix: Label used in log messages to identify the caller.
+/// - Returns: The short-lived token string, or `nil` on failure.
+private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) -> String? {
+    let endpoint = "\(scope.apiPrefix)/actions/runners/\(type)"
+    log("\(logPrefix) › POSTing \(endpoint)")
+    guard let outputData = urlSessionPost(endpoint), !outputData.isEmpty else {
+        log("\(logPrefix) › no data for \(endpoint)")
+        return nil
+    }
+    struct TokenResponse: Decodable { let token: String }
+    guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
+        log("\(logPrefix) › decode failed (\(outputData.count)b)")
+        return nil
+    }
+    return resp.token
+}
+
 /// Fetches a short-lived runner registration token for the given scope.
 func fetchRegistrationToken(scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRegistrationToken › invalid scope: \(scopeString)")
         return nil
     }
-    let endpoint = "\(scope.apiPrefix)/actions/runners/registration-token"
-    log("fetchRegistrationToken › POSTing \(endpoint)")
-    guard let outputData = urlSessionPost(endpoint) else {
-        log("fetchRegistrationToken › no data for \(endpoint)")
-        return nil
-    }
-    struct TokenResponse: Decodable { let token: String }
-    guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
-        log("fetchRegistrationToken › decode failed for \(endpoint) (\(outputData.count)b)")
-        return nil
-    }
+    guard let token = fetchRunnerToken(type: "registration-token", scope: scope, logPrefix: "fetchRegistrationToken") else { return nil }
     log("fetchRegistrationToken › got registration token")
-    return resp.token
+    return token
 }
 
 /// Fetches a runner removal token for the given scope.
@@ -545,19 +614,9 @@ func fetchRemovalToken(scope scopeString: String) -> String? {
         log("fetchRemovalToken › invalid scope: \(scopeString)")
         return nil
     }
-    let endpoint = "\(scope.apiPrefix)/actions/runners/remove-token"
-    log("fetchRemovalToken › POSTing \(endpoint)")
-    guard let outputData = urlSessionPost(endpoint) else {
-        log("fetchRemovalToken › no data returned for \(endpoint)")
-        return nil
-    }
-    struct TokenResponse: Decodable { let token: String }
-    guard let resp = try? JSONDecoder().decode(TokenResponse.self, from: outputData) else {
-        log("fetchRemovalToken › decode failed for \(endpoint) (\(outputData.count)b)")
-        return nil
-    }
+    guard let token = fetchRunnerToken(type: "remove-token", scope: scope, logPrefix: "fetchRemovalToken") else { return nil }
     log("fetchRemovalToken › got removal token")
-    return resp.token
+    return token
 }
 
 /// Sends a POST to the given GitHub API endpoint. Returns true on success (2xx).
