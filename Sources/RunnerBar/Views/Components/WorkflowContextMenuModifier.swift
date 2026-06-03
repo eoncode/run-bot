@@ -104,13 +104,9 @@ private struct JobContextMenuModifier: ViewModifier {
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
         let isLive      = job.status == "in_progress"
-<<<<<<< HEAD
 
         // Re-run job
         // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool // NOSONAR
-=======
-        // FIXME: #1077 Task.detached wraps a blocking call — migrating ghPost to async/await will unblock the cooperative thread pool
->>>>>>> origin/main
         Button {
             let scope = group.repo
             let jobID = job.id
