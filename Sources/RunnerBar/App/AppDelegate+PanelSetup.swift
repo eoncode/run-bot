@@ -85,12 +85,10 @@ extension AppDelegate: NSPopoverDelegate {
     }
 
     /// Syncs internal state after the popover closes for any reason.
+    /// Dedup guard — `popoverDidClose` can fire more than once per close cycle.
     public func popoverDidClose(_ notification: Notification) {
         guard panelIsOpen else { return }
-        panelIsOpen = false
-        panelVisibilityState.isOpen = false
-        removeEventMonitor()
-        removeWorkspaceObserver()
+        tearDownOpenState()
     }
 
     // MARK: KVO
@@ -102,6 +100,7 @@ extension AppDelegate: NSPopoverDelegate {
             options: [.new]
         ) { [weak self] _, change in
             guard let size = change.newValue, size.height > 0 else { return }
+            // KVO can fire on a background thread — hop to main before touching UI.
             DispatchQueue.main.async { [weak self] in self?.resizeAndRepositionPanel() }
         }
     }
@@ -110,6 +109,7 @@ extension AppDelegate: NSPopoverDelegate {
 
     /// Starts all Combine subscriptions.
     private func setupCombineSubscriptions() {
+        // $runners — local runner list changed on disk (added/removed runner config).
         LocalRunnerStore.shared.$runners
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -118,8 +118,10 @@ extension AppDelegate: NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
+        // Everything below makes live network calls — skip entirely in UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else { return }
 
+        // didUpdate — API poll cycle complete; refresh icon and view-model.
         RunnerStore.shared.didUpdate
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
@@ -130,8 +132,11 @@ extension AppDelegate: NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
+        // Start the polling loop. Guarded above — never runs during UI tests.
         RunnerStore.shared.start()
 
+        // didMutate — scope changed; must restart the store entirely so it polls
+        // the correct repos from the beginning.
         ScopeStore.shared.didMutate
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
