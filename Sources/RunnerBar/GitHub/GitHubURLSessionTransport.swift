@@ -54,6 +54,7 @@ var ghIsRateLimited: Bool {
             rateLimitLock.withLock {
                 $0.isLimited = false
                 $0.resetDate = nil
+                // cancel() is thread-safe and non-blocking; safe to call under the lock.
                 $0.resetItem?.cancel()
                 $0.resetItem = nil
             }
@@ -200,6 +201,8 @@ private func handleRateLimitResponse(
         .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
     // Retry-After is present on GitHub secondary rate-limit 403s (non-zero remaining).
     // Its value is the number of seconds to wait before retrying.
+    // Note: this function is only called for 403/429 responses (see all call sites),
+    // so retryAfter != nil is only treated as a rate-limit signal in that context.
     let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
         .flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
     let isRealRateLimit = statusCode == 429 || remaining == 0 || retryAfter != nil
@@ -209,6 +212,7 @@ private func handleRateLimitResponse(
         log("URLSessionTransport › ⚠️ rate limited (\(limitKind)) — \(endpoint) status=\(statusCode)")
         // For secondary limits, convert Retry-After (relative seconds) to an
         // absolute Unix timestamp so scheduleRateLimitReset can use it directly.
+        // Date() is called immediately on response receipt; latency is negligible.
         let effectiveResetTS: TimeInterval?
         if let retryAfter, resetTS == nil {
             effectiveResetTS = Date().timeIntervalSince1970 + retryAfter
@@ -274,8 +278,8 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
     dispatchPrecondition(condition: .notOnQueue(.main))
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [[String: Any]] = []
-    // Plain var is safe here: DispatchSemaphore serialises each iteration so the
-    // completion closure has fully returned before the outer loop reads this flag.
+    // Plain vars are safe here: DispatchSemaphore serialises each iteration so the
+    // completion closure has fully returned before the outer loop reads these flags.
     var didFailAuthentication = false
     while let urlString = nextURL {
         // Re-fetch token each iteration so a mid-pagination sign-out is detected early.
@@ -289,6 +293,10 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         let sem = DispatchSemaphore(value: 0)
         let pageData = OSAllocatedUnfairLock<Data?>(initialState: nil)
         let linkHeader = OSAllocatedUnfairLock<String?>(initialState: nil)
+        // Dedicated flag set only on a confirmed 401, so the guard below can
+        // distinguish a real auth failure from a transient network error (both
+        // leave pageData nil, but only 401 should discard partial results).
+        let got401 = OSAllocatedUnfairLock(initialState: false)
         URLSession.shared.dataTask(with: req) { data, response, error in
             defer { sem.signal() }
             if let error {
@@ -298,9 +306,9 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
             guard let http = response as? HTTPURLResponse else { return }
             if http.statusCode == 401 {
                 log("urlSessionAPIPaginated › 401 Unauthorized — token may have been revoked, stopping pagination")
-                // pageData stays nil; the guard below breaks the loop.
-                // didFailAuthentication is set after sem.wait() to avoid a
-                // data race between the closure write and the outer loop read.
+                // Mark the precise 401 path so the guard below can distinguish it
+                // from a plain network error (both leave pageData nil).
+                got401.withLock { $0 = true }
                 return
             }
             if http.statusCode == 403 || http.statusCode == 429 {
@@ -316,13 +324,11 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
             pageData.withLock { $0 = data }
         }.resume()
         sem.wait()
-        // 401 sets didFailAuthentication (via the response log path above, pageData
-        // stays nil); a network error also leaves pageData nil — both break here.
-        // The distinction is made after the loop via the didFailAuthentication flag.
+        // pageData is nil for both a 401 and a network error; use got401 to tell
+        // them apart. A network error breaks the loop but does NOT set
+        // didFailAuthentication, so any pages already fetched are preserved.
         guard let data = pageData.withLock({ $0 }) else {
-            // Detect 401 path: no data AND no rate-limit AND no items accumulated
-            // on this iteration means auth likely failed.
-            if !ghIsRateLimited {
+            if got401.withLock({ $0 }) {
                 didFailAuthentication = true
             }
             break
