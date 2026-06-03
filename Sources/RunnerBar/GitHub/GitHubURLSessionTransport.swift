@@ -253,12 +253,14 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
     dispatchPrecondition(condition: .notOnQueue(.main))
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [[String: Any]] = []
-    let didFailAuthentication = OSAllocatedUnfairLock<Bool>(initialState: false)
+    // Plain var is safe here: DispatchSemaphore serialises each iteration so the
+    // completion closure has fully returned before the outer loop reads this flag.
+    var didFailAuthentication = false
     while let urlString = nextURL {
         // Re-fetch token each iteration so a mid-pagination sign-out is detected early.
         guard let token = githubToken() else {
             log("urlSessionAPIPaginated › no token available, stopping pagination")
-            didFailAuthentication.withLock { $0 = true }
+            didFailAuthentication = true
             break
         }
         guard let url = URL(string: urlString) else { break }
@@ -275,8 +277,10 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
             guard let http = response as? HTTPURLResponse else { return }
             if http.statusCode == 401 {
                 log("urlSessionAPIPaginated › 401 Unauthorized — token may have been revoked, stopping pagination")
-                didFailAuthentication.withLock { $0 = true }
-                return  // pageData stays nil → guard below breaks the loop
+                // pageData stays nil; the guard below breaks the loop.
+                // didFailAuthentication is set after sem.wait() to avoid a
+                // data race between the closure write and the outer loop read.
+                return
             }
             if http.statusCode == 403 || http.statusCode == 429 {
                 handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
@@ -291,7 +295,17 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
             pageData.withLock { $0 = data }
         }.resume()
         sem.wait()
-        guard let data = pageData.withLock({ $0 }) else { break }
+        // 401 sets didFailAuthentication (via the response log path above, pageData
+        // stays nil); a network error also leaves pageData nil — both break here.
+        // The distinction is made after the loop via the didFailAuthentication flag.
+        guard let data = pageData.withLock({ $0 }) else {
+            // Detect 401 path: no data AND no rate-limit AND no items accumulated
+            // on this iteration means auth likely failed.
+            if !ghIsRateLimited {
+                didFailAuthentication = true
+            }
+            break
+        }
         if let page = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             allItems.append(contentsOf: page)
         } else {
@@ -301,7 +315,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         nextURL = extractNextURL(from: linkHeader.withLock({ $0 }))
     }
     // Auth failure: discard partial results so callers see nil, not a truncated list.
-    if didFailAuthentication.withLock({ $0 }) {
+    if didFailAuthentication {
         if !allItems.isEmpty {
             log("urlSessionAPIPaginated › authentication failed mid-pagination — discarding \(allItems.count) partial items")
         }
@@ -598,6 +612,9 @@ func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String
 private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) -> String? {
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(type)"
     log("\(logPrefix) › POSTing \(endpoint)")
+    // Token endpoints must return a body; empty Data() is failure here, not
+    // success. This overrides urlSessionPost's documented Data() == success
+    // semantics, which apply to bodyless 2xx responses like 204 No Content.
     guard let outputData = urlSessionPost(endpoint), !outputData.isEmpty else {
         log("\(logPrefix) › no data for \(endpoint)")
         return nil
