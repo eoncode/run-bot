@@ -178,6 +178,14 @@ private func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
 ///
 /// Sets `isLimited = true` and `resetDate` atomically inside `scheduleRateLimitReset`
 /// so that `isLimited == true` with `resetDate == nil` is never observable.
+///
+/// **Primary rate limits** (`429`, or `403` with `X-RateLimit-Remaining == 0`):
+/// detected via status code or the remaining-quota header.
+///
+/// **Secondary rate limits** (`403` with a `Retry-After` header and non-zero remaining):
+/// GitHub uses this for per-minute abuse / concurrency throttling. The `Retry-After`
+/// value (seconds) is used as the reset delay so the timer honours the server window.
+/// See https://docs.github.com/en/rest/overview/rate-limits-for-the-rest-api#secondary-rate-limits
 private func handleRateLimitResponse(
     statusCode: Int,
     _ data: Data?,
@@ -190,11 +198,24 @@ private func handleRateLimitResponse(
     // (e.g. " 0", "00") that string equality == "0" would miss.
     let remaining = response.value(forHTTPHeaderField: "X-RateLimit-Remaining")
         .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-    let isRealRateLimit = statusCode == 429 || remaining == 0
+    // Retry-After is present on GitHub secondary rate-limit 403s (non-zero remaining).
+    // Its value is the number of seconds to wait before retrying.
+    let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
+        .flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
+    let isRealRateLimit = statusCode == 429 || remaining == 0 || retryAfter != nil
     if isRealRateLimit {
         logErrorBody(data, endpoint: endpoint, status: statusCode)
-        log("URLSessionTransport › ⚠️ rate limited — \(endpoint) status=\(statusCode)")
-        scheduleRateLimitReset(resetAt: resetTS)
+        let limitKind = retryAfter != nil && remaining != 0 ? "secondary" : "primary"
+        log("URLSessionTransport › ⚠️ rate limited (\(limitKind)) — \(endpoint) status=\(statusCode)")
+        // For secondary limits, convert Retry-After (relative seconds) to an
+        // absolute Unix timestamp so scheduleRateLimitReset can use it directly.
+        let effectiveResetTS: TimeInterval?
+        if let retryAfter, resetTS == nil {
+            effectiveResetTS = Date().timeIntervalSince1970 + retryAfter
+        } else {
+            effectiveResetTS = resetTS
+        }
+        scheduleRateLimitReset(resetAt: effectiveResetTS)
     } else {
         log("URLSessionTransport › 403 permission error (not rate limit) — \(endpoint)")
     }
@@ -247,18 +268,15 @@ func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
 /// is detected immediately rather than continuing with a stale credential.
 /// A `401 Unauthorized` response breaks the loop, discards any partial results,
 /// and returns `nil` so callers can distinguish auth failure from a complete dataset.
-/// A non-array page response (e.g. an API error body) discards partial results
-/// and returns `nil` — earlier pages were fetched under the same bad conditions
-/// and may be unreliable.
+/// A non-array page response (unexpected shape) also breaks the loop with a log.
 /// ⚠️ Must be called from a background thread, never from the main thread.
 func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     dispatchPrecondition(condition: .notOnQueue(.main))
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [[String: Any]] = []
-    // Plain vars are safe here: DispatchSemaphore serialises each iteration so the
-    // completion closure has fully returned before the outer loop reads these flags.
+    // Plain var is safe here: DispatchSemaphore serialises each iteration so the
+    // completion closure has fully returned before the outer loop reads this flag.
     var didFailAuthentication = false
-    var didEncounterUnexpectedPage = false
     while let urlString = nextURL {
         // Re-fetch token each iteration so a mid-pagination sign-out is detected early.
         guard let token = githubToken() else {
@@ -302,7 +320,8 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         // stays nil); a network error also leaves pageData nil — both break here.
         // The distinction is made after the loop via the didFailAuthentication flag.
         guard let data = pageData.withLock({ $0 }) else {
-            // Detect 401 path: no data AND no rate-limit means auth likely failed.
+            // Detect 401 path: no data AND no rate-limit AND no items accumulated
+            // on this iteration means auth likely failed.
             if !ghIsRateLimited {
                 didFailAuthentication = true
             }
@@ -311,16 +330,16 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         if let page = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             allItems.append(contentsOf: page)
         } else {
-            // Non-array response is likely an API error body (e.g. {"message":"..."}).
-            // Discard all partial results — pages fetched so far may be unreliable.
-            log("urlSessionAPIPaginated › unexpected non-array response at \(urlString) — discarding \(allItems.count) partial item(s)")
-            didEncounterUnexpectedPage = true
+            log("urlSessionAPIPaginated › unexpected non-array response at \(urlString) — stopping pagination")
             break
         }
         nextURL = extractNextURL(from: linkHeader.withLock({ $0 }))
     }
-    // Auth failure or unexpected page shape: discard partial results.
-    if didFailAuthentication || didEncounterUnexpectedPage {
+    // Auth failure: discard partial results so callers see nil, not a truncated list.
+    if didFailAuthentication {
+        if !allItems.isEmpty {
+            log("urlSessionAPIPaginated › authentication failed mid-pagination — discarding \(allItems.count) partial items")
+        }
         return nil
     }
     // Log partial results so callers know the list may be incomplete due to rate limit.
