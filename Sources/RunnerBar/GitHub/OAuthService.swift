@@ -90,6 +90,8 @@ final class OAuthService {
         pendingState = state
         guard var comps = URLComponents(string: authorizeURL) else {
             log("OAuthService › signIn: malformed authorizeURL — aborting")
+            pendingState = nil
+            onCompletion?(false)
             return
         }
         comps.queryItems = [
@@ -98,7 +100,12 @@ final class OAuthService {
             URLQueryItem(name: "scope", value: scopes),
             URLQueryItem(name: "state", value: state)
         ]
-        guard let url = comps.url else { return }
+        guard let url = comps.url else {
+            log("OAuthService › signIn: failed to build authorization URL — aborting")
+            pendingState = nil
+            onCompletion?(false)
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 
@@ -124,6 +131,7 @@ final class OAuthService {
         // CSRF guard: verify the state param matches what we sent in signIn().
         guard let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value else {
             log("OAuthService › handleCallback: no state param in redirect URL")
+            pendingState = nil
             onCompletion?(false)
             return
         }
