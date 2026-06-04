@@ -4,51 +4,43 @@ import Foundation
 import os
 import RunnerBarCore
 
-// MARK: - RunnerStore thin wrappers
+// MARK: - DateParserActor
 
-// These extensions delegate to PollResultBuilder so RunnerStore.fetch() call
-// sites are unchanged while the logic lives in the independently testable builder.
-
-/// A `@unchecked Sendable` wrapper around `ISO8601DateFormatter`.
+/// Actor-isolated ISO-8601 date parser.
 ///
-/// `ISO8601DateFormatter` is expensive to allocate (it loads ICU calendars on init).
-/// Keeping one file-level instance avoids repeated allocation on every poll cycle.
-/// Access is serialised via `iso8601Lock`; the `@unchecked` annotation is safe because
-/// no two threads ever call the formatter concurrently.
-private struct SendableFormatter: @unchecked Sendable {
-    /// The internal formatter instance. Access only while holding `iso8601Lock`.
-    let iso = ISO8601DateFormatter()
+/// `ISO8601DateFormatter` is expensive to allocate (ICU calendars) and not
+/// `Sendable`. Wrapping it in an actor gives thread-safe access with no lock
+/// boilerplate and no `@unchecked Sendable` escape hatch.
+private actor DateParserActor {
+    private let iso = ISO8601DateFormatter()
+    func parse(_ str: String) -> Date? { iso.date(from: str) }
+    func makeJob(from payload: JobPayload, isDimmed: Bool) -> ActiveJob {
+        makeActiveJob(from: payload, iso: iso, isDimmed: isDimmed)
+    }
 }
 
-/// `OSAllocatedUnfairLock` protecting the shared `SendableFormatter`.
-/// Always access the formatter via `iso8601Lock.withLock { ... }` to avoid data races.
-private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
+private let dateParser = DateParserActor()
 
-/// `RunnerStore` extension that bridges `PollResultBuilder` for the `fetch()` call sites.
-///
-/// All methods are `nonisolated` because polling runs on a background thread.
-/// They read `ScopeStore.shared.scopes` via `DispatchQueue.main.sync` — this is safe
-/// only when called from a background thread. Do not call these methods from the main thread
-/// as `main.sync` from the main thread will deadlock.
+// MARK: - RunnerStore thin wrappers
+
 extension RunnerStore {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
-    nonisolated func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
-        PollResultBuilder.buildJobState(
+    func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) async -> JobPollResult {
+        await PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
             snapCache: snapCache,
             fetchJobs: {
-                // ⚠️ main.sync — safe only from a background thread; deadlocks if called on main.
-                let scopes = DispatchQueue.main.sync { ScopeStore.shared.scopes }
+                let scopes = await MainActor.run { ScopeStore.shared.scopes }
                 var jobs: [ActiveJob] = []
                 for scope in scopes {
-                    jobs.append(contentsOf: fetchActiveJobs(for: scope))
+                    jobs.append(contentsOf: await fetchActiveJobs(for: scope))
                 }
                 return jobs
             },
             backfill: { cache in
-                self.backfillSteps(into: &cache)
+                await self.backfillSteps(into: &cache)
             }
         )
     }
@@ -56,22 +48,21 @@ extension RunnerStore {
     /// Builds a `GroupPollResult` by fetching live workflow action groups for all monitored scopes,
     /// firing failure hooks for newly-failed groups, enriching jobs from the job cache,
     /// and diffing against `snapPrevGroups`.
-    nonisolated func buildGroupState(
+    func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: Set<String>,
         jobCache: [Int: ActiveJob]
-    ) -> GroupPollResult {
-        PollResultBuilder.buildGroupState(
+    ) async -> GroupPollResult {
+        await PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
             snapSeenGroupIDs: snapSeenGroupIDs,
             fetchGroups: { shaKeyedCache in
-                // ⚠️ main.sync — safe only from a background thread; deadlocks if called on main.
-                let scopes = DispatchQueue.main.sync { ScopeStore.shared.scopes }
+                let scopes = await MainActor.run { ScopeStore.shared.scopes }
                 var groups: [WorkflowActionGroup] = []
                 for scope in scopes {
-                    groups.append(contentsOf: fetchActionGroups(for: scope, cache: shaKeyedCache))
+                    groups.append(contentsOf: await fetchActionGroups(for: scope, cache: shaKeyedCache))
                 }
                 return groups
             },
@@ -83,33 +74,26 @@ extension RunnerStore {
         )
     }
 
-    // MARK: - Backfill (retains ghAPI access via RunnerStore)
+    // MARK: - Backfill
 
     /// Backfills step data for cached jobs that finished without complete step information.
-    ///
-    /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
-    /// fetches the full job payload from the GitHub API, and updates the cache entry.
-    nonisolated func backfillSteps(into cache: inout [Int: ActiveJob]) {
+    func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil,
                   cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }),
                   let scope = scopeFromHtmlUrl(cached.htmlUrl),
-                  let data = ghAPI("repos/\(scope)/actions/jobs/\(cacheID)"),
+                  let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)"),
                   let fresh = try? JSONDecoder().decode(JobPayload.self, from: data),
                   !fresh.steps.isEmpty
             else { continue }
-            cache[cacheID] = iso8601Lock.withLock { wrapper in
-                makeActiveJob(from: fresh, iso: wrapper.iso, isDimmed: true)
-            }
+            cache[cacheID] = await dateParser.makeJob(from: fresh, isDimmed: true)
         }
     }
 
-    // MARK: - Group helpers (retain RunnerStore context)
+    // MARK: - Group helpers
 
-    /// Derives a scope string for `group` by first trying `group.repo`, then falling back
-    /// to parsing the `htmlUrl` of the first run. Returns an empty string if neither is available.
-    nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
+    func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")
@@ -126,9 +110,7 @@ extension RunnerStore {
         return ""
     }
 
-    /// Merges live job data with cached job data, preferring whichever has a conclusion
-    /// or more complete step information.
-    nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
+    func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil

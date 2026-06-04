@@ -14,56 +14,29 @@ final class RunnerStore {
     /// The shared constant.
     static let shared = RunnerStore()
 
-    /// Documentation.
     private(set) var runners: [Runner] = []
-    /// Documentation.
     private(set) var jobs: [ActiveJob] = []
-    /// Documentation.
     private(set) var actions: [WorkflowActionGroup] = []
 
-    /// The prevLiveJobs property.
     private var prevLiveJobs: [Int: ActiveJob] = [:]
-    /// The completedCache property.
     private var completedCache: [Int: ActiveJob] = [:]
-    /// The prevLiveGroups property.
     private var prevLiveGroups: [String: WorkflowActionGroup] = [:]
-    /// The actionGroupCache property.
     private var actionGroupCache: [String: WorkflowActionGroup] = [:]
     /// IDs of action groups whose failure hook has already been fired.
-    ///
-    /// Kept separate from `actionGroupCache` so that cache eviction (capped at
-    /// `groupCacheLimit = 30`) does not re-arm the hook for old completed groups
-    /// that are still present in GitHub's last-100-completed feed.
     private var seenGroupIDs: Set<String> = []
 
-    /// Documentation.
     private(set) var isRateLimited = false
-
-    /// The exact moment the current rate-limit window expires.
-    ///
-    /// Set to `nil` when no rate-limit is active or when the reset time is
-    /// unknown (e.g. CLI code path that sets `ghIsRateLimited` without a
-    /// header value).  Sourced from `ghRateLimitResetDate` in
-    /// `applyFetchResult` and propagated via `RunnerViewModel` to the
-    /// `rateLimitBanner` in `PanelMainView`.
     private(set) var rateLimitResetDate: Date?
 
-    /// The timer property.
-    /// Safety: only mutated on MainActor (scheduleTimer/start). Timer callbacks
-    /// re-enter on the main run loop via Task { @MainActor in }, so no concurrent access.
-    nonisolated(unsafe) private var timer: Timer?
-    /// The intervalCancellable property.
+    /// Active structured poll task. Cancelled and replaced on every `start()` call.
+    private var pollTask: Task<Void, Never>?
+
     private var intervalCancellable: AnyCancellable?
-    /// The scopeCancellable property.
     private var scopeCancellable: AnyCancellable?
 
-    /// Emits whenever a fetch cycle completes and the store’s state has been updated.
+    /// Emits whenever a fetch cycle completes and the store's state has been updated.
     let didUpdate = PassthroughSubject<Void, Never>()
 
-    /// The aggregateStatus property.
-    ///
-    /// A runner with `.busy` status is connected to GitHub and executing a job,
-    /// so it counts toward the online tally alongside `.online` runners.
     var aggregateStatus: AggregateStatus {
         guard !runners.isEmpty else { return .allOffline }
         let onlineCount = runners.filter { $0.status == .online || $0.status == .busy }.count
@@ -72,15 +45,14 @@ final class RunnerStore {
         return .someOffline
     }
 
-    /// Private initialiser — use `shared`.
     private init() {
         log("RunnerStore › init")
         intervalCancellable = AppPreferencesStore.shared.$pollingInterval
             .dropFirst(1)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newInterval in
-                log("RunnerStore › pollingInterval changed to \(newInterval) — rescheduling timer")
-                self?.scheduleTimer()
+                log("RunnerStore › pollingInterval changed to \(newInterval) — restarting poll loop")
+                self?.start()
             }
         scopeCancellable = ScopeStore.shared.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -90,102 +62,106 @@ final class RunnerStore {
             }
     }
 
-    /// Performs the start operation.
+    // MARK: - Poll loop
+
+    /// Starts (or restarts) the structured async poll loop.
+    ///
+    /// Cancels any existing poll task, then launches a new one that:
+    ///   1. Fires an immediate fetch.
+    ///   2. Waits for a dynamic interval (rate-limit / active-work aware).
+    ///   3. Repeats until cancelled.
+    ///
+    /// Safe to call multiple times — the previous task is always cancelled first.
     func start() {
         let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › start — activeScopes=\(scopes)")
-        if scopes.isEmpty {
-            log("RunnerStore › ⚠️ start called but activeScopes is EMPTY — actions will not load")
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            guard let self else { return }
+            // Immediate first fetch.
+            await self.fetch()
+            // Subsequent fetches on a dynamic interval.
+            while !Task.isCancelled {
+                let interval = self.nextPollInterval()
+                log("RunnerStore › poll loop — next fetch in \(Int(interval))s")
+                do {
+                    try await Task.sleep(for: .seconds(interval))
+                } catch {
+                    // Task.sleep throws CancellationError when the task is cancelled.
+                    break
+                }
+                guard !Task.isCancelled else { break }
+                await self.fetch()
+            }
+            log("RunnerStore › poll loop — exited (cancelled)")
         }
-        timer?.invalidate()
-        log("RunnerStore › start — calling fetch()")
-        fetch()
     }
 
-    /// Performs the scheduleTimer operation.
-    private func scheduleTimer(liveActions: [WorkflowActionGroup]? = nil) {
-        timer?.invalidate()
+    /// Returns the next poll interval in seconds, based on current store state.
+    private func nextPollInterval() -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
-        let actionsToCheck = liveActions ?? self.actions
-        let hasActiveActions = actionsToCheck.contains {
+        let hasActiveActions = actions.contains {
             $0.groupStatus == .inProgress || $0.groupStatus == .queued
         }
         let hasActive = hasActiveJobs || hasActiveActions
         let baseIdle = max(10, AppPreferencesStore.shared.pollingInterval)
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
-        log("RunnerStore › scheduleTimer — next poll in \(Int(interval))s (hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle))")
-        timer = Timer.scheduledTimer(
-            withTimeInterval: interval,
-            repeats: false
-        ) { [weak self] _ in
-            log("RunnerStore › timer fired")
-            Task { @MainActor [weak self] in self?.fetch() }
-        }
+        log("RunnerStore › nextPollInterval — \(Int(interval))s (hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle))")
+        return interval
     }
 
-    /// Performs the fetch operation.
-    func fetch() {
+    // MARK: - Fetch
+
+    func fetch() async {
         let scopesSnapshot = ScopeStore.shared.activeScopes
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
         if scopesSnapshot.isEmpty {
             log("RunnerStore › ⚠️ fetch — activeScopes snapshot is EMPTY")
         }
-        let snapPrev = prevLiveJobs
-        let snapCache = completedCache
-        let snapPrevGroups = prevLiveGroups
-        let snapGroupCache = actionGroupCache
+        let snapPrev         = prevLiveJobs
+        let snapCache        = completedCache
+        let snapPrevGroups   = prevLiveGroups
+        let snapGroupCache   = actionGroupCache
         let snapSeenGroupIDs = seenGroupIDs
-        let installPathMap = buildInstallPathMap(
+        let installPathMap   = buildInstallPathMap(
             scopes: scopesSnapshot,
             localRunners: LocalRunnerStore.shared.runners
         )
 
-        // Task.detached ensures the body runs off the main actor so that
-        // urlSessionAPI's dispatchPrecondition(.notOnQueue(.main)) does not trap.
-        // (A plain Task on a @MainActor type inherits the actor and stays on the main thread.)
-        Task.detached(priority: .background) { [weak self] in
-            guard let self else { return }
-            ghIsRateLimited = false
-            let enrichedRunners = self.fetchAndEnrichRunners(
+        // Run heavy network work off the main actor.
+        let (enrichedRunners, jobResult, groupResult) = await Task.detached(priority: .background) { [weak self] in
+            guard let self else {
+                return ([Runner](), JobPollResult.empty, GroupPollResult.empty)
+            }
+            let enrichedRunners = await self.fetchAndEnrichRunners(
                 scopes: scopesSnapshot,
                 installPathMap: installPathMap
             )
-            let jobResult = self.buildJobState(snapPrev: snapPrev, snapCache: snapCache)
-            let groupResult = self.buildGroupState(
+            let jobResult = await self.buildJobState(snapPrev: snapPrev, snapCache: snapCache)
+            let groupResult = await self.buildGroupState(
                 snapPrevGroups: snapPrevGroups,
                 snapGroupCache: snapGroupCache,
                 snapSeenGroupIDs: snapSeenGroupIDs,
                 jobCache: jobResult.newCache
             )
-            await MainActor.run {
-                self.applyFetchResult(
-                    enrichedRunners: enrichedRunners,
-                    jobResult: jobResult,
-                    groupResult: groupResult
-                )
-            }
-        }
+            return (enrichedRunners, jobResult, groupResult)
+        }.value
+
+        applyFetchResult(
+            enrichedRunners: enrichedRunners,
+            jobResult: jobResult,
+            groupResult: groupResult
+        )
     }
 
-    /// Lookup maps built from the local runner list, used by `fetchAndEnrichRunners`.
+    // MARK: - InstallPathMap
+
     struct InstallPathMap {
-        /// "scope/runnerName" → installPath  (exact scope-prefixed match)
         let byFullKey: [String: String]
-        /// "runnerName" → installPath  (name-only fallback)
         let byName: [String: String]
-        /// agentId (Int) → installPath  (ID-based, scope-agnostic)
         let byId: [Int: String]
     }
 
-    /// Builds three lookup maps from the local runner list:
-    /// - Primary:    "scope/runnerName" → installPath  (exact scope-prefixed match)
-    /// - Secondary:  "runnerName"        → installPath  (name-only fallback)
-    /// - Tertiary:   agentId (Int)        → installPath  (ID-based, scope-agnostic)
-    ///
-    /// The ID map is the most reliable — GitHub writes the runner’s integer ID
-    /// to the `.runner` JSON on disk during `config.sh`, so it is stable across
-    /// renames and scope-string format changes.  Runners that predate this field
-    /// (agentId == nil) fall through to the fullKey / name maps.
     private func buildInstallPathMap(
         scopes: [String],
         localRunners: [RunnerModel]
@@ -210,12 +186,8 @@ final class RunnerStore {
         return InstallPathMap(byFullKey: byFullKey, byName: byName, byId: byId)
     }
 
-    /// Applies a completed fetch cycle’s results to the store’s @MainActor state.
-    ///
-    /// Copies `ghIsRateLimited` and `ghRateLimitResetDate` from the transport
-    /// layer so the full rate-limit context (flag + exact reset moment) is
-    /// available to `RunnerViewModel` and ultimately to `PanelMainView`’s
-    /// live-countdown banner.
+    // MARK: - Apply result
+
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -233,45 +205,42 @@ final class RunnerStore {
         rateLimitResetDate = ghRateLimitResetDate
         log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) isRateLimited=\(ghIsRateLimited) rateLimitResetDate=\(String(describing: rateLimitResetDate))")
         didUpdate.send()
-        scheduleTimer(liveActions: groupResult.newPrevLiveGroups.map { $0.value })
     }
 
-    /// Performs the fetchAndEnrichRunners operation.
-    nonisolated func fetchAndEnrichRunners(
+    // MARK: - fetchAndEnrichRunners
+
+    func fetchAndEnrichRunners(
         scopes: [String],
         installPathMap: InstallPathMap
-    ) -> [Runner] {
+    ) async -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER")
         log("RunnerStore › fetchAndEnrichRunners — activeScopes=\(scopes)")
         var runnersWithScope: [(scope: String, runner: Runner)] = []
         for scope in scopes {
-            let fetched = fetchRunners(for: scope)
+            let fetched = await fetchRunners(for: scope)
             log("RunnerStore › fetchAndEnrichRunners — scope=\(scope) returned \(fetched.count) runner(s)")
             for runner in fetched {
                 runnersWithScope.append((scope: scope, runner: runner))
             }
         }
-        log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey keys=\(installPathMap.byFullKey.keys.sorted())")
         var result: [Runner] = []
         for (scope, var runner) in runnersWithScope {
             guard runner.busy else {
                 runner.metrics = nil
-                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) is idle, metrics=nil")
                 result.append(runner)
                 continue
             }
             let fullKey = "\(scope)/\(runner.name)"
             if let installPath = installPathMap.byId[runner.id] {
                 runner.metrics = metricsForRunner(installPath: installPath)
-                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) metrics via id=\(runner.id)")
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) metrics via id=\(runner.id)")
             } else if let installPath = installPathMap.byFullKey[fullKey] {
                 runner.metrics = metricsForRunner(installPath: installPath)
-                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) metrics via fullKey=\(fullKey)")
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) metrics via fullKey=\(fullKey)")
             } else if let installPath = installPathMap.byName[runner.name] {
                 runner.metrics = metricsForRunner(installPath: installPath)
-                log("RunnerStore › fetchAndEnrichRunners — ⚠️ \(runner.name) (scope=\(scope)) fullKey miss, used name-only fallback")
+                log("RunnerStore › fetchAndEnrichRunners — ⚠️ \(runner.name) name-only fallback")
             } else {
-                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) busy but no installPath for key=\(fullKey), metrics=nil")
                 runner.metrics = nil
             }
             result.append(runner)
@@ -279,4 +248,19 @@ final class RunnerStore {
         log("RunnerStore › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)")
         return result
     }
+}
+
+// MARK: - Empty sentinels
+
+extension JobPollResult {
+    static let empty = JobPollResult(display: [], newCache: [:], newPrevLive: [:])
+}
+
+extension GroupPollResult {
+    static let empty = GroupPollResult(
+        display: [],
+        newGroupCache: [:],
+        newPrevLiveGroups: [:],
+        newSeenGroupIDs: []
+    )
 }
