@@ -110,10 +110,11 @@ struct PanelMainView: View {
         .onChange(of: panelVisibilityState.isOpen) { _, open in
             if open { systemStats.start() } else { systemStats.stop() }
         }
-        // TODO: visibleCount resets on every actions identity change, including poll // NOSONAR
-        // updates that don't change the list length. This snaps the user back to 10
-        // rows mid-scroll. Should reset only when store.actions.count decreases.
-        .onChange(of: store.actions) { _, _ in visibleCount = 10 }
+        // Reset the visible row count only when the list shrinks (e.g. a runner is removed),
+        // not on every poll update — avoids snapping the user back mid-scroll.
+        .onChange(of: store.actions) { old, new in
+            if new.count < old.count { visibleCount = 10 }
+        }
     }
 
     /// Scrollable container for the actions section, capped at `screenScrollMaxHeight`.
