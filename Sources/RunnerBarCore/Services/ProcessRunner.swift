@@ -20,12 +20,12 @@ import Foundation
 ///
 /// ## ⚠️ Timeout implementation — do NOT simplify
 /// The timeout is implemented as a `DispatchWorkItem` + `DispatchQueue.asyncAfter`
-/// rather than the simpler `process.waitUntilExit()` with no deadline.
+/// rather than a bare `process.waitUntilExit()` with no deadline.
 /// Reason: `waitUntilExit()` with no timeout can hang indefinitely if a child
 /// process ignores SIGTERM or holds an open pipe. This pattern was the root
 /// cause of the main-thread hang tracked in bug #477. The `DispatchWorkItem`
 /// approach guarantees termination within `timeout` seconds even in that case.
-/// Do NOT replace this with a bare `waitUntilExit()` call.
+/// Do NOT remove the timeout guard.
 public enum ProcessRunner {
     /// The collected output and exit status from a subprocess invocation.
     public struct Result {
@@ -83,25 +83,10 @@ public enum ProcessRunner {
             inputPipe = nil
         }
 
-        // nonisolated(unsafe): Swift 6 concurrency workaround — all concurrent reads/writes
-        // are serialised through `lock`. The final read after `readabilityHandler = nil` is
-        // safe because no other thread can access `outputData` at that point.
-        // TODO: replace readabilityHandler + NSLock with readDataToEndOfFile() after // NOSONAR — tracked deferred refactor
-        // waitUntilExit() — streaming is unnecessary given the background-thread call
-        // contract. Tracked in <issue link once created>.
-        nonisolated(unsafe) var outputData = Data()
-        let lock = NSLock()
-        outPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            lock.lock(); outputData.append(chunk); lock.unlock()
-        }
-
         do {
             try task.run()
         } catch {
             log("ProcessRunner › launch error: \(error) — \(executableURL.lastPathComponent) \(arguments.joined(separator: " "))")
-            outPipe.fileHandleForReading.readabilityHandler = nil
             return Result(data: nil, exitCode: Int32.max)
         }
 
@@ -111,11 +96,9 @@ public enum ProcessRunner {
             inputPipe.fileHandleForWriting.closeFile()
         }
 
-        // ⚠️ DO NOT replace this DispatchWorkItem timeout with a bare waitUntilExit().
+        // ⚠️ DO NOT remove this DispatchWorkItem timeout.
         // See class-level doc comment and bug #477 for full context.
         let timeoutItem = DispatchWorkItem {
-            // Guard against the race where the process exits just before the
-            // timeout fires — only terminate if the process is still running.
             guard task.isRunning else {
                 log("ProcessRunner › timeout fired but process already exited — \(executableURL.lastPathComponent)")
                 return
@@ -127,9 +110,10 @@ public enum ProcessRunner {
         task.waitUntilExit()
         timeoutItem.cancel()
 
-        outPipe.fileHandleForReading.readabilityHandler = nil
-        let tail = outPipe.fileHandleForReading.readDataToEndOfFile()
-        if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
+        // readDataToEndOfFile() drains any remaining buffered output after the
+        // process exits. No lock or readabilityHandler needed — the process is
+        // already gone, so this is the only reader.
+        let outputData = outPipe.fileHandleForReading.readDataToEndOfFile()
 
         let exitCode = task.terminationStatus
         log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
