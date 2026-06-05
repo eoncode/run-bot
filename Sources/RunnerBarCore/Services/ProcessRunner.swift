@@ -138,7 +138,7 @@ public enum ProcessRunner {
         let drainQueue = DispatchQueue(label: "ProcessRunner.drain")
         drainQueue.async {
             let chunk = outPipe.fileHandleForReading.readDataToEndOfFile()
-            Task { await accumulator.append(chunk) }
+            Task.detached { await accumulator.append(chunk) }
         }
 
         // ⚠️ DO NOT remove this DispatchWorkItem timeout.
@@ -237,7 +237,7 @@ public enum ProcessRunner {
                 outPipe.fileHandleForReading.readabilityHandler = { handle in
                     let chunk = handle.availableData
                     guard !chunk.isEmpty else { return }
-                    Task { await accumulator.append(chunk) }
+                    Task.detached { await accumulator.append(chunk) }
                 }
 
                 task.terminationHandler = { t in
@@ -247,7 +247,7 @@ public enum ProcessRunner {
                     let exitCode = t.terminationStatus
                     // Await the accumulator on a Task so terminationHandler
                     // (a non-async closure) can hand off to async context.
-                    Task {
+                    Task.detached {
                         await accumulator.append(tail)
                         let outputData = await accumulator.data
                         log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
