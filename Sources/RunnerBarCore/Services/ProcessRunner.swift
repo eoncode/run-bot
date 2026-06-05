@@ -54,10 +54,13 @@ import Foundation
 /// stored `value` property is written. A `drainQueue.sync {}` barrier after
 /// `waitUntilExit()` provides the happens-before guarantee.
 private final class Box<T>: @unchecked Sendable {
+    /// The wrapped mutable value.
     var value: T
+    /// Creates a box with the given initial value.
     init(_ initial: T) { value = initial }
 }
 
+/// Shared primitive for launching subprocesses. See file-level doc comment above for full details.
 public enum ProcessRunner {
     /// The collected output and exit status from a subprocess invocation.
     public struct Result {
