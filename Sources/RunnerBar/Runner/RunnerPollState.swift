@@ -9,6 +9,12 @@ import RunnerBarCore
 // sites are unchanged while the logic lives in the independently testable builder.
 
 /// `RunnerStore` extension that bridges `PollResultBuilder` for the `fetch()` call sites.
+///
+/// All methods are `async` and run off the main actor during `await` — the
+/// cooperative thread pool handles network work, and the continuation returns
+/// to `@MainActor` automatically after each `await`. The previous
+/// `DispatchQueue.main.sync` pattern (which could deadlock if called on the
+/// main thread) has been replaced throughout with `await MainActor.run { }`.
 extension RunnerStore {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
@@ -128,5 +134,4 @@ extension RunnerStore {
         }
     }
 }
-
 

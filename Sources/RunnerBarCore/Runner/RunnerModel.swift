@@ -17,6 +17,11 @@ import Foundation
 ///
 /// - Note: Distinct from `Runner`, which is the API-fetched remote runner snapshot.
 ///   `RunnerModel` is local-first; `Runner` is API-first.
+/// - Note: Fully `Sendable` because all previously-mutable `var` properties
+///   have been converted to `let`. Mutations now go through `copying(…)` which
+///   returns a new value — no in-place mutation means no shared-mutable-state
+///   data race, and the compiler can synthesise `Sendable` conformance without
+///   an `@unchecked` escape hatch.
 /// - SeeAlso: `Runner`, `RunnerStatus`, `RunnerStatusEnricher`, `LocalRunnerStore`
 public struct RunnerModel: Sendable, Identifiable, Equatable {
     // MARK: Stored Properties
