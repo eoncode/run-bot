@@ -230,9 +230,10 @@ extension RunnerModel {
     /// Example:
     /// ```swift
     /// runners[idx] = runners[idx].copying(isRunning: true)
-    /// runners[idx] = runners[idx].copying(lifecycleWarning: nil)  // clears warning
+    /// let noWarning: String? = nil
+    /// runners[idx] = runners[idx].copying(lifecycleWarning: noWarning)  // clears warning — a bare `nil` literal would be a no-op
     /// ```
-    func copying(
+    public func copying(
         gitHubUrl: String?? = nil,
         isRunning: Bool? = nil,
         githubStatus: RunnerStatus?? = nil,
