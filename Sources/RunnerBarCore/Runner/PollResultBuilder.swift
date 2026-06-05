@@ -13,10 +13,31 @@ public struct PollResultBuilder {
 
     // MARK: - Cache limits
 
+    /// Maximum number of completed jobs retained in the job cache.
     public static let jobCacheLimit = 3
+
+    /// Maximum number of job entries shown in the panel UI (live + cached combined).
+    ///
+    /// Intentionally larger than `jobCacheLimit` so that live in-progress and queued
+    /// jobs are never silently dropped when the cache is already full.
+    /// `jobCacheLimit` controls *retention*; `jobDisplayLimit` controls *visibility*.
     public static let jobDisplayLimit = 10
+
+    /// Maximum number of completed groups retained in the group cache.
     public static let groupCacheLimit = 30
+
+    /// Maximum number of groups shown in the panel UI (live + cached combined).
+    ///
+    /// Analogous to `jobDisplayLimit` — separates *retention* from *visibility*.
+    /// Prevents the panel flooding with up to `groupCacheLimit` (30) stale entries.
     public static let groupDisplayLimit = 10
+
+    /// Maximum number of group IDs retained in the seen-IDs set.
+    ///
+    /// Kept much larger than `groupCacheLimit` so that the failure-hook suppression
+    /// set survives well beyond the display-cache eviction horizon.
+    /// Sized for ~6–7 poll cycles worth of typical group completions at once.
+    /// Entries are pruned by arbitrary eviction when the limit is exceeded.
     public static let seenGroupIDsLimit = 200
 
     // MARK: - Job state
