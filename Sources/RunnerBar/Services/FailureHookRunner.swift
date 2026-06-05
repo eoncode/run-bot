@@ -78,6 +78,9 @@ enum FailureHookRunner {
             let resolved = resolveTokens(command, group: group, scope: scope, jobs: jobs)
             log("FailureHookRunner › Task — resolved command (first 300): \(resolved.prefix(300))")
             log("FailureHookRunner › Task — calling TerminalLauncher.open for groupID=\(group.id)")
+            // TerminalLauncher.open uses NSAppleScript, which must run on the main actor.
+            // The mechanism changed from DispatchQueue.main.async to await MainActor.run,
+            // but the constraint is unchanged — do not remove this MainActor hop.
             await MainActor.run {
                 TerminalLauncher.open(command: resolved)
                 log("FailureHookRunner › main actor — TerminalLauncher.open returned for groupID=\(group.id)")

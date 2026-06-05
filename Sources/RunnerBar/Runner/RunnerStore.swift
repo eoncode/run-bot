@@ -144,9 +144,12 @@ final class RunnerStore {
     /// Performs one complete poll cycle: fetches runners, jobs, and action groups,
     /// then applies results on the main actor via `applyFetchResult`.
     ///
-    /// The three async calls below suspend off the main actor for their network work
-    /// and return automatically — no Task.detached wrapper is needed. Priority is
-    /// inherited from the poll loop Task launched in `start()`.
+    /// Each `await` call below suspends off the main actor during its network work
+    /// and returns to `@MainActor` automatically — no `Task.detached` wrapper is
+    /// needed. A plain `Task { }` on a `@MainActor` type inherits the actor, but
+    /// the `await` points release it to the cooperative thread pool for the
+    /// duration of each network call.
+    /// Priority is inherited from the poll loop Task launched in `start()`.
     func fetch() async {
         // Proactively reset the transport-layer rate-limit flag at the start of each
         // cycle. The transport clears it automatically on a successful 2xx response
