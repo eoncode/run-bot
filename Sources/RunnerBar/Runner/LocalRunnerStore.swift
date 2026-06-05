@@ -10,17 +10,12 @@ import Foundation
 /// then enriches with GitHub API data (status, busy, labels, group).
 @MainActor
 final class LocalRunnerStore: ObservableObject {
-    /// Shared singleton instance.
     static let shared = LocalRunnerStore()
 
-    /// Locally-discovered runner list, sorted by name after each refresh.
     @Published private(set) var runners: [RunnerModel] = []
-    /// `true` while a background refresh is in progress.
     @Published private(set) var isScanning: Bool = false
 
-    /// `UserDefaults` key for the persisted `runnerIndex` dictionary.
     private static let indexKey = "localRunnerIndex"
-    /// Persisted map of runnerName → installPath.
     private var runnerIndex: [String: String] = [:]
 
     private init() {
@@ -29,24 +24,20 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Index helpers
 
-    /// Records a runner in the persisted index so it survives app restart.
     func register(name: String, installPath: String) {
         runnerIndex[name] = installPath
         persistIndex()
         log("LocalRunnerStore > register — '\(name)' at \(installPath)")
     }
 
-    /// Returns `true` if `runnerName` is present in the persisted index.
     func isTracked(runnerName: String) -> Bool {
         runnerIndex[runnerName] != nil
     }
 
-    /// Convenience alias for `register(name:installPath:)`. Called from `RunnerLifecycleService` after a successful registration.
     func add(runnerName: String, installPath: String) {
         register(name: runnerName, installPath: installPath)
     }
 
-    /// Immediately flips `isRunning` on the matching runner without waiting for the next `refresh()` cycle.
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
         runners[idx] = runners[idx].copying(isRunning: isRunning)
@@ -93,15 +84,14 @@ final class LocalRunnerStore: ObservableObject {
 
     /// Hydrates runners from disk, marks live launchctl services, then enriches via GitHub API.
     ///
-    /// Runs background work in a detached Task so the @MainActor context is not
-    /// blocked. The continuation returns to @MainActor automatically via
-    /// applyRefreshResults, eliminating the need for DispatchQueue.global +
-    /// DispatchQueue.main.async.
+    /// Runs background work in a plain `Task` so actor context, priority, and
+    /// cancellation are inherited from the `@MainActor` caller. The continuation
+    /// returns to `@MainActor` automatically via `applyRefreshResults`.
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
         let index = runnerIndex
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
             // 1. Hydrate from installPath/.runner JSON
@@ -110,8 +100,11 @@ final class LocalRunnerStore: ObservableObject {
 
             // 2. Mark live services via launchctl.
             let liveLabels = await self.scanLiveServices()
+            let isLive: (RunnerModel) -> Bool = { runner in
+                liveLabels.contains { $0.contains(runner.runnerName) }
+            }
             hydrated = hydrated.map { runner in
-                runner.copying(isRunning: liveLabels.contains { $0.contains(runner.runnerName) })
+                runner.copying(isRunning: isLive(runner))
             }
 
             // 3. Enrich via GitHub API (concurrent scope fetches)
@@ -132,7 +125,12 @@ final class LocalRunnerStore: ObservableObject {
 
     nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
 
-    private nonisolated func scanLiveServices() -> [String] {
+    /// Runs `launchctl list` and returns lines containing `actions.runner`.
+    ///
+    /// Marked `async` so it can be awaited from the `Task` body in `refresh()`
+    /// and to allow the blocking `ProcessRunner.run` call to suspend off the
+    /// main actor.
+    private nonisolated func scanLiveServices() async -> [String] {
         let result = ProcessRunner.run(
             executableURL: Self.launchctlURL,
             arguments: ["list"],
@@ -165,7 +163,7 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         let agentVersion: String?
         let ephemeral: Bool?
         enum CodingKeys: String, CodingKey {
-            case gitHubUrl            = "gitHubUrl"
+            case gitHubUrl            = "gitHubUrl" // must match runner agent JSON exactly — agent writes camelCase
             case agentId              = "AgentId"
             case workFolder           = "WorkFolder"
             case platform             = "Platform"
