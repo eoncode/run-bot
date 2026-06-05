@@ -238,6 +238,7 @@ final class RunnerStore {
 
     // MARK: - Apply result
 
+    /// Commits the results of one complete fetch cycle to the store's published state.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -259,6 +260,8 @@ final class RunnerStore {
 
     // MARK: - fetchAndEnrichRunners
 
+    /// Fetches the runner list for all active scopes and enriches each entry
+    /// with install-path data from the local runner store.
     func fetchAndEnrichRunners(
         scopes: [String],
         installPathMap: InstallPathMap
@@ -303,10 +306,12 @@ final class RunnerStore {
 // MARK: - Empty sentinels
 
 extension JobPollResult {
+    /// A zero-state sentinel used when the fetch is skipped (e.g. empty scopes).
     static let empty = JobPollResult(display: [], newCache: [:], newPrevLive: [:])
 }
 
 extension GroupPollResult {
+    /// A zero-state sentinel used when the fetch is skipped (e.g. empty scopes).
     static let empty = GroupPollResult(
         display: [],
         newGroupCache: [:],
