@@ -209,7 +209,9 @@ private func handleRateLimitResponse(
     let remaining = response.value(forHTTPHeaderField: "X-RateLimit-Remaining")
         .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
     // Retry-After is present on GitHub secondary rate-limit 403s (non-zero remaining).
-    // Its value is in seconds and is used as the reset delay.
+    // Its value is the number of seconds to wait before retrying.
+    // Note: this function is only called for 403/429 responses (see all call sites),
+    // so retryAfter != nil is only treated as a rate-limit signal in that context.
     let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
         .flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
     let isRealRateLimit = statusCode == 429 || remaining == 0 || retryAfter != nil
@@ -217,6 +219,9 @@ private func handleRateLimitResponse(
         logErrorBody(data, endpoint: endpoint, status: statusCode)
         let limitKind = retryAfter != nil && remaining != 0 ? "secondary" : "primary"
         log("URLSessionTransport › ⚠️ rate limited (\(limitKind)) — \(endpoint) status=\(statusCode)")
+        // For secondary limits, convert Retry-After (relative seconds) to an
+        // absolute Unix timestamp so scheduleRateLimitReset can use it directly.
+        // Date() is called immediately on response receipt; latency is negligible.
         let effectiveResetTS: TimeInterval?
         if let retryAfter, resetTS == nil {
             effectiveResetTS = Date().timeIntervalSince1970 + retryAfter
@@ -388,12 +393,14 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) -> D
         }
         nextURL = extractNextURL(from: linkHeader.withLock({ $0 }))
     }
+    // Auth failure: discard partial results so callers see nil, not a truncated list.
     if didFailAuthentication {
         if !allItems.isEmpty {
             log("urlSessionAPIPaginated › authentication failed mid-pagination — discarding \(allItems.count) partial items")
         }
         return nil
     }
+    // Log partial results so callers know the list may be incomplete due to rate limit.
     if ghIsRateLimited && !allItems.isEmpty {
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
@@ -421,6 +428,7 @@ private func extractNextURL(from header: String?) -> String? {
 // MARK: - Raw (log endpoints)
 
 /// Fetches raw bytes from a GitHub API endpoint that 302-redirects to S3.
+///
 /// # Redirect safety
 /// GitHub's job-log endpoint (`/actions/jobs/{id}/logs`) returns 302 to a
 /// pre-signed S3 URL on `*.amazonaws.com`. URLSession follows this redirect
@@ -430,6 +438,7 @@ private func extractNextURL(from header: String?) -> String? {
 /// never forwarded to S3. S3 authenticates purely via the pre-signed query
 /// params already embedded in the redirect URL. No custom redirect delegate is
 /// required or appropriate here.
+///
 /// ⚠️ Must be called from a background thread.
 func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
     dispatchPrecondition(condition: .notOnQueue(.main))
@@ -472,10 +481,12 @@ func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
 // MARK: - POST / DELETE / PUT (mutation)
 
 /// Sends a POST to the given GitHub API endpoint. Returns the response body, or nil on failure.
+///
 /// Return value semantics:
 /// - `nil`      — network failure or non-2xx status (request failed).
 /// - `Data()`   — 2xx response with no body (e.g. 204 No Content); treat as success.
 /// - `Data(…)`  — 2xx response with a body; decode as needed.
+///
 /// Callers that decode the response body should guard against empty `Data()` first.
 /// ⚠️ Must be called from a background thread.
 @discardableResult
