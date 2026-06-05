@@ -220,6 +220,7 @@ public struct RunnerModel: Sendable, Identifiable, Equatable {
 
 // MARK: - Copying
 
+/// Provides a `copying(…)` method for producing modified `RunnerModel` values.
 extension RunnerModel {
     /// Returns a new `RunnerModel` with selected fields replaced.
     ///
