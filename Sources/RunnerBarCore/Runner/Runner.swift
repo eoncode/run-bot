@@ -17,7 +17,7 @@ import Foundation
 /// - Note: This type represents the **API-fetched** remote runner list. For locally
 ///   installed runners discovered via LaunchAgent plists, see `RunnerModel`.
 /// - SeeAlso: `RunnerModel`, `RunnerStatus`, `RunnerMetrics`
-public struct Runner: Codable, Identifiable {
+public struct Runner: Codable, Identifiable, Sendable {
     /// GitHub's unique numeric ID for this runner.
     public let id: Int
     /// Human-readable runner name as configured on the host machine.
