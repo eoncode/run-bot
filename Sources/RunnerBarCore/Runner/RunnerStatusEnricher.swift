@@ -144,6 +144,9 @@ public struct RunnerStatusEnricher: Sendable {
     /// Fetches the **complete** runner list for a scope URL via ghAPI, paginating
     /// through all pages (per_page=100) until exhausted.
     ///
+    /// - Parameter scopeURL: The full GitHub URL for the repo or org scope.
+    /// - Returns: All runner payloads collected across all pages. Empty on failure.
+    ///
     /// GitHub's default page size is 30. Without explicit pagination any org/repo
     /// with more than 30 runners would silently lose enrichment for runners beyond
     /// the first page. Using per_page=100 (the API maximum) minimises round-trips.

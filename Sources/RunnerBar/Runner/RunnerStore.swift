@@ -278,10 +278,12 @@ final class RunnerStore {
                 runnersWithScope.append((scope: scope, runner: runner))
             }
         }
+        log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey keys=\(installPathMap.byFullKey.keys.sorted())")
         var result: [Runner] = []
         for (scope, var runner) in runnersWithScope {
             guard runner.busy else {
                 runner.metrics = nil
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) (scope=\(scope)) is idle, metrics=nil")
                 result.append(runner)
                 continue
             }
