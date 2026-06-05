@@ -26,13 +26,19 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
 /// boilerplate and no `@unchecked Sendable` escape hatch — consistent with the
 /// `DateParserActor` pattern used in `RunnerPollState.swift` and
 /// `WorkflowActionGroupFetch.swift`.
+/// Actor-isolated ISO-8601 date parser for this file.
+/// Mirrors the `DateParserActor` pattern used in `RunnerPollState.swift` and
+/// `WorkflowActionGroupFetch.swift`.
 private actor GitHubDateParserActor {
+    /// Shared formatter instance, allocated once per actor.
     private let iso = ISO8601DateFormatter()
+    /// Builds an `ActiveJob` from a decoded payload using the actor-owned formatter.
     func makeJob(from payload: JobPayload, isDimmed: Bool) -> ActiveJob {
         makeActiveJob(from: payload, iso: iso, isDimmed: isDimmed)
     }
 }
 
+/// Shared `GitHubDateParserActor` for this file.
 private let githubDateParser = GitHubDateParserActor()
 
 // MARK: - Fetch all jobs from active runs
