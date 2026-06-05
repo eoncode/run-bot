@@ -88,6 +88,10 @@ final class RunnerStore {
             }
     }
 
+    deinit {
+        pollTask?.cancel()
+    }
+
     // MARK: - Poll loop
 
     /// Starts (or restarts) the structured async poll loop.
@@ -112,8 +116,8 @@ final class RunnerStore {
                 log("RunnerStore › poll loop — next fetch in \(Int(interval))s")
                 do {
                     try await Task.sleep(for: .seconds(interval))
-                } catch {
-                    // Task.sleep throws CancellationError when the task is cancelled.
+                } catch is CancellationError {
+                    // Task was cancelled — exit the loop cleanly.
                     break
                 }
                 guard !Task.isCancelled else { break }

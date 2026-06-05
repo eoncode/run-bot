@@ -269,7 +269,8 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
         return out
     }
 
-    // Refresh in-progress/inconclusive jobs concurrently.
+    // Refresh in-progress/inconclusive jobs concurrently, capped at 3.
+    // Filter first so the cap applies to *eligible* jobs, not array position.
     let needsRefresh = initial.enumerated().filter { _, job in
         job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
     }.prefix(3)
