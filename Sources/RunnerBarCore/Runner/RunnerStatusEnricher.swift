@@ -8,8 +8,8 @@
 //   2. Issue ONE ghAPI call per unique scope — not one call per runner.
 //      Pages through all results (per_page=100) so fleets larger than
 //      GitHub's default page size of 30 are fully covered.
-//   3. Build a name → APIRunnerPayload dictionary per scope.
-//   4. Second pass: apply enrichment from the dictionary.
+//   3. Build a scopeURL → (name → APIRunnerPayload) dictionary per scope.
+//   4. Second pass: apply enrichment from the dictionary, scoped by gitHubUrl.
 //
 // Scope fetches run concurrently via withTaskGroup — poll latency is bounded
 // by the slowest scope rather than the sum of all scopes.
@@ -96,17 +96,19 @@ public struct RunnerStatusEnricher: Sendable {
         }
 
         // Step 2: fetch all scopes concurrently.
-        // Use [APIRunnerPayload] (Sendable) rather than [[String: Any]] (not Sendable)
-        // so the task-group result type satisfies Swift 6 strict concurrency.
-        var nameToAPI: [String: APIRunnerPayload] = [:]
-        await withTaskGroup(of: [APIRunnerPayload].self) { group in
+        // Use (scopeURL, [APIRunnerPayload]) tuples so results stay scope-keyed.
+        // Keying by (scopeURL, name) prevents last-write-wins collisions when two
+        // scopes (e.g. org + repo) expose a runner with the same registered name.
+        var apiByScope: [String: [String: APIRunnerPayload]] = [:]
+        await withTaskGroup(of: (String, [APIRunnerPayload]).self) { group in
             for scopeURL in scopeToRunnerIndices.keys {
-                group.addTask { await self.fetchRunnersForScope(scopeURL) }
+                group.addTask { (scopeURL, await self.fetchRunnersForScope(scopeURL)) }
             }
-            for await fetched in group {
-                for payload in fetched {
-                    nameToAPI[payload.name] = payload
-                }
+            for await (scopeURL, fetched) in group {
+                apiByScope[scopeURL] = Dictionary(
+                    fetched.map { ($0.name, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
             }
         }
 
@@ -114,27 +116,26 @@ public struct RunnerStatusEnricher: Sendable {
         var result = runners
         for idx in result.indices {
             let name = result[idx].runnerName
-            // Try exact match first.
-            if let api = nameToAPI[name] {
-                result[idx] = applyEnrichment(to: result[idx], from: api)
-                continue
+            // Restrict lookup to the runner's own scope first to avoid cross-scope
+            // name collisions, then fall back to a scan across all scopes.
+            let scopedAPI = result[idx].gitHubUrl.flatMap { apiByScope[$0] } ?? [:]
+            let fallbackAPI = apiByScope.values.reduce(into: [String: APIRunnerPayload]()) { $0.merge($1) { first, _ in first } }
+
+            func findPayload(in dict: [String: APIRunnerPayload]) -> APIRunnerPayload? {
+                if let api = dict[name] { return api }
+                let nameLower = name.lowercased()
+                if let key = dict.keys.first(where: { $0.lowercased() == nameLower }) { return dict[key] }
+                let nameTrimmed = name.trimmingCharacters(in: .whitespaces)
+                if let key = dict.keys.first(where: { $0.trimmingCharacters(in: .whitespaces) == nameTrimmed }) { return dict[key] }
+                return nil
             }
-            // Try case-insensitive match.
-            let nameLower = name.lowercased()
-            if let key = nameToAPI.keys.first(where: { $0.lowercased() == nameLower }),
-               let api = nameToAPI[key] {
+
+            if let api = findPayload(in: scopedAPI) ?? findPayload(in: fallbackAPI) {
                 result[idx] = applyEnrichment(to: result[idx], from: api)
-                continue
+            } else {
+                let gitHubUrl = result[idx].gitHubUrl ?? "NIL"
+                log("[Enricher] NO MATCH for '\(name)' — available API names: \(scopedAPI.keys.sorted()) gitHubUrl=\(gitHubUrl)")
             }
-            // Try trimmed whitespace match.
-            let nameTrimmed = name.trimmingCharacters(in: .whitespaces)
-            if let key = nameToAPI.keys.first(where: { $0.trimmingCharacters(in: .whitespaces) == nameTrimmed }),
-               let api = nameToAPI[key] {
-                result[idx] = applyEnrichment(to: result[idx], from: api)
-                continue
-            }
-            let gitHubUrl = result[idx].gitHubUrl ?? "NIL"
-            log("[Enricher] NO MATCH for '\(name)' — available API names: \(nameToAPI.keys.sorted()) gitHubUrl=\(gitHubUrl)")
         }
         return result
     }

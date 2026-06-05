@@ -40,6 +40,11 @@ import Foundation
 /// the subprocess runs. `withTaskCancellationHandler` wires `task.terminate()`
 /// directly to Swift structured concurrency cancellation. A sibling
 /// `Task.detached` replaces the `DispatchWorkItem` timeout from `run(_:)`.
+///
+/// The pipe-drain invariant is identical to `run(_:)`: a `DispatchQueue.global`
+/// thread calls `readDataToEndOfFile()` and signals a `DispatchSemaphore`;
+/// `terminationHandler` waits on that semaphore before resuming the
+/// continuation, guaranteeing `outputData` is fully written before it is read.
 public enum ProcessRunner {
     /// The collected output and exit status from a subprocess invocation.
     public struct Result {
@@ -171,8 +176,12 @@ public enum ProcessRunner {
     ///
     /// ## ⚠️ Pipe-drain concurrency — same invariant as `run(_:)`
     /// stdout is drained on a `DispatchQueue.global` thread *concurrently* with
-    /// process execution, before `terminationHandler` fires. This prevents the
-    /// kernel pipe buffer (~64 KB) from filling and blocking the child.
+    /// process execution. A `DispatchSemaphore` is waited in `terminationHandler`
+    /// before the continuation resumes, guaranteeing `outputData` is fully written
+    /// before it is read. This prevents the kernel pipe buffer (~64 KB) from filling
+    /// and blocking the child, and eliminates the readabilityHandler race where a
+    /// kernel delivery could fire between `readabilityHandler = nil` and the final
+    /// drain — a concurrent unsynchronised write to `outputData`.
     ///
     /// All parameters mirror `run(_:)`; defaults are identical.
     public static func runAsync(
@@ -203,20 +212,22 @@ public enum ProcessRunner {
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Result, Never>) in
-                // Drain stdout concurrently — see pipe-drain invariant above.
-                // `nonisolated(unsafe)`: the terminationHandler provides the
-                // happens-before guarantee that outputData is fully written
-                // before the continuation resumes.
+                // Drain stdout on a background thread concurrently with process execution.
+                // `nonisolated(unsafe)`: the drainSemaphore.wait() in terminationHandler
+                // provides the happens-before guarantee that the background write to
+                // outputData is complete before the continuation reads it.
+                let drainSemaphore = DispatchSemaphore(value: 0)
                 nonisolated(unsafe) var outputData = Data()
-                outPipe.fileHandleForReading.readabilityHandler = { handle in
-                    outputData.append(handle.availableData)
+                DispatchQueue.global().async {
+                    outputData = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    drainSemaphore.signal()
                 }
 
                 task.terminationHandler = { t in
-                    // Stop the readability handler and drain any final bytes.
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    let tail = outPipe.fileHandleForReading.readDataToEndOfFile()
-                    if !tail.isEmpty { outputData.append(tail) }
+                    // Wait for the drain thread to finish before reading outputData.
+                    // Bounded by the process lifetime + one pipe-flush; effectively
+                    // instant after the process exits.
+                    drainSemaphore.wait()
                     let exitCode = t.terminationStatus
                     log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
                     continuation.resume(returning: Result(
