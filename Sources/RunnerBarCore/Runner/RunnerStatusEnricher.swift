@@ -117,7 +117,8 @@ public struct RunnerStatusEnricher: Sendable {
                 result[idx] = applyEnrichment(to: result[idx], from: api)
                 continue
             }
-            log("[Enricher] NO MATCH for '\(name)' — available API names: \(nameToAPI.keys.sorted()) gitHubUrl=\(result[idx].gitHubUrl ?? \"NIL\")")
+            let gitHubUrl = result[idx].gitHubUrl ?? "NIL"
+            log("[Enricher] NO MATCH for '\(name)' — available API names: \(nameToAPI.keys.sorted()) gitHubUrl=\(gitHubUrl)")
         }
         return result
     }
