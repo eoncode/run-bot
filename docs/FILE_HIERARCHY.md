@@ -81,7 +81,7 @@ runner-bar/
 │       │   ├── ✅ GitHubCLITransport.swift   — former gh CLI transport (replaced by URLSession; kept for reference)
 │       │   ├── ✅ Keychain.swift             — thin Keychain wrapper for storing/retrieving the OAuth token
 │       │   ├── ✅ OAuthService.swift         — drives the GitHub OAuth Device Flow (sign-in URL, code exchange, CSRF check, callback handling)
-│       │   ├── ⬜ Scope.swift               — (pending review)
+│       │   ├── ✅ Scope.swift               — enum with .repo(owner:name:) and .org(_:) cases; parses raw scope strings ("owner/repo" or "orgname") and produces the correct GitHub REST API path prefix
 │       │   └── ✅ Secrets.swift             — holds the GitHub App client-id and client-secret constants
 │       │
 │       ├── Models/
