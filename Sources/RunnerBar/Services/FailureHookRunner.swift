@@ -156,7 +156,7 @@ enum FailureHookRunner {
     /// Escapes `s` so it is safe to embed between single-quotes in a shell command.
     /// Replaces every `'` with `'\''` — the standard POSIX single-quote escape.
     private static func singleQuoteEscape(_ s: String) -> String {
-        s.replacingOccurrences(of: "'", with: "'\\''") 
+        s.replacingOccurrences(of: "'", with: "'\\''")
     }
 
     /// Builds the `$FAILURE_LOG` content from failed job results.
