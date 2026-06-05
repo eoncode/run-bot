@@ -287,11 +287,9 @@ final class RunnerStore {
         log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey keys=\(installPathMap.byFullKey.keys.sorted())")
         // Resolve install paths and nil-out idle runners first (no async work needed).
         var indexed: [(scope: String, runner: Runner)] = runnersWithScope
-        for i in indexed.indices {
-            if !indexed[i].runner.busy {
-                indexed[i].runner.metrics = nil
-                log("RunnerStore › fetchAndEnrichRunners — \(indexed[i].runner.name) (scope=\(indexed[i].scope)) is idle, metrics=nil")
-            }
+        for i in indexed.indices where !indexed[i].runner.busy {
+            indexed[i].runner.metrics = nil
+            log("RunnerStore › fetchAndEnrichRunners — \(indexed[i].runner.name) (scope=\(indexed[i].scope)) is idle, metrics=nil")
         }
         // Fetch metrics for all busy runners concurrently. metricsForRunner is now
         // async (uses ProcessRunner.runAsync internally) so no Task.detached needed.
