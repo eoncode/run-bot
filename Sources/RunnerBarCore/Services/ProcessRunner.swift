@@ -34,13 +34,12 @@ import Foundation
 /// and `waitUntilExit()` to spin forever (Apple QA1858). `launchctl list` on
 /// a loaded Mac easily exceeds 64 KB.
 ///
-/// ## Async variant
-/// `runAsync` wraps `run` in a `withTaskCancellationHandler` +
-/// `withCheckedContinuation` so callers in async contexts do not block a
-/// cooperative thread. The blocking work is dispatched to
-/// `DispatchQueue.global(qos:)` and the continuation is resumed from
-/// `terminationHandler`. If the enclosing `Task` is cancelled before the
-/// process exits, `task.terminate()` is called immediately.
+/// ## Async variant (`runAsync`)
+/// `runAsync` owns its own `Process` instance and bridges completion via
+/// `terminationHandler` + `withCheckedContinuation` — no thread is held while
+/// the subprocess runs. `withTaskCancellationHandler` wires `task.terminate()`
+/// directly to Swift structured concurrency cancellation. A sibling
+/// `Task.detached` replaces the `DispatchWorkItem` timeout from `run(_:)`.
 public enum ProcessRunner {
     /// The collected output and exit status from a subprocess invocation.
     public struct Result {
@@ -155,51 +154,110 @@ public enum ProcessRunner {
 
     // MARK: - Async
 
-    /// Launches an executable asynchronously, freeing the cooperative thread pool
-    /// while the subprocess runs.
+    /// Launches an executable asynchronously without blocking the cooperative thread pool.
     ///
-    /// Internally dispatches all blocking work (`waitUntilExit`, pipe drain, timeout
-    /// guard) to `DispatchQueue.global(qos:)` and bridges back to the caller via
-    /// `withCheckedContinuation`. The timeout guard uses `withTaskCancellationHandler`
-    /// so cancelling the enclosing `Task` immediately terminates the subprocess —
-    /// no thread is held open waiting.
+    /// Unlike `run(_:)`, this method owns its `Process` instance directly so that
+    /// Swift structured concurrency can interact with it properly:
+    ///
+    /// - **Suspension:** the caller suspends at the `await` and is resumed by
+    ///   `terminationHandler` when the process exits — no thread is held.
+    /// - **Cancellation:** `withTaskCancellationHandler` calls `task.terminate()`
+    ///   the moment the enclosing `Task` is cancelled (e.g. when `start()` replaces
+    ///   `pollTask`), bounding latency to OS signal-delivery time rather than the
+    ///   full `timeout`.
+    /// - **Timeout:** a sibling `Task` sleeps for `timeout` seconds and then calls
+    ///   `task.terminate()` if the process is still running, preserving the
+    ///   hang-safety guarantee of `run(_:)` without a `DispatchWorkItem`.
+    ///
+    /// ## ⚠️ Pipe-drain concurrency — same invariant as `run(_:)`
+    /// stdout is drained on a `DispatchQueue.global` thread *concurrently* with
+    /// process execution, before `terminationHandler` fires. This prevents the
+    /// kernel pipe buffer (~64 KB) from filling and blocking the child.
     ///
     /// All parameters mirror `run(_:)`; defaults are identical.
-    ///
-    /// - Note: The DispatchWorkItem timeout and concurrent pipe-drain invariants
-    ///   described in the class-level doc comment are preserved inside this method.
     public static func runAsync(
         executableURL: URL,
         arguments: [String],
         stdin: Data? = nil,
         workingDirectory: URL? = nil,
         mergeStderr: Bool = false,
-        timeout: TimeInterval = 20,
-        qos: DispatchQoS = .userInitiated
+        timeout: TimeInterval = 20
     ) async -> Result {
-        // Capture the process in a sendable box so the cancellation handler
-        // can terminate it without touching the continuation.
-        final class ProcessBox: @unchecked Sendable {
-            var process: Process?
+        let task = Process()
+        task.executableURL = executableURL
+        task.arguments = arguments
+        if let workingDirectory { task.currentDirectoryURL = workingDirectory }
+
+        let outPipe = Pipe()
+        task.standardOutput = outPipe
+        task.standardError = mergeStderr ? outPipe : FileHandle.nullDevice
+
+        let inputPipe: Pipe?
+        if stdin != nil {
+            let p = Pipe()
+            task.standardInput = p
+            inputPipe = p
+        } else {
+            inputPipe = nil
         }
-        let box = ProcessBox()
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Result, Never>) in
-                DispatchQueue.global(qos: qos.qosClass).async {
-                    let result = ProcessRunner.run(
-                        executableURL: executableURL,
-                        arguments: arguments,
-                        stdin: stdin,
-                        workingDirectory: workingDirectory,
-                        mergeStderr: mergeStderr,
-                        timeout: timeout
-                    )
-                    continuation.resume(returning: result)
+                // Drain stdout concurrently — see pipe-drain invariant above.
+                // `nonisolated(unsafe)`: the terminationHandler provides the
+                // happens-before guarantee that outputData is fully written
+                // before the continuation resumes.
+                nonisolated(unsafe) var outputData = Data()
+                outPipe.fileHandleForReading.readabilityHandler = { handle in
+                    outputData.append(handle.availableData)
+                }
+
+                task.terminationHandler = { t in
+                    // Stop the readability handler and drain any final bytes.
+                    outPipe.fileHandleForReading.readabilityHandler = nil
+                    let tail = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    if !tail.isEmpty { outputData.append(tail) }
+                    let exitCode = t.terminationStatus
+                    log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
+                    continuation.resume(returning: Result(
+                        data: outputData.isEmpty ? nil : outputData,
+                        exitCode: exitCode
+                    ))
+                }
+
+                do {
+                    try task.run()
+                } catch {
+                    log("ProcessRunner › launch error: \(error) — \(executableURL.lastPathComponent) \(arguments.joined(separator: " "))")
+                    continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
+                    return
+                }
+
+                if let inputPipe, let stdinData = stdin {
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        inputPipe.fileHandleForWriting.write(stdinData)
+                        inputPipe.fileHandleForWriting.closeFile()
+                    }
+                }
+
+                // Timeout guard — terminates the process if it outlives `timeout`.
+                // Relies on Task.sleep throwing CancellationError to clean up
+                // when the process exits normally first.
+                Task.detached {
+                    do {
+                        try await Task.sleep(for: .seconds(timeout))
+                        guard task.isRunning else { return }
+                        log("ProcessRunner › timeout (\(timeout)s) — terminating \(executableURL.lastPathComponent)")
+                        task.terminate()
+                    } catch {
+                        // CancellationError: process already exited, nothing to do.
+                    }
                 }
             }
         } onCancel: {
-            box.process?.terminate()
+            // Enclosing Task was cancelled (e.g. pollTask replaced by start()).
+            // Terminate immediately rather than waiting for the timeout.
+            task.terminate()
         }
     }
 }
