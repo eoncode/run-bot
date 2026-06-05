@@ -115,7 +115,7 @@ public struct PollResultBuilder {
         fetchGroups: @Sendable ([String: WorkflowActionGroup]) async -> [WorkflowActionGroup],
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void,
-        enrichJobs: @Sendable ([ActiveJob]) async -> [ActiveJob]
+        enrichJobs: @escaping @Sendable ([ActiveJob]) async -> [ActiveJob]
     ) async -> GroupPollResult {
         log("PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count) snapSeenGroupIDs=\(snapSeenGroupIDs.count)")
         let shaKeyedCache = makeShaKeyedCache(snapGroupCache)
