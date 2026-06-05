@@ -148,7 +148,7 @@ final class LocalRunnerStore: ObservableObject {
             // 3. Enrich via GitHub API (concurrent scope fetches)
             let enriched = await RunnerStatusEnricher.shared.enrich(runners: hydrated)
 
-            await self.applyRefreshResults(enriched)
+            self.applyRefreshResults(enriched)
         }
     }
 
