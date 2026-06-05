@@ -336,6 +336,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
     var didFailAuthentication = false
 
     while let urlString = nextURL {
+        // Re-fetch token each iteration so a mid-pagination sign-out is detected early.
         guard let token = githubToken() else {
             log("urlSessionAPIPaginated › no token available, stopping pagination")
             didFailAuthentication = true
@@ -376,12 +377,14 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
         }
     }
 
+    // Auth failure: discard partial results so callers see nil, not a truncated list.
     if didFailAuthentication {
         if !allItems.isEmpty {
             log("urlSessionAPIPaginated › authentication failed mid-pagination — discarding \(allItems.count) partial items")
         }
         return nil
     }
+    // Log partial results so callers know the list may be incomplete due to rate limit.
     if ghIsRateLimited && !allItems.isEmpty {
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
