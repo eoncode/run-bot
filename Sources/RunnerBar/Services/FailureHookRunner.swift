@@ -49,7 +49,7 @@ enum FailureHookRunner {
             log("FailureHookRunner › SKIP — hook not enabled for scope=\(scope)")
             return
         }
-        // #560: Branch filter — skip if a branch filter is set and doesn’t match
+        // #560: Branch filter — skip if a branch filter is set and doesn't match
         let filterBranch = ScopePreferencesStore.failureHookBranch(for: scope)
         if let filter = filterBranch {
             let groupBranch = group.headBranch ?? ""
@@ -134,7 +134,7 @@ enum FailureHookRunner {
                 if let jobConclusion = job.conclusion,
                    failureConclusions.contains(jobConclusion.rawValue.lowercased()) {
                     log("FailureHookRunner › fetchFailedJobs — fetching log for failed jobID=\(job.id) name=\(job.name)")
-                    if let fullLog = await fetchJobLog(jobID: job.id, scope: scope) {
+                    if let fullLog = fetchJobLog(jobID: job.id, scope: scope) {
                         let lines = fullLog.components(separatedBy: "\n")
                         let kept = lines.suffix(150).joined(separator: "\n")
                         tail = kept
