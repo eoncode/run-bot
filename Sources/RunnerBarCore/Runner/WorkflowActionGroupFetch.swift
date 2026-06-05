@@ -7,15 +7,25 @@ import os
 /// Regex that extracts a PR number from a GitHub merge-ref branch name (e.g. `refs/pull/123/merge`).
 private let prNumberPattern = #"/(\d+)/"# // NOSONAR — fixed regex pattern
 
-// MARK: - Codable helpers (private to this file)
+// MARK: - Date parsing
 
-/// A `Sendable` wrapper around `ISO8601DateFormatter`.
-private struct SendableFormatter: @unchecked Sendable {
-    let iso = ISO8601DateFormatter()
+/// Actor-isolated ISO-8601 date parser.
+///
+/// `ISO8601DateFormatter` is expensive to allocate (ICU calendars) and not
+/// `Sendable`. Wrapping it in an actor gives thread-safe access with no lock
+/// boilerplate and no `@unchecked Sendable` escape hatch — consistent with the
+/// `DateParserActor` pattern used in `RunnerPollState.swift`.
+private actor WorkflowDateParserActor {
+    private let iso = ISO8601DateFormatter()
+    func parse(_ str: String) -> Date? { iso.date(from: str) }
+    func makeJob(from payload: JobPayload, iso formatter: ISO8601DateFormatter? = nil) -> ActiveJob {
+        makeActiveJob(from: payload, iso: iso)
+    }
 }
 
-/// Lock protecting the shared `ISO8601DateFormatter` instance.
-private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
+private let workflowDateParser = WorkflowDateParserActor()
+
+// MARK: - Codable helpers (private to this file)
 
 private struct ActionRunsResponse: Codable {
     let workflowRuns: [RunPayload]
@@ -66,8 +76,8 @@ private func prLabel(from run: RunPayload) -> String {
     return String(run.headSha.prefix(7))
 }
 
-private func parseCreatedAt(_ dateStr: String) -> Date? {
-    iso8601Lock.withLock { $0.iso.date(from: dateStr) }
+private func parseCreatedAt(_ dateStr: String) async -> Date? {
+    await workflowDateParser.parse(dateStr)
 }
 
 // MARK: - Fetch + Group
@@ -138,6 +148,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
                 let allJobs = await fetchJobsForGroup(shaRuns: shaRuns, scope: scope, cache: cache, sha: sha)
                 let starts = allJobs.compactMap { $0.startedAt }
                 let ends   = allJobs.compactMap { $0.completedAt }
+                let createdAt = await representative.createdAt.flatMap { await parseCreatedAt($0) }
                 return (i, WorkflowActionGroup(
                     headSha: sha,
                     label: label,
@@ -148,7 +159,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
                     jobs: allJobs,
                     firstJobStartedAt: starts.min(),
                     lastJobCompletedAt: ends.max(),
-                    createdAt: representative.createdAt.flatMap(parseCreatedAt)
+                    createdAt: createdAt
                 ))
             }
         }
@@ -207,8 +218,13 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
           let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
     else { return [] }
 
-    let initial = iso8601Lock.withLock { wrapper in
-        resp.jobs.map { makeActiveJob(from: $0, iso: wrapper.iso) }
+    let initial = await withTaskGroup(of: ActiveJob.self) { group in
+        for payload in resp.jobs {
+            group.addTask { await workflowDateParser.makeJob(from: payload) }
+        }
+        var out: [ActiveJob] = []
+        for await job in group { out.append(job) }
+        return out
     }
 
     // Refresh in-progress/inconclusive jobs concurrently.
@@ -227,9 +243,7 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
                 guard let freshData = await ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
                       let fresh = try? JSONDecoder().decode(JobPayload.self, from: freshData)
                 else { return (idx, nil) }
-                let freshJob = iso8601Lock.withLock { wrapper in
-                    makeActiveJob(from: fresh, iso: wrapper.iso)
-                }
+                let freshJob = await workflowDateParser.makeJob(from: fresh)
                 if fresh.conclusion != nil { return (idx, freshJob) }
                 let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
                 if betterSteps {
