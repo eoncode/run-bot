@@ -668,9 +668,22 @@ func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String
 
 // MARK: - Runner token helpers
 
+/// Shared implementation for `fetchRegistrationToken` and `fetchRemovalToken`.
+///
+/// Both functions are structurally identical; this helper keeps any future
+/// change (retry logic, timeout, error format) in one place.
+///
+/// - Parameters:
+///   - type: The token endpoint suffix, e.g. `"registration-token"` or `"remove-token"`.
+///   - scope: The parsed `Scope` value providing the API prefix.
+///   - logPrefix: Label used in log messages to identify the caller.
+/// - Returns: The short-lived token string, or `nil` on failure.
 private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) -> String? {
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(type)"
     log("\(logPrefix) › POSTing \(endpoint)")
+    // Token endpoints must return a body; empty Data() is failure here, not
+    // success. This overrides urlSessionPost's documented Data() == success
+    // semantics, which apply to bodyless 2xx responses like 204 No Content.
     guard let outputData = urlSessionPost(endpoint), !outputData.isEmpty else {
         log("\(logPrefix) › no data for \(endpoint)")
         return nil
@@ -683,6 +696,7 @@ private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) -> 
     return resp.token
 }
 
+/// Fetches a short-lived runner registration token for the given scope.
 func fetchRegistrationToken(scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRegistrationToken › invalid scope: \(scopeString)")
@@ -693,6 +707,7 @@ func fetchRegistrationToken(scope scopeString: String) -> String? {
     return token
 }
 
+/// Fetches a runner removal token for the given scope.
 func fetchRemovalToken(scope scopeString: String) -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRemovalToken › invalid scope: \(scopeString)")
@@ -703,6 +718,8 @@ func fetchRemovalToken(scope scopeString: String) -> String? {
     return token
 }
 
+/// Sends a POST to the given GitHub API endpoint. Returns true on success (2xx).
+/// ⚠️ Must be called from a background thread.
 @discardableResult
 func ghPost(_ endpoint: String) -> Bool {
     let result = urlSessionPost(endpoint)
@@ -711,6 +728,7 @@ func ghPost(_ endpoint: String) -> Bool {
     return success
 }
 
+/// Cancels a workflow run.
 @discardableResult
 func cancelRun(runID: Int, scope: String) -> Bool {
     let result = ghPost("repos/\(scope)/actions/runs/\(runID)/cancel")
