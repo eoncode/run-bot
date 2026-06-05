@@ -1,5 +1,7 @@
 # RunnerBar 
 
+<img width="120" alt="img" src="runbar-logo.svg">
+
 **Platform & Stack**
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple&logoColor=white)
