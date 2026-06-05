@@ -11,7 +11,7 @@ import RunnerBarCore
 /// Manages RunnerStore state and behaviour.
 @MainActor
 final class RunnerStore {
-    /// The shared constant.
+    /// The app-wide singleton. Always accessed on the main actor.
     static let shared = RunnerStore()
 
     /// Live runner list, updated after each poll cycle.
@@ -30,11 +30,21 @@ final class RunnerStore {
     /// Group cache keyed by group ID; capped at `PollResultBuilder.groupCacheLimit`.
     private var actionGroupCache: [String: WorkflowActionGroup] = [:]
     /// IDs of action groups whose failure hook has already been fired.
+    ///
+    /// Kept separate from `actionGroupCache` so that cache eviction (capped at
+    /// `groupCacheLimit = 30`) does not re-arm the hook for old completed groups
+    /// that are still present in GitHub's last-100-completed feed.
     private var seenGroupIDs: Set<String> = []
 
     /// Whether the GitHub API is currently rate-limiting this client.
     private(set) var isRateLimited = false
-    /// The exact `Date` at which the current rate-limit window expires; `nil` when not rate-limited.
+    /// The exact moment the current rate-limit window expires.
+    ///
+    /// Set to `nil` when no rate-limit is active or when the reset time is
+    /// unknown (e.g. CLI code path that sets `ghIsRateLimited` without a
+    /// header value).  Sourced from `ghRateLimitResetDate` in
+    /// `applyFetchResult` and propagated via `RunnerViewModel` to the
+    /// `rateLimitBanner` in `PanelMainView`.
     private(set) var rateLimitResetDate: Date?
 
     /// Active structured poll task. Cancelled and replaced on every `start()` call.
@@ -48,6 +58,10 @@ final class RunnerStore {
     /// Emits whenever a fetch cycle completes and the store's state has been updated.
     let didUpdate = PassthroughSubject<Void, Never>()
 
+    /// The aggregate online/offline status across all runners.
+    ///
+    /// A runner with `.busy` status is connected to GitHub and executing a job,
+    /// so it counts toward the online tally alongside `.online` runners.
     var aggregateStatus: AggregateStatus {
         guard !runners.isEmpty else { return .allOffline }
         let onlineCount = runners.filter { $0.status == .online || $0.status == .busy }.count
@@ -56,6 +70,7 @@ final class RunnerStore {
         return .someOffline
     }
 
+    /// Private initialiser — use `shared`.
     private init() {
         log("RunnerStore › init")
         intervalCancellable = AppPreferencesStore.shared.$pollingInterval
@@ -123,6 +138,8 @@ final class RunnerStore {
 
     // MARK: - Fetch
 
+    /// Performs one complete poll cycle: fetches runners, jobs, and action groups,
+    /// then applies results on the main actor via `applyFetchResult`.
     func fetch() async {
         // Proactively reset the transport-layer rate-limit flag at the start of each
         // cycle. The transport clears it automatically on a successful 2xx response
@@ -176,12 +193,25 @@ final class RunnerStore {
 
     // MARK: - InstallPathMap
 
+    /// Lookup maps built from the local runner list, used by `fetchAndEnrichRunners`.
     struct InstallPathMap {
+        /// "scope/runnerName" → installPath  (exact scope-prefixed match)
         let byFullKey: [String: String]
+        /// "runnerName" → installPath  (name-only fallback)
         let byName: [String: String]
+        /// agentId (Int) → installPath  (ID-based, scope-agnostic)
         let byId: [Int: String]
     }
 
+    /// Builds three lookup maps from the local runner list:
+    /// - Primary:    "scope/runnerName" → installPath  (exact scope-prefixed match)
+    /// - Secondary:  "runnerName"        → installPath  (name-only fallback)
+    /// - Tertiary:   agentId (Int)        → installPath  (ID-based, scope-agnostic)
+    ///
+    /// The ID map is the most reliable — GitHub writes the runner's integer ID
+    /// to the `.runner` JSON on disk during `config.sh`, so it is stable across
+    /// renames and scope-string format changes.  Runners that predate this field
+    /// (agentId == nil) fall through to the fullKey / name maps.
     private func buildInstallPathMap(
         scopes: [String],
         localRunners: [RunnerModel]
