@@ -71,6 +71,11 @@ enum FailureHookRunner {
             return
         }
         log("FailureHookRunner › ALL CHECKS PASSED — dispatching background Task for scope=\(scope) groupID=\(group.id)")
+        // Task.detached is required here — do NOT simplify to Task { }.
+        // fireIfNeeded is called from @MainActor context (via PollResultBuilder → RunnerStore).
+        // A plain Task { } would inherit @MainActor isolation, serialising the log fetch
+        // and TerminalLauncher call through the main actor. Task.detached breaks that
+        // inheritance so the work runs on the cooperative pool at .utility priority (#1152).
         Task.detached(priority: .utility) {
             log("FailureHookRunner › Task START — fetching failed jobs for groupID=\(group.id)")
             let jobs = await fetchFailedJobs(group: group, scope: scope)

@@ -61,13 +61,13 @@ extension RunnerStore {
                 return groups
             },
             scopeFromGroup: { group in
-                await MainActor.run { self.scopeFromActionGroup(group) }
+                self.scopeFromActionGroup(group)
             },
             fireFailureHook: { group, scope in
                 FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
             },
             enrichJobs: { jobs in
-                await MainActor.run { self.enrichGroupJobs(jobs, jobCache: jobCache) }
+                self.enrichGroupJobs(jobs, jobCache: jobCache)
             }
         )
     }
@@ -93,8 +93,11 @@ extension RunnerStore {
     // MARK: - Group helpers
 
     /// Derives the scope string (repo or org URL) from a `WorkflowActionGroup`.
-    @MainActor
-    func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
+    ///
+    /// `nonisolated`: reads only `group` (a `Sendable` value type passed as a parameter)
+    /// and calls `scopeFromHtmlUrl` (a pure free function). No main-actor state is accessed,
+    /// so the `@MainActor` hop at every call site in `buildGroupState` is unnecessary.
+    nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")
@@ -112,7 +115,13 @@ extension RunnerStore {
     }
 
     /// Enriches a group's job list with step and conclusion data from the job cache.
-    func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
+    ///
+    /// `nonisolated`: pure map over `jobCache` (a value-type snapshot captured at the
+    /// closure creation site) with no reads from `RunnerStore`'s actor-isolated state.
+    /// Marking it `nonisolated` removes the implicit `@MainActor` hop that was serialising
+    /// every `withTaskGroup` child task in `PollResultBuilder.buildGroupState` through
+    /// the main actor, negating the intended parallelism (#1153).
+    nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil

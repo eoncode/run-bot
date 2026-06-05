@@ -294,14 +294,18 @@ final class RunnerStore {
                 continue
             }
             let fullKey = "\(scope)/\(runner.name)"
+            // metricsForRunner calls DispatchSemaphore.wait() internally (via runProcess).
+            // Running it inside Task.detached(priority:) moves the blocking wait onto a
+            // GCD thread rather than the cooperative thread pool, preventing thread
+            // starvation when multiple busy runners are enriched per poll cycle (#1151).
             if let installPath = installPathMap.byId[runner.id] {
-                runner.metrics = metricsForRunner(installPath: installPath)
+                runner.metrics = await Task.detached(priority: .utility) { metricsForRunner(installPath: installPath) }.value
                 log("RunnerStore › fetchAndEnrichRunners — \(runner.name) metrics via id=\(runner.id)")
             } else if let installPath = installPathMap.byFullKey[fullKey] {
-                runner.metrics = metricsForRunner(installPath: installPath)
+                runner.metrics = await Task.detached(priority: .utility) { metricsForRunner(installPath: installPath) }.value
                 log("RunnerStore › fetchAndEnrichRunners — \(runner.name) metrics via fullKey=\(fullKey)")
             } else if let installPath = installPathMap.byName[runner.name] {
-                runner.metrics = metricsForRunner(installPath: installPath)
+                runner.metrics = await Task.detached(priority: .utility) { metricsForRunner(installPath: installPath) }.value
                 log("RunnerStore › fetchAndEnrichRunners — ⚠️ \(runner.name) name-only fallback")
             } else {
                 runner.metrics = nil

@@ -209,11 +209,13 @@ public enum ProcessRunner {
     ///   the hang-safety guarantee of `run(_:)` without a `DispatchWorkItem`.
     ///
     /// ## ⚠️ Pipe-drain concurrency — same invariant as `run(_:)`
-    /// stdout is drained on a `DispatchQueue.global` thread *concurrently* with
-    /// process execution. All writes go through `OutputAccumulator` so Swift 6.2
-    /// strict concurrency verifies correctness — no `nonisolated(unsafe)` needed.
-    /// `terminationHandler` awaits the accumulated data before resuming the
-    /// continuation, guaranteeing the buffer is fully written before it is read.
+    /// stdout is drained via a dedicated serial `DispatchQueue` *concurrently* with
+    /// process execution, mirroring the `Box + drainQueue.sync` pattern in `run(_:)`.
+    /// `readDataToEndOfFile()` blocks until the pipe's write end closes (i.e. the
+    /// process exits), so all bytes are captured in a single call with one clear
+    /// happens-before edge. `terminationHandler` joins the drain queue with
+    /// `drainQueue.sync {}` before reading the result — no actor, no lock, no
+    /// fire-and-forget tasks required.
     ///
     /// All parameters mirror `run(_:)`; defaults are identical.
     public static func runAsync(
@@ -242,34 +244,45 @@ public enum ProcessRunner {
             inputPipe = nil
         }
 
-        let accumulator = OutputAccumulator()
+        // Drain stdout on a dedicated serial queue concurrently with process execution,
+        // mirroring the run() synchronous pattern. readDataToEndOfFile() blocks until
+        // the write end of the pipe is closed (i.e. the process exits), so it captures
+        // all output in one call with a single clear happens-before edge.
+        //
+        // Using a DispatchQueue here (not a Task) keeps the drain off the cooperative
+        // thread pool, avoids the fire-and-forget Task.detached-per-chunk pattern, and
+        // ensures drainQueue.sync {} in terminationHandler is the sole synchronisation
+        // point — no actor, no lock, no untracked tasks required.
+        let outputBox = Box<Data>(Data())
+        let drainQueue = DispatchQueue(label: "ProcessRunner.drain.async")
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Result, Never>) in
-                // Drain stdout on a background thread concurrently with process
-                // execution. All writes go through the actor — no nonisolated(unsafe).
-                outPipe.fileHandleForReading.readabilityHandler = { handle in
-                    let chunk = handle.availableData
-                    guard !chunk.isEmpty else { return }
-                    Task.detached { await accumulator.append(chunk) }
+                drainQueue.async {
+                    outputBox.value = outPipe.fileHandleForReading.readDataToEndOfFile()
                 }
 
+                // Timeout guard — terminates the process if it outlives `timeout`.
+                // Declared before terminationHandler so it can be captured and cancelled
+                // directly inside that closure on normal exit. This prevents orphaned sleeping
+                // tasks from accumulating when start() rapidly replaces pollTask (#1152).
+                var timeoutTask: Task<Void, Never>? = nil
+
                 task.terminationHandler = { t in
-                    // Stop the handler and drain any final bytes.
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    let tail = outPipe.fileHandleForReading.readDataToEndOfFile()
                     let exitCode = t.terminationStatus
-                    // Await the accumulator on a Task so terminationHandler
-                    // (a non-async closure) can hand off to async context.
-                    Task.detached {
-                        await accumulator.append(tail)
-                        let outputData = await accumulator.data
-                        log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
-                        continuation.resume(returning: Result(
-                            data: outputData.isEmpty ? nil : outputData,
-                            exitCode: exitCode
-                        ))
-                    }
+                    // Cancel the timeout guard immediately — process has already exited.
+                    timeoutTask?.cancel()
+                    // Join the drain queue: blocks until readDataToEndOfFile() finishes.
+                    // This is the happens-before guarantee that makes outputBox.value safe
+                    // to read immediately after. The drainQueue.sync call is cheap here
+                    // because the process has already exited and the pipe is closed.
+                    drainQueue.sync {}
+                    let outputData = outputBox.value
+                    log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
+                    continuation.resume(returning: Result(
+                        data: outputData.isEmpty ? nil : outputData,
+                        exitCode: exitCode
+                    ))
                 }
 
                 do {
@@ -287,20 +300,21 @@ public enum ProcessRunner {
                     }
                 }
 
-                // Timeout guard — terminates the process if it outlives `timeout`.
-                Task.detached {
+                timeoutTask = Task.detached {
                     do {
                         try await Task.sleep(for: .seconds(timeout))
                         guard task.isRunning else { return }
                         log("ProcessRunner › timeout (\(timeout)s) — terminating \(executableURL.lastPathComponent)")
                         task.terminate()
                     } catch {
-                        // CancellationError: process already exited, nothing to do.
+                        // CancellationError from timeoutTask.cancel() — process already done.
                     }
                 }
             }
         } onCancel: {
             // Enclosing Task was cancelled (e.g. pollTask replaced by start()).
+            // terminate() signals the subprocess; terminationHandler fires and resumes
+            // the continuation, so the awaiting Task unblocks and exits cleanly.
             task.terminate()
         }
     }
