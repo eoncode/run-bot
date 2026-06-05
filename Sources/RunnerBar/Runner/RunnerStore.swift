@@ -101,6 +101,9 @@ final class RunnerStore {
     func start() {
         let scopes = ScopeStore.shared.activeScopes
         log("RunnerStore › start — activeScopes=\(scopes)")
+        if scopes.isEmpty {
+            log("RunnerStore › ⚠️ start called but activeScopes is EMPTY — actions will not load")
+        }
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             guard let self else { return }
