@@ -37,8 +37,6 @@ import Foundation
 /// `run` drains stdout into a plain `var` inside a `DispatchQueue.async` block
 /// and reads it back after `drainQueue.sync {}` — the queue provides the
 /// happens-before guarantee with zero unsafe annotations.
-/// `runAsync` routes the drain through an `OutputAccumulator` actor, which
-/// Swift 6.2 strict concurrency can verify independently.
 ///
 /// ## Async variant (`runAsync`)
 /// `runAsync` owns its own `Process` instance and bridges completion via
@@ -73,23 +71,6 @@ public enum ProcessRunner {
         public let exitCode: Int32
         /// Convenience: decoded UTF-8 string of `data`, or empty string.
         public var output: String { data.flatMap { String(data: $0, encoding: .utf8) } ?? "" }
-    }
-
-    // MARK: - OutputAccumulator
-
-    /// Actor-isolated stdout accumulator.
-    ///
-    /// Routing all pipe reads through an actor gives Swift 6.2 strict
-    /// concurrency a compiler-verified happens-before relationship between
-    /// the background drain thread and the reader — no `nonisolated(unsafe)`
-    /// or `DispatchSemaphore` required.
-    private actor OutputAccumulator {
-        /// Accumulated bytes from the process stdout pipe.
-        private var buffer = Data()
-        /// Appends a chunk of bytes to the buffer.
-        func append(_ chunk: Data) { buffer.append(chunk) }
-        /// Returns all accumulated bytes.
-        var data: Data { buffer }
     }
 
     // MARK: - Synchronous
@@ -263,15 +244,16 @@ public enum ProcessRunner {
                 }
 
                 // Timeout guard — terminates the process if it outlives `timeout`.
-                // Declared before terminationHandler so it can be captured and cancelled
-                // directly inside that closure on normal exit. This prevents orphaned sleeping
-                // tasks from accumulating when start() rapidly replaces pollTask (#1152).
-                var timeoutTask: Task<Void, Never>? = nil
+                // Box<Task?> is used so terminationHandler (a @Sendable closure) can capture
+                // a reference type (let) rather than a var, satisfying Swift 6.2 strict
+                // concurrency. The box is written once after task.run() and read once inside
+                // terminationHandler — both on the same serialised execution path (#1152).
+                let timeoutTaskBox = Box<Task<Void, Never>?>(nil)
 
                 task.terminationHandler = { t in
                     let exitCode = t.terminationStatus
                     // Cancel the timeout guard immediately — process has already exited.
-                    timeoutTask?.cancel()
+                    timeoutTaskBox.value?.cancel()
                     // Join the drain queue: blocks until readDataToEndOfFile() finishes.
                     // This is the happens-before guarantee that makes outputBox.value safe
                     // to read immediately after. The drainQueue.sync call is cheap here
@@ -300,7 +282,7 @@ public enum ProcessRunner {
                     }
                 }
 
-                timeoutTask = Task.detached {
+                timeoutTaskBox.value = Task.detached {
                     do {
                         try await Task.sleep(for: .seconds(timeout))
                         guard task.isRunning else { return }
