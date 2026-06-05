@@ -68,8 +68,11 @@ public enum ProcessRunner {
     /// the background drain thread and the reader — no `nonisolated(unsafe)`
     /// or `DispatchSemaphore` required.
     private actor OutputAccumulator {
+        /// Accumulated bytes from the process stdout pipe.
         private var buffer = Data()
+        /// Appends a chunk of bytes to the buffer.
         func append(_ chunk: Data) { buffer.append(chunk) }
+        /// Returns all accumulated bytes.
         var data: Data { buffer }
     }
 
@@ -166,17 +169,16 @@ public enum ProcessRunner {
         // `nonisolated(unsafe) var` + `DispatchSemaphore` pattern — the
         // happens-before relationship is now compiler-verified through the actor
         // and the continuation rather than a manual semaphore.
-        let outputData: Data = { () -> Data in
-            let waiter = DispatchGroup()
-            waiter.enter()
-            var captured = Data()
-            Task.detached {
-                captured = await accumulator.data
-                waiter.leave()
-            }
-            waiter.wait()
-            return captured
-        }()
+        // `nonisolated(unsafe)` is safe here: the DispatchSemaphore provides the
+        // happens-before relationship — sema.wait() returns only after the Task
+        // has written `outputData`, so no concurrent access is possible.
+        nonisolated(unsafe) var outputData = Data()
+        let sema = DispatchSemaphore(value: 0)
+        Task.detached {
+            outputData = await accumulator.data
+            sema.signal()
+        }
+        sema.wait()
 
         log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
         return Result(data: outputData.isEmpty ? nil : outputData, exitCode: exitCode)

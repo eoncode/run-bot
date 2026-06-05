@@ -46,16 +46,27 @@ private struct RunPayload: Codable {
     let pullRequests: [PRRef]?
     /// CodingKeys mapping snake_case API fields to camelCase Swift properties.
     enum CodingKeys: String, CodingKey {
+        /// Maps the `id` JSON field.
         case id
+        /// Maps the `name` JSON field.
         case name
+        /// Maps the `status` JSON field.
         case status
+        /// Maps the `conclusion` JSON field.
         case conclusion
+        /// Maps the `head_branch` JSON field.
         case headBranch   = "head_branch"
+        /// Maps the `head_sha` JSON field.
         case headSha      = "head_sha"
+        /// Maps the `display_title` JSON field.
         case displayTitle = "display_title"
+        /// Maps the `created_at` JSON field.
         case createdAt    = "created_at"
+        /// Maps the `html_url` JSON field.
         case htmlUrl      = "html_url"
+        /// Maps the `head_commit` JSON field.
         case headCommit   = "head_commit"
+        /// Maps the `pull_requests` JSON field.
         case pullRequests = "pull_requests"
     }
 }

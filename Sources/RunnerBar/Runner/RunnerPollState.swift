@@ -1,3 +1,5 @@
+// RunnerPollState.swift
+// RunnerBar
 import Combine
 import Foundation
 import os
@@ -134,4 +136,7 @@ extension RunnerStore {
         }
     }
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> 6d89b154 (fix: resolve remaining SwiftLint errors and SendingRisksDataRace in ProcessRunner)
