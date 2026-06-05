@@ -235,7 +235,12 @@ final class RunnerStore {
 
     // MARK: - Apply result
 
-    /// Commits the results of one complete fetch cycle to the store's published state.
+    /// Applies a completed fetch cycle's results to the store's @MainActor state.
+    ///
+    /// Copies `ghIsRateLimited` and `ghRateLimitResetDate` from the transport
+    /// layer so the full rate-limit context (flag + exact reset moment) is
+    /// available to `RunnerViewModel` and ultimately to `PanelMainView`'s
+    /// live-countdown banner.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,

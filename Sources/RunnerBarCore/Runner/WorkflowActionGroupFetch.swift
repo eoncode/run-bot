@@ -105,7 +105,11 @@ private struct PRRef: Codable {
     let number: Int
 }
 
-/// Returns a short human-readable label for a run: PR number, SHA-derived branch ref, or abbreviated SHA.
+/// Derives the short display label for an action group row.
+///
+/// Priority: PR number → branch-embedded number → sha[:7].
+/// - Parameter run: The representative `RunPayload` for this group.
+/// - Returns: A short label string, e.g. `"#1270"` or `"d6281b"`.
 private func prLabel(from run: RunPayload) -> String {
     if let pr = run.pullRequests?.first { return "#\(pr.number)" }
     if let branch = run.headBranch,
@@ -150,7 +154,11 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
     var bySha: [String: [RunPayload]] = [:]
     for run in runPayloads { bySha[run.headSha, default: []].append(run) }
 
-    // Merge completed runs.
+    // Phase 2: fetch recently completed runs and merge into ALL SHA groups.
+    // Fix #1041: completed-only SHAs (groups that finished between polls) are
+    // now included so they can be routed through the normal cache/display pipeline.
+    // De-duplication of old completed groups re-triggering the failure hook is
+    // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
     if let data = cData,
        let resp = try? JSONDecoder().decode(ActionRunsResponse.self, from: data) {
         for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
@@ -222,6 +230,12 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
 // MARK: - Private helpers
 
 /// Returns the flattened job list for all runs sharing a `head_sha`.
+///
+/// Uses the SHA-keyed cache when all cached jobs are concluded and none have
+/// in-progress steps, avoiding redundant API calls for finished groups.
+/// Falls back to a live fetch via `fetchJobsForRun` when the cache is stale
+/// or missing.
+///
 /// Per-run job fetches run concurrently via `withTaskGroup`.
 private func fetchJobsForGroup(
     shaRuns: [RunPayload],
@@ -253,7 +267,13 @@ private func fetchJobsForGroup(
     return fetched
 }
 
-/// Fetches and decodes the job list for a single run ID.
+/// Fetches and decodes the job list for a single run ID, refreshing any
+/// in-progress or inconclusive jobs with a targeted single-job API call.
+///
+/// - Note: `filter=latest` is intentionally omitted — it drops queued jobs that
+///   haven't started yet, causing `jobsTotal` to be lower than the detail view.
+///   `per_page=100` is the GitHub API maximum and covers all realistic job counts.
+///
 /// Refresh calls for in-progress/inconclusive jobs run concurrently (capped at 3).
 private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
     guard let data = await ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=100"),
@@ -312,6 +332,10 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
 }
 
 /// Returns the sort priority for a `GroupStatus`.
+///
+/// Lower value = higher display priority (in-progress before queued before completed).
+/// - Parameter status: The `GroupStatus` to evaluate.
+/// - Returns: An integer priority where `0` = in-progress, `1` = queued, `2` = completed.
 private func statusPriority(_ status: GroupStatus) -> Int {
     switch status {
     case .inProgress: return 0

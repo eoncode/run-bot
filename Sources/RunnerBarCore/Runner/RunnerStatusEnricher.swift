@@ -68,6 +68,8 @@ private struct APIRunnerPayload: Sendable {
 /// the same repo/org issues only one API call per scope per poll cycle.
 /// Multiple scopes are fetched concurrently via `withTaskGroup`.
 ///
+/// - Important: All methods are async. Always call from an async context —
+///   never block the main actor waiting for enrichment.
 /// - SeeAlso: `RunnerModel`, `RunnerStatus`, `LocalRunnerStore`
 public struct RunnerStatusEnricher: Sendable {
     // MARK: - Shared singleton
@@ -139,13 +141,23 @@ public struct RunnerStatusEnricher: Sendable {
 
     // MARK: - Private
 
-    /// Fetches the complete runner list for a scope URL via ghAPI, paginating
+    /// Fetches the **complete** runner list for a scope URL via ghAPI, paginating
     /// through all pages (per_page=100) until exhausted.
+    ///
+    /// GitHub's default page size is 30. Without explicit pagination any org/repo
+    /// with more than 30 runners would silently lose enrichment for runners beyond
+    /// the first page. Using per_page=100 (the API maximum) minimises round-trips.
+    ///
+    /// - Note: This method intentionally does NOT gate on `ghIsRateLimited`. A permission
+    ///   403 on one scope (e.g. org) must not block a repo-scope fetch from running.
+    ///   The transport layer handles real rate-limits; duplicating the check here causes
+    ///   false skips when scopes are fetched concurrently and an org 403 fires first.
     private func fetchRunnersForScope(_ scopeURL: String) async -> [APIRunnerPayload] {
         let stripped = scopeURL.replacingOccurrences(of: GitHubConstants.base + "/", with: "")
         let parts = stripped.split(separator: "/").map(String.init)
         guard !parts.isEmpty else { return [] }
 
+        // ⚠️ No leading slash — ghAPI builds the full URL itself.
         let baseEndpoint: String
         if parts.count >= 2 {
             baseEndpoint = "repos/\(parts[0])/\(parts[1])/actions/runners"
@@ -179,7 +191,13 @@ public struct RunnerStatusEnricher: Sendable {
         return allRunners
     }
 
-    /// Applies enrichment data from an `APIRunnerPayload` to a `RunnerModel`.
+    /// Applies fields from an `APIRunnerPayload` to a `RunnerModel`.
+    ///
+    /// - Returns: A new `RunnerModel` with API-sourced fields applied.
+    /// - Note: Platform and architecture are derived from API labels when the `.runner`
+    ///   JSON on disk did not supply them (older runner agent versions omit these fields).
+    ///   Prefer label-derived values (always correctly cased by GitHub)
+    ///   over whatever `.runner` JSON provided (often nil or raw OS strings).
     private func applyEnrichment(to runner: RunnerModel, from api: APIRunnerPayload) -> RunnerModel {
         let githubStatus = api.status.map { RunnerStatus(rawString: $0) }
         let effectiveLabels = api.labelNames.isEmpty ? runner.labels : api.labelNames
@@ -191,6 +209,8 @@ public struct RunnerStatusEnricher: Sendable {
             let l = label.lowercased()
             return l == "arm64" || l == "x64" || l == "x86" || l == "aarch64"
         })
+        // Prefer label-derived values (always correctly cased by GitHub)
+        // over whatever .runner JSON provided (often nil or raw OS strings).
         let platform = labelPlatform ?? runner.platform
         let platformArchitecture = labelArch ?? runner.platformArchitecture
 

@@ -43,6 +43,8 @@ final class LocalRunnerStore: ObservableObject {
         log("LocalRunnerStore > register — '\(name)' at \(installPath)")
     }
 
+    // MARK: - Convenience API (called by views)
+
     /// Returns `true` if `runnerName` has an entry in the persisted index.
     func isTracked(runnerName: String) -> Bool {
         runnerIndex[runnerName] != nil
@@ -62,13 +64,15 @@ final class LocalRunnerStore: ObservableObject {
         runners[idx] = runners[idx].copying(isRunning: isRunning)
     }
 
-    /// Sets or clears the `lifecycleWarning` string shown in the runner row.
+    /// Sets or clears the lifecycle warning badge for a runner (e.g. "Failed to connect").
+    /// Already runs on the main actor via @MainActor class isolation.
     func setLifecycleWarning(_ runnerName: String, warning: String?) {
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
         runners[idx] = runners[idx].copying(lifecycleWarning: warning)
     }
 
     /// Immediately removes `runnerName` from the index and display list without waiting for a refresh.
+    /// Already runs on the main actor via @MainActor class isolation.
     func optimisticallyRemove(_ runnerName: String) {
         unregister(name: runnerName)
         runners.removeAll { $0.runnerName == runnerName }
@@ -119,9 +123,13 @@ final class LocalRunnerStore: ObservableObject {
 
     /// Hydrates runners from disk, marks live launchctl services, then enriches via GitHub API.
     ///
+    /// Called by `RunnerViewModel.reload()`, which is triggered by Combine sinks in
+    /// `AppDelegate+PanelSetup` (on `RunnerStore.didUpdate` and `LocalRunnerStore.$runners`).
     /// Uses a plain `Task { }` so actor context, priority, and cancellation are inherited
     /// from the `@MainActor` caller. Background work runs off the main actor during each
     /// `await`; the continuation returns to `@MainActor` automatically via `applyRefreshResults`.
+    /// `isScanning` guards against concurrent refresh cycles — a new call is a no-op while one
+    /// is already in flight.
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
@@ -153,6 +161,7 @@ final class LocalRunnerStore: ObservableObject {
     }
 
     /// Applies enriched runner data back on the main actor and clears the scanning flag.
+    /// Extracted from `refresh()` to keep closure nesting within the 2-level limit.
     @MainActor
     private func applyRefreshResults(_ enriched: [RunnerModel]) {
         runners = enriched.sorted { $0.runnerName < $1.runnerName }
@@ -166,6 +175,13 @@ final class LocalRunnerStore: ObservableObject {
     nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
 
     /// Runs `launchctl list` and returns lines containing `actions.runner`.
+    ///
+    /// Called inside `refresh()` (step 2), immediately after disk hydration.
+    /// Each returned line is matched against `runnerName` to set `RunnerModel.isRunning`.
+    ///
+    /// - Note: `isRunning` is **not** set during JSON parsing in `runnerModelFromIndex` — it is
+    ///   always initialised to `false` there and updated here via launchctl. Do not assume
+    ///   `isRunning` is dead or always-false — the wiring is refresh() → scanLiveServices() → isRunning.
     ///
     /// Uses `ProcessRunner.runAsync` so the cooperative thread pool is not
     /// blocked while `launchctl` runs. If the enclosing `Task` is cancelled
