@@ -46,6 +46,18 @@ import Foundation
 /// the subprocess runs. `withTaskCancellationHandler` wires `task.terminate()`
 /// directly to Swift structured concurrency cancellation. A sibling
 /// `Task.detached` replaces the `DispatchWorkItem` timeout from `run(_:)`.
+/// Minimal heap-allocated mutable box.
+///
+/// Used by `ProcessRunner.run(_:)` to let a `DispatchQueue.async` closure
+/// mutate a value without triggering Swift 6.2 `#SendableClosureCaptures`.
+/// The *box itself* is a `let` constant captured by the closure; only the
+/// stored `value` property is written. A `drainQueue.sync {}` barrier after
+/// `waitUntilExit()` provides the happens-before guarantee.
+private final class Box<T>: @unchecked Sendable {
+    var value: T
+    init(_ initial: T) { value = initial }
+}
+
 public enum ProcessRunner {
     /// The collected output and exit status from a subprocess invocation.
     public struct Result {
@@ -139,15 +151,16 @@ public enum ProcessRunner {
         // See class-level doc: draining must overlap with waitUntilExit() to
         // prevent the kernel pipe buffer (~64 KB) from filling and deadlocking.
         //
-        // `outputData` is written inside `drainQueue.async` and read only after
-        // `drainQueue.sync {}` returns — the queue provides the happens-before
-        // guarantee that the compiler can verify. No `nonisolated(unsafe)` or
-        // `DispatchSemaphore` needed; the variable never crosses a concurrent
-        // boundary.
-        var outputData = Data()
+        // We use a single-element array as a heap-allocated mutable box.
+        // The array itself is a `let` constant captured by the closure — only the
+        // *element* is mutated, which is valid without `nonisolated(unsafe)` and
+        // avoids the Swift 6.2 `#SendableClosureCaptures` diagnostic.
+        // `drainQueue.sync {}` after `waitUntilExit()` provides the happens-before
+        // guarantee: the write at [0] is always complete before we read it.
+        let outputBox = Box<Data>(Data())
         let drainQueue = DispatchQueue(label: "ProcessRunner.drain")
         drainQueue.async {
-            outputData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            outputBox.value = outPipe.fileHandleForReading.readDataToEndOfFile()
         }
 
         // ⚠️ DO NOT remove this DispatchWorkItem timeout.
@@ -165,11 +178,12 @@ public enum ProcessRunner {
         timeoutItem.cancel()
 
         // Join the drain queue — blocks until readDataToEndOfFile() has finished
-        // writing `outputData`. After this point `outputData` is safe to read on
-        // the calling thread; the queue serialisation is the happens-before edge.
+        // writing outputBox.value. After this sync barrier the value is safe to
+        // read on the calling thread; the queue serialisation is the happens-before edge.
         drainQueue.sync {}
 
         let exitCode = task.terminationStatus
+        let outputData = outputBox.value
         log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
         return Result(data: outputData.isEmpty ? nil : outputData, exitCode: exitCode)
     }

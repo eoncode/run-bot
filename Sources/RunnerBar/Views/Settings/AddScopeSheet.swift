@@ -215,17 +215,17 @@ struct AddScopeSheet: View {
         isFetching = true
         errorMessage = nil
         Task(priority: .userInitiated) {
-            async let orgs  = fetchUserOrgs()
-            async let repos = fetchUserRepos()
-            let (fetchedOrgs, fetchedRepos) = await (orgs, repos)
+            async let fetchedOrgs  = fetchUserOrgs()
+            async let fetchedRepos = fetchUserRepos()
+            let (resolvedOrgs, resolvedRepos) = await (fetchedOrgs, fetchedRepos)
             isFetching = false
-            if fetchedOrgs.isEmpty && fetchedRepos.isEmpty {
+            if resolvedOrgs.isEmpty && resolvedRepos.isEmpty {
                 log("AddScopeSheet \u{203a} fetch returned no orgs or repos \u{2014} using text field")
                 usePicker = false
                 errorMessage = "Could not load orgs/repos. Enter manually."
             } else {
-                orgs  = fetchedOrgs
-                repos = fetchedRepos
+                orgs  = resolvedOrgs
+                repos = resolvedRepos
                 usePicker = true
                 selectedScope = pickerItems.first ?? ""
                 log("AddScopeSheet \u{203a} loaded orgs=\(orgs.count) repos=\(repos.count)")
