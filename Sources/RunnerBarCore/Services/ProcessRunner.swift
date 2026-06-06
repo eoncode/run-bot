@@ -44,9 +44,6 @@ import Foundation
 /// the subprocess runs. `withTaskCancellationHandler` wires `task.terminate()`
 /// directly to Swift structured concurrency cancellation. A sibling
 /// `Task.detached` replaces the `DispatchWorkItem` timeout from `run(_:)`.
-/// Minimal heap-allocated mutable box.
-///
-/// Used by `ProcessRunner.run(_:)` to let a `DispatchQueue.async` closure
 /// Tiny mutable reference wrapper used only to bridge `DispatchQueue.async` /
 /// `terminationHandler` closures to outer local state without tripping Swift 6.2
 /// `#SendableClosureCaptures` diagnostics.
@@ -315,6 +312,13 @@ public enum ProcessRunner {
             // Enclosing Task was cancelled (e.g. pollTask replaced by start()).
             // terminate() signals the subprocess; terminationHandler fires and resumes
             // the continuation, so the awaiting Task unblocks and exits cleanly.
+            //
+            // No `guard task.isRunning` needed: Swift only invokes onCancel after the
+            // operation closure has begun executing. By that point task.run() has either
+            // succeeded (process is live — terminate() is safe) or thrown and returned
+            // early, in which case the continuation was already resumed and this Task
+            // is no longer cancellable. An unlaunched-process crash is therefore
+            // structurally impossible here.
             task.terminate()
         }
     }

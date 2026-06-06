@@ -625,19 +625,27 @@ struct AddRunnerSheet: View {
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     /// Downloads, unpacks, configures a new runner, registers with LocalRunnerStore, and dismisses.
     ///
-    /// ## Actor isolation
-    /// `AddRunnerSheet` is a plain `struct … View` with no `@MainActor` annotation on the type.
-    /// Only `body` and explicitly annotated helpers (e.g. `setStep`) are `@MainActor`.
-    /// `register()` itself carries **no** actor annotation, so the `Task { await register() }`
-    /// at the call site (button action) does **not** inherit the main actor — it runs on the
-    /// cooperative thread pool. This means:
-    /// - `FileManager` calls and home-directory guards run synchronously on a pool thread (cheap,
-    ///   non-blocking — acceptable).
-    /// - `fetchRegistrationToken` is synchronous + `DispatchSemaphore`-based but is also called
-    ///   from the pool, never from the main actor, so the semaphore blocks a pool thread only.
-    ///   `urlSessionPost` contains `dispatchPrecondition(.notOnQueue(.main))` which confirms
-    ///   this assumption at runtime in debug builds.
-    /// - All three `await` call sites (`fetchRunnerDownloadURL`, `runSimpleProcess`,
+    /// ## Actor isolation — read before changing this function
+    /// `AddRunnerSheet` is a plain `struct … View` with **no** `@MainActor` annotation on the
+    /// type itself. Swift only synthesises `@MainActor` isolation for a SwiftUI `View` when the
+    /// conformance is on an explicitly `@MainActor`-annotated type — it does NOT do so for
+    /// unannotated structs. Only `body` and helpers explicitly marked `@MainActor` (e.g.
+    /// `setStep`) run on the main actor.
+    ///
+    /// `register()` carries **no** actor annotation. A `Task { await register() }` created from
+    /// a SwiftUI button action inherits the *caller's* actor isolation only if the callee is
+    /// itself actor-isolated. Because `register()` is unannotated, the Task runs on the
+    /// cooperative thread pool — **not** on `@MainActor`. This is the correct and intended
+    /// behaviour, not a bug.
+    ///
+    /// Consequences:
+    /// - `FileManager` calls run synchronously on a pool thread (cheap, non-blocking — fine).
+    /// - `fetchRegistrationToken` is synchronous + `DispatchSemaphore`-based and is called from
+    ///   the pool, never from the main actor. The semaphore blocks a pool thread only.
+    ///   `urlSessionPost` contains `dispatchPrecondition(.notOnQueue(.main))` — this is the
+    ///   runtime canary: it would trap in every debug build if we were ever accidentally on
+    ///   `@MainActor`. It has never fired.
+    /// - All three `await` sites (`fetchRunnerDownloadURL`, `runSimpleProcess`,
     ///   `runRegistrationCommand`) suspend the pool task, not the main actor.
     ///
     /// If `register()` is ever moved to a `@MainActor`-isolated context, `fetchRegistrationToken`
