@@ -47,15 +47,15 @@ public struct PollResultBuilder {
     /// - Parameters:
     ///   - snapPrev: Live-job snapshot from the previous poll.
     ///   - snapCache: Completed-job cache from the previous poll.
-    ///   - fetchJobs: Closure that fetches live jobs for every active scope.
-    ///   - backfill: Closure that backfills step data into a completed-job cache entry.
+    ///   - fetchJobs: Async closure that fetches live jobs for every active scope.
+    ///   - backfill: Async closure that backfills step data into a completed-job cache entry.
     public static func buildJobState(
         snapPrev: [Int: ActiveJob],
         snapCache: [Int: ActiveJob],
-        fetchJobs: () -> [ActiveJob],
-        backfill: (inout [Int: ActiveJob]) -> Void
-    ) -> JobPollResult {
-        let allFetched: [ActiveJob] = fetchJobs()
+        fetchJobs: @Sendable () async -> [ActiveJob],
+        backfill: @Sendable (inout [Int: ActiveJob]) async -> Void
+    ) async -> JobPollResult {
+        let allFetched: [ActiveJob] = await fetchJobs()
         let liveJobs: [ActiveJob] = allFetched.filter { $0.conclusion == nil && $0.status != .completed }
         let freshDone: [ActiveJob] = allFetched.filter { $0.conclusion != nil || $0.status == .completed }
         let liveIDs: Set<Int> = Set(liveJobs.map { $0.id })
@@ -78,7 +78,7 @@ public struct PollResultBuilder {
             )
         }
         trimJobCache(&newCache, limit: jobCacheLimit)
-        backfill(&newCache)
+        await backfill(&newCache)
         let newPrevLive: [Int: ActiveJob] = [Int: ActiveJob](uniqueKeysWithValues: liveJobs.map { ($0.id, $0) })
         let display = buildJobDisplay(live: liveJobs, cache: newCache)
         let inProgCount = liveJobs.filter { $0.status == .inProgress }.count
@@ -100,10 +100,11 @@ public struct PollResultBuilder {
     ///   - snapSeenGroupIDs: Set of group IDs that have already triggered the failure
     ///     hook in a previous poll cycle. Keyed by `WorkflowActionGroup.id`.
     ///     Survives `trimGroupCache` eviction so the hook cannot re-fire for old groups.
-    ///   - fetchGroups: Closure that fetches live groups for every active scope.
-    ///   - scopeFromGroup: Closure that derives a scope string from a WorkflowActionGroup.
-    ///   - fireFailureHook: Closure invoked the first time a group transitions to a failure conclusion.
-    ///   - enrichJobs: Closure that enriches a job list from the job cache.
+    ///   - fetchGroups: Async closure that fetches live groups for every active scope.
+    ///   - scopeFromGroup: Synchronous closure that derives a scope string from a WorkflowActionGroup.
+    ///   - fireFailureHook: Async closure invoked the first time a group transitions to a failure conclusion.
+    ///   - enrichJobs: Async closure that enriches a job list from the job cache.
+    ///     Called concurrently for each display group inside `buildGroupState` via `withTaskGroup`.
     ///
     /// - Important: `doneGroups` inserts into `newSeenGroupIDs` **before**
     ///   `freezeVanishedGroups` runs, so a group that appears in both the fetched
@@ -112,14 +113,14 @@ public struct PollResultBuilder {
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: Set<String> = [],
-        fetchGroups: ([String: WorkflowActionGroup]) -> [WorkflowActionGroup],
-        scopeFromGroup: (WorkflowActionGroup) -> String,
-        fireFailureHook: (WorkflowActionGroup, String) -> Void,
-        enrichJobs: ([ActiveJob]) -> [ActiveJob]
-    ) -> GroupPollResult {
+        fetchGroups: @Sendable ([String: WorkflowActionGroup]) async -> [WorkflowActionGroup],
+        scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
+        fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void,
+        enrichJobs: @escaping @Sendable ([ActiveJob]) async -> [ActiveJob]
+    ) async -> GroupPollResult {
         log("PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count) snapSeenGroupIDs=\(snapSeenGroupIDs.count)")
         let shaKeyedCache = makeShaKeyedCache(snapGroupCache)
-        let allFetched = fetchGroups(shaKeyedCache)
+        let allFetched = await fetchGroups(shaKeyedCache)
         if allFetched.isEmpty {
             log("PollResultBuilder › buildGroupState — ⚠️ fetchGroups returned 0 groups; activeScopes may be empty or all scopes are unreachable")
         }
@@ -147,7 +148,7 @@ public struct PollResultBuilder {
                 // Success/cancelled/skipped completions must not trigger an alert.
                 let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
                 if isFailure {
-                    fireFailureHook(group, scope)
+                    await fireFailureHook(group, scope)
                 }
                 newSeenGroupIDs.insert(group.id)
             }
@@ -155,7 +156,7 @@ public struct PollResultBuilder {
             dimmed.isDimmed = true
             newCache[group.id] = dimmed
         }
-        freezeVanishedGroups(
+        await freezeVanishedGroups(
             snapPrev: snapPrevGroups,
             liveIDs: liveIDs,
             now: now,
@@ -174,8 +175,27 @@ public struct PollResultBuilder {
             "PollResultBuilder › groups: \(inProgCount) in_progress \(queuedCount) queued"
             + " | cache: \(newCache.count) | seenIDs: \(newSeenGroupIDs.count) | display: \(display.count)"
         )
-        let enriched = display.map { $0.withJobs(enrichJobs($0.jobs)) }
-        let enrichedCache = newCache.mapValues { $0.withJobs(enrichJobs($0.jobs)) }
+        // Enrich jobs concurrently while preserving the sort order produced by
+        // buildGroupDisplay. withTaskGroup yields results in completion order, so
+        // we key tasks by index and re-sort before returning.
+        let enriched: [WorkflowActionGroup] = await withTaskGroup(
+            of: (Int, WorkflowActionGroup).self
+        ) { group in
+            for (idx, g) in display.enumerated() {
+                group.addTask { (idx, g.withJobs(await enrichJobs(g.jobs))) }
+            }
+            var out: [(Int, WorkflowActionGroup)] = []
+            for await pair in group { out.append(pair) }
+            return out.sorted { $0.0 < $1.0 }.map { $0.1 }
+        }
+        let enrichedCache: [String: WorkflowActionGroup] = await withTaskGroup(
+            of: (String, WorkflowActionGroup).self
+        ) { group in
+            for (key, g) in newCache { group.addTask { (key, g.withJobs(await enrichJobs(g.jobs))) } }
+            var out: [String: WorkflowActionGroup] = [:]
+            for await (key, g) in group { out[key] = g }
+            return out
+        }
         return GroupPollResult(
             display: enriched,
             newGroupCache: enrichedCache,
@@ -278,9 +298,9 @@ public struct PollResultBuilder {
         now: Date,
         into cache: inout [String: WorkflowActionGroup],
         seenGroupIDs: Set<String> = [],
-        scopeFromGroup: (WorkflowActionGroup) -> String,
-        fireFailureHook: (WorkflowActionGroup, String) -> Void
-    ) {
+        scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
+        fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void
+    ) async {
         log("PollResultBuilder › freezeVanishedGroups — snapPrev=\(snapPrev.count) liveIDs=\(liveIDs)")
         for (groupID, group) in snapPrev where !liveIDs.contains(groupID) {
             log("PollResultBuilder › freezeVanishedGroups — vanished groupID=\(group.id) inCache=\(cache[groupID] != nil)")
@@ -295,7 +315,7 @@ public struct PollResultBuilder {
                 let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
                 if isFailure {
                     log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+failure → fireFailureHook scope=\(scope)")
-                    fireFailureHook(group, scope)
+                    await fireFailureHook(group, scope)
                 }
             }
             var frozen = group
