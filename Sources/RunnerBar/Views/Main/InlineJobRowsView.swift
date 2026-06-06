@@ -94,6 +94,8 @@ private struct JobInlineProgress: View {
 private struct StepRowView: View {
     /// The step to display.
     let step: JobStep
+    /// The parent job that owns this step.
+    let job: ActiveJob
     /// Whether this is the last step in the list.
     let isLast: Bool
     /// Called when the user taps the step row.
@@ -254,6 +256,7 @@ private struct JobRowCard: View {
             ForEach(Array(job.steps.enumerated()), id: \.element.id) { index, step in
                 StepRowView(
                     step: step,
+                    job: job,
                     isLast: index == job.steps.count - 1,
                     onTap: { onStepTap(step) }
                 )
