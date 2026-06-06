@@ -24,7 +24,7 @@ private let tokenCacheLock = OSAllocatedUnfairLock(initialState: Optional<String
 /// or after signing out so the next githubToken() call re-resolves from source.
 func invalidateTokenCache() {
     tokenCacheLock.withLock { $0 = nil }
-    log("Auth › token cache invalidated")
+    log("Auth › invalidateTokenCache — cache cleared")
 }
 
 /// Returns a GitHub personal access token from the first available source.
@@ -38,18 +38,27 @@ func invalidateTokenCache() {
 /// Returns `nil` if no token is available from any source.
 func githubToken() -> String? {
     // 1. In-memory cache
-    if let cached = tokenCacheLock.withLock({ $0 }) { return cached }
+    if let cached = tokenCacheLock.withLock({ $0 }) {
+        log("Auth › githubToken — resolved from cache (len=\(cached.count))")
+        return cached
+    }
     // 2. Keychain — preferred; set by OAuthService after native OAuth sign-in
     if let token = Keychain.token {
+        log("Auth › githubToken — resolved from Keychain (len=\(token.count)), populating cache")
         tokenCacheLock.withLock { $0 = token }
         return token
     }
+    log("Auth › githubToken — Keychain: nil")
     // 3–4. CI / environment variable fallbacks
     for key in ["GH_TOKEN", "GITHUB_TOKEN"] {
         if let token = ProcessInfo.processInfo.environment[key], !token.isEmpty {
+            log("Auth › githubToken — resolved from env var \(key) (len=\(token.count)), populating cache")
             tokenCacheLock.withLock { $0 = token }
             return token
+        } else {
+            log("Auth › githubToken — env var \(key): nil/empty")
         }
     }
+    log("Auth › githubToken — returning nil (no token from any source)")
     return nil
 }
