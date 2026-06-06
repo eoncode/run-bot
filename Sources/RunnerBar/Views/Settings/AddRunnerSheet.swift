@@ -785,20 +785,15 @@ struct AddRunnerSheet: View {
 /// matching the current CPU architecture (`arm64` or `x64`).
 ///
 /// Uses `URLSession.data(for:)` async/await for the API call — no blocking `Data(contentsOf:)`.
-/// Architecture detection still uses a synchronous `Process` call (reading `uname -m`) because
-/// it is a trivial local subprocess with no network I/O; blocking is negligible here.
+/// Architecture detection uses `ProcessRunner.runAsync` — consistent with the rest of the file
+/// and avoids `waitUntilExit()` on the cooperative thread pool.
 private func fetchRunnerDownloadURL() async -> String? {
-    let archTask = Process()
-    archTask.executableURL  = URL(fileURLWithPath: GitHubURIs.unamePath)
-    archTask.arguments      = ["-m"]
-    let archPipe = Pipe()
-    archTask.standardOutput = archPipe
-    archTask.standardError  = Pipe()
-    guard (try? archTask.run()) != nil else { return nil }
-    archTask.waitUntilExit()
-    let archRaw   = archPipe.fileHandleForReading.readDataToEndOfFile()
-    let arch      = String(data: archRaw, encoding: .utf8)?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let archResult = await ProcessRunner.runAsync(
+        executableURL: URL(fileURLWithPath: GitHubURIs.unamePath),
+        arguments: ["-m"],
+        timeout: 5
+    )
+    let arch      = archResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
     let assetArch = (arch == "arm64") ? "arm64" : "x64"
     let assetName = "actions-runner-osx-\(assetArch)"
     log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
