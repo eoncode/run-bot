@@ -82,6 +82,8 @@ public struct RunnerModel: Sendable, Identifiable, Equatable {
 
     // MARK: - Init
 
+    // swiftlint:disable:next function_parameter_count
+    // NOSONAR — 17 parameters faithfully model the GitHub API runner payload; splitting would break all call sites.
     /// Creates a new `RunnerModel` instance.
     ///
     /// - Parameters:
@@ -102,7 +104,6 @@ public struct RunnerModel: Sendable, Identifiable, Equatable {
     ///   - isEphemeral: Whether the runner is registered as ephemeral.
     ///   - runnerGroup: Runner group name from the GitHub API.
     ///   - metrics: Optional CPU/memory snapshot from `ps aux`.
-    // NOSONAR — 17 parameters faithfully model the GitHub API runner payload; splitting would break all call sites.
     public init(
         id: String? = nil,
         runnerName: String,
