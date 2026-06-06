@@ -50,11 +50,18 @@ final class RunnerViewModel: ObservableObject {
     /// Called by Combine sinks in `AppDelegate+PanelSetup` — one on `RunnerStore.didUpdate`
     /// and one on `LocalRunnerStore.$runners`. Also called eagerly in `AppDelegate.openPanel()`
     /// to seed state on first panel open, since the Combine sinks only fire on store changes,
-    /// not on initial subscription. Also calls `LocalRunnerStore.refresh()` to trigger a
-    /// re-scan of locally-installed runner agents.
-    /// - Note: The `LocalRunnerStore.$runners` sink triggers this method, which then calls
-    ///   `refresh()`, which eventually publishes to `$runners` again. This is safe because
-    ///   `LocalRunnerStore.isScanning` prevents concurrent refresh cycles from stacking.
+    /// not on initial subscription.
+    ///
+    /// IMPORTANT: Do NOT call localStore.refresh() here. reload() is a read-only bridge.
+    /// Calling refresh() from here creates an infinite loop:
+    ///   LocalRunnerStore.$runners publishes
+    ///   → reload() is called (via AppDelegate+PanelSetup sink)
+    ///   → refresh() runs and completes
+    ///   → sets runners, publishes $runners again
+    ///   → reload() is called again, forever.
+    /// isScanning only prevents concurrent cycles — not sequential ones.
+    /// Callers that need a fresh scan (SettingsView, PanelMainView, lifecycle actions)
+    /// call LocalRunnerStore.shared.refresh() directly at their own call sites.
     func reload() {
         let localStore = localRunnerStore ?? LocalRunnerStore.shared
         let store = RunnerStore.shared
@@ -65,8 +72,5 @@ final class RunnerViewModel: ObservableObject {
         localRunners = localStore.runners
         isRateLimited = store.isRateLimited
         rateLimitResetDate = store.rateLimitResetDate
-        // Snapshot is taken before refresh() so the UI always shows the last completed scan,
-        // not a partial one mid-flight.
-        localStore.refresh()
     }
 }
