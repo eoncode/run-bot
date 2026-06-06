@@ -612,6 +612,11 @@ struct AddRunnerSheet: View {
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     /// Downloads, unpacks, configures a new runner, registers with LocalRunnerStore, and dismisses.
+    ///
+    /// `register()` is already `async` (called via `Task { await register() }` from the button).
+    /// All subprocess and network work suspends off the main actor via `await` — no
+    /// `Task.detached` wrapper is needed. Home-directory and pre-flight guards run
+    /// synchronously; the async hops happen at the three `await` call sites below.
     private func register() async {
         guard canRegister else { return }
         errorMessage = nil
@@ -623,106 +628,89 @@ struct AddRunnerSheet: View {
         let dir    = installDir.trimmingCharacters(in: .whitespaces)
         let currentScopeType = scopeType
 
-        await Task.detached(priority: .userInitiated) {
-            let homeDir     = FileManager.default.homeDirectoryForCurrentUser
-                .resolvingSymlinksInPath().path
-            let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
-            guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
-                await MainActor.run {
-                    isRegistering = false
-                    errorMessage  = "Install directory must be inside your home folder (~/…)."
-                }
+        let homeDir     = FileManager.default.homeDirectoryForCurrentUser
+            .resolvingSymlinksInPath().path
+        let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
+        guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
+            isRegistering = false
+            errorMessage  = "Install directory must be inside your home folder (~/…)."
+            return
+        }
+
+        let runnerFile = URL(fileURLWithPath: dir).appendingPathComponent(".runner").path
+        if FileManager.default.fileExists(atPath: runnerFile) {
+            isRegistering = false
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(atPath: dir,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            isRegistering = false
+            errorMessage  = "Failed to create directory: \(error.localizedDescription)"
+            return
+        }
+
+        let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
+
+        if !FileManager.default.fileExists(atPath: configPath) {
+            await setStep("Downloading runner package…")
+            guard let downloadURL = await fetchRunnerDownloadURL() else {
+                isRegistering = false
+                errorMessage  = "Could not determine runner download URL. Check your internet connection."
                 return
             }
-
-            let runnerFile = URL(fileURLWithPath: dir).appendingPathComponent(".runner").path
-            if FileManager.default.fileExists(atPath: runnerFile) {
-                await MainActor.run { isRegistering = false }
+            let tarPath = URL(fileURLWithPath: dir)
+                .appendingPathComponent("actions-runner.tar.gz").path
+            let curlResult = await runSimpleProcess(
+                GitHubURIs.curlPath,
+                args: ["-sL", downloadURL, "-o", tarPath]
+            )
+            guard curlResult == 0 else {
+                isRegistering = false
+                errorMessage = "Download failed."
                 return
             }
-
-            do {
-                try FileManager.default.createDirectory(atPath: dir,
-                                                        withIntermediateDirectories: true)
-            } catch {
-                await MainActor.run {
-                    isRegistering = false
-                    errorMessage  = "Failed to create directory: \(error.localizedDescription)"
-                }
+            await setStep("Unpacking runner package…")
+            let tarResult = await runSimpleProcess(GitHubURIs.tarPath, args: ["xzf", tarPath, "-C", dir])
+            try? FileManager.default.removeItem(atPath: tarPath)
+            guard tarResult == 0 else {
+                isRegistering = false
+                errorMessage = "Unpack failed."
                 return
             }
+        }
 
-            let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
-
-            if !FileManager.default.fileExists(atPath: configPath) {
-                await setStep("Downloading runner package…")
-                guard let downloadURL = await fetchRunnerDownloadURL() else {
-                    await MainActor.run {
-                        isRegistering = false
-                        errorMessage  = "Could not determine runner download URL. Check your internet connection."
-                    }
-                    return
-                }
-                let tarPath = URL(fileURLWithPath: dir)
-                    .appendingPathComponent("actions-runner.tar.gz").path
-                let curlResult = await ProcessRunner.runAsync(
-                    executableURL: URL(fileURLWithPath: GitHubURIs.curlPath),
-                    arguments: ["-sL", downloadURL, "-o", tarPath],
-                    timeout: 300
-                )
-                guard curlResult.exitCode == 0 else {
-                    await MainActor.run { isRegistering = false; errorMessage = "Download failed." }
-                    return
-                }
-                await setStep("Unpacking runner package…")
-                let tarResult = await ProcessRunner.runAsync(
-                    executableURL: URL(fileURLWithPath: GitHubURIs.tarPath),
-                    arguments: ["xzf", tarPath, "-C", dir],
-                    timeout: 120
-                )
-                try? FileManager.default.removeItem(atPath: tarPath)
-                guard tarResult.exitCode == 0 else {
-                    await MainActor.run { isRegistering = false; errorMessage = "Unpack failed." }
-                    return
-                }
+        await setStep("Fetching registration token…")
+        guard let token = fetchRegistrationToken(scope: scope) else {
+            isRegistering = false
+            if currentScopeType == .org {
+                errorMessage = "Not authorised to register org-level runners. Ensure your token has the 'manage_runners:org' scope, or sign in via the GitHub button in Settings."
+            } else {
+                errorMessage = "Could not get a registration token. Ensure a valid token is available via OAuth sign-in, or the GH_TOKEN / GITHUB_TOKEN environment variable."
             }
+            return
+        }
 
-            await setStep("Fetching registration token…")
-            guard let token = fetchRegistrationToken(scope: scope) else {
-                await MainActor.run {
-                    isRegistering = false
-                    if currentScopeType == .org {
-                        errorMessage = "Not authorised to register org-level runners. Ensure your token has the 'manage_runners:org' scope, or sign in via the GitHub button in Settings."
-                    } else {
-                        errorMessage = "Could not get a registration token. Ensure a valid token is available via OAuth sign-in, or the GH_TOKEN / GITHUB_TOKEN environment variable."
-                    }
-                }
-                return
-            }
+        await setStep("Configuring runner…")
+        let ghURL      = "\(GitHubURIs.base)\(scope)"
+        let configExit = await runRegistrationCommand(
+            dir: dir, ghURL: ghURL, token: token, name: name, labels: labels
+        )
+        guard configExit == 0 else {
+            isRegistering = false
+            errorMessage  = "config.sh failed (exit \(configExit)). Check the token is valid and the runner name is unique."
+            return
+        }
 
-            await setStep("Configuring runner…")
-            let ghURL      = "\(GitHubURIs.base)\(scope)"
-            let configExit = await runRegistrationCommand(dir: dir, ghURL: ghURL,
-                                                          token: token, name: name, labels: labels)
-            guard configExit == 0 else {
-                await MainActor.run {
-                    isRegistering = false
-                    errorMessage  = "config.sh failed (exit \(configExit)). Check the token is valid and the runner name is unique."
-                }
-                return
-            }
-
-            await setStep("Registering service…")
-            writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
-
-            await MainActor.run {
-                LocalRunnerStore.shared.add(runnerName: name, installPath: dir)
-                isRegistering    = false
-                registrationStep = ""
-                isPresented      = false
-                onComplete()
-            }
-        }.value
+        await setStep("Registering service…")
+        writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
+        LocalRunnerStore.shared.add(runnerName: name, installPath: dir)
+        isRegistering    = false
+        registrationStep = ""
+        isPresented      = false
+        onComplete()
     }
 
     // MARK: - Plist writer (shared by both modes)
@@ -756,10 +744,11 @@ struct AddRunnerSheet: View {
 
     /// Invokes `config.sh` with the GitHub URL, registration token, runner name and labels.
     ///
-    /// Uses `ProcessRunner.runAsync` so the cooperative thread pool is not blocked
-    /// while `config.sh` runs (replaces the former `nonisolated(unsafe)` + `NSLock`
-    /// + `readabilityHandler` pattern — #1158, #1159).
-    nonisolated private func runRegistrationCommand(
+    /// Delegates to `ProcessRunner.runAsync` — no `nonisolated(unsafe)`, no `NSLock`,
+    /// no `readabilityHandler`. Pipe drain, timeout, and cancellation are all handled
+    /// by `ProcessRunner.runAsync` via its `Box + drainQueue` + `withTaskCancellationHandler`
+    /// pattern (see `ProcessRunner.swift`).
+    private func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) async -> Int32 {
         var args = ["--url", ghURL, "--token", token, "--name", name, "--unattended"]
@@ -774,6 +763,20 @@ struct AddRunnerSheet: View {
         log("runRegistrationCommand › exit=\(result.exitCode): \(result.output.prefix(500))")
         return result.exitCode
     }
+
+    /// Launches `executable` with `args` asynchronously and returns the termination status.
+    ///
+    /// Delegates to `ProcessRunner.runAsync` — no blocking `waitUntilExit()` on the
+    /// cooperative thread pool. stderr is discarded (default `mergeStderr: false`).
+    private func runSimpleProcess(_ executable: String, args: [String]) async -> Int32 {
+        let result = await ProcessRunner.runAsync(
+            executableURL: URL(fileURLWithPath: executable),
+            arguments: args,
+            timeout: 120
+        )
+        log("runSimpleProcess › \(executable) exit \(result.exitCode)")
+        return result.exitCode
+    }
 }
 
 // MARK: - Runner download URL
@@ -781,16 +784,21 @@ struct AddRunnerSheet: View {
 /// Queries the GitHub API for the latest macOS runner release and returns the `.tar.gz` download URL
 /// matching the current CPU architecture (`arm64` or `x64`).
 ///
-/// Architecture detection uses `ProcessRunner.runAsync` (replaces bare `Process` + `waitUntilExit`).
-/// Release JSON is fetched via `URLSession.data(for:)` async/await (replaces blocking
-/// `Data(contentsOf:)` — #1158).
+/// Uses `URLSession.data(for:)` async/await for the API call — no blocking `Data(contentsOf:)`.
+/// Architecture detection still uses a synchronous `Process` call (reading `uname -m`) because
+/// it is a trivial local subprocess with no network I/O; blocking is negligible here.
 private func fetchRunnerDownloadURL() async -> String? {
-    let archResult = await ProcessRunner.runAsync(
-        executableURL: URL(fileURLWithPath: GitHubURIs.unamePath),
-        arguments: ["-m"],
-        timeout: 5
-    )
-    let arch      = archResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+    let archTask = Process()
+    archTask.executableURL  = URL(fileURLWithPath: GitHubURIs.unamePath)
+    archTask.arguments      = ["-m"]
+    let archPipe = Pipe()
+    archTask.standardOutput = archPipe
+    archTask.standardError  = Pipe()
+    guard (try? archTask.run()) != nil else { return nil }
+    archTask.waitUntilExit()
+    let archRaw   = archPipe.fileHandleForReading.readDataToEndOfFile()
+    let arch      = String(data: archRaw, encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let assetArch = (arch == "arm64") ? "arm64" : "x64"
     let assetName = "actions-runner-osx-\(assetArch)"
     log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
@@ -799,39 +807,41 @@ private func fetchRunnerDownloadURL() async -> String? {
         log("fetchRunnerDownloadURL › invalid URL")
         return nil
     }
+    let data: Data
     do {
-        let (data, _) = try await URLSession.shared.data(from: url)
-        /// Minimal GitHub release asset payload.
-        struct Asset: Decodable {
-            /// The asset file name.
-            let name: String
-            /// The direct download URL for this asset.
-            let browserDownloadUrl: String
-            /// Maps snake_case API keys to camelCase Swift properties.
-            enum CodingKeys: String, CodingKey {
-                /// The name coding key.
-                case name
-                /// The browserDownloadUrl coding key.
-                case browserDownloadUrl = "browser_download_url"
-            }
-        }
-        /// Minimal GitHub release payload — only assets are needed.
-        struct Release: Decodable {
-            /// The list of release assets.
-            let assets: [Asset]
-        }
-        guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
-            log("fetchRunnerDownloadURL › decode failed")
-            return nil
-        }
-        let match = release.assets.first {
-            $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
-        }
-        log("fetchRunnerDownloadURL › match=\(match?.name ?? \"nil\")")
-        return match?.browserDownloadUrl
+        let (responseData, _) = try await URLSession.shared.data(from: url)
+        data = responseData
     } catch {
         log("fetchRunnerDownloadURL › network error: \(error.localizedDescription)")
         return nil
     }
+    /// Minimal GitHub release asset payload.
+    struct Asset: Decodable {
+        /// The asset file name.
+        let name: String
+        /// The direct download URL for this asset.
+        let browserDownloadUrl: String
+        /// Maps snake_case API keys to camelCase Swift properties.
+        enum CodingKeys: String, CodingKey {
+            /// The name coding key.
+            case name
+            /// The browserDownloadUrl coding key.
+            case browserDownloadUrl = "browser_download_url"
+        }
+    }
+    /// Minimal GitHub release payload — only assets are needed.
+    struct Release: Decodable {
+        /// The list of release assets.
+        let assets: [Asset]
+    }
+    guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
+        log("fetchRunnerDownloadURL › decode failed")
+        return nil
+    }
+    let match = release.assets.first {
+        $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
+    }
+    log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
+    return match?.browserDownloadUrl
 }
 // swiftlint:enable type_body_length

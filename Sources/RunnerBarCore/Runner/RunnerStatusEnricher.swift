@@ -116,25 +116,25 @@ public struct RunnerStatusEnricher: Sendable {
         // `fallbackAPI` is hoisted outside the loop — `apiByScope` is immutable
         // after Step 2, so recomputing the merged dict on every iteration is O(N×S)
         // work for no benefit. Compute once here: O(S × runners-per-scope).
-        let fallbackAPI = apiByScope.values.reduce(into: [String: APIRunnerPayload]()) {
-            $0.merge($1) { first, _ in first }
-        }
-
-        // Warn when two different scopes expose a runner with the same name.
-        // The scoped-first lookup mitigates this for the common case, but a runner
-        // whose gitHubUrl is nil will fall through to fallbackAPI and may be
-        // enriched with data from the wrong scope (#1160).
-        var seenInFallback: [String: String] = [:]
-        for (scopeURL, payloads) in apiByScope {
-            for name in payloads.keys {
-                if let previousScope = seenInFallback[name] {
-                    log("[Enricher] ⚠️ fallback collision — runner '\(name)' appears in both '\(previousScope)' and '\(scopeURL)'; scoped lookup takes priority")
+        //
+        // Collision note: when two scopes expose a runner with the same registered
+        // name AND that runner's gitHubUrl is nil (so the scoped lookup misses),
+        // the fallback dict's `first` wins. The winner is the first scope whose
+        // withTaskGroup task completes — non-deterministic but harmless in practice
+        // since both payloads describe the same physical runner. A warning is logged
+        // so collisions are visible in diagnostic output without any code change needed.
+        var seenInFallback: [String: String] = [:]  // name → first winning scopeURL
+        let fallbackAPI = apiByScope.reduce(into: [String: APIRunnerPayload]()) { result, entry in
+            let (scopeURL, scopeDict) = entry
+            for (name, payload) in scopeDict {
+                if result[name] != nil {
+                    log("[Enricher] ⚠️ fallback collision: runner '\(name)' appears in both '\(seenInFallback[name] ?? "?")' and '\(scopeURL)' — first-writer wins")
                 } else {
+                    result[name] = payload
                     seenInFallback[name] = scopeURL
                 }
             }
         }
-
         var result = runners
         for idx in result.indices {
             let name = result[idx].runnerName
