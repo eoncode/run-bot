@@ -125,6 +125,21 @@ extension RunnerStore {
     nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
+            // cacheHasConclusion: the cache settled a conclusion the live API hasn't returned
+            // yet (common on the first poll after a job finishes — GitHub propagates conclusion
+            // slightly after status flips to "completed").
+            //
+            // cacheHasBetterSteps: the cache has fully-resolved steps while the live payload
+            // still shows in-progress ones (backfill ran after the main fetch).
+            //
+            // When only cacheHasConclusion fires (cacheHasBetterSteps is false), the merged
+            // job carries conclusion from the cache and steps from the live job. This is
+            // intentional: the live steps are the freshest available data; showing them
+            // alongside a bridged conclusion is correct. Returning the full stale cached
+            // entry would hide newer step state. The `steps` field in the UI only renders
+            // the step list when the job is expanded, so a brief one-poll transient where
+            // conclusion is set but steps are still completing is acceptable and preferable
+            // to stale data. This is NOT a conclusion/steps inconsistency bug.
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
             let cacheHasBetterSteps = !cached.steps.isEmpty
                 && (job.steps.isEmpty || job.steps.contains { $0.status == .inProgress })

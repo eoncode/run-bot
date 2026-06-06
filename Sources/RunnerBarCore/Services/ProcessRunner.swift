@@ -276,6 +276,18 @@ public enum ProcessRunner {
                     ))
                 }
 
+                // Guard against the already-cancelled case: Swift invokes onCancel
+                // *before* this operation closure when the task is cancelled at the
+                // moment withTaskCancellationHandler is called. onCancel's
+                // `guard task.isRunning` no-ops in that scenario, so we must also
+                // bail here before task.run() to honour cancellation rather than
+                // launching the process normally.
+                if Task.isCancelled {
+                    outPipe.fileHandleForWriting.closeFile()
+                    continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
+                    return
+                }
+
                 do {
                     try task.run()
                 } catch {
@@ -313,12 +325,15 @@ public enum ProcessRunner {
             // terminate() signals the subprocess; terminationHandler fires and resumes
             // the continuation, so the awaiting Task unblocks and exits cleanly.
             //
-            // No `guard task.isRunning` needed: Swift only invokes onCancel after the
-            // operation closure has begun executing. By that point task.run() has either
-            // succeeded (process is live — terminate() is safe) or thrown and returned
-            // early, in which case the continuation was already resumed and this Task
-            // is no longer cancellable. An unlaunched-process crash is therefore
-            // structurally impossible here.
+            // Swift docs: if the task is already cancelled when withTaskCancellationHandler
+            // is called, onCancel fires synchronously *before* the operation closure runs.
+            // In that case task.run() has not been called yet — isRunning is false and
+            // terminate() would be a no-op on Darwin, but the process would then start
+            // normally when the operation eventually runs, violating cancellation semantics.
+            // The guard ensures we only signal a live process, and the Task.isCancelled
+            // check at the top of the operation catches the already-cancelled path before
+            // task.run() is reached.
+            guard task.isRunning else { return }
             task.terminate()
         }
     }
