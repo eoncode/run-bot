@@ -79,6 +79,8 @@ func ghRawTransport() -> GHRawTransport {
 }
 
 /// Returns `true` when the GitHub API is currently rate-limiting this client.
-var ghIsRateLimited: Bool {
+/// periphery:ignore — cross-target visibility: getter is called from the RunnerBar app target
+/// via `GitHubURLSessionTransport`; Periphery cannot trace the cross-module read path.
+var ghIsRateLimited: Bool { // periphery:ignore
     rateLimitLock.withLock { $0() }
 }

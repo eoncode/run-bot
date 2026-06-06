@@ -135,13 +135,13 @@ extension Color {
     )
 
     /// Low-opacity amber tint for row backgrounds in warning/queued state.
-    static let rbYellowTint = rbWarning.opacity(0.08)
+    static let rbYellowTint = rbWarning.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
     /// Low-opacity blue tint for row backgrounds in in-progress state.
-    static let rbBlueTint = rbBlue.opacity(0.08)
+    static let rbBlueTint = rbBlue.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
     /// Low-opacity green tint for row backgrounds in success state.
-    static let rbGreenTint = rbSuccess.opacity(0.08)
+    static let rbGreenTint = rbSuccess.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
     /// Low-opacity red tint for row backgrounds in failed/danger state.
-    static let rbRedTint = rbDanger.opacity(0.08)
+    static let rbRedTint = rbDanger.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
 }
 
 // MARK: - Status helpers
@@ -182,7 +182,7 @@ enum RBStatus {
     }
 
     /// The SF Symbol name that represents this status.
-    var sfSymbol: String {
+    var sfSymbol: String { // periphery:ignore — used from menu bar icon code in app target
         switch self {
         case .inProgress: return "arrow.trianglehead.2.clockwise"
         case .success: return "checkmark"
