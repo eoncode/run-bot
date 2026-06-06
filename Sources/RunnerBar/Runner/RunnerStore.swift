@@ -89,10 +89,10 @@ final class RunnerStore {
     }
 
     deinit {
-        // Cancel the poll loop when the store is deallocated.
-        // RunnerStore is a singleton so this path is never taken at runtime,
-        // but the explicit cancel makes lifecycle intent clear and guards
-        // against future refactors that move away from a singleton.
+        // Cancel the poll task so the cooperative thread pool is not kept busy
+        // after the store is torn down (e.g. in tests or future non-singleton use).
+        // At runtime RunnerStore.shared is never deallocated, but the explicit
+        // cancel documents intent and guards against future lifecycle changes.
         pollTask?.cancel()
     }
 
@@ -155,12 +155,11 @@ final class RunnerStore {
     /// Performs one complete poll cycle: fetches runners, jobs, and action groups,
     /// then applies results on the main actor via `applyFetchResult`.
     ///
-    /// Each `await` call below suspends off the main actor during its network work
-    /// and returns to `@MainActor` automatically — no `Task.detached` wrapper is
-    /// needed. A plain `Task { }` on a `@MainActor` type inherits the actor, but
-    /// the `await` points release it to the cooperative thread pool for the
-    /// duration of each network call.
-    /// Priority is inherited from the poll loop Task launched in `start()`.
+    /// `RunnerStore` is `@MainActor`-isolated, so `fetch()` starts on the main actor.
+    /// Each `await` below suspends off the main actor for the duration of its network
+    /// work; the continuation automatically returns to `@MainActor` afterwards.
+    /// No `Task.detached` wrapper is needed or used.
+    /// Priority is inherited from the poll-loop `Task` launched in `start()`.
     func fetch() async {
         // Proactively reset the transport-layer rate-limit flag at the start of each
         // cycle. The transport clears it automatically on a successful 2xx response

@@ -125,9 +125,9 @@ final class LocalRunnerStore: ObservableObject {
     ///
     /// Called by `RunnerViewModel.reload()`, which is triggered by Combine sinks in
     /// `AppDelegate+PanelSetup` (on `RunnerStore.didUpdate` and `LocalRunnerStore.$runners`).
-    /// Uses a plain `Task { }` so actor context, priority, and cancellation are inherited
-    /// from the `@MainActor` caller. Background work runs off the main actor during each
-    /// `await`; the continuation returns to `@MainActor` automatically via `applyRefreshResults`.
+    /// `LocalRunnerStore` is `@MainActor`-isolated, so the `Task { }` launched here
+    /// inherits that isolation. Each `await` releases the main actor during network/disk
+    /// work; the continuation returns to `@MainActor` automatically.
     /// `isScanning` guards against concurrent refresh cycles — a new call is a no-op while one
     /// is already in flight.
     func refresh() {

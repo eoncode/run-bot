@@ -14,9 +14,10 @@ import RunnerBarCore
 ///
 /// All methods are `async` and run off the main actor during `await` — the
 /// cooperative thread pool handles network work, and the continuation returns
-/// to `@MainActor` automatically after each `await`. The previous
-/// `DispatchQueue.main.sync` pattern (which could deadlock if called on the
-/// main thread) has been replaced throughout with `await MainActor.run { }`.
+/// to `@MainActor` automatically after each `await`.
+/// `await MainActor.run { }` replaces the old `DispatchQueue.main.sync` pattern;
+/// unlike `main.sync`, `MainActor.run` is re-entrant-safe and will not deadlock
+/// when called from the main actor itself.
 extension RunnerStore {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
