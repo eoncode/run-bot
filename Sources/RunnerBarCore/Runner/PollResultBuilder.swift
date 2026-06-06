@@ -98,7 +98,7 @@ public struct PollResultBuilder {
     ///   - snapPrevGroups: Live-group snapshot from the previous poll.
     ///   - snapGroupCache: Completed-group cache from the previous poll.
     ///   - snapSeenGroupIDs: Set of group IDs that have already triggered the failure
-    ///     hook in a previous poll cycle. Keyed by `WorkflowActionGroup.id`.
+    ///     hook in a previous poll cycle. Contains `WorkflowActionGroup.id` values.
     ///     Survives `trimGroupCache` eviction so the hook cannot re-fire for old groups.
     ///   - fetchGroups: Async closure that fetches live groups for every active scope.
     ///   - scopeFromGroup: Synchronous closure that derives a scope string from a WorkflowActionGroup.
@@ -351,8 +351,7 @@ public struct PollResultBuilder {
     /// Trims the seen-group-IDs set to at most `limit` entries.
     ///
     /// `Set` is unordered so eviction order is arbitrary, not FIFO.
-    /// The set is trimmed to exactly `limit` entries by removing the minimum
-    /// overshoot — only entries beyond `limit` are dropped.
+    /// Removes `count − limit` entries; the resulting set has exactly `limit` members.
     public static func trimSeenGroupIDs(_ ids: inout Set<String>, limit: Int) {
         guard ids.count > limit else { return }
         let excess = ids.count - limit

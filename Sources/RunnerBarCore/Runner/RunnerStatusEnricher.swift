@@ -64,8 +64,6 @@ private struct APIRunnerPayload: Sendable {
 
 /// Enriches a `[RunnerModel]` snapshot with live GitHub API data.
 ///
-/// Batches API calls by unique scope URL so a fleet of N runners registered to
-/// the same repo/org issues only one API call per scope per poll cycle.
 /// Multiple scopes are fetched concurrently via `withTaskGroup`.
 ///
 /// - Important: All methods are async. Always call from an async context —
@@ -234,8 +232,6 @@ public struct RunnerStatusEnricher: Sendable {
             let l = label.lowercased()
             return l == "arm64" || l == "x64" || l == "x86" || l == "aarch64"
         })
-        // Prefer label-derived values (always correctly cased by GitHub)
-        // over whatever .runner JSON provided (often nil or raw OS strings).
         let platform = labelPlatform ?? runner.platform
         let platformArchitecture = labelArch ?? runner.platformArchitecture
 
