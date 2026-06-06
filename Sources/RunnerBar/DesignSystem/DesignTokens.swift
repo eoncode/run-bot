@@ -118,22 +118,6 @@ extension Color {
         }
     }
 
-    /// Mid-weight border — slightly stronger than `rbBorderSubtle`.
-    /// Use for component outlines that need more definition on glass.
-    static var rbBorderMid: Color {
-        if #available(macOS 26, *) {
-            return Color.adaptive(
-                light: Color(white: 0.0).opacity(0.14),
-                dark:  Color(white: 1.0).opacity(0.10)
-            )
-        } else {
-            return Color.adaptive(
-                light: Color(white: 0.0).opacity(0.10),
-                dark:  Color(white: 1.0).opacity(0.08)
-            )
-        }
-    }
-
     /// Primary text — high contrast body and heading text.
     static let rbTextPrimary = Color.adaptive(
         light: .black,
@@ -209,23 +193,6 @@ enum RBStatus {
     }
 }
 
-// MARK: - Shadow Tokens
-
-/// Adaptive shadow constants for card and panel elevation.
-/// macOS 26+ uses softer, larger shadows to complement the glass material.
-enum RBShadow {
-    /// Shadow opacity for card backgrounds.
-    /// macOS 26+: 0.18 (softer on glass); pre-26: 0.35.
-    static var cardOpacity: Double {
-        if #available(macOS 26, *) { return 0.18 } else { return 0.35 }
-    }
-    /// Shadow blur radius for card backgrounds.
-    /// macOS 26+: 18 pt (larger, diffuse); pre-26: 12 pt.
-    static var cardRadius: CGFloat {
-        if #available(macOS 26, *) { return 18 } else { return 12 }
-    }
-}
-
 // MARK: - Spacing & Geometry Tokens
 
 /// Fixed spacing constants derived from an 8-pt grid. Use these instead of raw `CGFloat` literals.
@@ -240,10 +207,6 @@ enum RBSpacing {
     static let label: CGFloat = 8
     /// 10 pt — default row horizontal padding.
     static let md: CGFloat = 10
-    /// 16 pt — section-level spacing.
-    static let lg: CGFloat = 16
-    /// 24 pt — large inter-section gap.
-    static let xl: CGFloat = 24
 }
 
 /// Corner-radius constants for consistent rounding across components.
