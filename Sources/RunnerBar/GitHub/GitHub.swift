@@ -19,20 +19,10 @@ func scopeFromHtmlUrl(_ urlString: String?) -> String? {
 
 // MARK: - Fetch all jobs from active runs
 
-// Shared ISO-8601 date formatter.
-// Safety: protected by iso8601Lock.
-
-/// A Sendable wrapper for ISO8601DateFormatter.
-private struct SendableFormatter: @unchecked Sendable {
-    /// The internal formatter instance.
-    let iso = ISO8601DateFormatter()
-}
-/// Lock for the shared ISO-8601 date formatter.
-private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
-
 /// Fetches all active (in-progress and queued) jobs for a given scope.
 /// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) runners.
-func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
+/// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
+func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchActiveJobs › invalid scope: \(scopeString)")
         return []
@@ -45,7 +35,7 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     }
 
     for status in ["in_progress", "queued"] {
-        guard let data = ghAPI(runsEndpoint(status: status)),
+        guard let data = await ghAPI(runsEndpoint(status: status)),
               let resp = try? JSONDecoder().decode(WorkflowRunsResponse.self, from: data)
         else { continue }
         // filter() cannot replace this loop: insert() mutates seenRunIDs as a side effect.
@@ -59,14 +49,12 @@ func fetchActiveJobs(for scopeString: String) -> [ActiveJob] {
     var jobs: [ActiveJob] = []
     var seenJobIDs = Set<Int>()
     for runID in runIDs {
-        guard let data = ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=100"),
+        guard let data = await ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=100"),
               let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
         else { continue }
         for payload in resp.jobs {
             guard seenJobIDs.insert(payload.id).inserted else { continue }
-            jobs.append(iso8601Lock.withLock { wrapper in
-                makeActiveJob(from: payload, iso: wrapper.iso, isDimmed: false)
-            })
+            jobs.append(await ISO8601DateParser.shared.makeJob(from: payload, isDimmed: false))
         }
     }
     log("fetchActiveJobs › \(jobs.count) job(s) for \(scopeString)")
@@ -95,14 +83,14 @@ private struct WorkflowRun: Codable {
 // MARK: - Runners
 
 /// Fetches all registered runners for the given scope string.
-func fetchRunners(for scopeString: String) -> [Runner] {
+func fetchRunners(for scopeString: String) async -> [Runner] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRunners › invalid scope: \(scopeString)")
         return []
     }
     let endpoint = "\(scope.apiPrefix)/actions/runners"
     log("fetchRunners › \(endpoint)")
-    guard let data = ghAPI(endpoint) else {
+    guard let data = await ghAPI(endpoint) else {
         log("fetchRunners › no data for scope: \(scopeString)")
         return []
     }
@@ -123,8 +111,8 @@ private struct RunnersResponse: Codable {
 // MARK: - User orgs and repos
 
 /// Returns the login names of all GitHub organisations the authenticated user belongs to.
-func fetchUserOrgs() -> [String] {
-    guard let data = ghAPIPaginated(GitHubConstants.userOrgsPath) else { return [] }
+func fetchUserOrgs() async -> [String] {
+    guard let data = await ghAPIPaginated(GitHubConstants.userOrgsPath) else { return [] }
     /// Minimal org payload — only the login name is needed.
     struct Org: Decodable {
         /// The organisation's GitHub login name.
@@ -135,8 +123,8 @@ func fetchUserOrgs() -> [String] {
 }
 
 /// Returns the `owner/repo` full names of all repositories visible to the authenticated user.
-func fetchUserRepos() -> [String] {
-    guard let data = ghAPIPaginated(GitHubConstants.userReposPath) else { return [] }
+func fetchUserRepos() async -> [String] {
+    guard let data = await ghAPIPaginated(GitHubConstants.userReposPath) else { return [] }
     /// Minimal repo payload — only the full name is needed.
     struct Repo: Decodable {
         /// The repository's full name in `owner/repo` format.

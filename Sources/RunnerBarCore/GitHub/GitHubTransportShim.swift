@@ -16,9 +16,9 @@ import os
 
 // MARK: - Transport types
 
-/// A synchronous GitHub API fetch returning raw JSON `Data`.
+/// An async GitHub API fetch returning raw JSON `Data`.
 /// Used for standard REST GET endpoints.
-public typealias GHAPITransport = @Sendable (_ endpoint: String) -> Data?
+public typealias GHAPITransport = @Sendable (_ endpoint: String) async -> Data?
 
 /// A synchronous raw-bytes fetch for GitHub log endpoints.
 /// These endpoints 302-redirect to S3; the transport must follow redirects.
@@ -43,7 +43,7 @@ private let rateLimitLock = OSAllocatedUnfairLock<@Sendable () -> Bool>(initialS
 /// Wire up the real (or mock) GitHub transports. Call once at launch before any fetch.
 ///
 /// - Parameters:
-///   - transport: Synchronous closure for JSON REST calls; returns `nil` on failure.
+///   - transport: Async closure for JSON REST calls; returns `nil` on failure.
 ///   - isRateLimited: Returns `true` when the API is rate-limited.
 public func configureGHAPI(
     _ transport: @escaping GHAPITransport,
@@ -64,8 +64,11 @@ public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
 // MARK: - Module-level symbols consumed by RunnerBarCore files
 
 /// Calls the configured GitHub API transport for the given endpoint.
-func ghAPI(_ endpoint: String) -> Data? {
-    transportLock.withLock { $0(endpoint) }
+/// Reads the closure under the lock then awaits it outside —
+/// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
+func ghAPI(_ endpoint: String) async -> Data? {
+    let transport = transportLock.withLock { $0 }
+    return await transport(endpoint)
 }
 
 /// Returns the configured raw-bytes transport closure.

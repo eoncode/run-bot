@@ -17,26 +17,24 @@ import Foundation
 ///
 /// - Note: Distinct from `Runner`, which is the API-fetched remote runner snapshot.
 ///   `RunnerModel` is local-first; `Runner` is API-first.
-/// - Note: Marked `@unchecked Sendable` because the struct carries mutable `var`
-///   properties that prevent the compiler from synthesising `Sendable` conformance
-///   automatically. All mutations occur on `@MainActor` in practice (via
-///   `LocalRunnerStore` and `RunnerStatusEnricher`), making this safe.
-///   TODO: Remove `@unchecked` once all mutable properties are actor-isolated or `let`. // NOSONAR — tracked deferred refactor
+/// - Note: Fully `Sendable` because all previously-mutable `var` properties
+///   have been converted to `let`. Mutations now go through `copying(…)` which
+///   returns a new value — no in-place mutation means no shared-mutable-state
+///   data race, and the compiler can synthesise `Sendable` conformance without
+///   an `@unchecked` escape hatch.
 /// - SeeAlso: `Runner`, `RunnerStatus`, `RunnerStatusEnricher`, `LocalRunnerStore`
-public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
+public struct RunnerModel: Sendable, Identifiable, Equatable {
     // MARK: Stored Properties
 
-    /// String-based ID so `LocalRunnerScanner` can use `runnerName` as the dedup key.
+    /// String-based ID so `LocalRunnerStore` can use `runnerName` as the dedup key.
     public let id: String
     /// The human-readable name of the runner as configured on the host machine.
     public let runnerName: String
     /// Absolute path to the runner agent installation directory on disk.
     public let installPath: String?
     /// The GitHub URL scope this runner is registered to (repo or org URL).
-    ///
-    /// `var` because `LocalRunnerScanner` may patch this after initial init
-    /// when the `.runner` config file is read separately from the LaunchAgent plist.
-    public var gitHubUrl: String?
+    /// Use `copying(gitHubUrl:)` to produce an updated value.
+    public let gitHubUrl: String?
     /// GitHub's internal numeric agent ID for this runner.
     public let agentId: Int?
     /// Absolute path to the runner's `_work` folder on disk.
@@ -55,37 +53,37 @@ public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
     /// Whether the runner was registered as ephemeral from `.runner` JSON `ephemeral` key.
     public let isEphemeral: Bool
     /// GitHub runner group name. Populated by `RunnerStatusEnricher` via the GitHub API.
-    public var runnerGroup: String?
+    public let runnerGroup: String?
 
     /// Launchctl / process running state.
-    ///
-    /// `var` so optimistic UI updates and the Source-3 live-service check can
-    /// both mutate it in-place on the array.
-    public var isRunning: Bool
+    /// Use `copying(isRunning:)` to produce an updated value.
+    public let isRunning: Bool
 
     /// GitHub API-reported connectivity status. Set by `RunnerStatusEnricher`.
     ///
     /// `nil` when the runner has not yet been enriched or the API call failed.
-    public var githubStatus: RunnerStatus?
+    public let githubStatus: RunnerStatus?
 
     /// Whether the runner is currently executing a job. Set by `RunnerStatusEnricher`.
-    public var isBusy: Bool
+    public let isBusy: Bool
 
     /// Short error string surfaced directly in the runner row after a failed lifecycle action.
     ///
     /// When non-nil, `displayStatus` shows this string instead of the normal status
     /// so the user sees the problem directly in the row.
     /// Cleared automatically the next time `refresh()` replaces the runner array.
-    public var lifecycleWarning: String?
+    public let lifecycleWarning: String?
 
     /// CPU/memory utilisation from the local `ps aux` snapshot, matched by `installPath`.
     ///
     /// `nil` if no matching process was found for this runner, or the runner is not busy.
     /// Populated by `LocalRunnerStore.refresh()` after scanning.
-    public var metrics: RunnerMetrics?
+    public let metrics: RunnerMetrics?
 
     // MARK: - Init
 
+    // swiftlint:disable:next function_parameter_count
+    // NOSONAR — 17 parameters faithfully model the GitHub API runner payload; splitting would break all call sites.
     /// Creates a new `RunnerModel` instance.
     ///
     /// - Parameters:
@@ -106,7 +104,6 @@ public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
     ///   - isEphemeral: Whether the runner is registered as ephemeral.
     ///   - runnerGroup: Runner group name from the GitHub API.
     ///   - metrics: Optional CPU/memory snapshot from `ps aux`.
-    /// - Note: 17 parameters faithfully model the GitHub API runner payload; splitting would break all call sites. // NOSONAR
     public init(
         id: String? = nil,
         runnerName: String,
@@ -226,5 +223,52 @@ public struct RunnerModel: @unchecked Sendable, Identifiable, Equatable {
         case idle
         /// Runner is offline or a lifecycle error occurred.
         case offline
+    }
+}
+
+// MARK: - Copying
+
+/// Provides a `copying(…)` method for producing modified `RunnerModel` values.
+extension RunnerModel {
+    /// Returns a new `RunnerModel` with selected fields replaced.
+    ///
+    /// Pass only the fields you want to change; all others are forwarded unchanged.
+    /// Uses `Optional<Optional<T>>` (double-optional) for nullable fields so callers
+    /// can distinguish "set to nil" (`.some(nil)`) from "leave unchanged" (`.none`).
+    ///
+    /// Example:
+    /// ```swift
+    /// runners[idx] = runners[idx].copying(isRunning: true)
+    /// let noWarning: String? = nil
+    /// runners[idx] = runners[idx].copying(lifecycleWarning: noWarning)  // clears warning — a bare `nil` literal would be a no-op
+    /// ```
+    public func copying(
+        gitHubUrl: String?? = nil,
+        isRunning: Bool? = nil,
+        githubStatus: RunnerStatus?? = nil,
+        isBusy: Bool? = nil,
+        lifecycleWarning: String?? = nil,
+        runnerGroup: String?? = nil,
+        metrics: RunnerMetrics?? = nil
+    ) -> RunnerModel {
+        RunnerModel(
+            id: id,
+            runnerName: runnerName,
+            gitHubUrl: gitHubUrl ?? self.gitHubUrl,
+            agentId: agentId,
+            workFolder: workFolder,
+            installPath: installPath,
+            isRunning: isRunning ?? self.isRunning,
+            labels: labels,
+            githubStatus: githubStatus ?? self.githubStatus,
+            isBusy: isBusy ?? self.isBusy,
+            lifecycleWarning: lifecycleWarning ?? self.lifecycleWarning,
+            platform: platform,
+            platformArchitecture: platformArchitecture,
+            agentVersion: agentVersion,
+            isEphemeral: isEphemeral,
+            runnerGroup: runnerGroup ?? self.runnerGroup,
+            metrics: metrics ?? self.metrics
+        )
     }
 }

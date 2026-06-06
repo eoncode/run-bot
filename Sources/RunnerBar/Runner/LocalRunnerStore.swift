@@ -61,17 +61,17 @@ final class LocalRunnerStore: ObservableObject {
     /// Already runs on the main actor via @MainActor class isolation.
     func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
-        runners[idx].isRunning = isRunning
+        runners[idx] = runners[idx].copying(isRunning: isRunning)
     }
 
     /// Sets or clears the lifecycle warning badge for a runner (e.g. "Failed to connect").
     /// Already runs on the main actor via @MainActor class isolation.
     func setLifecycleWarning(_ runnerName: String, warning: String?) {
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else { return }
-        runners[idx].lifecycleWarning = warning
+        runners[idx] = runners[idx].copying(lifecycleWarning: warning)
     }
 
-    /// Removes a runner from both the index and the published list immediately.
+    /// Immediately removes `runnerName` from the index and display list without waiting for a refresh.
     /// Already runs on the main actor via @MainActor class isolation.
     func optimisticallyRemove(_ runnerName: String) {
         unregister(name: runnerName)
@@ -100,21 +100,21 @@ final class LocalRunnerStore: ObservableObject {
         }
     }
 
-    /// Removes the index entry for `name` and persists the updated index.
+    /// Removes `name` from the persisted index and writes through to `UserDefaults`.
     func unregister(name: String) {
         runnerIndex.removeValue(forKey: name)
         persistIndex()
         log("LocalRunnerStore > unregister — '\(name)'")
     }
 
-    /// Loads the runner index from UserDefaults into `runnerIndex`.
+    /// Hydrates `runnerIndex` from `UserDefaults` at init time.
     private func loadIndex() {
         runnerIndex = UserDefaults.standard
             .dictionary(forKey: Self.indexKey) as? [String: String] ?? [:]
         log("LocalRunnerStore > loadIndex — \(runnerIndex.count) entry(ies)")
     }
 
-    /// Writes the current `runnerIndex` to UserDefaults.
+    /// Writes the current `runnerIndex` to `UserDefaults`.
     private func persistIndex() {
         UserDefaults.standard.set(runnerIndex, forKey: Self.indexKey)
     }
@@ -125,18 +125,16 @@ final class LocalRunnerStore: ObservableObject {
     ///
     /// Called by `RunnerViewModel.reload()`, which is triggered by Combine sinks in
     /// `AppDelegate+PanelSetup` (on `RunnerStore.didUpdate` and `LocalRunnerStore.$runners`).
-    /// Must be called on the main actor; heavy work is dispatched to a background queue internally.
+    /// `LocalRunnerStore` is `@MainActor`-isolated, so the `Task { }` launched here
+    /// inherits that isolation. Each `await` releases the main actor during network/disk
+    /// work; the continuation returns to `@MainActor` automatically.
     /// `isScanning` guards against concurrent refresh cycles — a new call is a no-op while one
     /// is already in flight.
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
         let index = runnerIndex
-        // ⚠️ DispatchQueue.global + DispatchQueue.main.async: safe today but a Swift 6 migration
-        // candidate — tracked in #1077. Replace with a plain Task { } launched from this
-        // @MainActor context: background work runs off-actor during `await`, and the
-        // continuation returns to @MainActor automatically — no Task.detached needed.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        Task { [weak self] in
             guard let self else { return }
 
             // 1. Hydrate from installPath/.runner JSON
@@ -147,19 +145,22 @@ final class LocalRunnerStore: ObservableObject {
             // scanLiveServices() is always called here — isRunning is intentionally set to false
             // during JSON parsing (step 1) and updated to its real value only at this point.
             // Do not remove this call or assume isRunning is always false.
-            let liveLabels = scanLiveServices()
-            for idx in hydrated.indices {
-                hydrated[idx].isRunning = liveLabels.contains { $0.contains(hydrated[idx].runnerName) }
+            let liveLabels = await self.scanLiveServices()
+            let isLive: (RunnerModel) -> Bool = { runner in
+                liveLabels.contains { $0.contains(runner.runnerName) }
+            }
+            hydrated = hydrated.map { runner in
+                runner.copying(isRunning: isLive(runner))
             }
 
-            // 3. Enrich via GitHub API
-            let enriched = RunnerStatusEnricher.shared.enrich(runners: hydrated)
+            // 3. Enrich via GitHub API (concurrent scope fetches)
+            let enriched = await RunnerStatusEnricher.shared.enrich(runners: hydrated)
 
-            Task { @MainActor in self.applyRefreshResults(enriched) }
+            self.applyRefreshResults(enriched)
         }
     }
 
-    /// Applies enriched runner results on the main actor.
+    /// Applies enriched runner data back on the main actor and clears the scanning flag.
     /// Extracted from `refresh()` to keep closure nesting within the 2-level limit.
     @MainActor
     private func applyRefreshResults(_ enriched: [RunnerModel]) {
@@ -170,22 +171,24 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - launchctl scan
 
-    /// Runs `launchctl list` and returns raw lines whose label contains `actions.runner`.
+    /// Fixed path to the `launchctl` binary used to query live LaunchAgent services.
+    nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
+
+    /// Runs `launchctl list` and returns lines containing `actions.runner`.
     ///
-    /// Called inside `refresh()` (step 2) on a background queue, immediately after disk hydration.
+    /// Called inside `refresh()` (step 2), immediately after disk hydration.
     /// Each returned line is matched against `runnerName` to set `RunnerModel.isRunning`.
     ///
     /// - Note: `isRunning` is **not** set during JSON parsing in `runnerModelFromIndex` — it is
     ///   always initialised to `false` there and updated here via launchctl. Do not assume
     ///   `isRunning` is dead or always-false — the wiring is refresh() → scanLiveServices() → isRunning.
-    /// System path to the launchctl binary.
-    /// Extracted to a constant so SonarCloud does not flag it as a hardcoded URI inline.
-    nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR — fixed OS path
-
-    /// Runs `launchctl list` and filters lines whose label contains `actions.runner`.
-    /// Called on a background queue inside `refresh()` to mark live services.
-    private nonisolated func scanLiveServices() -> [String] {
-        let result = ProcessRunner.run(
+    ///
+    /// Uses `ProcessRunner.runAsync` so the cooperative thread pool is not
+    /// blocked while `launchctl` runs. If the enclosing `Task` is cancelled
+    /// (e.g. because `start()` was called again), `launchctl` is terminated
+    /// immediately via the cancellation handler wired inside `runAsync`.
+    private nonisolated func scanLiveServices() async -> [String] {
+        let result = await ProcessRunner.runAsync(
             executableURL: Self.launchctlURL,
             arguments: ["list"],
             timeout: 5
@@ -219,7 +222,6 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
     if data.prefix(3).elementsEqual(bom) {
         data = data.dropFirst(3)
     }
-
     struct RunnerJSON: Decodable {
         let gitHubUrl: String?
         let agentId: Int?

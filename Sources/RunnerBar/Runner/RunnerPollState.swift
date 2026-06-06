@@ -9,46 +9,32 @@ import RunnerBarCore
 // These extensions delegate to PollResultBuilder so RunnerStore.fetch() call
 // sites are unchanged while the logic lives in the independently testable builder.
 
-/// A `@unchecked Sendable` wrapper around `ISO8601DateFormatter`.
-///
-/// `ISO8601DateFormatter` is expensive to allocate (it loads ICU calendars on init).
-/// Keeping one file-level instance avoids repeated allocation on every poll cycle.
-/// Access is serialised via `iso8601Lock`; the `@unchecked` annotation is safe because
-/// no two threads ever call the formatter concurrently.
-private struct SendableFormatter: @unchecked Sendable {
-    /// The internal formatter instance. Access only while holding `iso8601Lock`.
-    let iso = ISO8601DateFormatter()
-}
-
-/// `OSAllocatedUnfairLock` protecting the shared `SendableFormatter`.
-/// Always access the formatter via `iso8601Lock.withLock { ... }` to avoid data races.
-private let iso8601Lock = OSAllocatedUnfairLock(initialState: SendableFormatter())
-
 /// `RunnerStore` extension that bridges `PollResultBuilder` for the `fetch()` call sites.
 ///
-/// All methods are `nonisolated` because polling runs on a background thread.
-/// They read `ScopeStore.shared.scopes` via `DispatchQueue.main.sync` — this is safe
-/// only when called from a background thread. Do not call these methods from the main thread
-/// as `main.sync` from the main thread will deadlock.
+/// All methods are `async` and run off the main actor during `await` — the
+/// cooperative thread pool handles network work, and the continuation returns
+/// to `@MainActor` automatically after each `await`.
+/// `await MainActor.run { }` replaces the old `DispatchQueue.main.sync` pattern;
+/// unlike `main.sync`, `MainActor.run` is re-entrant-safe and will not deadlock
+/// when called from the main actor itself.
 extension RunnerStore {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
-    nonisolated func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) -> JobPollResult {
-        PollResultBuilder.buildJobState(
+    func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) async -> JobPollResult {
+        await PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
             snapCache: snapCache,
             fetchJobs: {
-                // ⚠️ main.sync — safe only from a background thread; deadlocks if called on main.
-                let scopes = DispatchQueue.main.sync { ScopeStore.shared.scopes }
+                let scopes = await MainActor.run { ScopeStore.shared.scopes }
                 var jobs: [ActiveJob] = []
                 for scope in scopes {
-                    jobs.append(contentsOf: fetchActiveJobs(for: scope))
+                    jobs.append(contentsOf: await fetchActiveJobs(for: scope))
                 }
                 return jobs
             },
             backfill: { cache in
-                self.backfillSteps(into: &cache)
+                await self.backfillSteps(into: &cache)
             }
         )
     }
@@ -56,84 +42,121 @@ extension RunnerStore {
     /// Builds a `GroupPollResult` by fetching live workflow action groups for all monitored scopes,
     /// firing failure hooks for newly-failed groups, enriching jobs from the job cache,
     /// and diffing against `snapPrevGroups`.
-    nonisolated func buildGroupState(
+    func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: Set<String>,
         jobCache: [Int: ActiveJob]
-    ) -> GroupPollResult {
-        PollResultBuilder.buildGroupState(
+    ) async -> GroupPollResult {
+        await PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
             snapSeenGroupIDs: snapSeenGroupIDs,
             fetchGroups: { shaKeyedCache in
-                // ⚠️ main.sync — safe only from a background thread; deadlocks if called on main.
-                let scopes = DispatchQueue.main.sync { ScopeStore.shared.scopes }
+                let scopes = await MainActor.run { ScopeStore.shared.scopes }
                 var groups: [WorkflowActionGroup] = []
                 for scope in scopes {
-                    groups.append(contentsOf: fetchActionGroups(for: scope, cache: shaKeyedCache))
+                    groups.append(contentsOf: await fetchActionGroups(for: scope, cache: shaKeyedCache))
                 }
                 return groups
             },
-            scopeFromGroup: { group in self.scopeFromActionGroup(group) },
+            scopeFromGroup: { group in
+                self.scopeFromActionGroup(group)
+            },
             fireFailureHook: { group, scope in
                 FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
             },
-            enrichJobs: { jobs in self.enrichGroupJobs(jobs, jobCache: jobCache) }
+            enrichJobs: { jobs in
+                self.enrichGroupJobs(jobs, jobCache: jobCache)
+            }
         )
     }
 
-    // MARK: - Backfill (retains ghAPI access via RunnerStore)
-
-    /// Backfills step data for cached jobs that finished without complete step information.
+    /// Backfills step data into the completed-job cache.
     ///
     /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
-    nonisolated func backfillSteps(into cache: inout [Int: ActiveJob]) {
+    func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil,
                   cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }),
                   let scope = scopeFromHtmlUrl(cached.htmlUrl),
-                  let data = ghAPI("repos/\(scope)/actions/jobs/\(cacheID)"),
+                  let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)"),
                   let fresh = try? JSONDecoder().decode(JobPayload.self, from: data),
                   !fresh.steps.isEmpty
             else { continue }
-            cache[cacheID] = iso8601Lock.withLock { wrapper in
-                makeActiveJob(from: fresh, iso: wrapper.iso, isDimmed: true)
-            }
+            cache[cacheID] = await ISO8601DateParser.shared.makeJob(from: fresh, isDimmed: true)
         }
     }
 
-    // MARK: - Group helpers (retain RunnerStore context)
+    // MARK: - Group helpers
 
-    /// Derives a scope string for `group` by first trying `group.repo`, then falling back
-    /// to parsing the `htmlUrl` of the first run. Returns an empty string if neither is available.
+    /// Derives the scope string (repo or org URL) from a `WorkflowActionGroup`.
+    ///
+    /// `nonisolated`: reads only `group` (a `Sendable` value type passed as a parameter)
+    /// and calls `scopeFromHtmlUrl` (a pure free function). No main-actor state is accessed,
+    /// so the `@MainActor` hop at every call site in `buildGroupState` is unnecessary.
     nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")
             return group.repo
         }
-        if let firstRun = group.runs.first, let url = firstRun.htmlUrl {
-            log("RunnerStore › scopeFromActionGroup — group.repo empty, trying htmlUrl='\(url)'")
-            if let derived = scopeFromHtmlUrl(url) {
-                log("RunnerStore › scopeFromActionGroup — derived scope='\(derived)' from htmlUrl")
-                return derived
-            }
+        log("RunnerStore › scopeFromActionGroup — group.repo is empty, trying htmlUrl of first run")
+        if let firstRun = group.runs.first,
+           let url = firstRun.htmlUrl,
+           let scope = scopeFromHtmlUrl(url) {
+            log("RunnerStore › scopeFromActionGroup — derived scope '\(scope)' from htmlUrl '\(url)'")
+            return scope
         }
-        log("RunnerStore › ⚠️ scopeFromActionGroup — could not derive scope, returning empty string! groupID=\(group.id)")
+        log("RunnerStore › scopeFromActionGroup — ⚠️ could not derive scope for groupID=\(group.id)")
         return ""
     }
 
-    /// Merges live job data with cached job data, preferring whichever has a conclusion
-    /// or more complete step information.
+    /// Enriches a group's job list with step and conclusion data from the job cache.
+    ///
+    /// `nonisolated`: pure map over `jobCache` (a value-type snapshot captured at the
+    /// closure creation site) with no reads from `RunnerStore`'s actor-isolated state.
+    /// Marking it `nonisolated` removes the implicit `@MainActor` hop that was serialising
+    /// every `withTaskGroup` child task in `PollResultBuilder.buildGroupState` through
+    /// the main actor, negating the intended parallelism (#1153).
     nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
+            // cacheHasConclusion: the cache settled a conclusion the live API hasn't returned
+            // yet (common on the first poll after a job finishes — GitHub propagates conclusion
+            // slightly after status flips to "completed").
+            //
+            // cacheHasBetterSteps: the cache has fully-resolved steps while the live payload
+            // still shows in-progress ones (backfill ran after the main fetch).
+            //
+            // When only cacheHasConclusion fires (cacheHasBetterSteps is false), the merged
+            // job carries conclusion from the cache and steps from the live job. This is
+            // intentional: the live steps are the freshest available data; showing them
+            // alongside a bridged conclusion is correct. Returning the full stale cached
+            // entry would hide newer step state. The `steps` field in the UI only renders
+            // the step list when the job is expanded, so a brief one-poll transient where
+            // conclusion is set but steps are still completing is acceptable and preferable
+            // to stale data. This is NOT a conclusion/steps inconsistency bug.
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
-            let cacheHasMoreSteps  = cached.steps.count > job.steps.count
-            return (cacheHasConclusion || cacheHasMoreSteps) ? cached : job
+            let cacheHasBetterSteps = !cached.steps.isEmpty
+                && (job.steps.isEmpty || job.steps.contains { $0.status == .inProgress })
+                && !cached.steps.contains { $0.status == .inProgress }
+            guard cacheHasConclusion || cacheHasBetterSteps else { return job }
+            return ActiveJob(
+                id: job.id,
+                name: job.name,
+                htmlUrl: job.htmlUrl,
+                status: job.status,
+                conclusion: cached.conclusion ?? job.conclusion,
+                isDimmed: job.isDimmed,
+                runnerName: job.runnerName,
+                scope: job.scope,
+                startedAt: job.startedAt,
+                completedAt: cached.completedAt ?? job.completedAt,
+                steps: cacheHasBetterSteps ? cached.steps : job.steps
+            )
         }
     }
 }

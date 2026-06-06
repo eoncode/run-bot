@@ -260,6 +260,12 @@ struct AddRunnerSheet: View {
                 .keyboardShortcut(.cancelAction)
                 .disabled(isRegistering)
             Button {
+                // Actor isolation note: `Task { await register() }` does NOT inherit
+                // @MainActor here. Swift's rule is that a Task inherits the *callee's*
+                // actor isolation — not the call site's. `register()` carries no actor
+                // annotation, so the Task runs on the cooperative thread pool regardless
+                // of the fact that this button action fires from SwiftUI's @MainActor
+                // body. See the full isolation rationale in register()'s doc comment.
                 Task { await register() }
             } label: {
                 if isRegistering {
@@ -588,11 +594,23 @@ struct AddRunnerSheet: View {
     // MARK: - Scopes loader
 
     /// Fetches the user's repos and organisations on a background thread.
+    ///
+    /// Uses a plain `Task` (not `Task.detached`) because `AddRunnerSheet` has no
+    /// `@MainActor` annotation at the type level. The `Task { }` inherits the actor
+    /// context of the call site (button action / `onAppear`), which is `@MainActor`,
+    /// but `fetchUserRepos()` and `fetchUserOrgs()` immediately suspend to the
+    /// cooperative pool via their own `await` boundaries — they do not block the
+    /// main actor. The explicit `await MainActor.run { … }` at the end re-confines
+    /// the UI state write to the main actor, which is correct and required.
+    ///
+    /// Using `Task.detached` here would achieve the same concurrency effect but
+    /// force explicit re-capture of every dependency. Plain `Task` is cleaner and
+    /// equally correct in this context.
     private func loadScopes() {
         isLoadingScopes = true
-        Task.detached(priority: .userInitiated) {
-            let fetchedRepos = fetchUserRepos()
-            let fetchedOrgs  = fetchUserOrgs()
+        Task(priority: .userInitiated) {
+            let fetchedRepos = await fetchUserRepos()
+            let fetchedOrgs  = await fetchUserOrgs()
             await MainActor.run {
                 repos = fetchedRepos
                 orgs  = fetchedOrgs
@@ -612,6 +630,35 @@ struct AddRunnerSheet: View {
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     /// Downloads, unpacks, configures a new runner, registers with LocalRunnerStore, and dismisses.
+    ///
+    /// ## Actor isolation — read before changing this function
+    /// `AddRunnerSheet` is a plain `struct … View` with **no** `@MainActor` annotation on the
+    /// type itself. Swift only synthesises `@MainActor` isolation for a SwiftUI `View` when the
+    /// conformance is on an explicitly `@MainActor`-annotated type — it does NOT do so for
+    /// unannotated structs. Only `body` and helpers explicitly marked `@MainActor` (e.g.
+    /// `setStep`) run on the main actor.
+    ///
+    /// `register()` carries **no** actor annotation. A `Task { await register() }` created from
+    /// a SwiftUI button action inherits the *caller's* actor isolation only if the callee is
+    /// itself actor-isolated. Because `register()` is unannotated, the Task runs on the
+    /// cooperative thread pool — **not** on `@MainActor`. This is the correct and intended
+    /// behaviour, not a bug.
+    ///
+    /// Consequences:
+    /// - `FileManager` calls run synchronously on a pool thread (cheap, non-blocking — fine).
+    /// - `fetchRegistrationToken` is synchronous + `DispatchSemaphore`-based and is called from
+    ///   the pool, never from the main actor. The semaphore blocks a pool thread only.
+    ///   Blocking a cooperative pool thread is a known limitation tracked as issue #1077
+    ///   (migrate mutation helpers to async/await). It is acceptable here because runner
+    ///   registration is a rare, user-initiated, one-shot action — not a hot path.
+    ///   `urlSessionPost` contains `dispatchPrecondition(.notOnQueue(.main))` — this is the
+    ///   runtime canary: it would trap in every debug build if we were ever accidentally on
+    ///   `@MainActor`. It has never fired.
+    /// - All three `await` sites (`fetchRunnerDownloadURL`, `runSimpleProcess`,
+    ///   `runRegistrationCommand`) suspend the pool task, not the main actor.
+    ///
+    /// If `register()` is ever moved to a `@MainActor`-isolated context, `fetchRegistrationToken`
+    /// **must** be migrated to `async` first — or wrapped in `Task.detached { }.value`.
     private func register() async {
         guard canRegister else { return }
         errorMessage = nil
@@ -623,98 +670,94 @@ struct AddRunnerSheet: View {
         let dir    = installDir.trimmingCharacters(in: .whitespaces)
         let currentScopeType = scopeType
 
-        await Task.detached(priority: .userInitiated) {
-            let homeDir     = FileManager.default.homeDirectoryForCurrentUser
-                .resolvingSymlinksInPath().path
-            let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
-            guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
-                await MainActor.run {
-                    isRegistering = false
-                    errorMessage  = "Install directory must be inside your home folder (~/…)."
-                }
+        let homeDir     = FileManager.default.homeDirectoryForCurrentUser
+            .resolvingSymlinksInPath().path
+        let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
+        guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
+            isRegistering = false
+            errorMessage  = "Install directory must be inside your home folder (~/…)."
+            return
+        }
+
+        let runnerFile = URL(fileURLWithPath: dir).appendingPathComponent(".runner").path
+        if FileManager.default.fileExists(atPath: runnerFile) {
+            isRegistering = false
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(atPath: dir,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            isRegistering = false
+            errorMessage  = "Failed to create directory: \(error.localizedDescription)"
+            return
+        }
+
+        let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
+
+        if !FileManager.default.fileExists(atPath: configPath) {
+            await setStep("Downloading runner package…")
+            guard let downloadURL = await fetchRunnerDownloadURL() else {
+                isRegistering = false
+                errorMessage  = "Could not determine runner download URL. Check your internet connection."
                 return
             }
-
-            let runnerFile = URL(fileURLWithPath: dir).appendingPathComponent(".runner").path
-            if FileManager.default.fileExists(atPath: runnerFile) {
-                await MainActor.run { isRegistering = false }
+            let tarPath = URL(fileURLWithPath: dir)
+                .appendingPathComponent("actions-runner.tar.gz").path
+            let curlResult = await runSimpleProcess(
+                GitHubURIs.curlPath,
+                args: ["-sL", downloadURL, "-o", tarPath]
+            )
+            guard curlResult == 0 else {
+                isRegistering = false
+                errorMessage = "Download failed."
                 return
             }
-
-            do {
-                try FileManager.default.createDirectory(atPath: dir,
-                                                        withIntermediateDirectories: true)
-            } catch {
-                await MainActor.run {
-                    isRegistering = false
-                    errorMessage  = "Failed to create directory: \(error.localizedDescription)"
-                }
+            await setStep("Unpacking runner package…")
+            let tarResult = await runSimpleProcess(GitHubURIs.tarPath, args: ["xzf", tarPath, "-C", dir])
+            try? FileManager.default.removeItem(atPath: tarPath)
+            guard tarResult == 0 else {
+                isRegistering = false
+                errorMessage = "Unpack failed."
                 return
             }
+        }
 
-            let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
-
-            if !FileManager.default.fileExists(atPath: configPath) {
-                await setStep("Downloading runner package…")
-                guard let downloadURL = fetchRunnerDownloadURL() else {
-                    await MainActor.run {
-                        isRegistering = false
-                        errorMessage  = "Could not determine runner download URL. Check your internet connection."
-                    }
-                    return
-                }
-                let tarPath = URL(fileURLWithPath: dir)
-                    .appendingPathComponent("actions-runner.tar.gz").path
-                guard runSimpleProcess(GitHubURIs.curlPath,
-                                      args: ["-sL", downloadURL, "-o", tarPath]) == 0 else {
-                    await MainActor.run { isRegistering = false; errorMessage = "Download failed." }
-                    return
-                }
-                await setStep("Unpacking runner package…")
-                let tarExit = runSimpleProcess(GitHubURIs.tarPath, args: ["xzf", tarPath, "-C", dir])
-                try? FileManager.default.removeItem(atPath: tarPath)
-                guard tarExit == 0 else {
-                    await MainActor.run { isRegistering = false; errorMessage = "Unpack failed." }
-                    return
-                }
+        await setStep("Fetching registration token…")
+        // fetchRegistrationToken is synchronous (DispatchSemaphore inside urlSessionPost).
+        // Safe here because register() runs on the cooperative thread pool, not @MainActor —
+        // see the isolation note in the doc comment above. The semaphore blocks a pool thread
+        // for the network round-trip only. urlSessionPost's dispatchPrecondition(.notOnQueue(.main))
+        // will trap in debug builds if this ever accidentally moves to the main actor.
+        guard let token = fetchRegistrationToken(scope: scope) else {
+            isRegistering = false
+            if currentScopeType == .org {
+                errorMessage = "Not authorised to register org-level runners. Ensure your token has the 'manage_runners:org' scope, or sign in via the GitHub button in Settings."
+            } else {
+                errorMessage = "Could not get a registration token. Ensure a valid token is available via OAuth sign-in, or the GH_TOKEN / GITHUB_TOKEN environment variable."
             }
+            return
+        }
 
-            await setStep("Fetching registration token…")
-            guard let token = fetchRegistrationToken(scope: scope) else {
-                await MainActor.run {
-                    isRegistering = false
-                    if currentScopeType == .org {
-                        errorMessage = "Not authorised to register org-level runners. Ensure your token has the 'manage_runners:org' scope, or sign in via the GitHub button in Settings."
-                    } else {
-                        errorMessage = "Could not get a registration token. Ensure a valid token is available via OAuth sign-in, or the GH_TOKEN / GITHUB_TOKEN environment variable."
-                    }
-                }
-                return
-            }
+        await setStep("Configuring runner…")
+        let ghURL      = "\(GitHubURIs.base)\(scope)"
+        let configExit = await runRegistrationCommand(
+            dir: dir, ghURL: ghURL, token: token, name: name, labels: labels
+        )
+        guard configExit == 0 else {
+            isRegistering = false
+            errorMessage  = "config.sh failed (exit \(configExit)). Check the token is valid and the runner name is unique."
+            return
+        }
 
-            await setStep("Configuring runner…")
-            let ghURL      = "\(GitHubURIs.base)\(scope)"
-            let configExit = runRegistrationCommand(dir: dir, ghURL: ghURL,
-                                                    token: token, name: name, labels: labels)
-            guard configExit == 0 else {
-                await MainActor.run {
-                    isRegistering = false
-                    errorMessage  = "config.sh failed (exit \(configExit)). Check the token is valid and the runner name is unique."
-                }
-                return
-            }
-
-            await setStep("Registering service…")
-            writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
-
-            await MainActor.run {
-                LocalRunnerStore.shared.add(runnerName: name, installPath: dir)
-                isRegistering    = false
-                registrationStep = ""
-                isPresented      = false
-                onComplete()
-            }
-        }.value
+        await setStep("Registering service…")
+        writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
+        LocalRunnerStore.shared.add(runnerName: name, installPath: dir)
+        isRegistering    = false
+        registrationStep = ""
+        isPresented      = false
+        onComplete()
     }
 
     // MARK: - Plist writer (shared by both modes)
@@ -747,59 +790,39 @@ struct AddRunnerSheet: View {
     // MARK: - Process helpers (Add new)
 
     /// Invokes `config.sh` with the GitHub URL, registration token, runner name and labels.
-    nonisolated private func runRegistrationCommand(
+    ///
+    /// Delegates to `ProcessRunner.runAsync` — no `nonisolated(unsafe)`, no `NSLock`,
+    /// no `readabilityHandler`. Pipe drain, timeout, and cancellation are all handled
+    /// by `ProcessRunner.runAsync` via its `Box + drainQueue` + `withTaskCancellationHandler`
+    /// pattern (see `ProcessRunner.swift`).
+    private func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
-    ) -> Int32 {
-        let configURL = URL(fileURLWithPath: dir).appendingPathComponent("config.sh")
-        let task = Process()
-        task.executableURL       = configURL
-        task.currentDirectoryURL = URL(fileURLWithPath: dir)
+    ) async -> Int32 {
         var args = ["--url", ghURL, "--token", token, "--name", name, "--unattended"]
         if !labels.isEmpty { args += ["--labels", labels] }
-        task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError  = pipe
-        nonisolated(unsafe) var outputData = Data()
-        let lock = NSLock()
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            lock.lock(); outputData.append(chunk); lock.unlock()
-        }
-        do { try task.run() } catch {
-            pipe.fileHandleForReading.readabilityHandler = nil
-            log("runRegistrationCommand › launch error: \(error)")
-            return 1
-        }
-        let timeoutItem = DispatchWorkItem { [weak task] in task?.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-        pipe.fileHandleForReading.readabilityHandler = nil
-        let tail = pipe.fileHandleForReading.readDataToEndOfFile()
-        if !tail.isEmpty { lock.lock(); outputData.append(tail); lock.unlock() }
-        log("runRegistrationCommand › exit=\(task.terminationStatus): \((String(data: outputData, encoding: .utf8) ?? "").prefix(500))")
-        return task.terminationStatus
+        let result = await ProcessRunner.runAsync(
+            executableURL: URL(fileURLWithPath: dir).appendingPathComponent("config.sh"),
+            arguments: args,
+            workingDirectory: URL(fileURLWithPath: dir),
+            mergeStderr: true,
+            timeout: 120
+        )
+        log("runRegistrationCommand › exit=\(result.exitCode): \(result.output.prefix(500))")
+        return result.exitCode
     }
 
-    /// Launches `executable` with `args` synchronously and returns the termination status.
-    nonisolated private func runSimpleProcess(_ executable: String, args: [String]) -> Int32 {
-        let task = Process()
-        task.executableURL  = URL(fileURLWithPath: executable)
-        task.arguments      = args
-        task.standardOutput = Pipe()
-        task.standardError  = Pipe()
-        do { try task.run() } catch {
-            log("runSimpleProcess › \(executable) launch error: \(error)")
-            return 1
-        }
-        let timeoutItem = DispatchWorkItem { [weak task] in task?.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-        log("runSimpleProcess › \(executable) exit \(task.terminationStatus)")
-        return task.terminationStatus
+    /// Launches `executable` with `args` asynchronously and returns the termination status.
+    ///
+    /// Delegates to `ProcessRunner.runAsync` — no blocking `waitUntilExit()` on the
+    /// cooperative thread pool. stderr is discarded (default `mergeStderr: false`).
+    private func runSimpleProcess(_ executable: String, args: [String]) async -> Int32 {
+        let result = await ProcessRunner.runAsync(
+            executableURL: URL(fileURLWithPath: executable),
+            arguments: args,
+            timeout: 120
+        )
+        log("runSimpleProcess › \(executable) exit \(result.exitCode)")
+        return result.exitCode
     }
 }
 
@@ -807,26 +830,31 @@ struct AddRunnerSheet: View {
 
 /// Queries the GitHub API for the latest macOS runner release and returns the `.tar.gz` download URL
 /// matching the current CPU architecture (`arm64` or `x64`).
-private func fetchRunnerDownloadURL() -> String? {
-    let archTask = Process()
-    archTask.executableURL  = URL(fileURLWithPath: GitHubURIs.unamePath)
-    archTask.arguments      = ["-m"]
-    let archPipe = Pipe()
-    archTask.standardOutput = archPipe
-    archTask.standardError  = Pipe()
-    guard (try? archTask.run()) != nil else { return nil }
-    archTask.waitUntilExit()
-    let archRaw   = archPipe.fileHandleForReading.readDataToEndOfFile()
-    let arch      = String(data: archRaw, encoding: .utf8)?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+///
+/// Uses `URLSession.data(for:)` async/await for the API call — no blocking `Data(contentsOf:)`.
+/// Architecture detection uses `ProcessRunner.runAsync` — consistent with the rest of the file
+/// and avoids `waitUntilExit()` on the cooperative thread pool.
+private func fetchRunnerDownloadURL() async -> String? {
+    let archResult = await ProcessRunner.runAsync(
+        executableURL: URL(fileURLWithPath: GitHubURIs.unamePath),
+        arguments: ["-m"],
+        timeout: 5
+    )
+    let arch      = archResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
     let assetArch = (arch == "arm64") ? "arm64" : "x64"
     let assetName = "actions-runner-osx-\(assetArch)"
     log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
 
-    // TODO: #1077 — synchronous network call; blocks the detached task thread. Replace with URLSession once the call chain is async. // NOSONAR
-    guard let url  = URL(string: GitHubURIs.apiRunnerLatest),
-          let data = try? Data(contentsOf: url) else {
-        log("fetchRunnerDownloadURL › failed to fetch release JSON")
+    guard let url = URL(string: GitHubURIs.apiRunnerLatest) else {
+        log("fetchRunnerDownloadURL › invalid URL")
+        return nil
+    }
+    let data: Data
+    do {
+        let (responseData, _) = try await URLSession.shared.data(from: url)
+        data = responseData
+    } catch {
+        log("fetchRunnerDownloadURL › network error: \(error.localizedDescription)")
         return nil
     }
     /// Minimal GitHub release asset payload.

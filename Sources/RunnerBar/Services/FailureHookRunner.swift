@@ -40,7 +40,7 @@ enum FailureHookRunner {
     static let defaultCommand = "cd $LOCAL_PATH && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
 
     /// Call this whenever a group transitions to done with a failure conclusion.
-    /// Dispatches to a background thread, fetches failed job/step details, then fires.
+    /// Spawns a detached background Task, fetches failed job/step details, then fires.
     static func fireIfNeeded(group: WorkflowActionGroup, scope: String, callsite: String = "unknown") {
         log("FailureHookRunner › fireIfNeeded ENTER — callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
         let hookEnabled = ScopePreferencesStore.failureHookEnabled(for: scope)
@@ -70,19 +70,25 @@ enum FailureHookRunner {
             log("FailureHookRunner › SKIP — group is not a failure, groupID=\(group.id)")
             return
         }
-        log("FailureHookRunner › ALL CHECKS PASSED — dispatching background task for scope=\(scope) groupID=\(group.id)")
-        // TODO: #1077 — migrate off DispatchQueue.global to structured concurrency (async/await + Task) // NOSONAR
-        DispatchQueue.global(qos: .utility).async {
-            log("FailureHookRunner › background thread START — fetching failed jobs for groupID=\(group.id)")
-            let jobs = fetchFailedJobs(group: group, scope: scope)
-            log("FailureHookRunner › background thread — fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
+        log("FailureHookRunner › ALL CHECKS PASSED — dispatching background Task for scope=\(scope) groupID=\(group.id)")
+        // Task.detached is required here — do NOT simplify to Task { }.
+        // fireIfNeeded is called from @MainActor context (via PollResultBuilder → RunnerStore).
+        // A plain Task { } would inherit @MainActor isolation, serialising the log fetch
+        // and TerminalLauncher call through the main actor. Task.detached breaks that
+        // inheritance so the work runs on the cooperative pool at .utility priority (#1152).
+        Task.detached(priority: .utility) {
+            log("FailureHookRunner › Task START — fetching failed jobs for groupID=\(group.id)")
+            let jobs = await fetchFailedJobs(group: group, scope: scope)
+            log("FailureHookRunner › Task — fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
             let resolved = resolveTokens(command, group: group, scope: scope, jobs: jobs)
-            log("FailureHookRunner › background thread — resolved command (first 300): \(resolved.prefix(300))")
-            log("FailureHookRunner › background thread — calling TerminalLauncher.open for groupID=\(group.id)")
-            // NSAppleScript must run on the main thread.
-            DispatchQueue.main.async {
+            log("FailureHookRunner › Task — resolved command (first 300): \(resolved.prefix(300))")
+            log("FailureHookRunner › Task — calling TerminalLauncher.open for groupID=\(group.id)")
+            // TerminalLauncher.open uses NSAppleScript, which must run on the main actor.
+            // The mechanism changed from DispatchQueue.main.async to await MainActor.run,
+            // but the constraint is unchanged — do not remove this MainActor hop.
+            await MainActor.run {
                 TerminalLauncher.open(command: resolved)
-                log("FailureHookRunner › main thread — TerminalLauncher.open returned for groupID=\(group.id)")
+                log("FailureHookRunner › main actor — TerminalLauncher.open returned for groupID=\(group.id)")
             }
         }
     }
@@ -110,11 +116,10 @@ enum FailureHookRunner {
     }
 
     /// Fetches jobs (with steps) and raw log tail for all failed runs in the group.
-    /// Blocking — must be called from a background thread.
     /// - Note: `fetchJobLog` → `RunnerBarCore/Services/LogFetcher.swift`.
     ///         `ghAPI` → `RunnerBarCore/GitHub/GitHubTransportShim.swift` (shim),
     ///                   `RunnerBar/GitHub/GitHubURLSessionTransport.swift` (app target).
-    private static func fetchFailedJobs(group: WorkflowActionGroup, scope: String) -> [FailedJobResult] {
+    private static func fetchFailedJobs(group: WorkflowActionGroup, scope: String) async -> [FailedJobResult] {
         var result: [FailedJobResult] = []
         var seenIDs = Set<Int>()
         for run in group.runs {
@@ -123,7 +128,7 @@ enum FailureHookRunner {
                 continue
             }
             log("FailureHookRunner › fetchFailedJobs — fetching jobs for failed run=\(run.id) conclusion=\(c)")
-            guard let data = ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=100") else {
+            guard let data = await ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=100") else {
                 log("FailureHookRunner › fetchFailedJobs — ghAPI returned nil for run=\(run.id)")
                 continue
             }

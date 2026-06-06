@@ -17,7 +17,7 @@ import Foundation
 /// - Note: This type represents the **API-fetched** remote runner list. For locally
 ///   installed runners discovered via LaunchAgent plists, see `RunnerModel`.
 /// - SeeAlso: `RunnerModel`, `RunnerStatus`, `RunnerMetrics`
-public struct Runner: Codable, Identifiable {
+public struct Runner: Codable, Identifiable, Sendable {
     /// GitHub's unique numeric ID for this runner.
     public let id: Int
     /// Human-readable runner name as configured on the host machine.
@@ -32,7 +32,7 @@ public struct Runner: Codable, Identifiable {
     /// `nil` if no matching `Runner.Worker` process was found for this runner's slot.
     /// Populated by `RunnerStore.fetch()` after the API response is decoded —
     /// not present in the JSON payload.
-    public var metrics: RunnerMetrics?
+    public let metrics: RunnerMetrics?
 
     /// Creates a new `Runner` instance.
     ///
@@ -61,6 +61,31 @@ public struct Runner: Codable, Identifiable {
         case status
         /// Maps to the `busy` JSON field.
         case busy
+    }
+
+    /// Decodes a `Runner` from the GitHub API JSON payload.
+    ///
+    /// `metrics` is intentionally excluded from `CodingKeys` and is always
+    /// initialised to `nil` here — it is populated separately after decoding
+    /// via `RunnerStore.fetchAndEnrichRunners`. Swift cannot synthesise
+    /// `init(from:)` automatically when a stored property has no CodingKey
+    /// and no default value, so this explicit implementation is required.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        status = try c.decode(RunnerStatus.self, forKey: .status)
+        busy = try c.decode(Bool.self, forKey: .busy)
+        metrics = nil
+    }
+
+    /// Returns a copy of this runner with the given `metrics` value.
+    ///
+    /// Mirrors the `copying(…)` pattern used by `RunnerModel` for immutable mutation.
+    /// Use `nil` to clear metrics (idle runners), or pass a `RunnerMetrics` value for
+    /// busy runners whose process stats were resolved via `ps aux`.
+    public func copying(metrics: RunnerMetrics?) -> Runner {
+        Runner(id: id, name: name, status: status, busy: busy, metrics: metrics)
     }
 
     /// A single-line status string for display in the runner list row.
