@@ -14,7 +14,7 @@ import os
 /// can never observe `isLimited == true` with a stale / nil `resetDate`.
 ///
 /// Pipeline:
-///   1. `urlSessionAPI` / `urlSessionAPIPaginated` receive a 403/429.
+///   1. `urlSessionAPIAsync` / `urlSessionAPIPaginated` receive a 403/429.
 ///   2. They write `isLimited = true` + `resetDate` under this lock and call
 ///      `scheduleRateLimitReset(resetAt:)` to auto-clear after the window.
 ///   3. `ghIsRateLimited` / `ghRateLimitResetDate` module vars expose the
@@ -292,44 +292,6 @@ func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) async ->
 }
 
 // MARK: - Legacy synchronous GET (retained for non-async call sites)
-
-/// Fetches a single GitHub API page synchronously (blocking the calling thread).
-/// ⚠️ Must be called from a background thread, never from the main thread.
-func urlSessionAPI(_ endpoint: String, timeout: TimeInterval = 20) -> Data? {
-    dispatchPrecondition(condition: .notOnQueue(.main))
-    guard let token = githubToken() else {
-        log("urlSessionAPI › no token available")
-        return nil
-    }
-    let urlString = resolveURL(endpoint)
-    guard let url = URL(string: urlString) else {
-        log("urlSessionAPI › invalid URL: \(urlString)")
-        return nil
-    }
-    let req = makeRequest(url: url, token: token, timeout: timeout)
-    let sem = DispatchSemaphore(value: 0)
-    let result = OSAllocatedUnfairLock<Data?>(initialState: nil)
-    URLSession.shared.dataTask(with: req) { data, response, error in
-        defer { sem.signal() }
-        if let error {
-            log("URLSessionTransport › \(urlString) network error: \(error.localizedDescription)")
-            return
-        }
-        guard let http = response as? HTTPURLResponse else { return }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-            return
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            logErrorBody(data, endpoint: urlString, status: http.statusCode)
-            return
-        }
-        clearRateLimitIfNeeded()
-        result.withLock { $0 = data }
-    }.resume()
-    sem.wait()
-    return result.withLock { $0 }
-}
 
 /// Fetches all pages of a GitHub API endpoint, concatenating JSON arrays.
 /// Follows the `Link: <url>; rel="next"` header automatically.
