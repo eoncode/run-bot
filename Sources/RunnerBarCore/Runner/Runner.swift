@@ -63,6 +63,22 @@ public struct Runner: Codable, Identifiable, Sendable {
         case busy
     }
 
+    /// Decodes a `Runner` from the GitHub API JSON payload.
+    ///
+    /// `metrics` is intentionally excluded from `CodingKeys` and is always
+    /// initialised to `nil` here — it is populated separately after decoding
+    /// via `RunnerStore.fetchAndEnrichRunners`. Swift cannot synthesise
+    /// `init(from:)` automatically when a stored property has no CodingKey
+    /// and no default value, so this explicit implementation is required.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id     = try c.decode(Int.self,          forKey: .id)
+        name   = try c.decode(String.self,       forKey: .name)
+        status = try c.decode(RunnerStatus.self, forKey: .status)
+        busy   = try c.decode(Bool.self,         forKey: .busy)
+        metrics = nil
+    }
+
     /// Returns a copy of this runner with the given `metrics` value.
     ///
     /// Mirrors the `copying(…)` pattern used by `RunnerModel` for immutable mutation.
