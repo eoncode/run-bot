@@ -435,7 +435,8 @@ struct AddRunnerSheet: View {
 
     // MARK: - Helpers (Add new)
 
-    /// The effectiveScope property.
+    /// The resolved scope string — the selected repo slug when repo-scoped,
+    /// or the selected organisation name when org-scoped.
     private var effectiveScope: String { scopeType == .repo ? selectedRepo : selectedOrg }
 
     /// Returns `true` when the chosen install directory already contains a `.runner` file,
@@ -517,11 +518,11 @@ struct AddRunnerSheet: View {
             return
         }
 
-        /// Minimal `.runner` JSON payload — only name and GitHub URL are needed.
+        // Minimal `.runner` JSON payload — only name and GitHub URL are needed.
         struct RunnerJSON: Decodable {
-            /// The URL of the GitHub repo or org this runner is registered to.
+            // The URL of the GitHub repo or org this runner is registered to.
             let gitHubUrl: String?
-            /// The registered runner name.
+            // The registered runner name.
             let runnerName: String?
         }
 
@@ -762,8 +763,11 @@ struct AddRunnerSheet: View {
 
     // MARK: - Plist writer (shared by both modes)
 
-    /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/`.
-    nonisolated func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
+    /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/` for the given runner.
+    ///
+    /// The plist label is derived as `actions.runner.<owner>.<repo>.<runnerName>` and written
+    /// atomically. Used by both the "Add new" and "Add pre-existing" flows.
+    private nonisolated func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(GitHubURIs.launchAgentsDir)
         let scopeParts = scope.components(separatedBy: "/")
@@ -857,33 +861,33 @@ private func fetchRunnerDownloadURL() async -> String? {
         log("fetchRunnerDownloadURL › network error: \(error.localizedDescription)")
         return nil
     }
-    /// Minimal GitHub release asset payload.
-    struct Asset: Decodable {
-        /// The asset file name.
-        let name: String
-        /// The direct download URL for this asset.
-        let browserDownloadUrl: String
-        /// Maps snake_case API keys to camelCase Swift properties.
-        enum CodingKeys: String, CodingKey {
-            /// The name coding key.
-            case name
-            /// The browserDownloadUrl coding key.
-            case browserDownloadUrl = "browser_download_url"
+        // Minimal GitHub release asset payload.
+        struct Asset: Decodable {
+            // The asset file name.
+            let name: String
+            // The direct download URL for this asset.
+            let browserDownloadUrl: String
+            // Maps snake_case API keys to camelCase Swift properties.
+            enum CodingKeys: String, CodingKey {
+                // The name coding key.
+                case name
+                // The browserDownloadUrl coding key.
+                case browserDownloadUrl = "browser_download_url"
+            }
         }
+        // Minimal GitHub release payload — only assets are needed.
+        struct Release: Decodable {
+            // The list of release assets.
+            let assets: [Asset]
+        }
+        guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
+            log("fetchRunnerDownloadURL › decode failed")
+            return nil
+        }
+        let match = release.assets.first {
+            $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
+        }
+        log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
+        return match?.browserDownloadUrl
     }
-    /// Minimal GitHub release payload — only assets are needed.
-    struct Release: Decodable {
-        /// The list of release assets.
-        let assets: [Asset]
-    }
-    guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
-        log("fetchRunnerDownloadURL › decode failed")
-        return nil
-    }
-    let match = release.assets.first {
-        $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
-    }
-    log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
-    return match?.browserDownloadUrl
-}
-// swiftlint:enable type_body_length
+    // swiftlint:enable type_body_length

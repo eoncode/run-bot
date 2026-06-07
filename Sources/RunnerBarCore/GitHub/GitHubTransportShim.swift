@@ -1,7 +1,7 @@
 // GitHubTransportShim.swift
 // RunnerBarCore
 //
-// Provides module-level `ghAPI`, `ghRawTransport`, and `ghIsRateLimited` symbols
+// Provides module-level `ghAPI`, `ghRawTransport` symbols
 // for RunnerBarCore consumers (WorkflowActionGroupFetch, RunnerStatusEnricher,
 // LogFetcher).
 //
@@ -34,23 +34,16 @@ private let transportLock = OSAllocatedUnfairLock<GHAPITransport>(initialState: 
 /// Serialises all reads and writes to the active raw transport closure.
 private let rawTransportLock = OSAllocatedUnfairLock<GHRawTransport>(initialState: { _ in nil })
 
-/// Closure that reports the current rate-limit state.
-/// Serialises all reads and writes to the rate-limit closure.
-private let rateLimitLock = OSAllocatedUnfairLock<@Sendable () -> Bool>(initialState: { false })
-
 // MARK: - Configuration
 
 /// Wire up the real (or mock) GitHub transports. Call once at launch before any fetch.
 ///
 /// - Parameters:
 ///   - transport: Async closure for JSON REST calls; returns `nil` on failure.
-///   - isRateLimited: Returns `true` when the API is rate-limited.
 public func configureGHAPI(
-    _ transport: @escaping GHAPITransport,
-    isRateLimited: @escaping @Sendable () -> Bool
+    _ transport: @escaping GHAPITransport
 ) {
     transportLock.withLock { $0 = transport }
-    rateLimitLock.withLock { $0 = isRateLimited }
 }
 
 /// Wire up the raw-bytes transport for log endpoints. Call once at launch.
@@ -76,9 +69,4 @@ func ghAPI(_ endpoint: String) async -> Data? {
 /// - Note: Returns the closure itself, not the result of a call — callers invoke it directly.
 func ghRawTransport() -> GHRawTransport {
     rawTransportLock.withLock { $0 }
-}
-
-/// Returns `true` when the GitHub API is currently rate-limiting this client.
-var ghIsRateLimited: Bool {
-    rateLimitLock.withLock { $0() }
 }

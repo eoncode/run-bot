@@ -17,9 +17,6 @@ extension Color {
                 .accessibilityHighContrastDarkAqua,
                 .accessibilityHighContrastVibrantDark
             ]
-            // Use nil-coalescing instead of force-unwrap — bestMatch returns nil if the
-            // provided array is empty, which cannot happen here, but crashing on a novel
-            // system appearance name is worse than silently falling back to light mode.
             let best = appearance.bestMatch(from: darkMatches + [.aqua])
             return darkMatches.contains(best ?? .aqua)
                 ? NSColor(dark)
@@ -118,22 +115,6 @@ extension Color {
         }
     }
 
-    /// Mid-weight border — slightly stronger than `rbBorderSubtle`.
-    /// Use for component outlines that need more definition on glass.
-    static var rbBorderMid: Color {
-        if #available(macOS 26, *) {
-            return Color.adaptive(
-                light: Color(white: 0.0).opacity(0.14),
-                dark:  Color(white: 1.0).opacity(0.10)
-            )
-        } else {
-            return Color.adaptive(
-                light: Color(white: 0.0).opacity(0.10),
-                dark:  Color(white: 1.0).opacity(0.08)
-            )
-        }
-    }
-
     /// Primary text — high contrast body and heading text.
     static let rbTextPrimary = Color.adaptive(
         light: .black,
@@ -149,20 +130,11 @@ extension Color {
         light: Color(white: 0.58),
         dark: Color(white: 0.39)
     )
-
-    /// Low-opacity amber tint for row backgrounds in warning/queued state.
-    static let rbYellowTint = rbWarning.opacity(0.08)
-    /// Low-opacity blue tint for row backgrounds in in-progress state.
-    static let rbBlueTint = rbBlue.opacity(0.08)
-    /// Low-opacity green tint for row backgrounds in success state.
-    static let rbGreenTint = rbSuccess.opacity(0.08)
-    /// Low-opacity red tint for row backgrounds in failed/danger state.
-    static let rbRedTint = rbDanger.opacity(0.08)
 }
 
 // MARK: - Status helpers
 
-/// Semantic status values used to drive color, tint, and SF Symbol selection across the app.
+/// Semantic status values used to drive color selection across the app.
 enum RBStatus {
     /// A job or workflow step that is currently executing.
     case inProgress
@@ -185,45 +157,6 @@ enum RBStatus {
         case .unknown: return .rbTextTertiary
         }
     }
-
-    /// A low-opacity background tint to visually distinguish rows by status.
-    var tint: Color {
-        switch self {
-        case .inProgress: return .rbBlueTint
-        case .success:    return .rbGreenTint
-        case .failed:     return .rbRedTint
-        case .queued:     return .rbYellowTint
-        case .unknown:    return .clear
-        }
-    }
-
-    /// The SF Symbol name that represents this status.
-    var sfSymbol: String {
-        switch self {
-        case .inProgress: return "arrow.trianglehead.2.clockwise"
-        case .success: return "checkmark"
-        case .failed: return "xmark"
-        case .queued: return "clock"
-        case .unknown: return "questionmark"
-        }
-    }
-}
-
-// MARK: - Shadow Tokens
-
-/// Adaptive shadow constants for card and panel elevation.
-/// macOS 26+ uses softer, larger shadows to complement the glass material.
-enum RBShadow {
-    /// Shadow opacity for card backgrounds.
-    /// macOS 26+: 0.18 (softer on glass); pre-26: 0.35.
-    static var cardOpacity: Double {
-        if #available(macOS 26, *) { return 0.18 } else { return 0.35 }
-    }
-    /// Shadow blur radius for card backgrounds.
-    /// macOS 26+: 18 pt (larger, diffuse); pre-26: 12 pt.
-    static var cardRadius: CGFloat {
-        if #available(macOS 26, *) { return 18 } else { return 12 }
-    }
 }
 
 // MARK: - Spacing & Geometry Tokens
@@ -236,14 +169,8 @@ enum RBSpacing {
     static let xs: CGFloat = 4
     /// 6 pt — tight gap between related elements.
     static let sm: CGFloat = 6
-    /// 8 pt — standard label/row gap. Compat alias for xs+sm region.
-    static let label: CGFloat = 8
     /// 10 pt — default row horizontal padding.
     static let md: CGFloat = 10
-    /// 16 pt — section-level spacing.
-    static let lg: CGFloat = 16
-    /// 24 pt — large inter-section gap.
-    static let xl: CGFloat = 24
 }
 
 /// Corner-radius constants for consistent rounding across components.
@@ -278,14 +205,13 @@ enum RBFont {
 
 // MARK: - DesignTokens namespace shim
 
-/// Backwards-compatibility namespace that delegates to the primary `RBFont`, `RBSpacing`,
-/// and `Color` token types.
+/// Backwards-compatibility namespace that delegates to the primary `RBFont` and `RBSpacing` token types.
 ///
 /// - Note: **Deprecated shim** — prefer `RBFont`, `RBSpacing`, `RBRadius`, and the `Color`
 /// token extensions directly in all new code. This namespace exists only to avoid a
 /// mass rename of existing call sites. Do not add new members here.
-/// TODO: Remove once all remaining call sites (`DesignTokens.Fonts.*`, `DesignTokens.Spacing.*`, // NOSONAR
-/// `DesignTokens.Radius.*`, `DesignTokens.Colors.*`) are migrated to the `RB*` equivalents.
+/// TODO: Remove once all remaining call sites (`DesignTokens.Fonts.*`, `DesignTokens.Spacing.*`) // NOSONAR
+/// are migrated to the `RB*` equivalents.
 /// Active call sites as of Batch 22: `SystemStatsView` (×2), `PanelMainView+Subviews` (×6),
 /// `InlineJobRowsView` (×3) — 11 total. Migrate those files before removing this shim.
 enum DesignTokens {
@@ -304,24 +230,5 @@ enum DesignTokens {
     enum Spacing {
         /// Horizontal row padding — alias for `RBSpacing.md`.
         static let rowHPad: CGFloat = RBSpacing.md
-    }
-    /// Radius aliases forwarded from `RBRadius`.
-    /// - Note: Deprecated — use `RBRadius` directly.
-    @available(*, deprecated, renamed: "RBRadius")
-    enum Radius {
-        /// Card corner radius — alias for `RBRadius.card`.
-        static let card: CGFloat = RBRadius.card
-    }
-    /// Color helpers forwarded from the `Color` token extensions.
-    /// - Note: Deprecated — use the `Color.rb*` extensions directly.
-    @available(*, deprecated, message: "Use Color.rb* extensions directly.")
-    enum Colors {
-        /// Returns a traffic-light color based on a usage percentage (0–100).
-        /// - Green below 60 %, amber 60–85 %, red above 85 %.
-        static func usage(pct: Double) -> Color {
-            if pct < 60 { return .rbSuccess }
-            if pct < 85 { return .rbWarning }
-            return .rbDanger
-        }
     }
 }
