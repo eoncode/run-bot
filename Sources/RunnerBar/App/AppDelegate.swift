@@ -442,7 +442,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let popoverWindow = popover.contentViewController?.view.window else { return }
             let sheetWindows = popoverWindow.sheets
             let inSheet = sheetWindows.contains { $0.frame.contains(screenLoc) }
-            if !popoverWindow.frame.contains(screenLoc) && !inSheet {
+            // Don't hide if a modal panel (e.g. NSOpenPanel/NSSavePanel) is running.
+            // NSOpenPanel opens as a standalone NSWindow or modal session, not as an
+            // attached sheet, so it is invisible to the sheetWindows check above.
+            // Without this guard any click — including clicks inside the file dialog —
+            // would satisfy !inSheet and incorrectly trigger hidePanel(). (#1186)
+            let hasModalSession = NSApp.modalWindow != nil
+            // Don't hide if the click landed inside another visible app-owned window
+            // (e.g. alert dialogs presented as separate windows).
+            // ⚠️ isVisible is required: NSApp.windows includes offscreen/hidden windows
+            // whose frames could overlap the click location and falsely suppress hidePanel().
+            let inOtherAppWindow = NSApp.windows.contains {
+                $0 !== popoverWindow && !sheetWindows.contains($0) && $0.isVisible && $0.frame.contains(screenLoc)
+            }
+            if !popoverWindow.frame.contains(screenLoc) && !inSheet && !hasModalSession && !inOtherAppWindow {
                 self.hidePanel()
             }
         }
