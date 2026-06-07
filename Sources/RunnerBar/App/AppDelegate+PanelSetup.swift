@@ -84,7 +84,6 @@ extension AppDelegate: NSPopoverDelegate {
     /// user can interact with other apps. Nav state is preserved and restored
     /// on next open via savedNavState.
     public func popoverShouldClose(_ _: NSPopover) -> Bool {
-        log("AppDelegate › popoverShouldClose — returning true")
         return true
     }
 

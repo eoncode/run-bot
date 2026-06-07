@@ -291,12 +291,13 @@ final class RunnerStore {
             }
         }
         log("RunnerStore › fetchAndEnrichRunners — total runners across all scopes: \(runnersWithScope.count)")
+#if DEBUG
         log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey=\(installPathMap.byFullKey.keys.sorted()) byName=\(installPathMap.byName.keys.sorted()) byId=\(installPathMap.byId.keys.sorted())")
+#endif
 
         var indexed: [(scope: String, runner: Runner)] = runnersWithScope
         for i in indexed.indices where !indexed[i].runner.busy {
             indexed[i].runner = indexed[i].runner.copying(metrics: nil)
-            log("RunnerStore › fetchAndEnrichRunners — \(indexed[i].runner.name) (scope=\(indexed[i].scope)) is idle, metrics=nil")
         }
 
         let busyRunners = indexed.filter { $0.runner.busy }
@@ -310,14 +311,18 @@ final class RunnerStore {
                 let resolvedByFull = installPathMap.byFullKey[fullKey]
                 let resolvedByName = installPathMap.byName[runner.name]
                 let installPath    = resolvedById ?? resolvedByFull ?? resolvedByName
+#if DEBUG
                 log("RunnerStore › fetchAndEnrichRunners — \(runner.name) id=\(runner.id) busy=true; fullKey=\(fullKey); byId=\(String(describing: resolvedById)) byFullKey=\(String(describing: resolvedByFull)) byName=\(String(describing: resolvedByName)) → resolved=\(String(describing: installPath))")
+#endif
                 guard let installPath else {
                     log("RunnerStore › ⚠️ fetchAndEnrichRunners — \(runner.name) busy but NO installPath resolved. id=\(runner.id) fullKey=\(fullKey). localRunners may be empty or scope/name mismatch.")
                     continue
                 }
                 group.addTask {
                     let metrics = await metricsForRunner(installPath: installPath)
+#if DEBUG
                     log("RunnerStore › fetchAndEnrichRunners — \(runner.name) metrics fetched installPath=\(installPath) metrics=\(String(describing: metrics))")
+#endif
                     return (idx, metrics)
                 }
             }
@@ -329,10 +334,14 @@ final class RunnerStore {
         // Write metrics back to LocalRunnerStore so the main-view runner row badge
         // reflects the latest CPU/MEM values. applyMetrics is a lightweight in-place
         // copying(metrics:) — no disk I/O, no API call, no refresh() cycle.
-        // Also clear metrics for idle runners so stale values don't linger.
-        log("RunnerStore › fetchAndEnrichRunners — writing metrics back to LocalRunnerStore for \(indexed.count) runner(s)")
-        for (_, runner) in indexed {
+        // Only apply for self-hosted runners (those with a resolved installPath) to
+        // avoid spurious ⚠️ warnings for cloud-hosted runners that have no local entry.
+        for (_, runner) in indexed
+            where installPathMap.byId[runner.id] != nil
+               || installPathMap.byName[runner.name] != nil {
+#if DEBUG
             log("RunnerStore › fetchAndEnrichRunners — applyMetrics to LocalRunnerStore: \(runner.name) id=\(runner.id) busy=\(runner.busy) metrics=\(String(describing: runner.metrics))")
+#endif
             LocalRunnerStore.shared.applyMetrics(
                 runner.metrics,
                 forAgentId: runner.id,

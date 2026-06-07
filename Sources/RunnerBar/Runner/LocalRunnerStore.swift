@@ -52,7 +52,9 @@ final class LocalRunnerStore: ObservableObject {
     /// Returns `true` if `runnerName` has an entry in the persisted index.
     func isTracked(runnerName: String) -> Bool {
         let tracked = runnerIndex[runnerName] != nil
+#if DEBUG
         log("LocalRunnerStore › isTracked '\(runnerName)' → \(tracked)")
+#endif
         return tracked
     }
 
@@ -181,7 +183,9 @@ final class LocalRunnerStore: ObservableObject {
             }
             hydrated = hydrated.map { runner in
                 let live = isLive(runner)
+#if DEBUG
                 log("LocalRunnerStore › refresh() — '\(runner.runnerName)' isRunning=\(live)")
+#endif
                 return runner.copying(isRunning: live)
             }
 
