@@ -159,13 +159,11 @@ final class RunnerStore {
     /// Performs one complete poll cycle: fetches runners, jobs, and action groups,
     /// then applies results on the main actor via `applyFetchResult`.
     ///
-    /// FIX (#1179): Triggers LocalRunnerStore.shared.refresh() at the top of each
-    /// fetch cycle so the installPathMap always reflects the current on-disk state.
-    /// This is an async kick-off (not awaited) — refresh() is guarded by isScanning
-    /// so concurrent cycles are safe. The refreshed runners will be picked up by
-    /// the NEXT fetch cycle if they land after buildInstallPathMap runs this cycle.
-    /// On first launch, refresh() was already called before start() in
-    /// AppDelegate+PanelSetup, so the first fetch sees a populated localRunners.
+    /// `LocalRunnerStore` is seeded once at startup (before `start()` is called in
+    /// `AppDelegate+PanelSetup`) and kept current reactively via its own `$runners`
+    /// Combine sink. There is no need to call `refresh()` here — doing so would
+    /// duplicate the `GET /actions/runners` GitHub API call that `fetchAndEnrichRunners`
+    /// already makes in the same cycle, doubling the API request rate on the hot path.
     func fetch() async {
         ghIsRateLimited = false
 
@@ -173,20 +171,6 @@ final class RunnerStore {
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
         if scopesSnapshot.isEmpty {
             log("RunnerStore › ⚠️ fetch — activeScopes snapshot is EMPTY")
-        }
-
-        // Refresh local runner list so installPathMap stays current.
-        // isScanning prevents concurrent refreshes. We kick it off here and
-        // read LocalRunnerStore.shared.runners immediately — if a refresh is
-        // already in flight from a previous cycle or the startup call, we read
-        // whatever was last committed (still correct, just potentially one cycle stale).
-        let localCountBefore = LocalRunnerStore.shared.runners.count
-        log("RunnerStore › fetch — LocalRunnerStore.shared.runners.count BEFORE refresh kick=\(localCountBefore) isScanning=\(LocalRunnerStore.shared.isScanning)")
-        if !LocalRunnerStore.shared.isScanning {
-            log("RunnerStore › fetch — kicking LocalRunnerStore.refresh() (not already scanning)")
-            LocalRunnerStore.shared.refresh()
-        } else {
-            log("RunnerStore › fetch — LocalRunnerStore.refresh() already in flight, skipping kick")
         }
 
         let snapPrev         = prevLiveJobs
