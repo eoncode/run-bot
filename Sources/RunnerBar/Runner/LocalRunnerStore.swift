@@ -40,7 +40,7 @@ final class LocalRunnerStore: ObservableObject {
     func register(name: String, installPath: String) {
         runnerIndex[name] = installPath
         persistIndex()
-        log("LocalRunnerStore > register — '\(name)' at \(installPath)")
+        log("LocalRunnerStore › register — '\(name)' at \(installPath)")
     }
 
     // MARK: - Convenience API (called by views)
@@ -93,7 +93,7 @@ final class LocalRunnerStore: ObservableObject {
         } else {
             // Cannot restore index entry without installPath — the runner will disappear
             // from the UI again once the subsequent refresh() rebuilds from the index.
-            log("LocalRunnerStore > optimisticallyRestore: no installPath for '\(runner.runnerName)' — index entry not restored")
+            log("LocalRunnerStore › optimisticallyRestore: no installPath for '\(runner.runnerName)' — index entry not restored")
         }
         if !runners.contains(where: { $0.runnerName == runner.runnerName }) {
             runners.append(runner)
@@ -104,14 +104,14 @@ final class LocalRunnerStore: ObservableObject {
     func unregister(name: String) {
         runnerIndex.removeValue(forKey: name)
         persistIndex()
-        log("LocalRunnerStore > unregister — '\(name)'")
+        log("LocalRunnerStore › unregister — '\(name)'")
     }
 
     /// Hydrates `runnerIndex` from `UserDefaults` at init time.
     private func loadIndex() {
         runnerIndex = UserDefaults.standard
             .dictionary(forKey: Self.indexKey) as? [String: String] ?? [:]
-        log("LocalRunnerStore > loadIndex — \(runnerIndex.count) entry(ies)")
+        log("LocalRunnerStore › loadIndex — \(runnerIndex.count) entry(ies): \(runnerIndex.keys.sorted())")
     }
 
     /// Writes the current `runnerIndex` to `UserDefaults`.
@@ -131,11 +131,17 @@ final class LocalRunnerStore: ObservableObject {
     /// No-op when no matching runner is found.
     /// Does NOT trigger a full `refresh()` — it is a lightweight in-place `copying(metrics:)`.
     func applyMetrics(_ metrics: RunnerMetrics?, forAgentId agentId: Int?, name: String) {
+        log("LocalRunnerStore › applyMetrics — name=\(name) agentId=\(String(describing: agentId)) metrics=\(String(describing: metrics)) runners.count=\(runners.count)")
         guard let idx = runners.firstIndex(where: { runner in
             if let aid = agentId, let rid = runner.agentId { return aid == rid }
             return runner.runnerName == name
-        }) else { return }
+        }) else {
+            log("LocalRunnerStore › applyMetrics — ⚠️ NO MATCH for name=\(name) agentId=\(String(describing: agentId)) in runners=\(runners.map { "\($0.runnerName)(id=\(String(describing: $0.agentId)))" })")
+            return
+        }
+        let before = runners[idx].metrics
         runners[idx] = runners[idx].copying(metrics: metrics)
+        log("LocalRunnerStore › applyMetrics — matched '\(runners[idx].runnerName)' at idx=\(idx) metrics: \(String(describing: before)) → \(String(describing: metrics))")
     }
 
     // MARK: - Refresh
@@ -150,7 +156,11 @@ final class LocalRunnerStore: ObservableObject {
     /// `isScanning` guards against concurrent refresh cycles — a new call is a no-op while one
     /// is already in flight.
     func refresh() {
-        guard !isScanning else { return }
+        log("LocalRunnerStore › refresh() called — isScanning=\(isScanning) indexCount=\(runnerIndex.count) runnerIndexKeys=\(runnerIndex.keys.sorted())")
+        guard !isScanning else {
+            log("LocalRunnerStore › refresh() — SKIPPED (already scanning)")
+            return
+        }
         isScanning = true
         let index = runnerIndex
         Task { [weak self] in
@@ -158,34 +168,78 @@ final class LocalRunnerStore: ObservableObject {
 
             // 1. Hydrate from installPath/.runner JSON
             var hydrated: [RunnerModel] = index.compactMap { runnerModelFromIndex(name: $0.key, installPath: $0.value) }
-            log("LocalRunnerStore > refresh() background — hydrated \(hydrated.count) runner(s)")
+            log("LocalRunnerStore › refresh() background — hydrated \(hydrated.count) runner(s) from \(index.count) index entries")
 
             // 2. Mark live services via launchctl.
             // scanLiveServices() is always called here — isRunning is intentionally set to false
             // during JSON parsing (step 1) and updated to its real value only at this point.
             // Do not remove this call or assume isRunning is always false.
             let liveLabels = await self.scanLiveServices()
+            log("LocalRunnerStore › refresh() — launchctl liveLabels=\(liveLabels)")
             let isLive: (RunnerModel) -> Bool = { runner in
                 liveLabels.contains { $0.contains(runner.runnerName) }
             }
             hydrated = hydrated.map { runner in
-                runner.copying(isRunning: isLive(runner))
+                let live = isLive(runner)
+                log("LocalRunnerStore › refresh() — '\(runner.runnerName)' isRunning=\(live)")
+                return runner.copying(isRunning: live)
             }
 
             // 3. Enrich via GitHub API (concurrent scope fetches)
+            log("LocalRunnerStore › refresh() — enriching \(hydrated.count) runner(s) via GitHub API")
             let enriched = await RunnerStatusEnricher.shared.enrich(runners: hydrated)
+            log("LocalRunnerStore › refresh() — enrichment done, \(enriched.count) runner(s) returned")
 
             self.applyRefreshResults(enriched)
         }
     }
 
     /// Applies enriched runner data back on the main actor and clears the scanning flag.
-    /// Extracted from `refresh()` to keep closure nesting within the 2-level limit.
+    ///
+    /// ## Metrics preservation
+    /// `RunnerStore.applyMetrics` writes CPU/memory back into `self.runners` after every
+    /// poll cycle. If `applyRefreshResults` overwrites `runners` unconditionally those
+    /// metrics are silently discarded, causing the badge to blank out on the next refresh.
+    ///
+    /// Fix: snapshot the metrics from the current `runners` list (keyed by agentId and name)
+    /// BEFORE overwriting, then re-apply them to any runner in the incoming enriched list
+    /// whose metrics field is still nil (i.e. it is not currently busy and RunnerStore did
+    /// not write fresh metrics for it this cycle — carry forward the last known value).
     @MainActor
     private func applyRefreshResults(_ enriched: [RunnerModel]) {
-        runners = enriched.sorted { $0.runnerName < $1.runnerName }
+        // Snapshot current metrics before overwriting.
+        var metricsByAgentId: [Int: RunnerMetrics] = [:]
+        var metricsByName: [String: RunnerMetrics] = [:]
+        for runner in runners {
+            guard let m = runner.metrics else { continue }
+            if let aid = runner.agentId { metricsByAgentId[aid] = m }
+            metricsByName[runner.runnerName] = m
+        }
+        log("LocalRunnerStore › applyRefreshResults — preserving metrics snapshot: agentIds=\(metricsByAgentId.keys.sorted()) names=\(metricsByName.keys.sorted())")
+
+        // Restore metrics for any runner whose enriched copy has nil metrics.
+        let restored = enriched.map { runner -> RunnerModel in
+            guard runner.metrics == nil else {
+                log("LocalRunnerStore › applyRefreshResults — '\(runner.runnerName)' already has metrics, skipping restore")
+                return runner
+            }
+            if let aid = runner.agentId, let m = metricsByAgentId[aid] {
+                log("LocalRunnerStore › applyRefreshResults — '\(runner.runnerName)' metrics restored via agentId=\(aid)")
+                return runner.copying(metrics: m)
+            }
+            if let m = metricsByName[runner.runnerName] {
+                log("LocalRunnerStore › applyRefreshResults — '\(runner.runnerName)' metrics restored via name")
+                return runner.copying(metrics: m)
+            }
+            log("LocalRunnerStore › applyRefreshResults — '\(runner.runnerName)' no prior metrics to restore")
+            return runner
+        }
+        let restoredCount = zip(enriched, restored).filter { $0.metrics == nil && $1.metrics != nil }.count
+        log("LocalRunnerStore › applyRefreshResults — restored metrics for \(restoredCount)/\(enriched.count) runner(s)")
+
+        runners = restored.sorted { $0.runnerName < $1.runnerName }
         isScanning = false
-        log("LocalRunnerStore > refresh() main — done. runners.count=\(runners.count)")
+        log("LocalRunnerStore › applyRefreshResults — done. runners.count=\(runners.count) names=\(runners.map(\.runnerName))")
     }
 
     // MARK: - launchctl scan
@@ -213,8 +267,13 @@ final class LocalRunnerStore: ObservableObject {
             timeout: 5
         )
         guard let data = result.data,
-              let output = String(data: data, encoding: .utf8) else { return [] }
-        return output.components(separatedBy: "\n").filter { $0.contains("actions.runner") }
+              let output = String(data: data, encoding: .utf8) else {
+            log("LocalRunnerStore › scanLiveServices — ⚠️ launchctl returned no data or failed to decode")
+            return []
+        }
+        let lines = output.components(separatedBy: "\n").filter { $0.contains("actions.runner") }
+        log("LocalRunnerStore › scanLiveServices — found \(lines.count) live runner service(s)")
+        return lines
     }
 }
 
@@ -232,7 +291,7 @@ final class LocalRunnerStore: ObservableObject {
 private func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
     let jsonURL = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
     guard var data = try? Data(contentsOf: jsonURL) else {
-        log("LocalRunnerStore > runnerModelFromIndex — no .runner at \(installPath), skipping \(name)")
+        log("LocalRunnerStore › runnerModelFromIndex — no .runner at \(installPath), skipping \(name)")
         return nil
     }
 
@@ -240,6 +299,7 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
     let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
     if data.prefix(3).elementsEqual(bom) {
         data = data.dropFirst(3)
+        log("LocalRunnerStore › runnerModelFromIndex — stripped UTF-8 BOM from \(name)")
     }
     struct RunnerJSON: Decodable {
         let gitHubUrl: String?
@@ -260,6 +320,11 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         }
     }
     let json = try? JSONDecoder().decode(RunnerJSON.self, from: data)
+    if json == nil {
+        log("LocalRunnerStore › runnerModelFromIndex — ⚠️ JSON decode failed for \(name) at \(installPath)")
+    } else {
+        log("LocalRunnerStore › runnerModelFromIndex — parsed \(name): agentId=\(String(describing: json?.agentId)) gitHubUrl=\(String(describing: json?.gitHubUrl)) ephemeral=\(String(describing: json?.ephemeral))")
+    }
     return RunnerModel(
         runnerName: name,
         gitHubUrl: json?.gitHubUrl,
