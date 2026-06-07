@@ -435,7 +435,8 @@ struct AddRunnerSheet: View {
 
     // MARK: - Helpers (Add new)
 
-    /// The effectiveScope property.
+    /// The resolved scope string — the selected repo slug when repo-scoped,
+    /// or the selected organisation name when org-scoped.
     private var effectiveScope: String { scopeType == .repo ? selectedRepo : selectedOrg }
 
     /// Returns `true` when the chosen install directory already contains a `.runner` file,
@@ -762,7 +763,10 @@ struct AddRunnerSheet: View {
 
     // MARK: - Plist writer (shared by both modes)
 
-    /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/`.
+    /// Writes a minimal LaunchAgent plist to `~/Library/LaunchAgents/` for the given runner.
+    ///
+    /// The plist label is derived as `actions.runner.<owner>.<repo>.<runnerName>` and written
+    /// atomically. Used by both the "Add new" and "Add pre-existing" flows.
     nonisolated func writeLaunchAgentPlist(scope: String, runnerName: String, workingDirectory: String) {
         let launchAgentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(GitHubURIs.launchAgentsDir)
