@@ -207,7 +207,7 @@ final class LocalRunnerStore: ObservableObject {
         var metricsByAgentId: [Int: RunnerMetrics] = [:]
         var metricsByName: [String: RunnerMetrics] = [:]
         for runner in runners {
-            guard let m = runner.metrics else { continue }
+            guard runner.busy, let m = runner.metrics else { continue }
             if let aid = runner.agentId { metricsByAgentId[aid] = m }
             metricsByName[runner.runnerName] = m
         }
