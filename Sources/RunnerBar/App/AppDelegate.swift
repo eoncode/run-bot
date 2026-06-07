@@ -451,9 +451,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Without this guard any click — including clicks inside the file dialog —
             // would satisfy !inSheet and incorrectly trigger hidePanel(). (#1186)
             let hasModalSession = NSApp.modalWindow != nil
-            // Don't hide if the click landed inside another app-owned window (e.g. alert dialogs).
+            // Don't hide if the click landed inside another visible app-owned window
+            // (e.g. alert dialogs presented as separate windows).
+            // ⚠️ isVisible is required: NSApp.windows includes offscreen/hidden windows
+            // whose frames could overlap the click location and falsely suppress hidePanel().
             let inOtherAppWindow = NSApp.windows.contains {
-                $0 !== popoverWindow && !sheetWindows.contains($0) && $0.frame.contains(screenLoc)
+                $0 !== popoverWindow && !sheetWindows.contains($0) && $0.isVisible && $0.frame.contains(screenLoc)
             }
             if !popoverWindow.frame.contains(screenLoc) && !inSheet && !hasModalSession && !inOtherAppWindow {
                 self.hidePanel()
