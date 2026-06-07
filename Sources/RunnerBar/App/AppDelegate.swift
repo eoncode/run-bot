@@ -203,8 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupSignOutSubscription() {
         OAuthService.shared.didSignOut
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard self != nil else { return }
+            .sink {
                 log("AppDelegate › didSignOut — restarting poll loop for env-token fallback")
                 RunnerStore.shared.start()
             }
