@@ -71,6 +71,7 @@ struct RunnerDetailPopover: View {
     // MARK: - Body
 
     /// Root popover layout: header, form fields, and action bar.
+    // swiftlint:disable:next missing_docs
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             popoverHeader
