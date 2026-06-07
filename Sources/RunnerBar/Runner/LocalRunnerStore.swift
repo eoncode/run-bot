@@ -133,7 +133,9 @@ final class LocalRunnerStore: ObservableObject {
 
     /// Applies a CPU/memory snapshot to the matching `RunnerModel` in place.
     func applyMetrics(_ metrics: RunnerMetrics?, forAgentId agentId: Int?, name: String) {
+#if DEBUG
         log("LocalRunnerStore › applyMetrics — agentId=\(String(describing: agentId)) name=\(name) metrics=\(String(describing: metrics))")
+#endif
         guard let idx = runners.firstIndex(where: { runner in
             if let aid = agentId, let rid = runner.agentId { return aid == rid }
             return runner.runnerName == name
@@ -209,21 +211,27 @@ final class LocalRunnerStore: ObservableObject {
             if let aid = runner.agentId { metricsByAgentId[aid] = m }
             metricsByName[runner.runnerName] = m
         }
+#if DEBUG
         log("LocalRunnerStore › applyRefreshResults — preserved metrics: byAgentId.count=\(metricsByAgentId.count) byName.count=\(metricsByName.count)")
+#endif
         let preserved: [RunnerModel] = enriched.map { runner in
             if let aid = runner.agentId, let m = metricsByAgentId[aid] {
+#if DEBUG
                 log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via agentId=\(aid)")
+#endif
                 return runner.copying(metrics: m)
             }
             if let m = metricsByName[runner.runnerName] {
+#if DEBUG
                 log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via name")
+#endif
                 return runner.copying(metrics: m)
             }
             return runner
         }
         runners = preserved.sorted { $0.runnerName < $1.runnerName }
         isScanning = false
-        log("LocalRunnerStore › applyRefreshResults — DONE. runners.count=\(runners.count) names=\(runners.map { $0.runnerName }) isScanning=false")
+        log("LocalRunnerStore › applyRefreshResults — DONE. runners.count=\(runners.count) isScanning=false")
     }
 
     // MARK: - launchctl scan

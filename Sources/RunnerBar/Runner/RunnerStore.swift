@@ -336,9 +336,12 @@ final class RunnerStore {
         // copying(metrics:) — no disk I/O, no API call, no refresh() cycle.
         // Only apply for self-hosted runners (those with a resolved installPath) to
         // avoid spurious ⚠️ warnings for cloud-hosted runners that have no local entry.
+        // Only write back for BUSY runners — idle runners have metrics=nil stamped above
+        // and writing nil back would stomp the values applyRefreshResults just preserved.
         for (_, runner) in indexed
-            where installPathMap.byId[runner.id] != nil
-               || installPathMap.byName[runner.name] != nil {
+            where runner.busy
+               && (installPathMap.byId[runner.id] != nil
+                   || installPathMap.byName[runner.name] != nil) {
 #if DEBUG
             log("RunnerStore › fetchAndEnrichRunners — applyMetrics to LocalRunnerStore: \(runner.name) id=\(runner.id) busy=\(runner.busy) metrics=\(String(describing: runner.metrics))")
 #endif
