@@ -17,9 +17,6 @@ extension Color {
                 .accessibilityHighContrastDarkAqua,
                 .accessibilityHighContrastVibrantDark
             ]
-            // Use nil-coalescing instead of force-unwrap — bestMatch returns nil if the
-            // provided array is empty, which cannot happen here, but crashing on a novel
-            // system appearance name is worse than silently falling back to light mode.
             let best = appearance.bestMatch(from: darkMatches + [.aqua])
             return darkMatches.contains(best ?? .aqua)
                 ? NSColor(dark)
@@ -133,20 +130,11 @@ extension Color {
         light: Color(white: 0.58),
         dark: Color(white: 0.39)
     )
-
-    /// Low-opacity amber tint for row backgrounds in warning/queued state.
-    static let rbYellowTint = rbWarning.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
-    /// Low-opacity blue tint for row backgrounds in in-progress state.
-    static let rbBlueTint = rbBlue.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
-    /// Low-opacity green tint for row backgrounds in success state.
-    static let rbGreenTint = rbSuccess.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
-    /// Low-opacity red tint for row backgrounds in failed/danger state.
-    static let rbRedTint = rbDanger.opacity(0.08) // periphery:ignore — used indirectly via RBStatus.tint
 }
 
 // MARK: - Status helpers
 
-/// Semantic status values used to drive color, tint, and SF Symbol selection across the app.
+/// Semantic status values used to drive color selection across the app.
 enum RBStatus {
     /// A job or workflow step that is currently executing.
     case inProgress
@@ -169,28 +157,6 @@ enum RBStatus {
         case .unknown: return .rbTextTertiary
         }
     }
-
-    /// A low-opacity background tint to visually distinguish rows by status.
-    var tint: Color {
-        switch self {
-        case .inProgress: return .rbBlueTint
-        case .success:    return .rbGreenTint
-        case .failed:     return .rbRedTint
-        case .queued:     return .rbYellowTint
-        case .unknown:    return .clear
-        }
-    }
-
-    /// The SF Symbol name that represents this status.
-    var sfSymbol: String { // periphery:ignore — used from menu bar icon code in app target
-        switch self {
-        case .inProgress: return "arrow.trianglehead.2.clockwise"
-        case .success: return "checkmark"
-        case .failed: return "xmark"
-        case .queued: return "clock"
-        case .unknown: return "questionmark"
-        }
-    }
 }
 
 // MARK: - Spacing & Geometry Tokens
@@ -203,7 +169,7 @@ enum RBSpacing {
     static let xs: CGFloat = 4
     /// 6 pt — tight gap between related elements.
     static let sm: CGFloat = 6
-    /// 8 pt — standard label/row gap. Compat alias for xs+sm region.
+    /// 8 pt — standard label/row gap.
     static let label: CGFloat = 8
     /// 10 pt — default row horizontal padding.
     static let md: CGFloat = 10
@@ -241,14 +207,13 @@ enum RBFont {
 
 // MARK: - DesignTokens namespace shim
 
-/// Backwards-compatibility namespace that delegates to the primary `RBFont`, `RBSpacing`,
-/// and `Color` token types.
+/// Backwards-compatibility namespace that delegates to the primary `RBFont` and `RBSpacing` token types.
 ///
 /// - Note: **Deprecated shim** — prefer `RBFont`, `RBSpacing`, `RBRadius`, and the `Color`
 /// token extensions directly in all new code. This namespace exists only to avoid a
 /// mass rename of existing call sites. Do not add new members here.
-/// TODO: Remove once all remaining call sites (`DesignTokens.Fonts.*`, `DesignTokens.Spacing.*`, // NOSONAR
-/// `DesignTokens.Radius.*`, `DesignTokens.Colors.*`) are migrated to the `RB*` equivalents.
+/// TODO: Remove once all remaining call sites (`DesignTokens.Fonts.*`, `DesignTokens.Spacing.*`) // NOSONAR
+/// are migrated to the `RB*` equivalents.
 /// Active call sites as of Batch 22: `SystemStatsView` (×2), `PanelMainView+Subviews` (×6),
 /// `InlineJobRowsView` (×3) — 11 total. Migrate those files before removing this shim.
 enum DesignTokens {
@@ -267,24 +232,5 @@ enum DesignTokens {
     enum Spacing {
         /// Horizontal row padding — alias for `RBSpacing.md`.
         static let rowHPad: CGFloat = RBSpacing.md
-    }
-    /// Radius aliases forwarded from `RBRadius`.
-    /// - Note: Deprecated — use `RBRadius` directly.
-    @available(*, deprecated, renamed: "RBRadius")
-    enum Radius {
-        /// Card corner radius — alias for `RBRadius.card`.
-        static let card: CGFloat = RBRadius.card
-    }
-    /// Color helpers forwarded from the `Color` token extensions.
-    /// - Note: Deprecated — use the `Color.rb*` extensions directly.
-    @available(*, deprecated, message: "Use Color.rb* extensions directly.")
-    enum Colors {
-        /// Returns a traffic-light color based on a usage percentage (0–100).
-        /// - Green below 60 %, amber 60–85 %, red above 85 %.
-        static func usage(pct: Double) -> Color {
-            if pct < 60 { return .rbSuccess }
-            if pct < 85 { return .rbWarning }
-            return .rbDanger
-        }
     }
 }
