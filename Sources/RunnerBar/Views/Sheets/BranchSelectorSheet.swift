@@ -16,7 +16,6 @@ import SwiftUI
 // than 100 results, so repos with >100 branches are fully listed.
 // An empty result after a successful fetch is treated as a load error so
 // the user is not misled by a silent blank list.
-
 /// Searchable sheet for picking a branch to attach to a failure hook scope.
 /// Fetches all branches from the GitHub API on a background task and filters
 /// them client-side. `onSelect(nil)` clears the filter; `onSelect(branch)`
@@ -241,6 +240,7 @@ extension BranchSelectorSheet {
     /// Paginates through all pages (per_page=100) until GitHub returns fewer
     /// than 100 items, collecting all branch names across pages.
     nonisolated private func fetchBranchNames(scope: String) async -> [String]? {
+        /// Minimal decodable model for a GitHub branch API response item.
         struct BranchItem: Decodable { let name: String }
         var allNames: [String] = []
         var page = 1
