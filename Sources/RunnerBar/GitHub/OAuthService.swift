@@ -42,23 +42,50 @@ final class OAuthService {
     /// Sourced from `GitHubConstants.oauthRedirectURI` — do not duplicate this string inline.
     private let redirectURI = GitHubConstants.oauthRedirectURI
     /// OAuth scopes requested during sign-in.
+    ///
+    /// - `repo`: Read access to repository runners, workflow runs, and job logs.
+    ///   Required for all repo-scoped API calls (`/repos/{owner}/{repo}/actions/*`).
+    /// - `read:org`: Read org membership and team info. Required to list org-level
+    ///   runners via `/orgs/{org}/actions/runners` for users who are org members
+    ///   but not owners.
+    /// - `admin:org`: Broader org admin access. Required to call the runners API
+    ///   on organisations where the authenticated user is an owner. Without this,
+    ///   org-runner fetches return 403 for owner-level accounts.
+    /// - `manage_runners:org`: Fine-grained scope (added in 2023) that explicitly
+    ///   grants runner management on org level. Requested in addition to `admin:org`
+    ///   for forward-compatibility as GitHub narrows older broad scopes.
+    /// - `workflow`: Required to trigger and re-run workflow runs via the API.
+    ///   Without this, dispatch and re-run actions fail with 403 even when `repo`
+    ///   is present.
+    /// - `gist`: Required by some legacy GitHub operations. Absent from the token,
+    ///   GitHub prompts for re-auth interactively.
+    ///
+    /// Previously only `repo` and `read:org` were requested. The additional scopes
+    /// were added because org-runner listing and workflow dispatch were returning 403
+    /// for accounts with org-owner or org-admin roles.
     private let scopes = "repo read:org admin:org manage_runners:org workflow gist"
 
     // MARK: - OAuth endpoint constants
+    /// GitHub OAuth authorisation URL — entry point for the browser-based sign-in flow.
     private let authorizeURL    = "\(GitHubConstants.base)/login/oauth/authorize"
+    /// GitHub OAuth token-exchange URL — receives the code and returns the access token.
     private let accessTokenURL  = "\(GitHubConstants.base)/login/oauth/access_token"
 
     /// CSRF nonce generated in signIn(), verified in handleCallback().
+    /// Cleared after use or on sign-out.
     private var pendingState: String?
 
     /// Called on main thread after sign-in completes. `true` = success.
+    /// Register once in SettingsView.onAppearAction — do NOT re-assign in signIn().
     var onCompletion: ((Bool) -> Void)?
 
     /// Emits on the main thread after a successful sign-out.
+    /// Subscribe via `.sink { }.store(in: &cancellables)` — do NOT use a raw closure.
     let didSignOut = PassthroughSubject<Void, Never>()
 
     // MARK: Sign In
 
+    /// Opens the GitHub OAuth authorization page in the default browser to begin sign-in.
     func signIn() {
         log("OAuthService › signIn — initiating OAuth flow")
         let state = UUID().uuidString
@@ -81,12 +108,24 @@ final class OAuthService {
             onCompletion?(false)
             return
         }
+        // NOTE: pendingState is left set if the browser open fails silently.
+        // handleCallback will CSRF-reject any eventual redirect with a mismatched
+        // or absent state, so a stuck pendingState is safe — it will be cleared
+        // on the next signIn(), signOut(), or a rejected handleCallback().
         log("OAuthService › signIn — opening browser for OAuth")
         NSWorkspace.shared.open(url)
     }
 
     // MARK: Sign Out
 
+    /// Clears the stored token and emits `didSignOut` — but only when the token
+    /// was actually removed from Keychain.
+    ///
+    /// Gating `didSignOut` on `deleted == true` prevents a "ghost sign-in" state
+    /// where the UI shows signed-out while the old token remains in Keychain and
+    /// subsequent API calls succeed as if the user were still authenticated.
+    /// Mirrors the same pattern used in `exchangeCode()` where `onCompletion` is
+    /// gated on the actual Keychain save result.
     func signOut() {
         log("OAuthService › signOut — called, pendingState=\(pendingState != nil ? "set" : "nil")")
         pendingState = nil
@@ -102,6 +141,7 @@ final class OAuthService {
 
     // MARK: Callback Handler
 
+    /// Handles the OAuth redirect URL from AppDelegate, verifying state and exchanging the code.
     func handleCallback(_ url: URL) {
         log("OAuthService › handleCallback — url=\(url.absoluteString)")
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -111,6 +151,7 @@ final class OAuthService {
             onCompletion?(false)
             return
         }
+        // CSRF guard: verify the state param matches what we sent in signIn().
         guard let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value else {
             log("OAuthService › handleCallback: no state param in redirect URL")
             pendingState = nil
@@ -130,6 +171,7 @@ final class OAuthService {
 
     // MARK: Token Exchange
 
+    /// POSTs the authorization code to GitHub and saves the returned access token to Keychain.
     private func exchangeCode(_ code: String) async {
         log("OAuthService › exchangeCode — POST to GitHub")
         guard let url = URL(string: accessTokenURL) else { return }
@@ -149,6 +191,7 @@ final class OAuthService {
             onCompletion?(false)
             return
         }
+        // GitHub returns 200 even on failure; check for an error field before access_token.
         if let errorCode = json["error"] as? String {
             let desc = json["error_description"] as? String ?? ""
             log("OAuthService › exchangeCode: GitHub error=\(errorCode) \(desc)")
@@ -160,6 +203,9 @@ final class OAuthService {
             onCompletion?(false)
             return
         }
+        // Gate success on whether the token was actually persisted to Keychain.
+        // If Keychain.save fails, report failure so the UI does not show signed-in
+        // while Keychain.token remains nil and subsequent API calls lack auth.
         log("OAuthService › exchangeCode — got access_token (len=\(token.count)), saving to Keychain")
         let saved = Keychain.save(token)
         log("OAuthService › exchangeCode — Keychain.save result=\(saved), calling onCompletion(\(saved))")
