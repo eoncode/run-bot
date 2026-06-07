@@ -236,6 +236,7 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - launchctl scan
 
+    /// Path to the `launchctl` binary used to enumerate live runner services.
     nonisolated private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR
 
     /// Runs `launchctl list` and returns lines containing `actions.runner`.
