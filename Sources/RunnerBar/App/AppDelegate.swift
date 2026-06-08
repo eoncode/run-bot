@@ -494,6 +494,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log("AppDelegate › outsideClickMonitor — guard exit: panel not open")
                     return
                 }
+                // If a sheet is attached to the popover window (e.g. NSOpenPanel via
+                // beginSheetModal, or a SwiftUI .sheet), every click is directed at
+                // that sheet and should never dismiss the popover. The sheet is modal
+                // so no truly "outside" click is possible while it is open.
+                guard !self.hasActiveSheet else {
+                    log("AppDelegate › outsideClickMonitor — guard exit: hasActiveSheet=true, skipping hidePanel")
+                    return
+                }
                 // Ignore clicks that land inside the popover's own window.
                 // Global monitors fire for ALL clicks — including taps on
                 // interactive rows inside the popover — so without this check
@@ -501,17 +509,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // row's action even runs.
                 let mouseLoc = NSEvent.mouseLocation
                 if let popoverWindow = self.popover?.contentViewController?.view.window {
-                    log("AppDelegate › outsideClickMonitor — popoverFrame=\(popoverWindow.frame) mouseLoc=\(mouseLoc) contains=\(popoverWindow.frame.contains(mouseLoc)) sheets=\(popoverWindow.sheets.count)")
+                    log("AppDelegate › outsideClickMonitor — popoverFrame=\(popoverWindow.frame) mouseLoc=\(mouseLoc) contains=\(popoverWindow.frame.contains(mouseLoc))")
                     if popoverWindow.frame.contains(mouseLoc) {
                         log("AppDelegate › outsideClickMonitor — click inside popover window, ignoring")
                         return
-                    }
-                    // If the click landed inside any attached sheet, also ignore.
-                    for sheet in popoverWindow.sheets {
-                        if sheet.frame.contains(mouseLoc) {
-                            log("AppDelegate › outsideClickMonitor — click inside sheet window frame=\(sheet.frame), ignoring")
-                            return
-                        }
                     }
                 } else {
                     log("AppDelegate › outsideClickMonitor — WARNING: popoverWindow is nil, mouseLoc=\(mouseLoc)")
