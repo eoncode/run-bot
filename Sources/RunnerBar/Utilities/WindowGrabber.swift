@@ -21,7 +21,7 @@ import SwiftUI
 final class NSWindowGrabber: NSView {
     /// Called with the `NSWindow` reference when the view moves to a window,
     /// or `nil` when it is removed from one.
-    let onWindow: (NSWindow?) -> Void
+    var onWindow: (NSWindow?) -> Void
 
     /// Creates a grabber that invokes `onWindow` on every `viewDidMoveToWindow` call.
     init(onWindow: @escaping (NSWindow?) -> Void) {
@@ -55,6 +55,9 @@ struct WindowGrabber: NSViewRepresentable {
         NSWindowGrabber(onWindow: onWindow)
     }
 
-    /// No updates required — the grabber is stateless after creation.
-    func updateNSView(_ nsView: NSWindowGrabber, context: Context) {}
+    /// Propagates the latest closure so the grabber never holds a stale
+    /// callback.
+    func updateNSView(_ nsView: NSWindowGrabber, context: Context) {
+        nsView.onWindow = onWindow
+    }
 }
