@@ -81,15 +81,29 @@ struct SettingsView: View {
     // MARK: - Body
     /// Root view: swaps between the settings scroll, `LocalRunnersView`, and `ScopesView`.
     var body: some View {
-        if showLocalRunners {
-            LocalRunnersView(
-                onBack: { showLocalRunners = false },
-                isAuthenticated: isOAuthAuthenticated || isCLIAuthenticated
-            )
-        } else if showScopes {
-            ScopesView(onBack: { showScopes = false })
-        } else {
-            settingsBody
+        // Lifecycle modifiers live on the root (wrapping all branches) so
+        // onAppearAction()/onDisappear fire only when the settings panel itself
+        // opens/closes — NOT on every navigation to LocalRunnersView/ScopesView.
+        // Attaching them to `settingsBody` caused needless Keychain re-reads and
+        // signOutCancellable recreation on every back-navigation.
+        Group {
+            if showLocalRunners {
+                LocalRunnersView(
+                    onBack: { showLocalRunners = false },
+                    isAuthenticated: isOAuthAuthenticated || isCLIAuthenticated
+                )
+            } else if showScopes {
+                ScopesView(onBack: { showScopes = false })
+            } else {
+                settingsBody
+            }
+        }
+        .onAppear(perform: onAppearAction)
+        .onDisappear {
+            // Clear the singleton closure so a future SettingsView instance can claim it.
+            // Without this, the last-opened instance permanently owns onCompletion.
+            // Guard: do not clear while an OAuth flow is in progress — the callback must land.
+            if !isSigningIn { OAuthService.shared.onCompletion = nil }
         }
     }
 
@@ -120,13 +134,6 @@ struct SettingsView: View {
             .frame(maxHeight: .infinity)
         }
         .frame(idealWidth: 480, maxWidth: .infinity)
-        .onAppear(perform: onAppearAction)
-        .onDisappear {
-            // Clear the singleton closure so a future SettingsView instance can claim it.
-            // Without this, the last-opened instance permanently owns onCompletion.
-            // Guard: do not clear while an OAuth flow is in progress — the callback must land.
-            if !isSigningIn { OAuthService.shared.onCompletion = nil }
-        }
     }
 
     /// Vertical stack of all settings sections.
