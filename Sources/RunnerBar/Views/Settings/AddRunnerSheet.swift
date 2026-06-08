@@ -482,23 +482,49 @@ struct AddRunnerSheet: View {
     // MARK: - Actions (Add pre-existing)
 
     /// Opens an `NSOpenPanel` to let the user select a pre-configured runner directory.
+    ///
+    /// Uses the same `isFilePickerActive` flag + `beginSheetModal` pattern as
+    /// `ScopeDetailView.openFolderPicker()` (#1195 Attempt 8).
+    ///
+    /// ❌ NEVER use `picker.begin { }` (free-floating) or `runModal()` here —
+    ///    both open NSOpenPanel outside the popover window. The global
+    ///    `outsideClickMonitor` cannot distinguish a tap inside a free-floating
+    ///    NSOpenPanel from a tap on the desktop, so it calls `hidePanel()` and
+    ///    collapses the entire app.
+    ///
+    /// ❌ NEVER use `NSApp.keyWindow ?? NSApp.mainWindow` without the
+    ///    `isFilePickerActive` guard. The popover may not be key at call time
+    ///    (e.g. if the Settings sheet already took focus), so `keyWindow` may
+    ///    return nil or return a different window, causing a silent fallback to
+    ///    `runModal()` — which is the free-floating path we just banned.
+    ///
+    /// ✅ Set `isFilePickerActive = true` BEFORE calling `beginSheetModal` so
+    ///    both the `workspaceObserver` and `outsideClickMonitor` skip `hidePanel()`
+    ///    for the entire lifetime of the picker. Clear it in the completion handler.
     private func pickExistingFolder() {
+        let delegate = NSApp.delegate as? AppDelegate
+        guard let window = delegate?.popover?.contentViewController?.view.window else {
+            log("AddRunnerSheet › pickExistingFolder — ERROR: popover window unavailable, aborting")
+            return
+        }
+
         let openPanel = NSOpenPanel()
         openPanel.canChooseFiles = false
         openPanel.canChooseDirectories = true
         openPanel.allowsMultipleSelection = false
         openPanel.message = "Select the runner install folder (must contain a .runner file)"
         openPanel.prompt = "Select"
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-            openPanel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = openPanel.url else { return }
-                handlePickedFolder(url)
-            }
-        } else {
-            // No key or main window available (e.g. panel not yet focused) — fall back to
-            // a modal run so the picker still works instead of silently doing nothing.
-            let response = openPanel.runModal()
-            if response == .OK, let url = openPanel.url { handlePickedFolder(url) }
+
+        // Set flag BEFORE beginSheetModal so any workspace/click events that arrive
+        // during sheet presentation see isFilePickerActive = true immediately.
+        delegate?.isFilePickerActive = true
+        log("AddRunnerSheet › pickExistingFolder — isFilePickerActive=true, calling beginSheetModal")
+
+        openPanel.beginSheetModal(for: window) { response in
+            delegate?.isFilePickerActive = false
+            log("AddRunnerSheet › pickExistingFolder — sheet closed response=\(response.rawValue) isFilePickerActive=false")
+            guard response == .OK, let url = openPanel.url else { return }
+            handlePickedFolder(url)
         }
     }
 
