@@ -320,7 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Hides the popover on outside-tap or workspace app-switch.
     ///
-    /// With `.transient` behavior AppKit calls this path via `popoverDidClose`.
+    /// Called directly by `outsideClickMonitor` and `workspaceObserver` (both installed in `openPanel()`).
     /// Intentionally does NOT call dismissSheets() and does NOT reset rootView.
     /// The NSHostingController and its SwiftUI @State (including any open sheet
     /// bindings) remain alive. On re-open, popover.show() reattaches the same
