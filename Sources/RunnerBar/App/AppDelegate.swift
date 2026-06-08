@@ -283,15 +283,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Does NOT reset `panelVisibilityState.isTransientHide` — that flag is cleared
     ///    by `openPanel()` on re-open.
     @MainActor func tearDownOpenState() {
+        log("AppDelegate › tearDownOpenState — caller=\(Thread.callStackSymbols[1])")
         panelIsOpen = false
         panelVisibilityState.isOpen = false
         if let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
+            log("AppDelegate › tearDownOpenState — outsideClickMonitor removed")
+        } else {
+            log("AppDelegate › tearDownOpenState — outsideClickMonitor was already nil")
         }
         if let observer = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             workspaceObserver = nil
+            log("AppDelegate › tearDownOpenState — workspaceObserver removed")
+        } else {
+            log("AppDelegate › tearDownOpenState — workspaceObserver was already nil")
         }
     }
 
@@ -300,7 +307,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ Do NOT call this from outside-tap / workspace-switch — use hidePanel() or
     ///    rely on .transient behavior.
     func closePanel() {
-        guard panelIsOpen else { return }
+        log("AppDelegate › closePanel — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive)")
+        guard panelIsOpen else {
+            log("AppDelegate › closePanel — guard exit: not open")
+            return
+        }
         popover?.performClose(nil)
         preservedSheetWindowHide = false
         tearDownOpenState()
@@ -320,7 +331,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
-        guard panelIsOpen else { return }
+        log("AppDelegate › hidePanel — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) hasActiveSheet=\(hasActiveSheet)")
+        guard panelIsOpen else {
+            log("AppDelegate › hidePanel — guard exit: not open")
+            return
+        }
         panelSheetState.captureTransientHideState()
         // ❌ Set isTransientHide = true BEFORE isOpen = false.
         // PanelContainerView.onChange fires synchronously when isOpen changes.
@@ -449,11 +464,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the popover. tearDownOpenState() removes the monitor on every close path.
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] _ in
-            guard let self, self.panelIsOpen, !self.isFilePickerActive else { return }
-            log("AppDelegate › outsideClickMonitor — hiding panel")
+        ) { [weak self] event in
+            let loc = event.locationInWindow
+            log("AppDelegate › outsideClickMonitor — FIRED type=\(event.type.rawValue) loc=\(loc)")
+            guard let self else {
+                log("AppDelegate › outsideClickMonitor — self is nil, skipping")
+                return
+            }
+            log("AppDelegate › outsideClickMonitor — panelIsOpen=\(self.panelIsOpen) isFilePickerActive=\(self.isFilePickerActive)")
+            guard self.panelIsOpen else {
+                log("AppDelegate › outsideClickMonitor — guard exit: panel not open")
+                return
+            }
+            guard !self.isFilePickerActive else {
+                log("AppDelegate › outsideClickMonitor — guard exit: file picker active, NOT hiding")
+                return
+            }
+            log("AppDelegate › outsideClickMonitor — calling hidePanel()")
             self.hidePanel()
         }
+        log("AppDelegate › openPanel — outsideClickMonitor installed: \(String(describing: outsideClickMonitor))")
 
         // Install app-switch observer. Fires when another app becomes frontmost.
         // Same isFilePickerActive guard — the NSOpenPanel activation change must
@@ -462,10 +492,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            guard let self, self.panelIsOpen, !self.isFilePickerActive else { return }
-            log("AppDelegate › workspaceObserver — other app activated, hiding panel")
+        ) { [weak self] notification in
+            let appName = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.localizedName ?? "unknown"
+            log("AppDelegate › workspaceObserver — FIRED activated=\(appName)")
+            guard let self else {
+                log("AppDelegate › workspaceObserver — self is nil, skipping")
+                return
+            }
+            log("AppDelegate › workspaceObserver — panelIsOpen=\(self.panelIsOpen) isFilePickerActive=\(self.isFilePickerActive)")
+            guard self.panelIsOpen else {
+                log("AppDelegate › workspaceObserver — guard exit: panel not open")
+                return
+            }
+            guard !self.isFilePickerActive else {
+                log("AppDelegate › workspaceObserver — guard exit: file picker active, NOT hiding")
+                return
+            }
+            log("AppDelegate › workspaceObserver — calling hidePanel()")
             self.hidePanel()
         }
+        log("AppDelegate › openPanel — workspaceObserver installed")
     }
 }

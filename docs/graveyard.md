@@ -155,6 +155,39 @@ If they were accidentally removed again, the popover would never close.
 
 ---
 
+## Attempt 6 — #1195 (2026-06-08 15:53 CEST): Move `isFilePickerActive = true` before `NSApp.activate`
+
+**Theory:** Attempt 5 had the right mechanism (`.applicationDefined` + `isFilePickerActive` flag +
+`workspaceObserver` guard + `outsideClickMonitor` guard) but a subtle ordering bug.
+In `openFolderPicker()` the call sequence was:
+
+1. `NSApp.activate(ignoringOtherApps: true)` ← fires `didActivateApplicationNotification` **synchronously on main**
+2. `delegate?.isFilePickerActive = true` ← **too late** — observer already ran with flag = false
+3. `picker.begin { }` ← panel opens
+
+Because `NSApp.activate` dispatches the workspace notification on `.main` immediately,
+the `workspaceObserver` closure ran with `isFilePickerActive == false`, saw `panelIsOpen == true`,
+passed both guards, and called `hidePanel()` — collapsing the app before the flag was ever set.
+Same race applies to the `outsideClickMonitor` if any click arrives between steps 1 and 2.
+
+**Fix:** Swap the order — set `isFilePickerActive = true` **before** calling `NSApp.activate`.
+Now both the workspace notification and any immediate click events see the flag as `true`
+and bail out of `hidePanel()` before it runs.
+
+**Changes:**
+- `ScopeDetailView.swift` `openFolderPicker()`: moved `delegate?.isFilePickerActive = true`
+  to before `NSApp.activate(ignoringOtherApps: true)`. Updated comment to explain why.
+- `docs/graveyard.md`: this entry.
+
+**Status:** In testing as of 2026-06-08 15:53 CEST.
+
+**Known risk:** If `picker.begin`'s completion handler fires on a non-main thread before
+`isFilePickerActive = false` is processed, the flag could get stuck `true` and permanently
+block `hidePanel()`. In practice `NSOpenPanel` completions arrive on main, so this is not
+an issue — but worth noting.
+
+---
+
 ## Reading list / references
 
 - https://ohanaware.com/swift/macOSOpenPanelSheet.html — documents the

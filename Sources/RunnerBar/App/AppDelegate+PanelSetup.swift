@@ -103,11 +103,13 @@ extension AppDelegate: NSPopoverDelegate {
     /// Outside-tap during a sheet (without a picker) still hides the popover so
     /// the user can interact with other apps. Nav state is preserved and restored
     /// on next open via savedNavState.
-    public func popoverShouldClose(_ _: NSPopover) -> Bool {
+    public func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        log("AppDelegate › popoverShouldClose — CALLED behavior=\(popover.behavior.rawValue) isFilePickerActive=\(isFilePickerActive) panelIsOpen=\(panelIsOpen) caller=\(Thread.callStackSymbols[1])")
         guard !isFilePickerActive else {
-            log("AppDelegate › popoverShouldClose — blocked (isFilePickerActive=true)")
+            log("AppDelegate › popoverShouldClose — returning false (isFilePickerActive=true)")
             return false
         }
+        log("AppDelegate › popoverShouldClose — returning true (allowing close)")
         return true
     }
 
@@ -116,12 +118,13 @@ extension AppDelegate: NSPopoverDelegate {
     /// When `closePanel()` or `hidePanel()` drives the close, they call
     /// `tearDownOpenState()` directly — by the time this fires, `panelIsOpen`
     /// is already `false` and the guard exits immediately.
-    public func popoverDidClose(_ _: Notification) {
-        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen)")
+    public func popoverDidClose(_ notification: Notification) {
+        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) caller=\(Thread.callStackSymbols[1])")
         guard panelIsOpen else {
             log("AppDelegate › popoverDidClose — guard exit (panelIsOpen already false)")
             return
         }
+        log("AppDelegate › popoverDidClose — calling tearDownOpenState (unexpected OS-driven close)")
         tearDownOpenState()
     }
 

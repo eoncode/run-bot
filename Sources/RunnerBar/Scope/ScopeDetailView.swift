@@ -445,15 +445,20 @@ extension ScopeEditSheet {
         } else {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
+        // Set isFilePickerActive BEFORE activating so the workspace observer and
+        // outside-click monitor both see the flag as true before any activation
+        // notification fires. (#1195 Attempt 6)
+        let delegate = NSApp.delegate as? AppDelegate
+        NSLog("[RB-DEBUG] openFolderPicker — setting isFilePickerActive=true (was \(delegate?.isFilePickerActive ?? false))")
+        delegate?.isFilePickerActive = true
         // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+. // NOSONAR
         // Replace with NSApp.activate() (no argument) once the deployment target allows.
         NSApp.activate(ignoringOtherApps: true)
-        // Set isFilePickerActive so popoverShouldClose returns false while the picker
-        // is open. Without this, .transient behavior dismisses the popover when the
-        // user clicks inside the NSOpenPanel window (which is a separate, free-floating
-        // system window invisible to AppKit's popover dismiss logic). (#1193)
-        (NSApp.delegate as? AppDelegate)?.isFilePickerActive = true
+        NSLog("[RB-DEBUG] openFolderPicker — calling picker.begin")
         picker.begin { response in
+            NSLog("[RB-DEBUG] openFolderPicker — picker.begin completion fired response=\(response.rawValue)")
+            let delegate2 = NSApp.delegate as? AppDelegate
+            NSLog("[RB-DEBUG] openFolderPicker — setting isFilePickerActive=false (was \(delegate2?.isFilePickerActive ?? false))")
             (NSApp.delegate as? AppDelegate)?.isFilePickerActive = false
             if response == .OK, let url = picker.url {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
