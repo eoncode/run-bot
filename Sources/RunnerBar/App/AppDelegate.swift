@@ -121,15 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// from dismissing the popover when the user clicks inside the file picker window. (#1193)
     var isFilePickerActive = false
 
-    /// Opaque token returned by `NSEvent.addGlobalMonitorForEvents`.
-    /// Typed `Any?` because that is what AppKit returns — `removeMonitor(_:)` also takes `Any`.
-    var eventMonitor: Any?
     /// KVO observation token for `NSHostingController.preferredContentSize`.
     /// Drives popover resize without re-calling `popover.show()`.
     var sizeObservation: NSKeyValueObservation?
-    /// Observer token returned by `NSWorkspace.notificationCenter.addObserver(forName:…)`.
-    /// Typed `NSObjectProtocol?` to match the API's actual return type.
-    var workspaceObserver: NSObjectProtocol?
     /// Combine cancellable bag for all long-lived subscriptions wired in `setupCombineSubscriptions()`.
     var cancellables = Set<AnyCancellable>()
 
