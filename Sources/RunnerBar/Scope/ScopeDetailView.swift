@@ -429,8 +429,14 @@ extension ScopeEditSheet {
     }
 
     /// Presents an `NSOpenPanel` to let the user pick the local repository folder.
-    /// The NSPanel is non-activating so it does not obscure the file picker —
-    /// no close/reopen dance is needed when the sheet is presented modally (#992).
+    ///
+    /// Uses `runModal()` rather than `picker.begin { }` to avoid the XPC activation
+    /// race that caused the popover to dismiss when the user clicked inside the picker
+    /// (issue #1193). `runModal()` runs the panel inline in the app's own modal run
+    /// loop: no XPC handoff, no `NSWorkspace.didActivateApplicationNotification` for
+    /// a foreign process, and AppKit suppresses global `NSEvent` monitors during
+    /// modal execution. No `isFilePickerActive` flag is needed. (#1193 Attempt 8)
+    ///
     /// Updates draft `localRepoPath` only — not persisted until Save.
     func openFolderPicker() {
         let picker = NSOpenPanel()
@@ -445,27 +451,21 @@ extension ScopeEditSheet {
         } else {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
-        // Set isFilePickerActive BEFORE activating so the workspace observer and
-        // outside-click monitor both see the flag as true before any activation
-        // notification fires. (#1195 Attempt 6)
-        let delegate = NSApp.delegate as? AppDelegate
-        NSLog("[RB-DEBUG] openFolderPicker — setting isFilePickerActive=true (was \(delegate?.isFilePickerActive ?? false))")
-        delegate?.isFilePickerActive = true
         // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+. // NOSONAR
         // Replace with NSApp.activate() (no argument) once the deployment target allows.
         NSApp.activate(ignoringOtherApps: true)
-        NSLog("[RB-DEBUG] openFolderPicker — calling picker.begin")
-        picker.begin { response in
-            NSLog("[RB-DEBUG] openFolderPicker — picker.begin completion fired response=\(response.rawValue)")
-            let delegate2 = NSApp.delegate as? AppDelegate
-            NSLog("[RB-DEBUG] openFolderPicker — setting isFilePickerActive=false (was \(delegate2?.isFilePickerActive ?? false))")
-            (NSApp.delegate as? AppDelegate)?.isFilePickerActive = false
-            if response == .OK, let url = picker.url {
-                let home = FileManager.default.homeDirectoryForCurrentUser.path
-                let abs = url.path
-                let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
-                localRepoPath = tilde
-            }
+        // runModal() blocks the main thread until the user dismisses the picker.
+        // Unlike picker.begin{}, this runs in-process via a nested modal run loop:
+        // - No XPC window handoff
+        // - No NSWorkspace.didActivateApplicationNotification for a foreign process
+        // - Global NSEvent monitors are suppressed during modal execution by AppKit
+        // - isFilePickerActive flag is not needed
+        let response = picker.runModal()
+        if response == .OK, let url = picker.url {
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            let abs = url.path
+            let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
+            localRepoPath = tilde
         }
     }
 }

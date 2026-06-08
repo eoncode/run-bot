@@ -210,14 +210,58 @@ ensuring the flag read is sequenced correctly after `isFilePickerActive = true`.
   warning-free for these properties.
 - `docs/graveyard.md`: Attempt 6 marked failed with root cause explanation.
 
-**Status:** In testing as of 2026-06-08 16:04 CEST.
+**Status:** ❌ FAILED — confirmed on device 2026-06-08 (Attempt 8 supersedes).
 
-**Known risk:** `Task { @MainActor }` schedules asynchronously on the main actor
-cooperative queue. If a click arrives and the task hasn't run yet, `isFilePickerActive`
-may still read `false` in a pathological timing window. This is extremely unlikely
-since `isFilePickerActive = true` is set synchronously on main before the picker
-opens — but if it recurs, the next step is `@MainActor` annotation on the closures
-directly or moving to `DispatchQueue.main.sync`.
+**Why it failed:**
+`Task { @MainActor }` dispatches **asynchronously** onto the main actor cooperative
+queue. This means the task body is enqueued, not run synchronously. A click that
+arrives while the picker is opening can be dequeued and processed before the task
+body runs — meaning `isFilePickerActive` may read `false` even after it was set
+`true` on the main thread. The async hop closed the Swift 6 compiler warning but
+did not eliminate the fundamental timing window. The root problem is that
+`picker.begin { }` opens NSOpenPanel as an XPC-hosted free-floating window;
+no amount of flag guarding fully closes the race inherent in that API.
+
+---
+
+## Attempt 8 — #1195 (2026-06-08): Switch `openFolderPicker` to `picker.runModal()` ← CURRENT
+
+**Theory:** Every previous attempt tried to guard around `picker.begin { }` triggering
+the dismiss. The root cause is that `picker.begin { }` opens `NSOpenPanel` as a
+free-floating window hosted by `com.apple.appkit.xpc.openAndSavePanelService` — a
+separate XPC process — and all of the dismiss triggers (workspace notification,
+global event monitor) fire in response to that XPC activation, which is invisible
+to the app's own window hierarchy and inherently racy.
+
+`picker.runModal()` takes a completely different path:
+- Runs the panel **inline in a nested modal run loop** on the main thread
+- No XPC process handoff → `NSWorkspace.didActivateApplicationNotification` does
+  not fire for a foreign process
+- AppKit **suppresses global `NSEvent` monitors** during modal run loop execution
+- The call blocks synchronously until the user dismisses — no async timing windows
+- `isFilePickerActive` flag is not needed at all
+
+This is the correct API for a user-driven blocking file pick from a menu bar app.
+Blocking the main thread for the duration of a file picker is exactly the intended
+use case for `runModal()`.
+
+**Changes:**
+- `ScopeDetailView.swift` `openFolderPicker()`: replaced `picker.begin { }` with
+  `let response = picker.runModal()`. Removed all `isFilePickerActive` flag
+  set/clear calls from this function. Updated doc comment to explain the rationale.
+- `docs/graveyard.md`: Attempt 7 marked failed, this entry added.
+- `AppDelegate.swift` `isFilePickerActive` flag and all guards in
+  `outsideClickMonitor` / `workspaceObserver` are intentionally **left in place**
+  as defence-in-depth, in case any future code path opens a picker asynchronously.
+
+**Status:** In testing as of 2026-06-08 16:27 CEST.
+
+**Known risk:** `runModal()` blocks the main thread. SwiftUI `@State` updates
+triggered from within the modal (impossible here since `localRepoPath` is only
+written after `runModal()` returns) are deferred until the modal ends — no
+concern for this specific call site. If a future requirement needs async picker
+behaviour, `picker.begin { }` must not be used without a structural solution
+(e.g. `beginSheetModal(for:)` with a pre-captured window reference).
 
 ---
 
