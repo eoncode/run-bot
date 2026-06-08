@@ -45,6 +45,9 @@ struct ScopeEditSheet: View {
     @State private var localRepoPath: String
     /// Tracks whether the inline path text field is in edit mode.
     @State private var isEditingPath = false
+    /// The NSWindow hosting this sheet, captured early via WindowGrabber so
+    /// it is reliably available when openFolderPicker() is called. (#1195)
+    @State private var hostWindow: NSWindow?
 
     /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
     /// so they reflect persisted user preferences on first render.
@@ -97,6 +100,11 @@ struct ScopeEditSheet: View {
         }
         .frame(width: 440)
         .accessibilityIdentifier("scopeEditSheet")
+        // Capture the hosting NSWindow as early as possible so beginSheetModal
+        // has a reliable reference when openFolderPicker() is called. (#1195)
+        .background(WindowGrabber { w in
+            if hostWindow == nil, let w { hostWindow = w }
+        })
         .sheet(isPresented: $showHookSheet) {
             FailureHookCommandSheet(scope: scope) { showHookSheet = false }
         }
@@ -329,7 +337,10 @@ extension ScopeEditSheet {
                     .foregroundColor(Color.rbAccent)
             } else {
                 // swiftlint:disable:next multiple_closures_with_trailing_closure
-                Button(action: { startEditingPath() }) {
+                Button(action: {
+                    log("[PICKER] localPathRow — text button tapped, calling startEditingPath")
+                    startEditingPath()
+                }) {
                     Text(localRepoPath.isEmpty ? "Tap to set path…" : localRepoPath)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(localRepoPath.isEmpty ? Color.rbTextTertiary : Color.rbTextPrimary)
@@ -338,7 +349,10 @@ extension ScopeEditSheet {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                Button(action: { openFolderPicker() }) {
+                Button(action: {
+                    log("[PICKER] localPathRow — folder button tapped, calling openFolderPicker")
+                    openFolderPicker()
+                }) {
                     Image(systemName: "folder")
                         .font(.system(size: 11))
                         .foregroundColor(Color.rbTextSecondary)
@@ -428,11 +442,25 @@ extension ScopeEditSheet {
         isPresented = false
     }
 
-    /// Presents an `NSOpenPanel` to let the user pick the local repository folder.
-    /// The NSPanel is non-activating so it does not obscure the file picker —
-    /// no close/reopen dance is needed when the sheet is presented modally (#992).
-    /// Updates draft `localRepoPath` only — not persisted until Save.
+    /// Presents an `NSOpenPanel` as a sheet attached to the popover's own window.
+    ///
+    /// Uses `beginSheetModal(for:)` so the panel attaches as a child sheet.
+    /// AppKit never considers clicks inside the sheet as "outside clicks",
+    /// so the popover is never dismissed during the picker session. (#1195)
+    ///
+    /// The host window reference is captured early by `WindowGrabber` (attached in
+    /// `body`) so there is no key-window race at call time.
     func openFolderPicker() {
+        let delegate = NSApp.delegate as? AppDelegate
+        log("[PICKER] openFolderPicker — ENTER hostWindow=\(String(describing: hostWindow)) panelIsOpen=\(delegate?.panelIsOpen ?? false)")
+
+        guard let window = hostWindow else {
+            log("[PICKER] openFolderPicker — ERROR: hostWindow is nil — picker will NOT open. popoverWindow=\(String(describing: delegate?.popover?.contentViewController?.view.window))")
+            return
+        }
+
+        log("[PICKER] openFolderPicker — window OK: \(window) isKey=\(window.isKeyWindow) isVisible=\(window.isVisible) sheets=\(window.sheets.count)")
+
         let picker = NSOpenPanel()
         picker.canChooseFiles = false
         picker.canChooseDirectories = true
@@ -445,15 +473,18 @@ extension ScopeEditSheet {
         } else {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
-        // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+. // NOSONAR
-        // Replace with NSApp.activate() (no argument) once the deployment target allows.
-        NSApp.activate(ignoringOtherApps: true)
-        picker.begin { response in
+
+        log("[PICKER] openFolderPicker — calling beginSheetModal on window")
+        picker.beginSheetModal(for: window) { response in
+            log("[PICKER] openFolderPicker — completion: response=\(response.rawValue) panelIsOpen=\(delegate?.panelIsOpen ?? false)")
             if response == .OK, let url = picker.url {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
                 let abs = url.path
                 let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
+                log("[PICKER] openFolderPicker — user picked path=\(tilde)")
                 localRepoPath = tilde
+            } else {
+                log("[PICKER] openFolderPicker — user cancelled or no URL")
             }
         }
     }

@@ -18,6 +18,39 @@ import SwiftUI
 // window-server compositor. Rounded corners survive SwiftUI .sheet
 // attachment natively — no CALayer manipulation required or desired.
 //
+// POPOVER BEHAVIOR: .applicationDefined (#1195)
+// behavior = .applicationDefined is set at setupPanel() AND re-asserted
+// immediately before every popover.show() call in openPanel(). AppKit latches
+// the behavior at show-time; failing to re-assert it caused silent reversion
+// to .transient between sessions (Attempt 8 root cause).
+//
+// .transient was tried (Attempt 2) and failed — AppKit's .transient dismiss
+// fires on ANY outside interaction, including clicks inside NSOpenPanel.
+// .transient does NOT have special awareness of system panels.
+//
+// OUTSIDE-CLICK / APP-SWITCH HIDE (#1195 — what actually works):
+// Both are handled by a manual NSEvent global monitor (outsideClickMonitor)
+// and an NSWorkspace observer (workspaceObserver), both installed by openPanel()
+// and torn down by tearDownOpenState().
+//
+// The key guard in outsideClickMonitor is:
+//
+//   guard !self.hasActiveSheet else { return }   // ← THE FIX
+//
+// NSOpenPanel is attached to the popover window via beginSheetModal(for:),
+// making it appear in popoverWindow.sheets. While any sheet is attached,
+// hasActiveSheet is true and every outside click is ignored — the popover
+// cannot be dismissed by a click that lands inside the NSOpenPanel.
+//
+// popoverShouldClose always returns true — AppKit is never blocked here.
+// All dismiss control goes through the manual monitor.
+//
+// ❌ NEVER use picker.begin { } (free-floating NSOpenPanel). It does NOT
+//    appear in popoverWindow.sheets and the hasActiveSheet guard is blind to it.
+// ❌ NEVER use runModal() for NSOpenPanel. Same reason as above.
+// ✅ ALWAYS use picker.beginSheetModal(for: popoverWindow) so the picker
+//    attaches as a child sheet and hasActiveSheet fires correctly.
+//
 // SHEET HANDLING:
 // SwiftUI .sheet() attaches as a child NSWindow to the popover's backing
 // window. Two problems arise:
@@ -27,22 +60,17 @@ import SwiftUI
 //    overlays Color.black.opacity(0.35) when a sheet is present.
 //
 // 2. OUTSIDE-TAP BEHAVIOUR DURING SHEET:
-//    Desired: tapping outside while a sheet is open hides the popover
-//    (so the user can interact with other apps), but saves nav state so
-//    re-opening the status bar app restores the sheet context.
+//    Tapping outside while a sheet is open hides the popover so the user
+//    can interact with other apps, but savedNavState preserves where they
+//    were so re-opening restores context.
 //
 //    Implementation:
 //    - popoverShouldClose always returns true. AppKit is never blocked.
-//    - popoverDidClose saves hasActiveSheet into a flag before state clears.
-//    - openPanel restores via savedNavState (already the case).
-//    - The global event monitor no longer has a hasActiveSheet guard —
-//      outside clicks always trigger closePanel().
-//    - closePanel() does NOT call endSheet on any open sheet. The sheet
-//      window is a child of the popover window; when the popover window
-//      closes, AppKit removes all child windows including the sheet.
-//      On re-open, SwiftUI re-presents the sheet if the binding is still true
-//      (e.g. showAddScopeSheet = true is preserved in @State in SettingsView).
-//      savedNavState = .settings ensures we navigate back to SettingsView.
+//    - popoverDidClose saves hasActiveSheet state before state clears.
+//    - openPanel restores via savedNavState.
+//    - Sheet NSWindows are children of the popover window; AppKit removes
+//      them when the popover closes. SwiftUI re-presents on re-open if the
+//      binding is still true. savedNavState = .settings ensures navigation.
 //
 // SIZE NOTE:
 // popover.contentSize is updated (both width AND height) via KVO on
@@ -67,6 +95,9 @@ extension AppDelegate: NSPopoverDelegate {
         newPopover.contentViewController = controller
         newPopover.contentSize = NSSize(width: 480, height: 300)
         newPopover.animates = false
+        // .applicationDefined: popoverShouldClose(_:) is consulted on every
+        // is true, keeping the popover alive when user clicks in NSOpenPanel.
+        // Manual NSEvent monitor + NSWorkspace observer handle hide-on-app-switch.
         newPopover.behavior = .applicationDefined
         newPopover.delegate = self
 
@@ -80,10 +111,29 @@ extension AppDelegate: NSPopoverDelegate {
 
     // MARK: NSPopoverDelegate
 
-    /// Always allow close. Outside-tap during a sheet hides the popover so the
-    /// user can interact with other apps. Nav state is preserved and restored
-    /// on next open via savedNavState.
-    public func popoverShouldClose(_ _: NSPopover) -> Bool {
+    /// Always returns `true` — AppKit is never blocked from closing the popover here.
+    ///
+    /// All dismiss control is handled by the manual `outsideClickMonitor` and
+    /// `workspaceObserver` in `openPanel()`. Those monitors guard against
+    /// NSOpenPanel clicks via `hasActiveSheet` (the panel is attached as a sheet
+    /// via `beginSheetModal`, so `popoverWindow.sheets` is non-empty while it
+    /// is open). There is no need to block AppKit here.
+    ///
+    /// `isFilePickerActive` is intentionally NOT used here. Earlier attempts
+    /// (Attempts 4–6, see `docs/graveyard.md`) tried gating this method on a
+    /// boolean flag, but `beginSheetModal` makes that unnecessary: the sheet
+    /// attachment is structural truth visible via `popoverWindow.sheets`, which
+    /// `hasActiveSheet` reads directly. The flag approach was removed in favour
+    /// of that structural check.
+    ///
+    /// See the OUTSIDE-CLICK / APP-SWITCH HIDE comment block above for the full
+    /// mechanism. See `docs/graveyard.md` for the history of approaches that
+    /// tried to gate this method and why they all failed.
+    public func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        #if DEBUG
+        log("AppDelegate › popoverShouldClose — CALLED behavior=\(popover.behavior.rawValue) panelIsOpen=\(panelIsOpen) caller=\(Thread.callStackSymbols[1])")
+        #endif
+        log("AppDelegate › popoverShouldClose — returning true (allowing close)")
         return true
     }
 
@@ -92,12 +142,15 @@ extension AppDelegate: NSPopoverDelegate {
     /// When `closePanel()` or `hidePanel()` drives the close, they call
     /// `tearDownOpenState()` directly — by the time this fires, `panelIsOpen`
     /// is already `false` and the guard exits immediately.
-    public func popoverDidClose(_ _: Notification) {
-        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen)")
+    public func popoverDidClose(_ notification: Notification) {
+        #if DEBUG
+        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) behavior=\((NSApp.delegate as? AppDelegate)?.popover?.behavior.rawValue ?? -1) stack=\(Thread.callStackSymbols.prefix(5).joined(separator: "||"))")
+        #endif
         guard panelIsOpen else {
             log("AppDelegate › popoverDidClose — guard exit (panelIsOpen already false)")
             return
         }
+        log("AppDelegate › popoverDidClose — calling tearDownOpenState (unexpected OS-driven close)")
         tearDownOpenState()
     }
 
