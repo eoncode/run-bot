@@ -188,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Entry point after launch. Configures the GitHub API clients, builds the
     /// status-bar item, and constructs the NSPopover panel.
     func applicationDidFinishLaunching(_ _: Notification) {
+        log("AppDelegate › applicationDidFinishLaunching — 🟢 FRESH BUILD RUNNING (branch: fix/1195)")
         configureGHAPI { endpoint in await ghAPI(endpoint) }
         configureGHRaw { endpoint in urlSessionRaw(endpoint) }
         setupStatusItem()
@@ -331,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
-        log("AppDelegate › hidePanel — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) hasActiveSheet=\(hasActiveSheet) caller=\(Thread.callStackSymbols[1])")
+        log("AppDelegate › hidePanel — ENTER panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) hasActiveSheet=\(hasActiveSheet) preservedSheetWindowHide=\(preservedSheetWindowHide) popoverBehavior=\(popover?.behavior.rawValue ?? -1) caller=\(Thread.callStackSymbols[1])")
         guard panelIsOpen else {
             log("AppDelegate › hidePanel — guard exit: not open")
             return
@@ -362,16 +363,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// sheet session so re-opening can order the same windows back in.
     @discardableResult
     func hidePopoverWindowsPreservingSheets() -> Bool {
+        log("AppDelegate › hidePopoverWindowsPreservingSheets — ENTER hasActiveSheet=\(hasActiveSheet) popoverWindow=\(String(describing: popover?.contentViewController?.view.window))")
         guard hasActiveSheet,
               let popoverWindow = popover?.contentViewController?.view.window
-        else { return false }
-
+        else {
+            log("AppDelegate › hidePopoverWindowsPreservingSheets — guard fail (hasActiveSheet=\(hasActiveSheet) popoverWindow=\(String(describing: popover?.contentViewController?.view.window))), returning false")
+            return false
+        }
+        log("AppDelegate › hidePopoverWindowsPreservingSheets — ordering out popoverWindow=\(popoverWindow) sheets=\(popoverWindow.sheets.count)")
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
             context.allowsImplicitAnimation = false
             popoverWindow.orderOut(nil)
         }
         preservedSheetWindowHide = true
+        log("AppDelegate › hidePopoverWindowsPreservingSheets — done, preservedSheetWindowHide=true")
         return true
     }
 
@@ -500,12 +506,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // interactive rows inside the popover — so without this check
                 // any tap inside the popover triggers hidePanel() before the
                 // row's action even runs.
-                if let popoverWindow = self.popover?.contentViewController?.view.window,
-                   popoverWindow.frame.contains(NSEvent.mouseLocation) {
-                    log("AppDelegate › outsideClickMonitor — click inside popover window, ignoring")
-                    return
+                let mouseLoc = NSEvent.mouseLocation
+                if let popoverWindow = self.popover?.contentViewController?.view.window {
+                    log("AppDelegate › outsideClickMonitor — popoverFrame=\(popoverWindow.frame) mouseLoc=\(mouseLoc) contains=\(popoverWindow.frame.contains(mouseLoc)) sheets=\(popoverWindow.sheets.count)")
+                    if popoverWindow.frame.contains(mouseLoc) {
+                        log("AppDelegate › outsideClickMonitor — click inside popover window, ignoring")
+                        return
+                    }
+                    // If the click landed inside any attached sheet, also ignore.
+                    for sheet in popoverWindow.sheets {
+                        if sheet.frame.contains(mouseLoc) {
+                            log("AppDelegate › outsideClickMonitor — click inside sheet window frame=\(sheet.frame), ignoring")
+                            return
+                        }
+                    }
+                } else {
+                    log("AppDelegate › outsideClickMonitor — WARNING: popoverWindow is nil, mouseLoc=\(mouseLoc)")
                 }
-                log("AppDelegate › outsideClickMonitor — calling hidePanel()")
+                log("AppDelegate › outsideClickMonitor — calling hidePanel() mouseLoc=\(mouseLoc)")
                 self.hidePanel()
             }
         }
@@ -534,10 +552,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 guard !self.isFilePickerActive else {
-                    log("AppDelegate › workspaceObserver — guard exit: file picker active, NOT hiding")
+                    log("AppDelegate › workspaceObserver — guard exit: file picker active, NOT hiding (activated=\(appName))")
                     return
                 }
-                log("AppDelegate › workspaceObserver — calling hidePanel()")
+                log("AppDelegate › workspaceObserver — calling hidePanel() because activated=\(appName) isFilePickerActive=false panelIsOpen=\(self.panelIsOpen)")
                 self.hidePanel()
             }
         }
