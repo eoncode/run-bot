@@ -493,12 +493,6 @@ struct AddRunnerSheet: View {
     private func pickExistingFolder() {
         let delegate = NSApp.delegate as? AppDelegate
 
-        // Guard against re-entry (e.g. button tapped multiple times rapidly).
-        guard delegate?.isFilePickerActive != true else {
-            log("AddRunnerSheet › pickExistingFolder — already active, ignoring")
-            return
-        }
-
         let openPanel = NSOpenPanel()
         openPanel.canChooseFiles = false
         openPanel.canChooseDirectories = true

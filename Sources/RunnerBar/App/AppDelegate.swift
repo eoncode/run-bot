@@ -188,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Entry point after launch. Configures the GitHub API clients, builds the
     /// status-bar item, and constructs the NSPopover panel.
     func applicationDidFinishLaunching(_ _: Notification) {
-        log("AppDelegate › applicationDidFinishLaunching — 🟢 FRESH BUILD RUNNING (branch: fix/1195)")
+        log("AppDelegate › applicationDidFinishLaunching — 🦊🌮🪐🎯🍄 BUILD-SIG:FOXCAKE")
         configureGHAPI { endpoint in await ghAPI(endpoint) }
         configureGHRaw { endpoint in urlSessionRaw(endpoint) }
         setupStatusItem()

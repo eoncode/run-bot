@@ -474,15 +474,15 @@ extension ScopeEditSheet {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
 
-        // ✅ Set isFilePickerActive = true BEFORE beginSheetModal.
-        // outsideClickMonitor and workspaceObserver both check this flag on
-        // the main actor. Setting it here means any click or app-switch event
-        // that arrives during the picker session sees the flag = true and
-        // bails before calling hidePanel().
+        // ✅ Set isFilePickerActive = true BEFORE begin{} so outsideClickMonitor
+        // and workspaceObserver skip hidePanel() for the entire picker session.
+        // Using picker.begin{} (free-floating) because the popover window is an
+        // NSPanel and beginSheetModal(for:) silently fails on NSPanel parents,
+        // leaving isFilePickerActive stuck true and the picker never appearing.
         delegate?.isFilePickerActive = true
-        log("[PICKER] openFolderPicker — isFilePickerActive SET TRUE, calling beginSheetModal on window=\(window)")
+        log("[PICKER] openFolderPicker — isFilePickerActive SET TRUE, calling begin{}")
 
-        picker.beginSheetModal(for: window) { response in
+        picker.begin { response in
             delegate?.isFilePickerActive = false
             log("[PICKER] openFolderPicker — completion: response=\(response.rawValue) isFilePickerActive SET FALSE panelIsOpen=\(delegate?.panelIsOpen ?? false)")
             if response == .OK, let url = picker.url {
@@ -495,7 +495,7 @@ extension ScopeEditSheet {
                 log("[PICKER] openFolderPicker — user cancelled or no URL")
             }
         }
-        log("[PICKER] openFolderPicker — beginSheetModal returned (sheet now attached, window.sheets=\(window.sheets.count))")
+        log("[PICKER] openFolderPicker — begin{} returned")
     }
 }
 
