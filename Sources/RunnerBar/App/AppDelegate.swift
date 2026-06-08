@@ -557,6 +557,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log("AppDelegate › workspaceObserver — guard exit: panel not open")
                     return
                 }
+                // Mirror the outsideClickMonitor guard: if a sheet is attached,
+                // an app-switch should not dismiss the popover either.
+                guard !self.hasActiveSheet else {
+                    log("AppDelegate › workspaceObserver — guard exit: hasActiveSheet=true, skipping hidePanel")
+                    return
+                }
                 log("AppDelegate › workspaceObserver — calling hidePanel() because activated=\(appName) panelIsOpen=\(self.panelIsOpen)")
                 self.hidePanel()
             }
