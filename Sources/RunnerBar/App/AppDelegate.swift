@@ -485,6 +485,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log("AppDelegate › outsideClickMonitor — guard exit: file picker active, NOT hiding")
                     return
                 }
+                // Ignore clicks that land inside the popover's own window.
+                // Global monitors fire for ALL clicks — including taps on
+                // interactive rows inside the popover — so without this check
+                // any tap inside the popover triggers hidePanel() before the
+                // row's action even runs.
+                if let popoverWindow = self.popover?.contentViewController?.view.window,
+                   popoverWindow.frame.contains(NSEvent.mouseLocation) {
+                    log("AppDelegate › outsideClickMonitor — click inside popover window, ignoring")
+                    return
+                }
                 log("AppDelegate › outsideClickMonitor — calling hidePanel()")
                 self.hidePanel()
             }
