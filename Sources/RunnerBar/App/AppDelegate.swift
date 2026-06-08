@@ -279,7 +279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Does NOT reset `panelVisibilityState.isTransientHide` — that flag is cleared
     ///    by `openPanel()` on re-open.
     @MainActor func tearDownOpenState() {
+        #if DEBUG
         log("AppDelegate › tearDownOpenState — caller=\(Thread.callStackSymbols[1])")
+        #endif
         panelIsOpen = false
         panelVisibilityState.isOpen = false
         if let monitor = outsideClickMonitor {
@@ -327,7 +329,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
+        #if DEBUG
         log("AppDelegate › hidePanel — ENTER panelIsOpen=\(panelIsOpen) hasActiveSheet=\(hasActiveSheet) preservedSheetWindowHide=\(preservedSheetWindowHide) popoverBehavior=\(popover?.behavior.rawValue ?? -1) caller=\(Thread.callStackSymbols[1])")
+        #endif
         guard panelIsOpen else {
             log("AppDelegate › hidePanel — guard exit: not open")
             return
