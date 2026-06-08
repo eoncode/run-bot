@@ -518,14 +518,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // interactive rows inside the popover — so without this check
                 // any tap inside the popover triggers hidePanel() before the
                 // row's action even runs.
-                if let popoverWindow = self.popover?.contentViewController?.view.window {
-                    log("AppDelegate › outsideClickMonitor — popoverFrame=\(popoverWindow.frame) screenLoc=\(screenLoc) contains=\(popoverWindow.frame.contains(screenLoc))")
-                    if popoverWindow.frame.contains(screenLoc) {
-                        log("AppDelegate › outsideClickMonitor — click inside popover window, ignoring")
-                        return
-                    }
-                } else {
-                    log("AppDelegate › outsideClickMonitor — WARNING: popoverWindow is nil, screenLoc=\(screenLoc)")
+                guard let popoverWindow = self.popover?.contentViewController?.view.window else {
+                    log("AppDelegate › outsideClickMonitor — WARNING: popoverWindow is nil, skipping hidePanel")
+                    return
+                }
+                log("AppDelegate › outsideClickMonitor — popoverFrame=\(popoverWindow.frame) screenLoc=\(screenLoc) contains=\(popoverWindow.frame.contains(screenLoc))")
+                if popoverWindow.frame.contains(screenLoc) {
+                    log("AppDelegate › outsideClickMonitor — click inside popover window, ignoring")
+                    return
                 }
                 log("AppDelegate › outsideClickMonitor — calling hidePanel() screenLoc=\(screenLoc)")
                 self.hidePanel()
