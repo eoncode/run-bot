@@ -66,7 +66,7 @@ still dismissed on every click inside the file picker.
 
 ---
 
-## Attempt 3 — #1195 commit 2 (2026-06-08): `beginSheetModal` ← CURRENT
+## Attempt 3 — #1195 commit 2 (2026-06-08): `beginSheetModal` ← CORRECT DIRECTION, incomplete
 
 **Theory:** The real problem is that `picker.begin { }` opens NSOpenPanel
 as a free-floating window that is invisible to every inspection mechanism
@@ -85,13 +85,18 @@ are needed at all.
   `picker.begin { }` to `picker.beginSheetModal(for: popoverWindow)`,
   attaching the picker as a sheet to the popover window.
 
-**Status:** In testing.
+**Status:** ⚠️ PARTIALLY CORRECT — the `beginSheetModal` approach was right,
+but the guard in the event monitor was wrong. The existing `for sheet in
+popoverWindow.sheets { if sheet.frame.contains(mouseLoc) }` geometry check
+is unreliable because `NSEvent.mouseLocation` is read inside a
+`Task { @MainActor }` hop — by execution time the mouse has moved and the
+captured coordinates may no longer match the sheet frame. The sheet was
+visible in `popoverWindow.sheets` correctly, but the frame check still let
+`hidePanel()` fire. Subsequent attempts 4–9 went down a different path
+(the `isFilePickerActive` flag) before the real fix was found.
 
-**Known risk:** `beginSheetModal` requires a valid `NSWindow` reference at
-call time. We obtain it via `NSApp.keyWindow` (the popover is key when the
-button is tapped) with a guard so we fall back to `begin { }` if the window
-is unexpectedly nil — preserving the old behaviour rather than silently
-doing nothing.
+**Known risk at the time:** `beginSheetModal` requires a valid `NSWindow`
+reference at call time. We obtain it via `NSApp.keyWindow` with a guard.
 
 ---
 
@@ -304,7 +309,83 @@ inside the runModal panel — and calls `hidePanel()`, collapsing the entire app
 **❌ NEVER use `NSApp.keyWindow ?? NSApp.mainWindow` without also setting `isFilePickerActive`.**
 **❌ NEVER add a second NSOpenPanel call site without applying the full flag + sheet pattern.**
 
-**Status:** Fix applied 2026-06-08 — in testing.
+**Status:** ❌ FAILED — confirmed on device 2026-06-08 ~18:00 CEST.
+
+**Why it failed:**
+The `isFilePickerActive` flag mechanism was the wrong abstraction. The flag
+had to be set in calling code, was easy to forget (as Attempt 9 proved —
+a second call site was missed entirely), and created a timing dependency
+between the flag write and the observer firing. None of these problems
+exist with the final fix.
+
+---
+
+## ✅ Attempt 10 — #1195 (2026-06-08 ~18:10 CEST): `guard !self.hasActiveSheet` — FIXED
+
+**Theory:** Strip out the entire `isFilePickerActive` abstraction and replace
+it with a direct structural check: if `popoverWindow.sheets` is non-empty,
+a sheet is open and no outside click can be genuine. The check has zero
+timing dependency, requires no flag management in calling code, and is
+automatically correct for every sheet type — NSOpenPanel via
+`beginSheetModal`, SwiftUI `.sheet()`, and any future modal.
+
+**Root cause of all previous failures:**
+Every attempt from 4–9 tried to suppress `hidePanel()` using a boolean
+flag (`isFilePickerActive`) read inside the event monitor or workspace
+observer. The flag approach failed for compounding reasons:
+- Call sites had to remember to set/clear it (Attempt 9 missed `AddRunnerSheet`).
+- Swift 6 actor isolation made reading it safely require `Task { @MainActor }`
+  hops (Attempt 7), which introduced new timing windows.
+- The `outsideClickMonitor` was already checking `popoverWindow.sheets` but
+  only used it for a per-frame `contains(mouseLoc)` geometry test. That test
+  was unreliable because `NSEvent.mouseLocation` was captured inside the
+  async Task hop, not at monitor-fire time — so coordinates were stale.
+
+**The actual fix (two lines changed):**
+
+In `outsideClickMonitor` inside `AppDelegate.swift openPanel()`:
+
+```swift
+// ✅ NEW: if any sheet is attached, skip dismissal entirely.
+guard !self.hasActiveSheet else {
+    log("AppDelegate › outsideClickMonitor — guard exit: hasActiveSheet=true, skipping hidePanel")
+    return
+}
+// ❌ REMOVED: the per-sheet frame.contains(mouseLoc) loop that was
+//    unreliable due to stale mouseLocation inside the Task hop.
+```
+
+`hasActiveSheet` is a computed property: `popover?.contentViewController?.view.window?.sheets.isEmpty == false`.
+No flag. No timing. No per-call-site boilerplate. If a sheet is open, the
+monitor returns immediately. If no sheet is open, normal outside-click
+dismissal proceeds unchanged.
+
+**What `beginSheetModal` gives us:**
+`beginSheetModal(for: popoverWindow)` attaches NSOpenPanel as a child of
+the popover's own `NSWindow`. This makes it appear in `popoverWindow.sheets`
+which is exactly what `hasActiveSheet` checks. This was already the correct
+APIcall from Attempt 3 — the sheet attachment was always working. Only the
+check for it was wrong.
+
+**Changes:**
+- `AppDelegate.swift` `openPanel()` `outsideClickMonitor`: added
+  `guard !self.hasActiveSheet` before the geometry check; removed the
+  `for sheet in popoverWindow.sheets { frame.contains(mouseLoc) }` loop.
+- `AppDelegate+PanelSetup.swift`: rewrote the POPOVER BEHAVIOR comment block
+  to accurately describe the working mechanism.
+- `AppDelegate+PanelSetup.swift` `popoverShouldClose`: updated doc comment
+  to reflect it is no longer a control point.
+- `AppDelegate.swift`: removed stale `isFilePickerActive` property comment.
+- `Resources/Info.plist`: build number bumped to 10.
+
+**Confirmed working:** 2026-06-08 18:19 CEST, build 10.
+
+**Rules going forward:**
+- ✅ ALWAYS use `picker.beginSheetModal(for: popoverWindow)` for NSOpenPanel.
+- ✅ ALWAYS rely on `hasActiveSheet` — never add per-picker boolean flags.
+- ❌ NEVER use `picker.begin { }` (free-floating, invisible to sheets check).
+- ❌ NEVER use `runModal()` (same reason).
+- ❌ NEVER add an `isFilePickerActive`-style flag — it will be missed somewhere.
 
 ---
 
