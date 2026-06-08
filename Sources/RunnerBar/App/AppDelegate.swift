@@ -119,7 +119,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set to `true` while an `NSOpenPanel` file picker is open (e.g. from `ScopeEditSheet`).
     /// `popoverShouldClose` returns `false` while this is `true`, preventing `.transient`
     /// from dismissing the popover when the user clicks inside the file picker window. (#1193)
-    var isFilePickerActive = false
 
     /// KVO observation token for `NSHostingController.preferredContentSize`.
     /// Drives popover resize without re-calling `popover.show()`.
@@ -188,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Entry point after launch. Configures the GitHub API clients, builds the
     /// status-bar item, and constructs the NSPopover panel.
     func applicationDidFinishLaunching(_ _: Notification) {
-        log("AppDelegate › applicationDidFinishLaunching — 🧲🌊🦋🔥🎸 BUILD-SIG:WAVECATCH")
+        log("AppDelegate › applicationDidFinishLaunching — START")
         configureGHAPI { endpoint in await ghAPI(endpoint) }
         configureGHRaw { endpoint in urlSessionRaw(endpoint) }
         setupStatusItem()
@@ -287,7 +286,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate › tearDownOpenState — caller=\(Thread.callStackSymbols[1])")
         panelIsOpen = false
         panelVisibilityState.isOpen = false
-        isFilePickerActive = false  // always reset on any close path — prevents stuck-true leaking into next open
         if let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
@@ -309,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ Do NOT call this from outside-tap / workspace-switch — use hidePanel() or
     ///    rely on .transient behavior.
     func closePanel() {
-        log("AppDelegate › closePanel — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive)")
+        log("AppDelegate › closePanel — panelIsOpen=\(panelIsOpen)")
         guard panelIsOpen else {
             log("AppDelegate › closePanel — guard exit: not open")
             return
@@ -333,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
-        log("AppDelegate › hidePanel — ENTER panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) hasActiveSheet=\(hasActiveSheet) preservedSheetWindowHide=\(preservedSheetWindowHide) popoverBehavior=\(popover?.behavior.rawValue ?? -1) caller=\(Thread.callStackSymbols[1])")
+        log("AppDelegate › hidePanel — ENTER panelIsOpen=\(panelIsOpen) hasActiveSheet=\(hasActiveSheet) preservedSheetWindowHide=\(preservedSheetWindowHide) popoverBehavior=\(popover?.behavior.rawValue ?? -1) caller=\(Thread.callStackSymbols[1])")
         guard panelIsOpen else {
             log("AppDelegate › hidePanel — guard exit: not open")
             return
@@ -477,14 +475,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Install outside-click monitor. Fires on every left/right click outside
-        // the app. Guard isFilePickerActive so taps inside NSOpenPanel don't hide
         // the popover. tearDownOpenState() removes the monitor on every close path.
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] event in
             let loc = event.locationInWindow
             log("AppDelegate › outsideClickMonitor — FIRED type=\(event.type.rawValue) loc=\(loc)")
-            // Hop to MainActor so we read isFilePickerActive / panelIsOpen on
             // the correct isolation domain. Without this the Swift 6 closure
             // may see stale values (the 'main actor-isolated property can not
             // be referenced from a Sendable closure' warning is the tell).
@@ -493,13 +489,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log("AppDelegate › outsideClickMonitor — self is nil, skipping")
                     return
                 }
-                log("AppDelegate › outsideClickMonitor — panelIsOpen=\(self.panelIsOpen) isFilePickerActive=\(self.isFilePickerActive)")
+                log("AppDelegate › outsideClickMonitor — panelIsOpen=\(self.panelIsOpen)")
                 guard self.panelIsOpen else {
                     log("AppDelegate › outsideClickMonitor — guard exit: panel not open")
-                    return
-                }
-                guard !self.isFilePickerActive else {
-                    log("AppDelegate › outsideClickMonitor — guard exit: file picker active, NOT hiding")
                     return
                 }
                 // Ignore clicks that land inside the popover's own window.
@@ -531,7 +523,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate › openPanel — outsideClickMonitor installed: \(String(describing: outsideClickMonitor))")
 
         // Install app-switch observer. Fires when another app becomes frontmost.
-        // Same isFilePickerActive guard — the NSOpenPanel activation change must
         // not collapse the popover.
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -540,23 +531,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] notification in
             let appName = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.localizedName ?? "unknown"
             log("AppDelegate › workspaceObserver — FIRED activated=\(appName)")
-            // Hop to MainActor so isFilePickerActive / panelIsOpen are read on
             // the correct isolation domain (same fix as outsideClickMonitor).
             Task { @MainActor [weak self] in
                 guard let self else {
                     log("AppDelegate › workspaceObserver — self is nil, skipping")
                     return
                 }
-                log("AppDelegate › workspaceObserver — panelIsOpen=\(self.panelIsOpen) isFilePickerActive=\(self.isFilePickerActive)")
+                log("AppDelegate › workspaceObserver — panelIsOpen=\(self.panelIsOpen)")
                 guard self.panelIsOpen else {
                     log("AppDelegate › workspaceObserver — guard exit: panel not open")
                     return
                 }
-                guard !self.isFilePickerActive else {
-                    log("AppDelegate › workspaceObserver — guard exit: file picker active, NOT hiding (activated=\(appName))")
-                    return
-                }
-                log("AppDelegate › workspaceObserver — calling hidePanel() because activated=\(appName) isFilePickerActive=false panelIsOpen=\(self.panelIsOpen)")
+                log("AppDelegate › workspaceObserver — calling hidePanel() because activated=\(appName) panelIsOpen=\(self.panelIsOpen)")
                 self.hidePanel()
             }
         }

@@ -20,7 +20,6 @@ import SwiftUI
 //
 // POPOVER BEHAVIOR: .applicationDefined (#1195 Attempt 5)
 // Using .applicationDefined so that AppKit delegates close decisions to
-// popoverShouldClose(_:). This lets us return false while isFilePickerActive
 // is true, blocking the dismiss when the user clicks inside NSOpenPanel.
 //
 // .transient was tried (Attempt 2) and failed — AppKit's .transient dismiss
@@ -76,7 +75,6 @@ extension AppDelegate: NSPopoverDelegate {
         newPopover.contentSize = NSSize(width: 480, height: 300)
         newPopover.animates = false
         // .applicationDefined: popoverShouldClose(_:) is consulted on every
-        // AppKit-driven close attempt. Returns false while isFilePickerActive
         // is true, keeping the popover alive when user clicks in NSOpenPanel.
         // Manual NSEvent monitor + NSWorkspace observer handle hide-on-app-switch.
         newPopover.behavior = .applicationDefined
@@ -96,7 +94,6 @@ extension AppDelegate: NSPopoverDelegate {
     ///
     /// `.transient` dismisses on any outside click, including clicks inside a
     /// free-floating `NSOpenPanel` launched via `picker.begin { }`. The
-    /// `isFilePickerActive` flag is set by `ScopeEditSheet.openFolderPicker()`
     /// before the picker opens and cleared in its completion handler, so we can
     /// return `false` here and let AppKit retry the close once the picker is gone.
     ///
@@ -104,11 +101,7 @@ extension AppDelegate: NSPopoverDelegate {
     /// the user can interact with other apps. Nav state is preserved and restored
     /// on next open via savedNavState.
     public func popoverShouldClose(_ popover: NSPopover) -> Bool {
-        log("AppDelegate › popoverShouldClose — CALLED behavior=\(popover.behavior.rawValue) isFilePickerActive=\(isFilePickerActive) panelIsOpen=\(panelIsOpen) caller=\(Thread.callStackSymbols[1])")
-        guard !isFilePickerActive else {
-            log("AppDelegate › popoverShouldClose — returning false (isFilePickerActive=true)")
-            return false
-        }
+        log("AppDelegate › popoverShouldClose — CALLED behavior=\(popover.behavior.rawValue) panelIsOpen=\(panelIsOpen) caller=\(Thread.callStackSymbols[1])")
         log("AppDelegate › popoverShouldClose — returning true (allowing close)")
         return true
     }
@@ -119,7 +112,7 @@ extension AppDelegate: NSPopoverDelegate {
     /// `tearDownOpenState()` directly — by the time this fires, `panelIsOpen`
     /// is already `false` and the guard exits immediately.
     public func popoverDidClose(_ notification: Notification) {
-        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) behavior=\((NSApp.delegate as? AppDelegate)?.popover?.behavior.rawValue ?? -1) stack=\(Thread.callStackSymbols.prefix(5).joined(separator: "||"))")
+        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) behavior=\((NSApp.delegate as? AppDelegate)?.popover?.behavior.rawValue ?? -1) stack=\(Thread.callStackSymbols.prefix(5).joined(separator: "||"))")
         guard panelIsOpen else {
             log("AppDelegate › popoverDidClose — guard exit (panelIsOpen already false)")
             return

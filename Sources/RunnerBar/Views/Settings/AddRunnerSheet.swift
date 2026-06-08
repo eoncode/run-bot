@@ -124,6 +124,9 @@ struct AddRunnerSheet: View {
     @State private var githubURLOverride = ""
     /// Whether a runner with this name is already in LocalRunnerStore's index.
     @State private var isDuplicate = false
+    /// The NSWindow hosting this sheet, captured early via WindowGrabber so
+    /// `beginSheetModal` has a reliable reference when pickExistingFolder() is called.
+    @State private var hostWindow: NSWindow?
 
     // MARK: - Body
 
@@ -155,6 +158,9 @@ struct AddRunnerSheet: View {
         }
         .padding(20)
         .frame(width: 420)
+        .background(WindowGrabber { w in
+            if hostWindow == nil, let w { hostWindow = w }
+        })
         .onAppear {
             if addMode == .addNew { loadScopes() }
         }
@@ -481,33 +487,25 @@ struct AddRunnerSheet: View {
 
     // MARK: - Actions (Add pre-existing)
 
-    /// Opens an `NSOpenPanel` to let the user select a pre-configured runner directory.
+    /// Opens an `NSOpenPanel` as a sheet attached to the popover's own window.
     ///
-    /// ✅ Uses `panel.begin { }` (free-floating / app-modal) because the popover
-    ///    window is an `NSPanel`, and `beginSheetModal(for:)` silently fails when
-    ///    the parent is an `NSPanel` — the sheet is never shown.
-    ///
-    /// ✅ `isFilePickerActive = true` is set BEFORE `begin { }` so both
-    ///    `workspaceObserver` and `outsideClickMonitor` skip `hidePanel()` for the
-    ///    entire lifetime of the picker. Cleared in the completion handler.
+    /// Uses `beginSheetModal(for:)` so the panel attaches as a child sheet.
+    /// AppKit never considers clicks inside the sheet as "outside clicks",
+    /// so the popover is never dismissed during the picker session.
     private func pickExistingFolder() {
-        let delegate = NSApp.delegate as? AppDelegate
-
+        guard let window = hostWindow else {
+            log("AddRunnerSheet › pickExistingFolder — ERROR: hostWindow nil, picker will not open")
+            return
+        }
         let openPanel = NSOpenPanel()
         openPanel.canChooseFiles = false
         openPanel.canChooseDirectories = true
         openPanel.allowsMultipleSelection = false
         openPanel.message = "Select the runner install folder (must contain a .runner file)"
         openPanel.prompt = "Select"
-
-        // Set flag BEFORE begin{} so workspace/click events that arrive
-        // during panel presentation see isFilePickerActive = true immediately.
-        delegate?.isFilePickerActive = true
-        log("AddRunnerSheet › pickExistingFolder — isFilePickerActive=true, calling begin{}")
-
-        openPanel.begin { response in
-            delegate?.isFilePickerActive = false
-            log("AddRunnerSheet › pickExistingFolder — panel closed response=\(response.rawValue) isFilePickerActive=false")
+        log("AddRunnerSheet › pickExistingFolder — calling beginSheetModal")
+        openPanel.beginSheetModal(for: window) { response in
+            log("AddRunnerSheet › pickExistingFolder — panel closed response=\(response.rawValue)")
             guard response == .OK, let url = openPanel.url else { return }
             handlePickedFolder(url)
         }
