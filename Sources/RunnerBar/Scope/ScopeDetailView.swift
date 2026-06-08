@@ -19,8 +19,11 @@ import SwiftUI
 // #973: Remove Danger Zone and monitoring toggle — Settings is single source of truth.
 // #992: Converted from nav drill-down to modal sheet with explicit Cancel / Save.
 //       All edits are staged locally; ScopePreferencesStore is only written on Save.
-//       NSOpenPanel runs without closing the panel — the NSPanel is non-activating
-//       so it does not obscure the picker.
+// #1193: Replace free-floating picker.begin{} with beginSheetModal(for: hostWindow).
+//        WindowGrabber captures the backing NSWindow at view-mount time so the
+//        reference is always valid when the folder button is tapped. Removed
+//        NSApp.activate() — it triggered NSApplicationDidResignActiveNotification
+//        which caused the app to hide before the picker opened.
 /// Modal sheet for editing settings of a single scope (org or repo).
 /// Presented when the user taps a scope row in `SettingsView`.
 struct ScopeEditSheet: View {
@@ -45,6 +48,10 @@ struct ScopeEditSheet: View {
     @State private var localRepoPath: String
     /// Tracks whether the inline path text field is in edit mode.
     @State private var isEditingPath = false
+    /// The backing NSWindow of this sheet, captured at view-mount time by
+    /// `WindowGrabber`. Used by `openFolderPicker()` to attach NSOpenPanel
+    /// as a sheet so it stays inside the popover's window hierarchy. (#1193)
+    @State private var hostWindow: NSWindow?
 
     /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
     /// so they reflect persisted user preferences on first render.
@@ -96,6 +103,11 @@ struct ScopeEditSheet: View {
             buttonFooter
         }
         .frame(width: 440)
+        // Capture the backing NSWindow as soon as this view mounts. The reference
+        // is stored in hostWindow and used by openFolderPicker() to call
+        // beginSheetModal(for:), keeping NSOpenPanel inside the popover's own
+        // window hierarchy rather than opening it as a free-floating XPC window.
+        .background(WindowGrabber { hostWindow = $0 })
         .accessibilityIdentifier("scopeEditSheet")
         .sheet(isPresented: $showHookSheet) {
             FailureHookCommandSheet(scope: scope) { showHookSheet = false }
@@ -428,9 +440,17 @@ extension ScopeEditSheet {
         isPresented = false
     }
 
-    /// Presents an `NSOpenPanel` to let the user pick the local repository folder.
-    /// The NSPanel is non-activating so it does not obscure the file picker —
-    /// no close/reopen dance is needed when the sheet is presented modally (#992).
+    /// Presents an `NSOpenPanel` attached as a sheet to the popover's own backing
+    /// window via `beginSheetModal(for:)`. This keeps the panel inside the app's
+    /// window hierarchy so macOS never fires `NSApplicationDidResignActiveNotification`
+    /// for a foreign XPC process — eliminating the app-hide race that defeated
+    /// Attempts 1–6 of #1193.
+    ///
+    /// `hostWindow` is captured at view-mount time by `WindowGrabber` (added to
+    /// `body`), so it is always non-nil when this function is called. If it is
+    /// unexpectedly nil we fall back to `picker.begin {}` to preserve the old
+    /// behaviour rather than silently doing nothing.
+    ///
     /// Updates draft `localRepoPath` only — not persisted until Save.
     func openFolderPicker() {
         let picker = NSOpenPanel()
@@ -445,16 +465,25 @@ extension ScopeEditSheet {
         } else {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
-        // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+. // NOSONAR
-        // Replace with NSApp.activate() (no argument) once the deployment target allows.
-        NSApp.activate(ignoringOtherApps: true)
-        picker.begin { response in
+
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
             if response == .OK, let url = picker.url {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
                 let abs = url.path
                 let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
                 localRepoPath = tilde
             }
+        }
+
+        if let window = hostWindow {
+            // Primary path: attach as a sheet so the panel lives inside the
+            // popover's own window — no XPC process activation, no resign-active
+            // notification, no app-hide race. (#1193 Attempt 7)
+            picker.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            // Fallback: free-floating (legacy behaviour). hostWindow should never
+            // be nil in practice since WindowGrabber fires before any tap is possible.
+            picker.begin(completionHandler: completion)
         }
     }
 }
