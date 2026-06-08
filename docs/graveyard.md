@@ -376,6 +376,20 @@ check for it was wrong.
 - `AppDelegate+PanelSetup.swift` `popoverShouldClose`: updated doc comment
   to reflect it is no longer a control point.
 - `AppDelegate.swift`: removed stale `isFilePickerActive` property comment.
+- `WindowGrabber.swift` (new): zero-size `NSViewRepresentable` that captures
+  the hosting `NSWindow` via `viewDidMoveToWindow()`; used by both picker
+  call sites to obtain a reliable window ref for `beginSheetModal(for:)`.
+- `ScopeDetailView.swift` `openFolderPicker()`: switched from free-floating
+  `picker.begin {}` to `picker.beginSheetModal(for: hostWindow)` via
+  `WindowGrabber`; removed `NSApp.activate` call.
+- `AddRunnerSheet.swift` `pickExistingFolder()`: same pattern —
+  `WindowGrabber` + `beginSheetModal(for: hostWindow)`, replacing the
+  previous `runModal()` fallback path.
+- `SettingsView.swift`: added `.onAppear` log for auth-state diagnostics
+  (Keychain token presence, OAuth/CLI state).
+- `build.sh`: binary copy path corrected from arch-neutral
+  `.build/apple/Products/Release/` to arm64-specific
+  `.build/arm64-apple-macosx/release/`.
 - `Resources/Info.plist`: build number bumped to 10.
 
 **Confirmed working:** 2026-06-08 18:19 CEST, build 10.
