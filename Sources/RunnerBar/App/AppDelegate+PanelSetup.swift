@@ -123,7 +123,9 @@ extension AppDelegate: NSPopoverDelegate {
     /// mechanism. See `docs/graveyard.md` for the history of approaches that
     /// tried to gate this method and why they all failed.
     public func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        #if DEBUG
         log("AppDelegate › popoverShouldClose — CALLED behavior=\(popover.behavior.rawValue) panelIsOpen=\(panelIsOpen) caller=\(Thread.callStackSymbols[1])")
+        #endif
         log("AppDelegate › popoverShouldClose — returning true (allowing close)")
         return true
     }
@@ -134,7 +136,9 @@ extension AppDelegate: NSPopoverDelegate {
     /// `tearDownOpenState()` directly — by the time this fires, `panelIsOpen`
     /// is already `false` and the guard exits immediately.
     public func popoverDidClose(_ notification: Notification) {
+        #if DEBUG
         log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) behavior=\((NSApp.delegate as? AppDelegate)?.popover?.behavior.rawValue ?? -1) stack=\(Thread.callStackSymbols.prefix(5).joined(separator: "||"))")
+        #endif
         guard panelIsOpen else {
             log("AppDelegate › popoverDidClose — guard exit (panelIsOpen already false)")
             return
