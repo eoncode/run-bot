@@ -119,7 +119,7 @@ extension AppDelegate: NSPopoverDelegate {
     /// `tearDownOpenState()` directly — by the time this fires, `panelIsOpen`
     /// is already `false` and the guard exits immediately.
     public func popoverDidClose(_ notification: Notification) {
-        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) caller=\(Thread.callStackSymbols[1])")
+        log("AppDelegate › popoverDidClose — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) behavior=\((NSApp.delegate as? AppDelegate)?.popover?.behavior.rawValue ?? -1) stack=\(Thread.callStackSymbols.prefix(5).joined(separator: "||"))")
         guard panelIsOpen else {
             log("AppDelegate › popoverDidClose — guard exit (panelIsOpen already false)")
             return

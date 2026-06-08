@@ -210,7 +210,16 @@ ensuring the flag read is sequenced correctly after `isFilePickerActive = true`.
   warning-free for these properties.
 - `docs/graveyard.md`: Attempt 6 marked failed with root cause explanation.
 
-**Status:** In testing as of 2026-06-08 16:04 CEST.
+**Status:** ❌ FAILED — confirmed on device 2026-06-08 16:21 CEST.
+
+**Why it failed:**
+The log for the failing test showed **zero `outsideClickMonitor FIRED` lines**. The monitor
+never ran. This is only possible when `behavior = .transient` — AppKit bypasses the global
+event monitor entirely and closes the popover internally. `behavior` was set to
+`.applicationDefined` once at `setupPanel()` time but not re-asserted before each `show()`.
+AppKit latches the behavior at show-time, and if it had reset the value between sessions, all
+subsequent opens ran as `.transient`. The `Task { @MainActor }` hops and the `isFilePickerActive`
+flag were correct but structurally unreachable — the monitor never delivered events to check.
 
 **Known risk:** `Task { @MainActor }` schedules asynchronously on the main actor
 cooperative queue. If a click arrives and the task hasn't run yet, `isFilePickerActive`
@@ -218,6 +227,43 @@ may still read `false` in a pathological timing window. This is extremely unlike
 since `isFilePickerActive = true` is set synchronously on main before the picker
 opens — but if it recurs, the next step is `@MainActor` annotation on the closures
 directly or moving to `DispatchQueue.main.sync`.
+
+---
+
+## Attempt 8 — #1195 (2026-06-08 16:22 CEST): Re-assert `behavior` + `delegate` immediately before `popover.show()`
+
+**Theory:** Attempt 7 had the right structure — `.applicationDefined` + `isFilePickerActive` flag +
+`Task { @MainActor }` hops in both closures — but the log for the failing test run revealed
+that **`outsideClickMonitor` never fired at all**. Zero instances. This is only possible if
+`behavior` was not `.applicationDefined` at show-time. When `behavior = .transient`, AppKit
+dismisses the popover directly without ever invoking the global monitor or `popoverShouldClose`.
+The value was being set once at `setupPanel()` (launch), but AppKit latches `behavior` at
+`popover.show()` time — exactly the same rule that already applied to `shouldHideAnchor`,
+which the existing code comments explicitly note must be set immediately before `show()`.
+`behavior` was never being re-asserted, so if AppKit reset it between sessions it would
+silently revert to `.transient` on the next open.
+
+**Fix:** In `AppDelegate.swift openPanel()`, re-assert `popover.behavior = .applicationDefined`
+and `popover.delegate = self` immediately before `popover.show()`, alongside `shouldHideAnchor`.
+Added PRE-SHOW and POST-SHOW log lines confirming the `behavior.rawValue` on every open.
+
+**Also added:**
+- `hidePanel` now logs its caller frame (`Thread.callStackSymbols[1]`) so unexpected dismisses
+  are traceable.
+- `popoverDidClose` now logs a 5-frame stack and the `behavior.rawValue` at dismiss time, so
+  if AppKit still bypasses the delegate the exact call site is visible.
+
+**Changes:**
+- `AppDelegate.swift` `openPanel()`: `popover.behavior = .applicationDefined` + `popover.delegate = self`
+  re-asserted immediately before `popover.show()`. PRE-SHOW / POST-SHOW log lines added.
+- `AppDelegate.swift` `hidePanel()`: added `caller=` to log line.
+- `AppDelegate+PanelSetup.swift` `popoverDidClose`: log now emits 5-frame stack + `behavior.rawValue`.
+
+**Status:** In testing as of 2026-06-08 16:22 CEST.
+
+**Known risk:** If AppKit resets `behavior` *during* the `show()` call itself this won't help.
+But given the existing `shouldHideAnchor` pattern already works with a pre-show set, the
+same approach should work for `behavior`.
 
 ---
 

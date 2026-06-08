@@ -331,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
-        log("AppDelegate › hidePanel — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) hasActiveSheet=\(hasActiveSheet)")
+        log("AppDelegate › hidePanel — panelIsOpen=\(panelIsOpen) isFilePickerActive=\(isFilePickerActive) hasActiveSheet=\(hasActiveSheet) caller=\(Thread.callStackSymbols[1])")
         guard panelIsOpen else {
             log("AppDelegate › hidePanel — guard exit: not open")
             return
@@ -439,7 +439,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if popover.responds(to: NSSelectorFromString("setShouldHideAnchor:")) {
                 popover.setValue(hideArrow, forKey: "shouldHideAnchor")
             }
+            // Re-assert behavior and delegate immediately before show().
+            // NSPopover latches these values at show() time — setting them
+            // only at setupPanel() is not sufficient; AppKit can reset them
+            // between calls. Without this, behavior silently falls back to
+            // .transient and our outsideClickMonitor / popoverShouldClose
+            // code never runs.
+            popover.behavior = .applicationDefined
+            popover.delegate = self
+            log("AppDelegate › openPanel — PRE-SHOW behavior=\(popover.behavior.rawValue) delegate=\(String(describing: popover.delegate))")
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            log("AppDelegate › openPanel — POST-SHOW behavior=\(popover.behavior.rawValue)")
         }
         makePopoverWindowKeyIfPossible()
         resizeAndRepositionPanel()
