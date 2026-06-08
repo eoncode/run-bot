@@ -18,18 +18,15 @@ import SwiftUI
 // window-server compositor. Rounded corners survive SwiftUI .sheet
 // attachment natively — no CALayer manipulation required or desired.
 //
-// POPOVER BEHAVIOR: .transient (#1195)
-// .transient causes AppKit to dismiss the popover automatically on any
-// outside click or app-switch. This replaces the manual NSEvent global
-// monitor and NSWorkspace observer that existed when the app used NSPanel
-// (.applicationDefined behavior).
-//
-// Crucially, AppKit's native .transient dismiss is aware of system panels
-// (e.g. NSOpenPanel) spawned by the app and will NOT dismiss the popover
-// while such a panel is active. The manual event monitor could not achieve
-// this because:
-//   - NSApp.modalWindow is nil when picker.begin { } is used (async, non-modal)
-//   - NSApp.windows does not include system-owned NSOpenPanel windows
+// BEHAVIOR: .applicationDefined
+// The popover uses .applicationDefined so the app controls dismissal
+// via a manual NSEvent global monitor + NSWorkspace observer in openPanel().
+// This was originally required for NSPanel and kept for NSPopover because:
+// - .transient was tested in #1195 and dismissed the popover on ALL outside
+//   clicks including clicks inside NSOpenPanel — Apple's .transient only
+//   respects the window containing the positioning view, not system panels.
+// - The manual monitor is necessary to guard against NSOpenPanel clicks.
+//   See docs/graveyard.md for full history.
 //
 // SHEET HANDLING:
 // SwiftUI .sheet() attaches as a child NSWindow to the popover's backing
@@ -48,9 +45,12 @@ import SwiftUI
 //    - popoverShouldClose always returns true. AppKit is never blocked.
 //    - popoverDidClose saves hasActiveSheet into a flag before state clears.
 //    - openPanel restores via savedNavState (already the case).
-//    - The sheet NSWindow is a child of the popover window; when the popover
-//      window closes, AppKit removes all child windows including the sheet.
-//      On re-open, SwiftUI re-presents the sheet if the binding is still true.
+//    - The global event monitor no longer has a hasActiveSheet guard —
+//      outside clicks always trigger hidePanel().
+//    - closePanel() does NOT call endSheet on any open sheet. The sheet
+//      window is a child of the popover window; when the popover window
+//      closes, AppKit removes all child windows including the sheet.
+//      On re-open, SwiftUI re-presents the sheet if the binding is still true
 //      savedNavState = .settings ensures we navigate back to SettingsView.
 //
 // SIZE NOTE:
@@ -76,14 +76,11 @@ extension AppDelegate: NSPopoverDelegate {
         newPopover.contentViewController = controller
         newPopover.contentSize = NSSize(width: 480, height: 300)
         newPopover.animates = false
-        // .transient: AppKit auto-dismisses on outside clicks and app-switch.
-        // This replaces the manual NSEvent monitor + NSWorkspace observer
-        // that were needed under .applicationDefined (#1195).
-        newPopover.behavior = .transient
+        newPopover.behavior = .applicationDefined
         newPopover.delegate = self
 
         popover = newPopover
-        log("AppDelegate › setupPanel — popover created, wiring KVO + Combine")
+        log("AppDelegate › setupPanel — popover created (behavior=.applicationDefined), wiring KVO + Combine")
 
         setupKVO(controller: controller)
         setupCombineSubscriptions()
@@ -96,6 +93,7 @@ extension AppDelegate: NSPopoverDelegate {
     /// user can interact with other apps. Nav state is preserved and restored
     /// on next open via savedNavState.
     public func popoverShouldClose(_ _: NSPopover) -> Bool {
+        log("AppDelegate › popoverShouldClose — returning true")
         return true
     }
 
@@ -110,6 +108,7 @@ extension AppDelegate: NSPopoverDelegate {
             log("AppDelegate › popoverDidClose — guard exit (panelIsOpen already false)")
             return
         }
+        log("AppDelegate › popoverDidClose — OS-initiated close, calling tearDownOpenState")
         tearDownOpenState()
     }
 
@@ -162,12 +161,6 @@ extension AppDelegate: NSPopoverDelegate {
             .store(in: &cancellables)
 
         // FIX (#1179): Seed localRunners BEFORE starting the poll loop.
-        // LocalRunnerStore.init() only calls loadIndex() which populates
-        // runnerIndex (name→path map) but leaves runners=[] until refresh()
-        // runs the disk-hydration + launchctl + GitHub-enrichment pipeline.
-        // Without this call, RunnerStore.buildInstallPathMap always receives
-        // localRunners=[] → installPathMap is always empty → busy runners
-        // never get their installPath → metrics are never fetched.
         log("AppDelegate › setupCombineSubscriptions — triggering LocalRunnerStore.refresh() BEFORE starting poll loop")
         LocalRunnerStore.shared.refresh()
 
