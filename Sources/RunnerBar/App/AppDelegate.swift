@@ -278,6 +278,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///    must nil it out themselves (see `closePanel()`).
     /// Does NOT reset `panelVisibilityState.isTransientHide` — that flag is cleared
     ///    by `openPanel()` on re-open.
+    /// Note: the `Thread.callStackSymbols` log line below is wrapped in `#if DEBUG`
+    ///    and compiles away completely in release builds.
     @MainActor func tearDownOpenState() {
         #if DEBUG
         log("AppDelegate › tearDownOpenState — caller=\(Thread.callStackSymbols[1])")
@@ -328,6 +330,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
+    /// Note: the `Thread.callStackSymbols` log line below is wrapped in `#if DEBUG`
+    ///    and compiles away completely in release builds.
     func hidePanel() {
         #if DEBUG
         log("AppDelegate › hidePanel — ENTER panelIsOpen=\(panelIsOpen) hasActiveSheet=\(hasActiveSheet) preservedSheetWindowHide=\(preservedSheetWindowHide) popoverBehavior=\(popover?.behavior.rawValue ?? -1) caller=\(Thread.callStackSymbols[1])")
@@ -531,9 +535,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate › openPanel — outsideClickMonitor installed: \(String(describing: outsideClickMonitor))")
 
         // Install app-switch observer. Fires when any app becomes frontmost,
-        // including RunnerBar itself. Guard against self-activation so that
-        // returning from an NSOpenPanel picker (which re-activates the parent
-        // app) does not immediately collapse the popover.
+        // including RunnerBar itself.
+        //
+        // IMPORTANT — self-activation guard is intentional:
+        // `guard activatedApp != NSRunningApplication.current` prevents the
+        // popover from self-dismissing when RunnerBar regains focus after an
+        // NSOpenPanel picker closes (the picker re-activates its parent app,
+        // which would otherwise trigger hidePanel on the way back in).
+        // Do NOT remove this guard.
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
