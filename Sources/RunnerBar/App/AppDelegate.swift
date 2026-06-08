@@ -287,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate › tearDownOpenState — caller=\(Thread.callStackSymbols[1])")
         panelIsOpen = false
         panelVisibilityState.isOpen = false
+        isFilePickerActive = false  // always reset on any close path — prevents stuck-true leaking into next open
         if let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
