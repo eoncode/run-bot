@@ -267,6 +267,47 @@ same approach should work for `behavior`.
 
 ---
 
+---
+
+## Attempt 9 — #1195 (2026-06-08 ~16:46 CEST): `AddRunnerSheet.pickExistingFolder()` missing `isFilePickerActive` + using `runModal()`
+
+**Root cause:** The fix so far (`isFilePickerActive` flag + `.applicationDefined` + `Task { @MainActor }` hops)
+was only applied to `ScopeDetailView.openFolderPicker()`. A **second, entirely separate** NSOpenPanel
+code path existed in `AddRunnerSheet.pickExistingFolder()` that was never updated. This path:
+1. Used `NSApp.keyWindow ?? NSApp.mainWindow` to find a window — which can be `nil` when the Settings
+   sheet already has focus, since the popover window may not be key at that moment.
+2. Fell back to `openPanel.runModal()` when no window was found — opening NSOpenPanel as a
+   **free-floating modal** completely outside the popover window hierarchy.
+3. Never set `isFilePickerActive = true` at all — so even the `NSApp.keyWindow` path offered
+   no protection against `outsideClickMonitor` or `workspaceObserver` calling `hidePanel()`.
+
+This is the panel visible in the screenshot from the bug report (the `actions-runner` folder picker
+opened by the "Add pre-existing runner" flow, which uses `AddRunnerSheet` not `ScopeDetailView`).
+
+**Why `runModal()` is fatal:**
+`runModal()` opens NSOpenPanel as a free-floating system window. It does NOT appear in
+`popoverWindow.sheets`, is NOT a child of any app window, and does NOT appear in `NSApp.windows`.
+The `outsideClickMonitor` fires on every click anywhere outside the popover frame — including
+inside the runModal panel — and calls `hidePanel()`, collapsing the entire app.
+
+**Fix applied:**
+- `AddRunnerSheet.pickExistingFolder()` rewritten to:
+  1. Obtain the window via `delegate?.popover?.contentViewController?.view.window` (the popover's
+     own backing window — same source used by `ScopeDetailView` via `WindowGrabber`).
+  2. Guard-return if window is nil (log + abort rather than silent `runModal()` fallback).
+  3. Set `delegate?.isFilePickerActive = true` BEFORE calling `beginSheetModal`.
+  4. Call `openPanel.beginSheetModal(for: window)` — attaches the picker as a child sheet.
+  5. Clear `delegate?.isFilePickerActive = false` in the completion handler.
+- Dense `log()` calls added to the new path so the picker lifecycle is visible in console.
+
+**❌ NEVER use `runModal()` for NSOpenPanel in this app.**
+**❌ NEVER use `NSApp.keyWindow ?? NSApp.mainWindow` without also setting `isFilePickerActive`.**
+**❌ NEVER add a second NSOpenPanel call site without applying the full flag + sheet pattern.**
+
+**Status:** Fix applied 2026-06-08 — in testing.
+
+---
+
 ## Reading list / references
 
 - https://ohanaware.com/swift/macOSOpenPanelSheet.html — documents the
