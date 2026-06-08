@@ -16,16 +16,24 @@ import SwiftUI
 
 // MARK: - NSWindowGrabber (NSView subclass)
 
+/// An `NSView` subclass that calls a closure with the hosting `NSWindow`
+/// as soon as the view is inserted into the window hierarchy.
 final class NSWindowGrabber: NSView {
+    /// Called with the `NSWindow` reference when the view moves to a window,
+    /// or `nil` when it is removed from one.
     let onWindow: (NSWindow?) -> Void
 
+    /// Creates a grabber that invokes `onWindow` on every `viewDidMoveToWindow` call.
     init(onWindow: @escaping (NSWindow?) -> Void) {
         self.onWindow = onWindow
         super.init(frame: .zero)
     }
 
+    /// Not supported — `WindowGrabber` is created programmatically only.
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    /// Fires `onWindow` with the current `window` value whenever the view
+    /// is added to or removed from a window hierarchy.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         onWindow(window)
@@ -34,12 +42,19 @@ final class NSWindowGrabber: NSView {
 
 // MARK: - WindowGrabber (NSViewRepresentable)
 
+/// A zero-size SwiftUI wrapper around `NSWindowGrabber`.
+///
+/// Attach via `.background(WindowGrabber { w in … })` to capture the
+/// hosting `NSWindow` without affecting layout.
 struct WindowGrabber: NSViewRepresentable {
+    /// Called with the hosting `NSWindow` when the view enters the hierarchy.
     var onWindow: (NSWindow?) -> Void
 
+    /// Creates the underlying `NSWindowGrabber` view.
     func makeNSView(context: Context) -> NSWindowGrabber {
         NSWindowGrabber(onWindow: onWindow)
     }
 
+    /// No updates required — the grabber is stateless after creation.
     func updateNSView(_ nsView: NSWindowGrabber, context: Context) {}
 }
