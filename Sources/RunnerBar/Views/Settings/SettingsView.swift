@@ -136,8 +136,6 @@ struct SettingsView: View {
             Divider()
             manageScopesRow
             Divider()
-            notificationsSection
-            Divider()
             generalSection
             Divider()
             accountSection
@@ -238,12 +236,16 @@ struct SettingsView: View {
         .padding(.vertical, 8)
     }
 
-    // MARK: - Notifications
-    /// Notification opt-in toggles for each event type.
-    private var notificationsSection: some View {
+    // MARK: - General
+    /// General section: notification toggles, launch-at-login, polling interval, and popover arrow.
+    ///
+    /// The former standalone Notifications section has been merged here
+    /// as its two toggles are closely related to the other app-behaviour controls.
+    private var generalSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Notifications").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+            Text("General").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
                 .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
+            // Notifications — merged from the former standalone Notifications section
             HStack {
                 Text("Notify on success").font(.system(size: 12)); Spacer()
                 Toggle("", isOn: $notifications.notifyOnSuccess)
@@ -257,15 +259,8 @@ struct SettingsView: View {
                     .toggleStyle(.switch).tint(Color.rbSuccess).labelsHidden()
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
-        }
-    }
-
-    // MARK: - General
-    /// General section: launch-at-login toggle, polling interval, and popover arrow toggle.
-    private var generalSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("General").font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
-                .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 4)
+            Divider().padding(.leading, RBSpacing.md)
+            // Launch at login
             HStack {
                 Text("Launch at login").font(.system(size: 12)); Spacer()
                 Toggle("", isOn: $launchAtLogin)
@@ -274,6 +269,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 6)
             Divider().padding(.leading, RBSpacing.md)
+            // Polling interval
             HStack {
                 Text("Polling interval").font(.system(size: 12)); Spacer()
                 Text("\(settings.pollingInterval)s").font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
