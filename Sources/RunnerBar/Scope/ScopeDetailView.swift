@@ -1,7 +1,37 @@
 // ScopeDetailView.swift
 // RunnerBar
+import AppKit
 import RunnerBarCore
 import SwiftUI
+
+// MARK: - WindowGrabber
+
+/// Captures the hosting NSWindow as soon as the view enters the window hierarchy.
+/// Used to pass the popover's backing window to `beginSheetModal(for:)` so that
+/// NSOpenPanel slides in as a sheet rather than a free-floating window.
+/// A free-floating NSOpenPanel causes AppKit to hand key-window status to the
+/// system process, which fires the workspace observer and dismisses the popover
+/// (#1195). Presenting as a sheet avoids the key-window transfer entirely.
+private class _WindowGrabberView: NSView {
+    var onWindow: (NSWindow?) -> Void
+    init(onWindow: @escaping (NSWindow?) -> Void) {
+        self.onWindow = onWindow
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindow(window)
+    }
+}
+
+private struct WindowGrabber: NSViewRepresentable {
+    var onWindow: (NSWindow?) -> Void
+    func makeNSView(context: Context) -> _WindowGrabberView {
+        _WindowGrabberView(onWindow: onWindow)
+    }
+    func updateNSView(_ nsView: _WindowGrabberView, context: Context) {}
+}
 
 // MARK: - ScopeEditSheet
 
@@ -21,6 +51,9 @@ import SwiftUI
 //       All edits are staged locally; ScopePreferencesStore is only written on Save.
 //       NSOpenPanel runs without closing the panel — the NSPanel is non-activating
 //       so it does not obscure the picker.
+// #1195: NSOpenPanel presented via beginSheetModal(for: popoverWindow) so it slides
+//        in as a sheet of the popover's backing window. This avoids the key-window
+//        transfer that caused the popover to dismiss when the picker opened.
 /// Modal sheet for editing settings of a single scope (org or repo).
 /// Presented when the user taps a scope row in `SettingsView`.
 struct ScopeEditSheet: View {
@@ -45,6 +78,11 @@ struct ScopeEditSheet: View {
     @State private var localRepoPath: String
     /// Tracks whether the inline path text field is in edit mode.
     @State private var isEditingPath = false
+    /// The NSWindow that hosts this view. Captured via WindowGrabber so that
+    /// NSOpenPanel can be presented as a sheet (beginSheetModal) instead of a
+    /// free-floating window. Free-floating panels cause a key-window transfer
+    /// which dismisses the popover (#1195).
+    @State private var hostWindow: NSWindow?
 
     /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
     /// so they reflect persisted user preferences on first render.
@@ -96,6 +134,13 @@ struct ScopeEditSheet: View {
             buttonFooter
         }
         .frame(width: 440)
+        // Capture the hosting NSWindow so openFolderPicker() can present the
+        // NSOpenPanel as a sheet (beginSheetModal). Without this the panel is
+        // free-floating, causes a key-window transfer, and dismisses the popover.
+        .background(
+            WindowGrabber { w in hostWindow = w }
+                .frame(width: 0, height: 0)
+        )
         .accessibilityIdentifier("scopeEditSheet")
         .sheet(isPresented: $showHookSheet) {
             FailureHookCommandSheet(scope: scope) { showHookSheet = false }
@@ -428,11 +473,31 @@ extension ScopeEditSheet {
         isPresented = false
     }
 
-    /// Presents an `NSOpenPanel` to let the user pick the local repository folder.
-    /// The NSPanel is non-activating so it does not obscure the file picker —
-    /// no close/reopen dance is needed when the sheet is presented modally (#992).
+    /// Presents an `NSOpenPanel` as a sheet of the popover's backing window.
+    ///
+    /// ## Why beginSheetModal, not picker.begin
+    /// `picker.begin {}` presents a free-floating system window (macOS 10.15+
+    /// runs open panels out-of-process). That causes:
+    /// 1. `NSApp.activate` hands key-window status to the system process.
+    /// 2. The workspace `didActivateApplicationNotification` fires and the
+    ///    popover's outside-click monitor both see a non-RunnerBar window become
+    ///    active, triggering `hidePanel()`.
+    /// 3. `addGlobalMonitorForEvents` fires for the click on the folder button
+    ///    itself (inside the popover), so `hidePanel()` runs before the action
+    ///    even completes (#1195, Attempts 1-6).
+    ///
+    /// `beginSheetModal(for: hostWindow)` slides the panel down from the top of
+    /// the popover window. The popover window remains key throughout; no
+    /// app-switch notification fires; no outside-click is generated.
+    /// `NSApp.activate` is not needed and has been removed.
+    ///
     /// Updates draft `localRepoPath` only — not persisted until Save.
     func openFolderPicker() {
+        guard let window = hostWindow else {
+            log("ScopeEditSheet › openFolderPicker — hostWindow is nil, falling back to picker.begin")
+            openFolderPickerFallback()
+            return
+        }
         let picker = NSOpenPanel()
         picker.canChooseFiles = false
         picker.canChooseDirectories = true
@@ -445,16 +510,36 @@ extension ScopeEditSheet {
         } else {
             picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
         }
-        // TODO: NSApp.activate(ignoringOtherApps:) is deprecated on macOS 14+. // NOSONAR
-        // Replace with NSApp.activate() (no argument) once the deployment target allows.
-        NSApp.activate(ignoringOtherApps: true)
+        picker.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = picker.url else { return }
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            let abs = url.path
+            let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
+            localRepoPath = tilde
+        }
+    }
+
+    /// Fallback used only if `hostWindow` is nil at call time (should not happen
+    /// in normal operation — the WindowGrabber fires before the user can tap).
+    private func openFolderPickerFallback() {
+        let picker = NSOpenPanel()
+        picker.canChooseFiles = false
+        picker.canChooseDirectories = true
+        picker.allowsMultipleSelection = false
+        picker.prompt = "Select"
+        picker.message = "Choose the local folder for \(scope)"
+        if !localRepoPath.isEmpty {
+            let expanded = NSString(string: localRepoPath).expandingTildeInPath
+            picker.directoryURL = URL(fileURLWithPath: expanded)
+        } else {
+            picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        }
         picker.begin { response in
-            if response == .OK, let url = picker.url {
-                let home = FileManager.default.homeDirectoryForCurrentUser.path
-                let abs = url.path
-                let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
-                localRepoPath = tilde
-            }
+            guard response == .OK, let url = picker.url else { return }
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            let abs = url.path
+            let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
+            localRepoPath = tilde
         }
     }
 }
