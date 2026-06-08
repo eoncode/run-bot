@@ -552,8 +552,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            let activatedApp = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            let appName = activatedApp?.localizedName ?? "unknown"
+            guard let activatedApp = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {
+                log("AppDelegate › workspaceObserver — FIRED but activatedApp is nil, skipping")
+                return
+            }
+            let appName = activatedApp.localizedName ?? "unknown"
             log("AppDelegate › workspaceObserver — FIRED activated=\(appName)")
             // Do nothing when RunnerBar itself is the newly-activated app.
             // This prevents the popover from self-dismissing when the user
