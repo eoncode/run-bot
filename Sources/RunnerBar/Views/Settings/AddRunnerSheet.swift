@@ -124,6 +124,9 @@ struct AddRunnerSheet: View {
     @State private var githubURLOverride = ""
     /// Whether a runner with this name is already in LocalRunnerStore's index.
     @State private var isDuplicate = false
+    /// The NSWindow hosting this sheet, captured early via WindowGrabber so
+    /// `beginSheetModal` has a reliable reference when pickExistingFolder() is called.
+    @State private var hostWindow: NSWindow?
 
     // MARK: - Body
 
@@ -155,6 +158,9 @@ struct AddRunnerSheet: View {
         }
         .padding(20)
         .frame(width: 420)
+        .background(WindowGrabber { w in
+            if hostWindow == nil, let w { hostWindow = w }
+        })
         .onAppear {
             if addMode == .addNew { loadScopes() }
         }
@@ -481,24 +487,27 @@ struct AddRunnerSheet: View {
 
     // MARK: - Actions (Add pre-existing)
 
-    /// Opens an `NSOpenPanel` to let the user select a pre-configured runner directory.
+    /// Opens an `NSOpenPanel` as a sheet attached to the popover's own window.
+    ///
+    /// Uses `beginSheetModal(for:)` so the panel attaches as a child sheet.
+    /// AppKit never considers clicks inside the sheet as "outside clicks",
+    /// so the popover is never dismissed during the picker session.
     private func pickExistingFolder() {
+        guard let window = hostWindow else {
+            log("AddRunnerSheet › pickExistingFolder — ERROR: hostWindow nil, picker will not open")
+            return
+        }
         let openPanel = NSOpenPanel()
         openPanel.canChooseFiles = false
         openPanel.canChooseDirectories = true
         openPanel.allowsMultipleSelection = false
         openPanel.message = "Select the runner install folder (must contain a .runner file)"
         openPanel.prompt = "Select"
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-            openPanel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = openPanel.url else { return }
-                handlePickedFolder(url)
-            }
-        } else {
-            // No key or main window available (e.g. panel not yet focused) — fall back to
-            // a modal run so the picker still works instead of silently doing nothing.
-            let response = openPanel.runModal()
-            if response == .OK, let url = openPanel.url { handlePickedFolder(url) }
+        log("AddRunnerSheet › pickExistingFolder — calling beginSheetModal")
+        openPanel.beginSheetModal(for: window) { response in
+            log("AddRunnerSheet › pickExistingFolder — panel closed response=\(response.rawValue)")
+            guard response == .OK, let url = openPanel.url else { return }
+            handlePickedFolder(url)
         }
     }
 

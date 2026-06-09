@@ -347,7 +347,15 @@ struct ActionRowView: View {
         }
     }
 
-    /// HStack containing the donut, runner type icon, labels, branch pill, and trailing meta.
+    /// Main body of the action row.
+    ///
+    /// Column order (#984):
+    /// graph-dot · local-remote-icon · sha · repo-name · commit-title · branch-text · Spacer
+    /// · time-ago · steps/total · elapsed(mm:ss, active only) · statusBadge
+    ///
+    /// - sha: `group.label` (7-char sha or PR#), muted mono
+    /// - repo-name: `group.repoShortName` stripped from owner/repo
+    /// - branch: plain `Text` capped at maxWidth 80, hidden when nil
     private var rowContent: some View {
         let tickSnapshot = tick
         return HStack(spacing: 6) {
@@ -369,10 +377,14 @@ struct ActionRowView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
+            // Branch — plain text, hidden when nil (#1194)
             if let branch = group.headBranch {
-                BranchTagPill(name: branch)
+                Text(branch)
+                    .font(DesignTokens.Fonts.mono)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .frame(maxWidth: 80, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(0)
             }
             Spacer()

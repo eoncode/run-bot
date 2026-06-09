@@ -34,13 +34,14 @@ Sources
 ## Newer approche:
 
 ```bash
+cd ~/runner-bar-3 && \
+pkill -x RunnerBar 2>/dev/null || true && \
 git fetch origin && \
-git checkout fix/948-local-runners-not-showing && \
-git pull origin fix/948-local-runners-not-showing && \
+git checkout feature/1202-local-runners-view && \
+git pull origin feature/1202-local-runners-view && \
 bash build.sh && \
-pkill RunnerBar 2>/dev/null; sleep 1; \
-log stream --level debug --predicate 'subsystem == "com.eoncode.runner-bar"' & LOG_PID=$!; sleep 1; \
-./dist/RunnerBar.app/Contents/MacOS/RunnerBar; kill $LOG_PID
+log stream --level debug --predicate 'subsystem == "com.eoncode.runner-bar"'
+
 ```
 
 ## For main:
@@ -53,4 +54,23 @@ bash build.sh && \
 pkill RunnerBar 2>/dev/null; sleep 1; \
 log stream --level debug --predicate 'subsystem == "com.eoncode.runner-bar"' & LOG_PID=$!; sleep 1; \
 ./dist/RunnerBar.app/Contents/MacOS/RunnerBar; kill $LOG_PID
+```
+
+# More robust fresh build launch 
+
+```
+ % cd /Users/eon/runner-bar-3 && \
+  pkill -x RunnerBar 2>/dev/null || true && \
+  sleep 1 && \
+  rm -rf dist/ && \
+  echo "✓ old dist/ deleted" && \
+  touch Sources/RunnerBar/App/AppDelegate.swift && \
+  bash build.sh && \
+  sleep 1 && \
+  NEW_PID=$(pgrep -x RunnerBar) && \
+  echo "✓ New PID: $NEW_PID" && \
+  lsof -p $NEW_PID | grep "RunnerBar$" | head -3 && \
+  log stream --level debug \
+    --predicate 'subsystem == "com.eoncode.runner-bar"' 2>/dev/null \
+  | grep -v -E "PollResult|RunnerStore|FailureHook|RunnerViewModel|RunnerPollState|Enricher|LocalRunnerStore"
 ```
