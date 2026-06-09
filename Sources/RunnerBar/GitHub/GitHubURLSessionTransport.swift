@@ -116,6 +116,14 @@ func clearGhRateLimit() async {
     await rateLimitActor.clear()
 }
 
+/// Returns `isLimited` and `resetDate` in a single actor hop.
+///
+/// Prefer this over separate `await ghIsRateLimited` + `await ghRateLimitResetDate` calls
+/// to avoid the TOCTOU window between two hops.
+func ghRateLimitSnapshot() async -> (isLimited: Bool, resetDate: Date?) {
+    await rateLimitActor.snapshot()
+}
+
 /// The exact `Date` at which the current rate-limit window expires.
 /// `nil` when no rate-limit is active or when the reset time is unknown.
 // periphery:ignore - async computed property; consumed via snapshot() but kept for direct callers
