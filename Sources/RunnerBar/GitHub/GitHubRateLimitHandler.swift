@@ -86,12 +86,15 @@ actor RateLimitActor {
     }
 }
 
-/// The module-wide rate-limit actor instance.
+/// The module-wide `RateLimitActor` instance shared by `GitHubResponseDecoder`
+/// and `GitHubURLSessionTransport`. Internal so both files can call `set(resetAt:)`,
+/// `clear()`, and `snapshot()` without duplication.
 let rateLimitActor = RateLimitActor()
 
 // MARK: - Rate-limit accessors
 
 /// Whether the GitHub API is currently rate-limiting this client.
+/// Backed by `RateLimitActor`; must be `await`-ed from async contexts.
 var ghIsRateLimited: Bool {
     get async { await rateLimitActor.isLimited }
 }
@@ -102,6 +105,8 @@ func clearGhRateLimit() async {
 }
 
 /// Returns `isLimited` and `resetDate` in a single actor hop.
+/// Prefer this over separate `await ghIsRateLimited` + `await ghRateLimitResetDate` calls
+/// to avoid the TOCTOU window between two hops.
 func ghRateLimitSnapshot() async -> (isLimited: Bool, resetDate: Date?) {
     await rateLimitActor.snapshot()
 }
