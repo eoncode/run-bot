@@ -15,7 +15,7 @@ private struct RunnerJSON: Decodable {
     let runnerName: String?
 }
 
-// swiftlint:disable:next missing_docs
+/// Form field subviews and pre-existing folder actions for `AddRunnerSheet`.
 extension AddRunnerSheet {
 
     // MARK: - Add New Form Body
@@ -352,6 +352,10 @@ extension AddRunnerSheet {
     }
 
     /// Writes the LaunchAgent plist, registers with `LocalRunnerStore`, and dismisses the sheet.
+    ///
+    /// The `canImport` check at entry is a defensive safety net. The primary gate is the
+    /// `.disabled(!canImport)` modifier on the Import button; this guard catches any
+    /// programmatic calls that bypass the UI.
     func importExistingRunner() {
         guard canImport else { return }
 

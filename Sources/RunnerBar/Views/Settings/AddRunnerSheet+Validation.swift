@@ -3,7 +3,7 @@
 
 import Foundation
 
-// swiftlint:disable:next missing_docs
+/// Computed validation helpers and state-check predicates for `AddRunnerSheet`.
 extension AddRunnerSheet {
 
     // MARK: - Helpers (Add new)
@@ -39,8 +39,9 @@ extension AddRunnerSheet {
             : detectedGitHubURL
     }
 
-    /// Guards the Import button: requires a detected runner name, no parse error,
-    /// no duplicate in the store, and a non-empty GitHub URL.
+    /// Returns `true` when all pre-existing import preconditions are met: a runner name was
+    /// detected, no parse error occurred, the runner is not already tracked, and a GitHub URL
+    /// is available.
     var canImport: Bool {
         !detectedName.isEmpty
             && existingError == nil

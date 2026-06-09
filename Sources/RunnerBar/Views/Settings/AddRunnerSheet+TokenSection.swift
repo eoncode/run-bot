@@ -56,16 +56,19 @@ func fetchRunnerDownloadURL() async -> String? {
     return match?.browserDownloadUrl
 }
 
-// swiftlint:disable:next missing_docs
+/// Scope-loading and step-reporting helpers for `AddRunnerSheet`.
 extension AddRunnerSheet {
 
     // MARK: - Scopes loader
 
     /// Fetches the user's repos and organisations on a background thread and updates state on `@MainActor`.
     ///
-    /// Uses a plain `Task` (not `Task.detached`) — inherits the `@MainActor` call-site context
-    /// but immediately suspends to the cooperative pool via `await` in the fetch functions.
-    /// State writes are confined back to the main actor via `await MainActor.run { … }`.
+    /// Uses a plain `Task` (not `Task.detached`). Whether the task starts on `@MainActor` is
+    /// **call-site dependent**: `AddRunnerSheet` has no `@MainActor` annotation at the type level,
+    /// so a `Task` created here only inherits `@MainActor` if the *caller* is itself `@MainActor`
+    /// (e.g. `.onAppear` in a SwiftUI body, which is `@MainActor`-isolated). Do not assume
+    /// `@MainActor` inheritance if calling `loadScopes()` from an unannotated context.
+    /// State writes are always confined back to the main actor via `await MainActor.run { … }`.
     func loadScopes() {
         isLoadingScopes = true
         Task(priority: .userInitiated) {
