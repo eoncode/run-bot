@@ -51,7 +51,7 @@ func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
 // MARK: - RunnerJSON
 
 /// Decodable envelope for the `.runner` JSON file written by the GitHub Actions runner agent.
-private struct RunnerJSON: Decodable {
+struct RunnerJSON: Decodable {
     /// The GitHub server URL associated with this runner (e.g. `https://github.com`).
     let gitHubUrl: String?
     /// The numeric agent identifier assigned by the GitHub Actions service.
