@@ -10,7 +10,9 @@ import SwiftUI
 /// Intentionally `internal` (not `private`) because the cross-file extension split
 /// requires all extension files to access these constants. Do not promote to `public`
 /// and do not add constants unrelated to `AddRunnerSheet` here.
-// TODO: If AddRunnerSheet is ever consolidated back into a single file, restrict to `private`.
+///
+/// - Note: If `AddRunnerSheet` is ever consolidated back into a single file,
+///   restrict this enum to `private`.
 enum GitHubURIs {
     /// The base GitHub web URL.
     static let base            = "https://github.com/" // NOSONAR — centralised constant, not an inline hardcoded URI
