@@ -35,7 +35,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                for id in runIDs { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun-failed-jobs") }
+                await withTaskGroup(of: Void.self) { group in
+                    for id in runIDs { group.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun-failed-jobs") } }
+                }
             }
         } label: { Label("Re-run Failed Jobs", systemImage: "arrow.counterclockwise") }
         .disabled(!isConcluded)
@@ -45,7 +47,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                for id in runIDs { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun") }
+                await withTaskGroup(of: Void.self) { group in
+                    for id in runIDs { group.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun") } }
+                }
             }
         } label: { Label("Re-run All Jobs", systemImage: "arrow.clockwise") }
         .disabled(!isConcluded)
@@ -55,7 +59,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                for id in runIDs { await cancelRun(runID: id, scope: scope) }
+                await withTaskGroup(of: Void.self) { tg in
+                    for id in runIDs { tg.addTask { await cancelRun(runID: id, scope: scope) } }
+                }
             }
         } label: { Label("Cancel", systemImage: "xmark.circle") }
         .disabled(!isLive)
@@ -117,7 +123,9 @@ private struct JobContextMenuModifier: ViewModifier {
             let scope  = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                for id in runIDs { await cancelRun(runID: id, scope: scope) }
+                await withTaskGroup(of: Void.self) { tg in
+                    for id in runIDs { tg.addTask { await cancelRun(runID: id, scope: scope) } }
+                }
             }
         } label: { Label("Cancel", systemImage: "xmark.circle") }
         .disabled(!isLive)
