@@ -64,7 +64,7 @@ func fetchRunnerDownloadURL() async -> String? {
     return match?.browserDownloadUrl
 }
 
-/// Defines token-related controls for the add-runner sheet.
+// swiftlint:disable:next missing_docs
 extension AddRunnerSheet {
 
     // MARK: - Scopes loader

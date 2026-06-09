@@ -3,7 +3,7 @@
 
 import Foundation
 
-/// Adds validation helpers for the add-runner form.
+// swiftlint:disable:next missing_docs
 extension AddRunnerSheet {
 
     // MARK: - Helpers (Add new)

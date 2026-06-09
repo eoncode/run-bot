@@ -4,7 +4,7 @@
 import AppKit
 import SwiftUI
 
-/// Defines form field controls for the add-runner sheet.
+// swiftlint:disable:next missing_docs
 extension AddRunnerSheet {
 
     // MARK: - Add New Form Body
