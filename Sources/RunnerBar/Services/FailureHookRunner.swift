@@ -214,7 +214,7 @@ enum FailureHookRunner {
     /// Resolves all `$TOKEN` placeholders in `command` using data from `group`, `scope`, and `jobs`.
     ///
     /// Token map:
-    /// - `$LOCAL_PATH`     — absolute path from `ScopePreferencesStore.localPath(for:)`
+    /// - `$LOCAL_PATH`     — absolute path from `ScopePreferencesStore.localRepoPath(for:)`
     /// - `$SCOPE`          — `owner/repo` string
     /// - `$BRANCH`         — head branch of the first run
     /// - `$COMMIT_SHA`     — full 40-char SHA of the triggering commit
@@ -231,7 +231,7 @@ enum FailureHookRunner {
         scope: String,
         jobs: [FailedJobResult]
     ) -> String {
-        let localPath = ScopePreferencesStore.localPath(for: scope) ?? scope
+        let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
         let branch = group.headBranch ?? ""
         let sha = group.headSha
         let firstRun = group.runs.first
