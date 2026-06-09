@@ -44,6 +44,12 @@ struct SettingsView: View {
     // render settles → infinite glitchy loop. @StateObject is owned by SwiftUI for the
     // lifetime of this view's identity, so the subscription is stable.
     // store (RunnerViewModel) is injected by the caller and must stay @ObservedObject.
+    //
+    // NOTE: These properties (and the @State vars below) are `internal` rather than
+    // `private` so that SettingsView+Sections.swift can access them from a separate-file
+    // extension. Swift does not allow `private` members to be read across files even
+    // within the same type. See SE-0169. signOutCancellable is the sole exception —
+    // it is not referenced in the extension and intentionally stays `private`.
     /// App-wide preferences (notifications, update channel, etc.).
     @StateObject var settings = AppPreferencesStore.shared
     /// Notification opt-in preferences per scope.
