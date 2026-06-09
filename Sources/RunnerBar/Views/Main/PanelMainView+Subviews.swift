@@ -135,8 +135,6 @@ private struct RunnerMetricsBadge: View {
 // MARK: - PanelLocalRunnerRow
 /// Renders a card for each runner passed in.
 ///
-/// Renders a card for each runner passed in.
-///
 /// ❌ DO NOT add an isBusy filter here — isBusy is set by RunnerStatusEnricher
 /// on a separate background cycle and will always lag behind the RunnerStore
 /// fetch cycle, causing rows to be silently swallowed. (#948)
