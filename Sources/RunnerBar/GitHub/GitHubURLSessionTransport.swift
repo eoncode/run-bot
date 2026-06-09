@@ -25,7 +25,7 @@ import os
 ///   5. `RunnerViewModel.reload()` mirrors them into `@Published` props.
 ///   6. `PanelMainView.rateLimitBanner` renders a live countdown using
 ///      `store.rateLimitResetDate` + the existing 1-second `displayTick`.
-private actor RateLimitActor {
+actor RateLimitActor {
     /// Whether the GitHub API is currently rate-limiting this client.
     private(set) var isLimited = false
     /// The moment at which the rate-limit window expires (mirrors X-RateLimit-Reset).
@@ -100,7 +100,7 @@ private actor RateLimitActor {
 }
 
 /// The module-wide rate-limit actor instance.
-private let rateLimitActor = RateLimitActor()
+let rateLimitActor = RateLimitActor()
 
 // MARK: - Rate-limit accessors
 
