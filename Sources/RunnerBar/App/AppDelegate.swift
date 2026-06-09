@@ -166,65 +166,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnyView(view.environmentObject(panelVisibilityState))
     }
 
-    // MARK: - App lifecycle
-
-    /// Sets activation policy during UI tests so XCTest can see windows.
-    func applicationWillFinishLaunching(_ _: Notification) {
-        guard ProcessInfo.processInfo.environment["UI_TESTING"] != nil else { return }
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    /// Entry point after launch. Configures the GitHub API clients, builds the
-    /// status-bar item, and constructs the NSPopover panel.
-    func applicationDidFinishLaunching(_ _: Notification) {
-        log("AppDelegate › applicationDidFinishLaunching — START")
-        configureGHAPI { endpoint in await ghAPI(endpoint) }
-        configureGHRaw { endpoint in await urlSessionRaw(endpoint) }
-        setupStatusItem()
-        setupPanel()
-        setupSignOutSubscription()
-    }
-
-    // MARK: - Sign-out subscription
-
-    /// Restarts the poll loop when the user signs out of OAuth so that
-    /// `githubToken()` re-resolves to `GH_TOKEN` / `GITHUB_TOKEN` env vars
-    /// on the very next fetch cycle.
-    ///
-    /// ## Why this lives here and not in SettingsView
-    /// `SettingsView`'s `signOutCancellable` is stored in `@State` and is
-    /// only alive while Settings is visible. `AppDelegate` is a true singleton
-    /// for the app's lifetime, so this subscription is always active.
-    ///
-    /// ## What was broken (regression from PR #1138)
-    /// Before #1138, polling was driven by `Timer + scheduleTimer()`. After
-    /// sign-out the timer fired, `fetch()` ran, `githubToken()` found the
-    /// cache cleared, and naturally fell through to env-var tokens.
-    /// #1138 replaced the timer with a `pollTask: Task` that loops on
-    /// `Task.sleep` — it never calls `start()` again, so the token fallback
-    /// only works if `start()` is explicitly invoked after sign-out.
-    private func setupSignOutSubscription() {
-        OAuthService.shared.didSignOut
-            .receive(on: DispatchQueue.main)
-            .sink {
-                log("AppDelegate › didSignOut — restarting poll loop for env-token fallback")
-                RunnerStore.shared.start()
-            }
-            .store(in: &cancellables)
-    }
-
-    // MARK: - OAuth URL callback
-
-    /// Handles the OAuth callback URL (`runnerbar://oauth/…`) delivered by the OS
-    /// after the user authorises the GitHub OAuth flow in the browser.
-    func application(_ _: NSApplication, open urls: [URL]) {
-        guard let url = urls.first(where: {
-            $0.scheme == GitHubConstants.oauthScheme && $0.host == GitHubConstants.oauthHost
-        }) else { return }
-        OAuthService.shared.handleCallback(url)
-    }
-
     // MARK: - Popover resize
 
     /// Clamps the popover's `contentSize` to the current screen bounds.
