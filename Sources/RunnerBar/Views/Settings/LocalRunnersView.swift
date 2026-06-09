@@ -325,7 +325,10 @@ struct LocalRunnersView: View {
                 if let installPath = runner.installPath {
                     original.load(installPath: installPath)
                 }
-                commitRunnerEdit(runner: runner, draft: draft, original: original) { @MainActor result in
+                Task {
+                    let result = await Task.detached(priority: .userInitiated) {
+                        await commitRunnerEdit(runner: runner, draft: draft, original: original)
+                    }.value
                     isCommitting = false
                     switch result {
                     case .success:

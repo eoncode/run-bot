@@ -41,7 +41,8 @@ struct FailureHookCommandSheet: View {
         log("FailureHookCommandSheet › init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
     }
 
-    /// The variables constant.
+    /// Shell-variable tokens the user can insert into the command, e.g. `$SCOPE`, `$FAILURE_LOG`.
+    /// Rendered as pill buttons in `pillSection`; tapping a pill appends the token to `commandText`.
     private let variables: [String] = [
         "$SCOPE", "$LOCAL_PATH", "$BRANCH", "$RUN_ID", "$COMMIT_SHA",
         "$WORKFLOW_NAME", "$FAILURE_LOG",
