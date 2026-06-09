@@ -327,7 +327,7 @@ final class LocalRunnerStore: ObservableObject {
 
 // MARK: - .runner JSON parser
 
-/// Reads `installPath/.runner` JSON and builds a RunnerModel.
+/// Reads `installPath/.runner` JSON and builds a `RunnerModel`.
 private func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
     log("LocalRunnerStore › runnerModelFromIndex — parsing '\(name)' at \(installPath)")
     let jsonURL = URL(fileURLWithPath: installPath).appendingPathComponent(".runner")
@@ -342,24 +342,42 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         data = data.dropFirst(3)
         log("LocalRunnerStore › runnerModelFromIndex — stripped UTF-8 BOM from '\(name)'")
     }
+
+    /// Decodable envelope for the `.runner` JSON file written by the GitHub Actions runner agent.
     struct RunnerJSON: Decodable {
+        /// The GitHub server URL associated with this runner.
         let gitHubUrl: String?
+        /// The numeric agent identifier assigned by the GitHub Actions service.
         let agentId: Int?
+        /// The working folder used by jobs executed on this runner.
         let workFolder: String?
+        /// The OS platform string reported by the runner agent.
         let platform: String?
+        /// The CPU architecture string reported by the runner agent.
         let platformArchitecture: String?
+        /// The version string of the runner agent binary.
         let agentVersion: String?
+        /// Whether this runner is configured as ephemeral (single-job, then self-removes).
         let ephemeral: Bool?
+        /// Maps Swift property names to the JSON keys used by the runner agent.
         enum CodingKeys: String, CodingKey {
+            /// Key for `gitHubUrl`.
             case gitHubUrl            = "gitHubUrl"
+            /// Key for `agentId`.
             case agentId              = "AgentId"
+            /// Key for `workFolder`.
             case workFolder           = "WorkFolder"
+            /// Key for `platform`.
             case platform             = "Platform"
+            /// Key for `platformArchitecture`.
             case platformArchitecture = "PlatformArchitecture"
+            /// Key for `agentVersion`.
             case agentVersion         = "AgentVersion"
+            /// Key for `ephemeral`.
             case ephemeral            = "Ephemeral"
         }
     }
+
     let json = try? JSONDecoder().decode(RunnerJSON.self, from: data)
     if json == nil {
         log("LocalRunnerStore › ⚠️ runnerModelFromIndex — JSON decode failed for '\(name)' at \(installPath). File may be malformed.")
