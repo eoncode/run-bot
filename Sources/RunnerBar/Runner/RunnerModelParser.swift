@@ -35,7 +35,9 @@ func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
         log("RunnerModelParser › runnerModelFromIndex — '\(name)' agentId=\(String(describing: json?.agentId)) gitHubUrl=\(String(describing: json?.gitHubUrl))")
     }
     return RunnerModel(
-        runnerName: name,
+        // Prefer the AgentName decoded from the .runner file; fall back to the index key
+        // if the field is absent (older runner agent versions may omit it).
+        runnerName: json?.runnerName ?? name,
         gitHubUrl: json?.gitHubUrl,
         agentId: json?.agentId,
         workFolder: json?.workFolder,

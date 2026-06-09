@@ -14,7 +14,7 @@ final class LocalRunnerIndex {
     // MARK: - Storage key
 
     /// The `UserDefaults` key used to persist the runner name → install path index.
-    static let indexKey = "localRunnerIndex"
+    private static let indexKey = "localRunnerIndex"
 
     // MARK: - State
 
