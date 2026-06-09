@@ -8,13 +8,13 @@ import RunnerBarCore
 extension RunnerStore {
     /// Lookup maps built from the local runner list, used by `fetchAndEnrichRunners`.
     struct InstallPathMap {
-        /// "scope/runnerName" → installPath  (exact scope-prefixed match)
+        /// Maps "scope/runnerName" to installPath (exact scope-prefixed match).
         let byFullKey: [String: String]
-        /// "runnerName" → installPath  (name-only fallback)
+        /// Maps "runnerName" to installPath (name-only fallback).
         let byName: [String: String]
-        /// agentId (Int) → installPath  (local `.runner` JSON AgentId, scope-agnostic)
+        /// Maps agentId to installPath using the local `.runner` JSON AgentId (scope-agnostic).
         let byId: [Int: String]
-        /// apiId (Int) → installPath  (GitHub REST API runner id from last enrichment cycle)
+        /// Maps apiId to installPath using the GitHub REST API runner id from the last enrichment cycle.
         ///
         /// For org runners the GitHub API assigns an `id` that differs from the local
         /// `.runner` JSON `AgentId`. This map is keyed on the API id so that metrics
