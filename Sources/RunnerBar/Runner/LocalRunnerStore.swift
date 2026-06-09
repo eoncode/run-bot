@@ -359,21 +359,16 @@ private func runnerModelFromIndex(name: String, installPath: String) -> RunnerMo
         let agentVersion: String?
         /// Whether this runner is configured as ephemeral (single-job, then self-removes).
         let ephemeral: Bool?
-        /// Maps Swift property names to the JSON keys used by the runner agent.
+        // CodingKeys maps Swift camelCase property names to the runner agent's
+        // PascalCase JSON keys. The exception is `gitHubUrl`, which the agent
+        // writes as-is (camelCase) — hence its raw value matches the property name.
         enum CodingKeys: String, CodingKey {
-            /// Key for `gitHubUrl`.
             case gitHubUrl            = "gitHubUrl"
-            /// Key for `agentId`.
             case agentId              = "AgentId"
-            /// Key for `workFolder`.
             case workFolder           = "WorkFolder"
-            /// Key for `platform`.
             case platform             = "Platform"
-            /// Key for `platformArchitecture`.
             case platformArchitecture = "PlatformArchitecture"
-            /// Key for `agentVersion`.
             case agentVersion         = "AgentVersion"
-            /// Key for `ephemeral`.
             case ephemeral            = "Ephemeral"
         }
     }

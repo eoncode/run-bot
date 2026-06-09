@@ -263,15 +263,21 @@ final class RunnerStore {
     ) async -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
 
+        // Derive extra org scopes from local runners whose gitHubUrl is org-level
+        // (i.e. "https://github.com/orgname" — only one non-empty path component).
+        // These are NOT in activeScopes (which only contains repo scopes the user added),
+        // so they would never be fetched otherwise — causing org runners to be invisible
+        // to the busy-detection and metrics path.
         let configuredScopeSet = Set(scopes)
         var extraOrgScopes: [String] = []
         for localRunner in localRunners {
             guard let urlString = localRunner.gitHubUrl,
                   let url = URL(string: urlString)
             else { continue }
+            // Strip leading "/" from path components and filter empties.
             let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
-            guard parts.count == 1 else { continue }
-            let orgScope = parts[0]
+            guard parts.count == 1 else { continue }   // org URL has exactly 1 component
+            let orgScope = parts[0]                    // e.g. "psw-pwa"
             guard !configuredScopeSet.contains(orgScope),
                   !extraOrgScopes.contains(orgScope)
             else { continue }
@@ -284,6 +290,7 @@ final class RunnerStore {
 
         var runnersWithScope: [(scope: String, runner: Runner)] = []
 
+        // Fetch configured (repo) scopes
         for scope in scopes {
             let fetched = await fetchRunners(for: scope)
             log("RunnerStore › fetchAndEnrichRunners — scope=\(scope) returned \(fetched.count) runner(s)")
@@ -292,6 +299,7 @@ final class RunnerStore {
             }
         }
 
+        // Fetch extra org scopes derived from local runners
         for orgScope in extraOrgScopes {
             let fetched = await fetchRunners(for: orgScope)
             log("RunnerStore › fetchAndEnrichRunners — org scope=\(orgScope) returned \(fetched.count) runner(s)")
@@ -348,6 +356,13 @@ final class RunnerStore {
             }
         }
 
+        // Write metrics back to LocalRunnerStore so the main-view runner row badge
+        // reflects the latest CPU/MEM values. applyMetrics is a lightweight in-place
+        // copying(metrics:) — no disk I/O, no API call, no refresh() cycle.
+        // Only apply for self-hosted runners (those with a resolved installPath) to
+        // avoid spurious ⚠️ warnings for cloud-hosted runners that have no local entry.
+        // Only write back for BUSY runners — idle runners have metrics=nil stamped above
+        // and writing nil back would stomp the values applyRefreshResults just preserved.
         for (_, runner) in indexed
             where runner.busy
                && (installPathMap.byApiId[runner.id] != nil
