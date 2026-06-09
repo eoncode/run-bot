@@ -2,7 +2,6 @@
 // RunnerBar
 
 import Foundation
-import os
 
 // MARK: - Shared execution core
 
