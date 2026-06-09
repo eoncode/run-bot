@@ -28,6 +28,7 @@ enum CommitResult {
 /// because the file-I/O helpers (`patchRunnerJSONMulti`, `writeProxyFiles`) are blocking.
 /// Returns the `CommitResult` directly; the caller is responsible for hopping back to
 /// `@MainActor` for any UI updates.
+// ⚠️ File I/O: must be called from Task.detached or another non-@MainActor context.
 func commitRunnerEdit(
     runner: RunnerModel,
     draft: RunnerEditDraft,
