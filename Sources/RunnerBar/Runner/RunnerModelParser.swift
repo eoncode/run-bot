@@ -51,9 +51,15 @@ func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
 // MARK: - RunnerJSON
 
 /// Decodable envelope for the `.runner` JSON file written by the GitHub Actions runner agent.
+///
+/// Used by both `runnerModelFromIndex` (store hydration) and `AddRunnerSheet` (pre-existing
+/// runner import) so that both code paths decode from the same struct.
 struct RunnerJSON: Decodable {
     /// The GitHub server URL associated with this runner (e.g. `https://github.com`).
     let gitHubUrl: String?
+    /// The display name the runner registered with.
+    /// Present in the `.runner` file as `AgentName`.
+    let runnerName: String?
     /// The numeric agent identifier assigned by the GitHub Actions service.
     let agentId: Int?
     /// The working folder used by jobs executed on this runner.
@@ -72,6 +78,8 @@ struct RunnerJSON: Decodable {
     private enum CodingKeys: String, CodingKey {
         /// Maps to the camelCase `gitHubUrl` key in the agent JSON.
         case gitHubUrl
+        /// Maps to the PascalCase `AgentName` key in the agent JSON.
+        case runnerName           = "AgentName"
         /// Maps to the PascalCase `AgentId` key in the agent JSON.
         case agentId              = "AgentId"
         /// Maps to the PascalCase `WorkFolder` key in the agent JSON.

@@ -47,7 +47,6 @@ final class LocalRunnerStore: ObservableObject {
 
     /// Removes `name` from the persisted index.
     func unregister(name: String) {
-        log("LocalRunnerStore › unregister '\(name)'")
         index.unregister(name: name)
     }
 

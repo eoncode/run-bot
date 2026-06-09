@@ -333,7 +333,10 @@ extension AddRunnerSheet {
             return
         }
 
-        detectedName = url.lastPathComponent
+        // Prefer the registered name from the .runner file (AgentName); fall back to
+        // the folder's last path component if the field is absent or empty.
+        let nameFromFile = json.runnerName.flatMap { $0.isEmpty ? nil : $0 }
+        detectedName = nameFromFile ?? url.lastPathComponent
         detectedGitHubURL = json.gitHubUrl ?? ""
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
