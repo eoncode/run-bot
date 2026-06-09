@@ -194,6 +194,7 @@ final class RunnerStore {
 
         let enrichedRunners = await fetchAndEnrichRunners(
             scopes: scopesSnapshot,
+            localRunners: localRunners,
             installPathMap: installPathMap
         )
         let jobResult = await buildJobState(snapPrev: snapPrev, snapCache: snapCache)
@@ -291,12 +292,47 @@ final class RunnerStore {
     // MARK: - fetchAndEnrichRunners
 
     /// Fetches runners from GitHub for each scope and enriches busy runners with local CPU/MEM metrics.
+    ///
+    /// In addition to the user-configured `scopes` (which are always repo-scoped), this
+    /// method also fetches from any **org-level** endpoints implied by local runners whose
+    /// `gitHubUrl` has a single-component path (e.g. `https://github.com/psw-pwa`).
+    /// Without this, org-scoped runners never appear in the fetched list, are never marked
+    /// busy, and `metricsForRunner` is never called for them.
     func fetchAndEnrichRunners(
         scopes: [String],
+        localRunners: [RunnerModel],
         installPathMap: InstallPathMap
     ) async -> [Runner] {
         log("RunnerStore › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
+
+        // Derive extra org scopes from local runners whose gitHubUrl is org-level
+        // (i.e. "https://github.com/orgname" — only one non-empty path component).
+        // These are NOT in activeScopes (which only contains repo scopes the user added),
+        // so they would never be fetched otherwise — causing org runners to be invisible
+        // to the busy-detection and metrics path.
+        let configuredScopeSet = Set(scopes)
+        var extraOrgScopes: [String] = []
+        for localRunner in localRunners {
+            guard let urlString = localRunner.gitHubUrl,
+                  let url = URL(string: urlString)
+            else { continue }
+            // Strip leading "/" from path components and filter empties.
+            let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+            guard parts.count == 1 else { continue }   // org URL has exactly 1 component
+            let orgScope = parts[0]                    // e.g. "psw-pwa"
+            guard !configuredScopeSet.contains(orgScope),
+                  !extraOrgScopes.contains(orgScope)
+            else { continue }
+            extraOrgScopes.append(orgScope)
+            log("RunnerStore › fetchAndEnrichRunners — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'")
+        }
+        if !extraOrgScopes.isEmpty {
+            log("RunnerStore › fetchAndEnrichRunners — extra org scopes to fetch: \(extraOrgScopes)")
+        }
+
         var runnersWithScope: [(scope: String, runner: Runner)] = []
+
+        // Fetch configured (repo) scopes
         for scope in scopes {
             let fetched = await fetchRunners(for: scope)
             log("RunnerStore › fetchAndEnrichRunners — scope=\(scope) returned \(fetched.count) runner(s)")
@@ -304,6 +340,16 @@ final class RunnerStore {
                 runnersWithScope.append((scope: scope, runner: runner))
             }
         }
+
+        // Fetch extra org scopes derived from local runners
+        for orgScope in extraOrgScopes {
+            let fetched = await fetchRunners(for: orgScope)
+            log("RunnerStore › fetchAndEnrichRunners — org scope=\(orgScope) returned \(fetched.count) runner(s)")
+            for runner in fetched {
+                runnersWithScope.append((scope: orgScope, runner: runner))
+            }
+        }
+
         log("RunnerStore › fetchAndEnrichRunners — total runners across all scopes: \(runnersWithScope.count)")
 #if DEBUG
         log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey=\(installPathMap.byFullKey.keys.sorted()) byName=\(installPathMap.byName.keys.sorted()) byId=\(installPathMap.byId.keys.sorted()) byApiId=\(installPathMap.byApiId.keys.sorted())")
