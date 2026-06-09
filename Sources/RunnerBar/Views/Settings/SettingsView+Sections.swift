@@ -5,6 +5,7 @@ import SwiftUI
 
 // MARK: - SettingsView sections extension
 // swiftlint:disable no_extension_access_modifier
+/// Settings sections broken out from `SettingsView` for readability.
 extension SettingsView {
 
     // MARK: - Account
