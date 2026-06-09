@@ -51,7 +51,7 @@ func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
 // MARK: - RunnerJSON
 
 /// Decodable envelope for the `.runner` JSON file written by the GitHub Actions runner agent.
-private struct RunnerJSON: Decodable {
+struct RunnerJSON: Decodable {
     /// The GitHub server URL associated with this runner (e.g. `https://github.com`).
     let gitHubUrl: String?
     /// The numeric agent identifier assigned by the GitHub Actions service.
@@ -68,20 +68,14 @@ private struct RunnerJSON: Decodable {
     let ephemeral: Bool?
 
     /// Maps Swift property names to the JSON keys used by the runner agent.
+    /// Note: the agent uses PascalCase for most keys but camelCase for `gitHubUrl`.
     enum CodingKeys: String, CodingKey {
-        /// Key for `gitHubUrl`.
-        case gitHubUrl            = "gitHubUrl"
-        /// Key for `agentId`.
+        case gitHubUrl
         case agentId              = "AgentId"
-        /// Key for `workFolder`.
         case workFolder           = "WorkFolder"
-        /// Key for `platform`.
         case platform             = "Platform"
-        /// Key for `platformArchitecture`.
         case platformArchitecture = "PlatformArchitecture"
-        /// Key for `agentVersion`.
         case agentVersion         = "AgentVersion"
-        /// Key for `ephemeral`.
         case ephemeral            = "Ephemeral"
     }
 }

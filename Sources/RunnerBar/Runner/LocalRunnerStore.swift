@@ -47,6 +47,7 @@ final class LocalRunnerStore: ObservableObject {
 
     /// Removes `name` from the persisted index.
     func unregister(name: String) {
+        log("LocalRunnerStore › unregister '\(name)'")
         index.unregister(name: name)
     }
 
@@ -127,25 +128,29 @@ final class LocalRunnerStore: ObservableObject {
 #endif
 
         guard let idx = runners.firstIndex(where: { runner in
+            // Priority 1: match on GitHub REST API id (populated after first enrichment).
+            // This is the key fix for org runners where apiId ≠ agentId.
             if let rid = runnerId, let aid = runner.apiId {
                 if aid == rid {
                     log("LocalRunnerStore › applyMetrics — MATCH via apiId=\(aid) for '\(runner.runnerName)'")
                     return true
                 }
             }
+            // Priority 2: match on local .runner JSON AgentId (repo runners).
             if let rid = runnerId, let aid = runner.agentId {
                 if aid == rid {
                     log("LocalRunnerStore › applyMetrics — MATCH via agentId=\(aid) for '\(runner.runnerName)'")
                     return true
                 }
             }
+            // Priority 3: name fallback.
             if runner.runnerName == name {
                 log("LocalRunnerStore › applyMetrics — MATCH via name='\(name)' for '\(runner.runnerName)'")
                 return true
             }
             return false
         }) else {
-            log("LocalRunnerStore › ⚠️ applyMetrics — NO MATCH for runnerId=\(String(describing: runnerId)) name=\(name).")
+            log("LocalRunnerStore › ⚠️ applyMetrics — NO MATCH for runnerId=\(String(describing: runnerId)) name=\(name). runners=\(runners.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
             return
         }
         log("LocalRunnerStore › applyMetrics — writing metrics=\(String(describing: metrics)) to '\(runners[idx].runnerName)'")
@@ -248,18 +253,21 @@ final class LocalRunnerStore: ObservableObject {
 #endif
 
         let preserved: [RunnerModel] = enriched.map { runner in
+            // Priority 1: apiId match — the critical path for org runners.
             if let id = runner.apiId, let m = metricsByApiId[id] {
 #if DEBUG
                 log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via apiId=\(id)")
 #endif
                 return runner.copying(metrics: m)
             }
+            // Priority 2: agentId match — repo runners.
             if let id = runner.agentId, let m = metricsByAgentId[id] {
 #if DEBUG
                 log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via agentId=\(id)")
 #endif
                 return runner.copying(metrics: m)
             }
+            // Priority 3: name match — last resort.
             if let m = metricsByName[runner.runnerName] {
 #if DEBUG
                 log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via name")
