@@ -7,7 +7,6 @@ import RunnerBarCore
 
 // MARK: - RunnerStore
 
-// swiftlint:disable:next type_body_length
 /// Manages RunnerStore state and behaviour.
 @MainActor
 final class RunnerStore {
@@ -116,7 +115,7 @@ final class RunnerStore {
         }
         pollTask?.cancel()
         log("RunnerStore › start — previous pollTask cancelled, launching new task")
-        pollTask = Task { [weak self] in
+        pollTask = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.fetch()
             while !Task.isCancelled {
@@ -215,61 +214,6 @@ final class RunnerStore {
         )
     }
 
-    // MARK: - InstallPathMap
-
-    /// Lookup maps built from the local runner list, used by `fetchAndEnrichRunners`.
-    struct InstallPathMap {
-        /// "scope/runnerName" → installPath  (exact scope-prefixed match)
-        let byFullKey: [String: String]
-        /// "runnerName" → installPath  (name-only fallback)
-        let byName: [String: String]
-        /// agentId (Int) → installPath  (local `.runner` JSON AgentId, scope-agnostic)
-        let byId: [Int: String]
-        /// apiId (Int) → installPath  (GitHub REST API runner id from last enrichment cycle)
-        ///
-        /// For org runners the GitHub API assigns an `id` that differs from the local
-        /// `.runner` JSON `AgentId`. This map is keyed on the API id so that metrics
-        /// can be resolved for org runners even when `byId` misses.
-        let byApiId: [Int: String]
-    }
-
-    /// Builds four lookup maps from the local runner list.
-    private func buildInstallPathMap(
-        scopes: [String],
-        localRunners: [RunnerModel]
-    ) -> InstallPathMap {
-        var byFullKey: [String: String] = [:]
-        var byName: [String: String] = [:]
-        var byId: [Int: String] = [:]
-        var byApiId: [Int: String] = [:]
-        for localRunner in localRunners {
-            guard let path = localRunner.installPath else {
-                log("RunnerStore › buildInstallPathMap — SKIP \(localRunner.runnerName): installPath is nil")
-                continue
-            }
-            byName[localRunner.runnerName] = path
-            if let agentId = localRunner.agentId {
-                byId[agentId] = path
-            } else {
-                log("RunnerStore › buildInstallPathMap — \(localRunner.runnerName): agentId is nil (will rely on apiId/fullKey/name fallback)")
-            }
-            if let apiId = localRunner.apiId {
-                byApiId[apiId] = path
-            }
-            for scope in scopes {
-                byFullKey["\(scope)/\(localRunner.runnerName)"] = path
-            }
-        }
-        log("RunnerStore › buildInstallPathMap — localRunners=\(localRunners.count) scopes=\(scopes) → fullKeys=\(byFullKey.keys.sorted()) nameKeys=\(byName.keys.sorted()) idKeys=\(byId.keys.sorted()) apiIdKeys=\(byApiId.keys.sorted())")
-        if byFullKey.isEmpty && !localRunners.isEmpty {
-            log("RunnerStore › ⚠️ buildInstallPathMap — fullKey map is EMPTY despite localRunners=\(localRunners.count). Scopes=\(scopes). Check scope string format alignment with localRunner names.")
-        }
-        if localRunners.isEmpty {
-            log("RunnerStore › ⚠️ buildInstallPathMap — localRunners is EMPTY. All maps are empty. Busy runners will have no installPath this cycle.")
-        }
-        return InstallPathMap(byFullKey: byFullKey, byName: byName, byId: byId, byApiId: byApiId)
-    }
-
     // MARK: - Apply result
 
     /// Commits a completed fetch cycle's results to the store and notifies observers.
@@ -366,7 +310,7 @@ final class RunnerStore {
 
         log("RunnerStore › fetchAndEnrichRunners — total runners across all scopes: \(runnersWithScope.count)")
 #if DEBUG
-        log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey=\(installPathMap.byFullKey.keys.sorted()) byName=\(installPathMap.byName.keys.sorted()) byId=\(installPathMap.byId.keys.sorted()) byApiId=\(installPathMap.byApiId.keys.sorted())")
+        log("RunnerStore › fetchAndEnrichRunners — installPathMap.byFullKey=\(installPathMap.byFullKey.keys.sorted()) byName=\(installPathMap.byName.keys.sorted()) byAgentId=\(installPathMap.byAgentId.keys.sorted()) byApiId=\(installPathMap.byApiId.keys.sorted())")
 #endif
 
         var indexed: [(scope: String, runner: Runner)] = runnersWithScope
@@ -382,18 +326,19 @@ final class RunnerStore {
                 guard runner.busy else { continue }
                 let fullKey = "\(scope)/\(runner.name)"
                 // Resolution order:
-                // 1. byApiId  — GitHub REST API id (populated after first enrichment cycle);
-                //               fixes org runners whose agentId ≠ API id.
-                // 2. byId     — local .runner JSON AgentId; works for repo runners.
-                // 3. byFullKey — scope/name string match.
-                // 4. byName   — name-only last resort.
-                let resolvedByApiId = installPathMap.byApiId[runner.id]
-                let resolvedById    = installPathMap.byId[runner.id]
-                let resolvedByFull  = installPathMap.byFullKey[fullKey]
-                let resolvedByName  = installPathMap.byName[runner.name]
-                let installPath     = resolvedByApiId ?? resolvedById ?? resolvedByFull ?? resolvedByName
+                // 1. byApiId    — GitHub REST API id (populated after first enrichment cycle);
+                //                 fixes org runners whose agentId ≠ API id.
+                // 2. byAgentId  — local .runner JSON AgentId; works for repo runners
+                //                 when agentId == API id.
+                // 3. byFullKey  — scope/name string match.
+                // 4. byName     — name-only last resort.
+                let resolvedByApiId   = installPathMap.byApiId[runner.id]
+                let resolvedByAgentId = installPathMap.byAgentId[runner.id]
+                let resolvedByFull    = installPathMap.byFullKey[fullKey]
+                let resolvedByName    = installPathMap.byName[runner.name]
+                let installPath       = resolvedByApiId ?? resolvedByAgentId ?? resolvedByFull ?? resolvedByName
 #if DEBUG
-                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) id=\(runner.id) busy=true; fullKey=\(fullKey); byApiId=\(String(describing: resolvedByApiId)) byId=\(String(describing: resolvedById)) byFullKey=\(String(describing: resolvedByFull)) byName=\(String(describing: resolvedByName)) → resolved=\(String(describing: installPath))")
+                log("RunnerStore › fetchAndEnrichRunners — \(runner.name) id=\(runner.id) busy=true; fullKey=\(fullKey); byApiId=\(String(describing: resolvedByApiId)) byAgentId=\(String(describing: resolvedByAgentId)) byFullKey=\(String(describing: resolvedByFull)) byName=\(String(describing: resolvedByName)) → resolved=\(String(describing: installPath))")
 #endif
                 guard let installPath else {
                     log("RunnerStore › ⚠️ fetchAndEnrichRunners — \(runner.name) busy but NO installPath resolved. id=\(runner.id) fullKey=\(fullKey). localRunners may be empty or scope/name mismatch.")
@@ -422,7 +367,7 @@ final class RunnerStore {
         for (_, runner) in indexed
             where runner.busy
                && (installPathMap.byApiId[runner.id] != nil
-                   || installPathMap.byId[runner.id] != nil
+                   || installPathMap.byAgentId[runner.id] != nil
                    || installPathMap.byName[runner.name] != nil) {
 #if DEBUG
             log("RunnerStore › fetchAndEnrichRunners — applyMetrics to LocalRunnerStore: \(runner.name) id=\(runner.id) busy=\(runner.busy) metrics=\(String(describing: runner.metrics))")
