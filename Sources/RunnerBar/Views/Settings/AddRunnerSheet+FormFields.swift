@@ -4,17 +4,6 @@
 import AppKit
 import SwiftUI
 
-// MARK: - RunnerJSON
-
-/// Minimal decodable shape for the `.runner` JSON written by `config.sh`.
-/// Only the two fields RunnerBar needs are decoded; all others are ignored.
-private struct RunnerJSON: Decodable {
-    /// The GitHub repository or organisation URL the runner is registered against.
-    let gitHubUrl: String?
-    /// The display name the runner registered with.
-    let runnerName: String?
-}
-
 /// Form field subviews and pre-existing folder actions for `AddRunnerSheet`.
 extension AddRunnerSheet {
 
