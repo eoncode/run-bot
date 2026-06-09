@@ -135,10 +135,13 @@ private struct RunnerMetricsBadge: View {
 // MARK: - PanelLocalRunnerRow
 /// Renders a card for each runner passed in.
 ///
+/// Renders a card for each runner passed in.
+///
 /// ❌ DO NOT add an isBusy filter here — isBusy is set by RunnerStatusEnricher
 /// on a separate background cycle and will always lag behind the RunnerStore
 /// fetch cycle, causing rows to be silently swallowed. (#948)
 struct PanelLocalRunnerRow: View {
+    /// Maximum number of runner cards shown before a “+ N more…” overflow label is appended.
     private static let maxVisibleRunners = 3
     /// The runners to display. Up to `maxVisibleRunners` are shown; a “+ N more…” label is appended when exceeded.
     let runners: [RunnerModel]
@@ -454,6 +457,8 @@ private struct RowTapModifier: ViewModifier {
 }
 
 // MARK: - String+nilIfEmpty
+/// Convenience helpers used within this file.
 private extension String {
+    /// Returns `nil` when the string is empty, otherwise returns `self`.
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
