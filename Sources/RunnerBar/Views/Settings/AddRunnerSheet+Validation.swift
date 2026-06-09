@@ -3,6 +3,7 @@
 
 import Foundation
 
+/// Adds validation helpers for the add-runner form.
 extension AddRunnerSheet {
 
     // MARK: - Helpers (Add new)

@@ -4,6 +4,7 @@
 import AppKit
 import SwiftUI
 
+/// Defines form field controls for the add-runner sheet.
 extension AddRunnerSheet {
 
     // MARK: - Add New Form Body

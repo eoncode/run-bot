@@ -64,6 +64,7 @@ func fetchRunnerDownloadURL() async -> String? {
     return match?.browserDownloadUrl
 }
 
+/// Defines token-related controls for the add-runner sheet.
 extension AddRunnerSheet {
 
     // MARK: - Scopes loader
