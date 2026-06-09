@@ -207,6 +207,15 @@ public enum ProcessRunner {
     /// `drainQueue.sync {}` before reading the result — no actor, no lock, no
     /// fire-and-forget tasks required.
     ///
+    /// ## stdin ordering
+    /// When `stdin` data is provided, it is written **synchronously on the calling
+    /// cooperative-pool thread before** `drainQueue.async` is dispatched and before
+    /// `task.run()` is called. This guarantees that:
+    /// 1. The pipe's write end is open when we write (the process has not launched yet).
+    /// 2. The kernel buffers the bytes until the child reads them.
+    /// 3. `closeFile()` on the write end happens-before `readDataToEndOfFile()` on
+    ///    the read end — no race against `terminationHandler` or `drainQueue.sync {}`.
+    ///
     /// All parameters mirror `run(_:)`; defaults are identical.
     public static func runAsync(
         executableURL: URL,
@@ -232,6 +241,19 @@ public enum ProcessRunner {
             inputPipe = p
         } else {
             inputPipe = nil
+        }
+
+        // Write stdin synchronously before starting the drain and before task.run().
+        // The process has not launched yet so the write end of the pipe is guaranteed
+        // open. The kernel buffers the bytes; the child reads them after launch.
+        // closeFile() on the write end signals EOF to the child once it has consumed
+        // all input. This must happen before drainQueue.async so that the drain
+        // (readDataToEndOfFile on the read end) only starts after stdin is fully written,
+        // avoiding any race against terminationHandler or drainQueue.sync {}.
+        // Fixes the data race documented in #1077 and tracked in #1228.
+        if let inputPipe, let stdinData = stdin {
+            inputPipe.fileHandleForWriting.write(stdinData)
+            inputPipe.fileHandleForWriting.closeFile()
         }
 
         // Drain stdout on a dedicated serial queue concurrently with process execution,
@@ -300,25 +322,6 @@ public enum ProcessRunner {
                     outPipe.fileHandleForWriting.closeFile()
                     continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
                     return
-                }
-
-                if let inputPipe, let stdinData = stdin {
-                    // stdin writing remains on DispatchQueue.global deliberately:
-                    // no current call site of runAsync passes stdin, so this path
-                    // is dormant and has never been exercised in production.
-                    //
-                    // WARNING — do not activate without fixing the ordering first:
-                    // this fire-and-forget write has no synchronisation with
-                    // terminationHandler. If the process exits before the write
-                    // completes, closeFile() races against drainQueue.sync{} and
-                    // continuation.resume() — a data race on the pipe file handle.
-                    // Fix: write stdin synchronously before drainQueue.async, or
-                    // use a dedicated serial queue with an explicit barrier.
-                    // Tracked as part of issue #1077 (mutation-path async migration).
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        inputPipe.fileHandleForWriting.write(stdinData)
-                        inputPipe.fileHandleForWriting.closeFile()
-                    }
                 }
 
                 timeoutTaskBox.value = Task.detached {
