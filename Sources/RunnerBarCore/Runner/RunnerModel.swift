@@ -255,6 +255,10 @@ extension RunnerModel {
     /// Uses `Optional<Optional<T>>` (double-optional) for nullable fields so callers
     /// can distinguish "set to nil" (`.some(nil)`) from "leave unchanged" (`.none`).
     ///
+    /// `apiId` is intentionally not a parameter — it is set once by
+    /// `RunnerStatusEnricher.applyEnrichment` via `init` and must not be
+    /// overwritten by any other code path. It is always forwarded as-is.
+    ///
     /// Example:
     /// ```swift
     /// runners[idx] = runners[idx].copying(isRunning: true)
