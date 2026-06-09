@@ -180,11 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ _: Notification) {
         log("AppDelegate › applicationDidFinishLaunching — START")
         configureGHAPI { endpoint in await ghAPI(endpoint) }
-<<<<<<< HEAD
-        configureGHRaw { endpoint in await urlSessionRawAsync(endpoint) }
-=======
         configureGHRaw { endpoint in await urlSessionRaw(endpoint) }
->>>>>>> b7832a9c (fix(concurrency): await async ghPost/cancelRun call sites + configureGHRaw)
         setupStatusItem()
         setupPanel()
         setupSignOutSubscription()
@@ -498,9 +494,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         log("AppDelegate › openPanel — outsideClickMonitor installed: \(String(describing: outsideClickMonitor))")
-<<<<<<< HEAD
-
-=======
         // Install app-switch observer. Fires when any app becomes frontmost,
         // including RunnerBar itself.
         //
@@ -510,7 +503,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // NSOpenPanel picker closes (the picker re-activates its parent app,
         // which would otherwise trigger hidePanel on the way back in).
         // Do NOT remove this guard.
->>>>>>> b7832a9c (fix(concurrency): await async ghPost/cancelRun call sites + configureGHRaw)
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
