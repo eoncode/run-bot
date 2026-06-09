@@ -20,8 +20,8 @@ func resolveURL(_ endpoint: String) -> String {
 
 /// Builds a URLRequest with the standard GitHub API headers shared by all
 /// request types: `Authorization`, `X-GitHub-Api-Version`.
-/// Callers set the `Accept` header for their specific media type.
-func makeBaseRequest(url: URL, token: String, timeout: TimeInterval) -> URLRequest {
+/// Only called internally by `makeRequest` and `makeRawRequest`.
+private func makeBaseRequest(url: URL, token: String, timeout: TimeInterval) -> URLRequest {
     var req = URLRequest(url: url, timeoutInterval: timeout)
     req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
