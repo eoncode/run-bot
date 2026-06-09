@@ -1,10 +1,11 @@
 // SettingsView+Sections.swift
 // RunnerBar
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - SettingsView sections extension
 // swiftlint:disable no_extension_access_modifier
-/// Section sub-views for `SettingsView` (account, management, general, and about).
+/// Settings sections broken out from `SettingsView` for readability.
 extension SettingsView {
 
     // MARK: - Account
@@ -178,7 +179,7 @@ extension SettingsView {
     ///
     /// Extracted as its own computed var so it is a first-class child of
     /// `generalSection`'s VStack, identical in structure to every other row.
-    fileprivate var popoverArrowRow: some View {
+    var popoverArrowRow: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Show popover arrow").font(.system(size: 12))
