@@ -430,7 +430,7 @@ func urlSessionPost(_ endpoint: String, body: Data? = nil, timeout: TimeInterval
         }
         await clearRateLimitIfNeeded()
         log("urlSessionPost › \(endpoint) → \(http.statusCode)")
-        return data ?? Data()
+        return data
     } catch {
         log("urlSessionPost › \(urlString) network error: \(error.localizedDescription)")
         return nil
