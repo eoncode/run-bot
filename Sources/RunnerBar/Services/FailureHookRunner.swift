@@ -142,7 +142,7 @@ enum FailureHookRunner {
                 if let jobConclusion = job.conclusion,
                    failureConclusions.contains(jobConclusion.rawValue.lowercased()) {
                     log("FailureHookRunner › fetchFailedJobs — fetching log for failed jobID=\(job.id) name=\(job.name)")
-                    if let fullLog = fetchJobLog(jobID: job.id, scope: scope) {
+                    if let fullLog = await fetchJobLog(jobID: job.id, scope: scope) {
                         let lines = fullLog.components(separatedBy: "\n")
                         let kept = lines.suffix(150).joined(separator: "\n")
                         tail = kept
@@ -211,42 +211,49 @@ enum FailureHookRunner {
         return parts.joined(separator: "\n\n")
     }
 
-    /// Replaces all `$TOKEN` placeholders in `command` with their resolved values.
+    /// Resolves all `$TOKEN` placeholders in `command` using data from `group`, `scope`, and `jobs`.
     ///
-    /// Tokens resolved: `$LOCAL_PATH`, `$SCOPE`, `$BRANCH`, `$COMMIT_SHA`,
-    /// `$RUN_ID`, `$WORKFLOW_NAME`, `$FAILURE_LOG`, `$RUN_LINK`,
-    /// `$COMMIT_LINK`, `$BRANCH_LINK`, `$REPO_LINK`.
+    /// Token map:
+    /// - `$LOCAL_PATH`     — absolute path from `ScopePreferencesStore.localPath(for:)`
+    /// - `$SCOPE`          — `owner/repo` string
+    /// - `$BRANCH`         — head branch of the first run
+    /// - `$COMMIT_SHA`     — full 40-char SHA of the triggering commit
+    /// - `$RUN_ID`         — GitHub Actions run ID of the first failed run
+    /// - `$WORKFLOW_NAME`  — display name of the workflow
+    /// - `$RUN_LINK`       — deep link to the Actions run page on GitHub
+    /// - `$COMMIT_LINK`    — deep link to the commit diff on GitHub
+    /// - `$BRANCH_LINK`    — deep link to the branch on GitHub
+    /// - `$REPO_LINK`      — deep link to the repository root on GitHub
+    /// - `$FAILURE_LOG`    — raw log tail (last 150 lines) of the first failed job
     private static func resolveTokens(
         _ command: String,
         group: WorkflowActionGroup,
         scope: String,
         jobs: [FailedJobResult]
     ) -> String {
-        let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
+        let localPath = ScopePreferencesStore.localPath(for: scope) ?? scope
         let branch = group.headBranch ?? ""
         let sha = group.headSha
-        let workflow = group.title
-        let baseURL = "https://github.com/\(scope)"
-        let branchURL = "\(baseURL)/tree/\(branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch)"
-        let commitURL = "\(baseURL)/commit/\(sha)"
-        let failedRunID = group.runs.first(where: {
-            guard let c = $0.conclusion else { return false }
-            return failureConclusions.contains(c.lowercased())
-        }).map { String($0.id) } ?? group.id
-        let runURL = "\(baseURL)/actions/runs/\(failedRunID)"
-        let logContent = singleQuoteEscape(buildLogContent(group: group, scope: scope, jobs: jobs))
-        log("FailureHookRunner › resolveTokens — $LOCAL_PATH='\(localPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $COMMIT_SHA='\(sha)' logContentBytes=\(logContent.count)")
+        let firstRun = group.runs.first
+        let runID = firstRun.map { String($0.id) } ?? ""
+        let workflowName = group.title
+        let runLink = firstRun?.htmlUrl ?? "https://github.com/\(scope)/actions"
+        let commitLink = "https://github.com/\(scope)/commit/\(sha)"
+        let branchLink = "https://github.com/\(scope)/tree/\(branch)"
+        let repoLink = "https://github.com/\(scope)"
+        let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
+        let escapedLog = singleQuoteEscape(logContent)
         return command
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
             .replacingOccurrences(of: "$SCOPE", with: scope)
             .replacingOccurrences(of: "$BRANCH", with: branch)
-            .replacingOccurrences(of: "$RUN_ID", with: "\(failedRunID)")
             .replacingOccurrences(of: "$COMMIT_SHA", with: sha)
-            .replacingOccurrences(of: "$WORKFLOW_NAME", with: workflow)
-            .replacingOccurrences(of: "$FAILURE_LOG", with: logContent)
-            .replacingOccurrences(of: "$RUN_LINK", with: runURL)
-            .replacingOccurrences(of: "$COMMIT_LINK", with: commitURL)
-            .replacingOccurrences(of: "$BRANCH_LINK", with: branchURL)
-            .replacingOccurrences(of: "$REPO_LINK", with: baseURL)
+            .replacingOccurrences(of: "$RUN_ID", with: runID)
+            .replacingOccurrences(of: "$WORKFLOW_NAME", with: workflowName)
+            .replacingOccurrences(of: "$RUN_LINK", with: runLink)
+            .replacingOccurrences(of: "$COMMIT_LINK", with: commitLink)
+            .replacingOccurrences(of: "$BRANCH_LINK", with: branchLink)
+            .replacingOccurrences(of: "$REPO_LINK", with: repoLink)
+            .replacingOccurrences(of: "$FAILURE_LOG", with: escapedLog)
     }
 }
