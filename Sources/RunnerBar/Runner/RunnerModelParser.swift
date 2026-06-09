@@ -69,7 +69,7 @@ private struct RunnerJSON: Decodable {
 
     /// Maps Swift property names to the JSON keys used by the runner agent.
     /// Note: the agent uses PascalCase for most keys but camelCase for `gitHubUrl`.
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case gitHubUrl
         case agentId              = "AgentId"
         case workFolder           = "WorkFolder"
