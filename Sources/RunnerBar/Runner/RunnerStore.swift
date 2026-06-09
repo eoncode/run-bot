@@ -285,6 +285,10 @@ final class RunnerStore {
         jobResult: JobPollResult,
         groupResult: GroupPollResult
     ) async {
+        // Snapshot rate-limit state before any mutation so all store writes are
+        // contiguous with no suspension in between — prevents a partial-update
+        // window where @MainActor readers see fresh runners against stale rate-limit state.
+        let rateLimitSnapshot = await ghRateLimitSnapshot()
         runners = enrichedRunners
         jobs = jobResult.display
         completedCache = jobResult.newCache
@@ -293,7 +297,6 @@ final class RunnerStore {
         actionGroupCache = groupResult.newGroupCache
         prevLiveGroups = groupResult.newPrevLiveGroups
         seenGroupIDs = groupResult.newSeenGroupIDs
-        let rateLimitSnapshot = await ghRateLimitSnapshot()
         isRateLimited = rateLimitSnapshot.isLimited
         rateLimitResetDate = rateLimitSnapshot.resetDate
         log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(isRateLimited) rateLimitResetDate=\(String(describing: rateLimitResetDate))")
