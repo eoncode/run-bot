@@ -8,9 +8,9 @@ import Foundation
 /// Queries the GitHub API for the latest macOS runner release and returns the `.tar.gz` download URL
 /// matching the current CPU architecture (`arm64` or `x64`).
 ///
-/// Uses `URLSession.data(for:)` async/await for the API call — no blocking `Data(contentsOf:)`.
-/// Architecture detection uses `ProcessRunner.runAsync` — consistent with the rest of the file
-/// and avoids `waitUntilExit()` on the cooperative thread pool.
+/// Uses `URLSession.data(for:)` async/await — no blocking `Data(contentsOf:)`.
+/// Architecture detection uses `ProcessRunner.runAsync` — avoids `waitUntilExit()` on the
+/// cooperative thread pool.
 func fetchRunnerDownloadURL() async -> String? {
     let archResult = await ProcessRunner.runAsync(
         executableURL: URL(fileURLWithPath: GitHubURIs.unamePath),
@@ -20,10 +20,10 @@ func fetchRunnerDownloadURL() async -> String? {
     let arch      = archResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
     let assetArch = (arch == "arm64") ? "arm64" : "x64"
     let assetName = "actions-runner-osx-\(assetArch)"
-    log("fetchRunnerDownloadURL \u203a arch=\(arch) assetName=\(assetName)")
+    log("fetchRunnerDownloadURL › arch=\(arch) assetName=\(assetName)")
 
     guard let url = URL(string: GitHubURIs.apiRunnerLatest) else {
-        log("fetchRunnerDownloadURL \u203a invalid URL")
+        log("fetchRunnerDownloadURL › invalid URL")
         return nil
     }
     let data: Data
@@ -31,7 +31,7 @@ func fetchRunnerDownloadURL() async -> String? {
         let (responseData, _) = try await URLSession.shared.data(from: url)
         data = responseData
     } catch {
-        log("fetchRunnerDownloadURL \u203a network error: \(error.localizedDescription)")
+        log("fetchRunnerDownloadURL › network error: \(error.localizedDescription)")
         return nil
     }
     // Minimal GitHub release asset payload.
@@ -54,13 +54,13 @@ func fetchRunnerDownloadURL() async -> String? {
         let assets: [Asset]
     }
     guard let release = try? JSONDecoder().decode(Release.self, from: data) else {
-        log("fetchRunnerDownloadURL \u203a decode failed")
+        log("fetchRunnerDownloadURL › decode failed")
         return nil
     }
     let match = release.assets.first {
         $0.name.hasPrefix(assetName) && $0.name.hasSuffix(".tar.gz")
     }
-    log("fetchRunnerDownloadURL \u203a match=\(match?.name ?? "nil")")
+    log("fetchRunnerDownloadURL › match=\(match?.name ?? "nil")")
     return match?.browserDownloadUrl
 }
 
@@ -68,15 +68,11 @@ extension AddRunnerSheet {
 
     // MARK: - Scopes loader
 
-    /// Fetches the user's repos and organisations on a background thread.
+    /// Fetches the user's repos and organisations on a background thread and updates state on `@MainActor`.
     ///
-    /// Uses a plain `Task` (not `Task.detached`) because `AddRunnerSheet` has no
-    /// `@MainActor` annotation at the type level. The `Task { }` inherits the actor
-    /// context of the call site (button action / `onAppear`), which is `@MainActor`,
-    /// but `fetchUserRepos()` and `fetchUserOrgs()` immediately suspend to the
-    /// cooperative pool via their own `await` boundaries — they do not block the
-    /// main actor. The explicit `await MainActor.run { \u2026 }` at the end re-confines
-    /// the UI state write to the main actor, which is correct and required.
+    /// Uses a plain `Task` (not `Task.detached`) — inherits the `@MainActor` call-site context
+    /// but immediately suspends to the cooperative pool via `await` in the fetch functions.
+    /// State writes are confined back to the main actor via `await MainActor.run { … }`.
     func loadScopes() {
         isLoadingScopes = true
         Task(priority: .userInitiated) {
@@ -92,7 +88,7 @@ extension AddRunnerSheet {
         }
     }
 
-    /// Updates `registrationStep` on the main thread.
+    /// Updates `registrationStep` on the main actor.
     @MainActor func setStep(_ msg: String) {
         registrationStep = msg
     }

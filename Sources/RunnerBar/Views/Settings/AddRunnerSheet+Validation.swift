@@ -31,7 +31,7 @@ extension AddRunnerSheet {
 
     // MARK: - Helpers (Add pre-existing)
 
-    /// The GitHub URL to use for the import: detected from .runner or the manual override.
+    /// The GitHub URL to use for the import: detected from `.runner` or the manual override.
     var effectiveGitHubURL: String {
         detectedGitHubURL.isEmpty
             ? githubURLOverride.trimmingCharacters(in: .whitespaces)
@@ -47,7 +47,7 @@ extension AddRunnerSheet {
             && !effectiveGitHubURL.isEmpty
     }
 
-    /// Checks whether the runner name is already tracked in LocalRunnerStore's index.
+    /// Returns `true` when the given runner name is already tracked in `LocalRunnerStore`.
     func checkDuplicate(runnerName: String) -> Bool {
         LocalRunnerStore.shared.isTracked(runnerName: runnerName)
     }

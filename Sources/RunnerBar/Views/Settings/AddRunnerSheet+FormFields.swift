@@ -9,7 +9,7 @@ extension AddRunnerSheet {
     // MARK: - Add New Form Body
 
     /// Form fields shown when the user selects the "Add new" mode:
-    /// scope picker, repo/org selector, token field, runner name, and install path.
+    /// scope picker, repo/org selector, runner name, labels, and install path.
     @ViewBuilder
     var addNewFormBody: some View {
         Picker("Scope", selection: $scopeType) {
@@ -20,7 +20,7 @@ extension AddRunnerSheet {
         if isLoadingScopes {
             HStack {
                 ProgressView().scaleEffect(0.7)
-                Text("Loading\u2026").font(.caption).foregroundColor(.secondary)
+                Text("Loading…").font(.caption).foregroundColor(.secondary)
             }
         } else if scopeType == .repo {
             selectorButton(
@@ -109,7 +109,7 @@ extension AddRunnerSheet {
                 if isRegistering {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(0.7).frame(width: 14, height: 14)
-                        Text("Registering\u2026")
+                        Text("Registering…")
                     }
                 } else {
                     Text("Add new runner")
@@ -141,7 +141,7 @@ extension AddRunnerSheet {
                     Button {
                         pickExistingFolder()
                     } label: {
-                        Text("Choose\u2026")
+                        Text("Choose…")
                     }
                     .controlSize(.small)
                 }
@@ -205,7 +205,10 @@ extension AddRunnerSheet {
 
     // MARK: - Sub-views
 
-    /// Selector button that opens the searchable RepoSelectorSheet.
+    /// Selector button that opens the searchable `RepoSelectorSheet`.
+    ///
+    /// Shows the current selection as the button label, or a "— select —" placeholder
+    /// when nothing has been chosen. A hint is shown below when the list is empty.
     @ViewBuilder
     func selectorButton(label: String, selection: String,
                         action: @escaping () -> Void) -> some View {
@@ -213,7 +216,7 @@ extension AddRunnerSheet {
             Text(label).font(.caption).foregroundColor(.secondary)
             Button(action: action) {
                 HStack {
-                    Text(selection.isEmpty ? "\u2014 select \u2014" : selection)
+                    Text(selection.isEmpty ? "— select —" : selection)
                         .font(.system(size: 12))
                         .foregroundColor(selection.isEmpty ? .secondary : .primary)
                         .lineLimit(1)
@@ -240,7 +243,7 @@ extension AddRunnerSheet {
         }
     }
 
-    /// Helper that renders a caption label above a `TextField` with rounded-border style.
+    /// Renders a caption label above a `TextField` with rounded-border style.
     @ViewBuilder
     func labeledField(_ title: String, placeholder: String,
                       text: Binding<String>) -> some View {
@@ -250,7 +253,7 @@ extension AddRunnerSheet {
         }
     }
 
-    /// Read-only display field used in the pre-existing form.
+    /// Read-only monospaced display field used in the pre-existing form.
     @ViewBuilder
     func labeledReadOnly(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -273,9 +276,13 @@ extension AddRunnerSheet {
     // MARK: - Actions (Add pre-existing)
 
     /// Opens an `NSOpenPanel` as a sheet attached to the popover's own window.
+    ///
+    /// Uses `beginSheetModal(for:)` so the panel attaches as a child sheet and
+    /// AppKit never treats clicks inside the panel as "outside clicks" that would
+    /// dismiss the popover.
     func pickExistingFolder() {
         guard let window = hostWindow else {
-            log("AddRunnerSheet \u203a pickExistingFolder \u2014 ERROR: hostWindow nil, picker will not open")
+            log("AddRunnerSheet › pickExistingFolder — ERROR: hostWindow nil, picker will not open")
             return
         }
         let openPanel = NSOpenPanel()
@@ -284,9 +291,9 @@ extension AddRunnerSheet {
         openPanel.allowsMultipleSelection = false
         openPanel.message = "Select the runner install folder (must contain a .runner file)"
         openPanel.prompt = "Select"
-        log("AddRunnerSheet \u203a pickExistingFolder \u2014 calling beginSheetModal")
+        log("AddRunnerSheet › pickExistingFolder — calling beginSheetModal")
         openPanel.beginSheetModal(for: window) { response in
-            log("AddRunnerSheet \u203a pickExistingFolder \u2014 panel closed response=\(response.rawValue)")
+            log("AddRunnerSheet › pickExistingFolder — panel closed response=\(response.rawValue)")
             guard response == .OK, let url = openPanel.url else { return }
             handlePickedFolder(url)
         }
@@ -322,10 +329,10 @@ extension AddRunnerSheet {
         detectedGitHubURL = json.gitHubUrl ?? ""
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
-        log("AddRunnerSheet \u203a pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
+        log("AddRunnerSheet › pre-existing: name=\(detectedName) url=\(detectedGitHubURL) duplicate=\(isDuplicate)")
     }
 
-    /// Writes the LaunchAgent plist, registers with LocalRunnerStore, and dismisses.
+    /// Writes the LaunchAgent plist, registers with `LocalRunnerStore`, and dismisses the sheet.
     func importExistingRunner() {
         guard canImport else { return }
 
