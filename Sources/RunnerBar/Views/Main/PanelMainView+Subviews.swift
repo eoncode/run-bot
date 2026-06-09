@@ -5,8 +5,12 @@ import RunnerBarCore
 import SwiftUI
 
 // MARK: - SectionHeaderLabel
+/// Uppercase small-caps label used as a section divider inside the panel.
 struct SectionHeaderLabel: View {
+    /// The raw title string; displayed uppercased.
     let title: String
+
+    /// Renders the uppercased title with section-caption font and secondary colour.
     var body: some View {
         Text(title.uppercased())
             .font(RBFont.sectionCaption)
@@ -18,9 +22,14 @@ struct SectionHeaderLabel: View {
 }
 
 // MARK: - PanelHeaderView
+/// Top bar of the popover panel showing system stats and the settings/quit buttons.
 struct PanelHeaderView: View {
+    /// View model driving the CPU/MEM/disk stat pills.
     @ObservedObject var statsVM: SystemStatsViewModel
+    /// Called when the user taps the settings gear button.
     let onSelectSettings: () -> Void
+
+    /// Renders the header HStack with stats bar and settings/quit buttons.
     var body: some View {
         HStack(spacing: 6) {
             HeaderStatsBar(statsVM: statsVM)
@@ -40,6 +49,7 @@ struct PanelHeaderView: View {
         .padding(.bottom, 8)
     }
 
+    /// Settings gear button — plain style, 28 pt hit area.
     @ViewBuilder private var settingsButton: some View {
         Button(action: onSelectSettings) {
             Image(systemName: "gearshape")
@@ -52,6 +62,7 @@ struct PanelHeaderView: View {
         .accessibilityLabel("Settings")
     }
 
+    /// Quit button — plain style, 28 pt hit area.
     @ViewBuilder private var quitButton: some View {
         Button(action: { NSApplication.shared.terminate(nil) }) {
             Image(systemName: "xmark")
@@ -66,8 +77,12 @@ struct PanelHeaderView: View {
 }
 
 // MARK: - RunnerTypeIcon
+/// Small icon indicating whether a runner is local (desktop) or cloud-hosted.
 private struct RunnerTypeIcon: View {
+    /// `true` for a self-hosted local runner, `false` for a cloud runner.
     let isLocal: Bool
+
+    /// Renders the appropriate SF Symbol for the runner type.
     var body: some View {
         Image(systemName: isLocal ? "desktopcomputer" : "cloud")
             .font(.system(size: 9))
@@ -76,20 +91,26 @@ private struct RunnerTypeIcon: View {
 }
 
 // MARK: - RunnerMetricsBadge
-/// CPU + MEM badge for runner rows.
+/// Single grouped badge showing CPU and MEM for a runner inside one shared glass background.
 ///
-/// Always rendered (shows 0% until real metrics arrive) to prevent layout jump.
+/// Always rendered regardless of whether live metrics are available — shows 0% on
+/// cycle 1 to prevent layout jump when real values arrive on cycle 2.
 ///
-/// Glass architecture — identical to StatusBadge in ActionRowView.metaTrailing:
-///   - Badge applies tint + .glassEffect(.regular, in: Capsule()) internally.
-///   - Call site wraps badge in a standalone GlassEffectContainer (NOT nested
-///     inside the card container) so it samples the real backdrop behind the panel.
+/// macOS 26+: MUST be wrapped in its OWN `GlassEffectContainer` at the call site
+/// (separate from the card container). Sharing the card’s container means the pill
+/// glass samples the card backdrop — near-zero contrast. Its own container gives
+/// a fresh dedicated CABackdropLayer sampling region, same pattern as StatusBadge
+/// in metaTrailing. Pre-26: falls back to `.ultraThinMaterial` capsule.
 ///
 /// ❌ Do NOT wrap the card itself in GlassEffectContainer — ActionRowView does not
 ///    do this and neither should runnerCard. Card glass is applied via .background{}.
 private struct RunnerMetricsBadge: View {
+    /// CPU utilisation percentage (0–100).
     let cpu: Double
+    /// Memory utilisation percentage (0–100).
     let mem: Double
+
+    /// Renders CPU and MEM metric items inside a `statPillBackground` capsule.
     var body: some View {
         HStack(spacing: 8) {
             metricItem(label: "CPU", value: String(format: "%.0f%%", cpu))
@@ -99,6 +120,7 @@ private struct RunnerMetricsBadge: View {
         .padding(.vertical, 4)
         .statPillBackground()
     }
+    /// Renders a single label–value pair for use inside the badge HStack.
     private func metricItem(label: String, value: String) -> some View {
         HStack(spacing: 3) {
             Text(label)
@@ -113,13 +135,23 @@ private struct RunnerMetricsBadge: View {
 }
 
 // MARK: - PanelLocalRunnerRow
-/// ❌ DO NOT add an isBusy filter here — causes rows to be silently swallowed (#948).
+/// Renders a card for each runner passed in.
+///
+/// ❌ DO NOT add an isBusy filter here — isBusy is set by RunnerStatusEnricher
+/// on a separate background cycle and will always lag behind the RunnerStore
+/// fetch cycle, causing rows to be silently swallowed. (#948)
 struct PanelLocalRunnerRow: View {
     private static let maxVisibleRunners = 3
+    /// The runners to display. Up to `maxVisibleRunners` are shown; a “+ N more…”
+    /// label is appended when the list exceeds that limit.
     let runners: [RunnerModel]
+
+    /// Renders the runner list when non-empty, otherwise produces no view.
     var body: some View {
         if !runners.isEmpty { runnerList(runners) }
     }
+
+    /// Renders up to `maxVisibleRunners` runner cards followed by a divider.
     @ViewBuilder private func runnerList(_ active: [RunnerModel]) -> some View {
         ForEach(active.prefix(Self.maxVisibleRunners)) { runner in runnerCard(runner) }
         if active.count > Self.maxVisibleRunners {
@@ -130,6 +162,8 @@ struct PanelLocalRunnerRow: View {
         Divider()
     }
 
+    /// Runner card with CPU/MEM badge.
+    ///
     /// Glass architecture mirrors ActionRowView exactly:
     ///   - .glassCard() applied via .background{} directly — NO GlassEffectContainer around the card.
     ///   - RunnerMetricsBadge gets its own standalone GlassEffectContainer, same as
@@ -183,11 +217,13 @@ struct PanelLocalRunnerRow: View {
         .padding(.vertical, RBSpacing.xxs)
     }
 
+    /// Returns a formatted subtitle string combining architecture and OS platform, or `nil` if neither is available.
     private func runnerSubtitle(_ runner: RunnerModel) -> String? {
         let arch = runner.platformArchitecture.map { normaliseArch($0) }
         let os = runner.platform.map { normalisePlatform($0) }
         return [arch, os].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
     }
+    /// Normalises a raw architecture string to a canonical lowercase form.
     private func normaliseArch(_ raw: String) -> String {
         switch raw.uppercased() {
         case "ARM64": return "arm64"
