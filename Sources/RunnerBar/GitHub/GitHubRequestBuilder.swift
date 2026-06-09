@@ -4,6 +4,10 @@
 import Foundation
 
 // MARK: - URL helpers
+// Note: resolveURL is intentionally internal. It is called from GitHubURLSessionTransport
+// and GitHubResponseDecoder across file boundaries, so fileprivate is not an option.
+// It has no meaningful side-effects and no security implications, so module-internal
+// visibility is the narrowest access level that satisfies the split.
 
 /// Module-level constant reused by `resolveURL` to avoid allocating a new
 /// `CharacterSet` on every API call and pagination iteration.
@@ -19,6 +23,10 @@ func resolveURL(_ endpoint: String) -> String {
 }
 
 // MARK: - Request factories
+// Note: makeRequest and makeRawRequest are intentionally internal for the same reason
+// as resolveURL — they are called from GitHubURLSessionTransport which lives in a
+// separate file after the split. makeBaseRequest remains private as it is only ever
+// called by the two functions directly below it in this file.
 
 /// Builds a `URLRequest` with the headers common to all GitHub API requests:
 /// `Authorization: Bearer`, `X-GitHub-Api-Version`.

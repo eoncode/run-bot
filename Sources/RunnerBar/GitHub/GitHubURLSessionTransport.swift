@@ -19,6 +19,21 @@ private enum ExecuteResult {
 
 /// Single shared implementation of the token-guard → URL-resolve → send → handle-response
 /// pipeline used by all public transport functions.
+///
+/// - Parameters:
+///   - endpoint: A relative path (e.g. `repos/owner/repo/actions/runners`) or an absolute
+///     URL string. Relative paths are resolved against `GitHubConstants.apiBase`.
+///   - timeout: The `URLRequest.timeoutInterval` for this request. Callers should pass a
+///     value appropriate for the operation: short for single-page GETs, longer for raw log
+///     downloads or mutations.
+///   - logTag: A short prefix prepended to all `log()` calls within the function, so log
+///     output can be correlated back to the specific call site (e.g. `"urlSessionPost"`).
+///   - useRawAccept: When `true`, sets `Accept: application/vnd.github.v3.raw` instead of
+///     the standard JSON header. Required for log endpoints that 302-redirect to raw S3
+///     content.
+///   - configure: A closure applied to the pre-built `URLRequest` just before it is sent.
+///     Use this to set `httpMethod`, `httpBody`, or additional headers. The closure receives
+///     the base request and must return the mutated copy; the default is the identity closure.
 private func urlSessionExecute(
     _ endpoint: String,
     timeout: TimeInterval,
@@ -63,6 +78,10 @@ private func urlSessionExecute(
 }
 
 // MARK: - Async GET (primary transport)
+// Note: urlSessionAPIAsync, urlSessionAPIPaginated, urlSessionRaw are intentionally
+// internal (no access modifier). They are the stable call sites for the rest of the module
+// and must be visible to RunnerStore and other consumers across files. The underlying
+// urlSessionExecute helper above remains private to this file.
 
 /// Fetches a single GitHub API page using `URLSession.data(for:)` async/await.
 func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
@@ -91,6 +110,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse else { break }
+
             if http.statusCode == 401 {
                 log("urlSessionAPIPaginated › 401 Unauthorized — token may have been revoked, stopping pagination")
                 didFailAuthentication = true
@@ -125,7 +145,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
         return nil
     }
     let isRateLimited = await ghIsRateLimited
-    if isRateLimited && !allItems.isEmpty {
+    if isRawRateLimited && !allItems.isEmpty {
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
@@ -144,6 +164,9 @@ func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data
 }
 
 // MARK: - POST / DELETE / PUT (mutation)
+// Note: urlSessionPost, urlSessionPut, urlSessionDelete are intentionally internal.
+// They back the public-facing ghPost/ghAPIPaginated helpers and the runner mutation
+// functions below, all of which are called from outside this file.
 
 /// Sends a POST to the given GitHub API endpoint.
 /// - Returns: Response body on 2xx (`Data()` for 204 No Content), `nil` on failure.
@@ -267,6 +290,11 @@ func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String
 
 /// Requests a runner token of the given `type` (registration or removal) for `scope`.
 /// Shared implementation used by `fetchRegistrationToken` and `fetchRemovalToken`.
+///
+/// GitHub token endpoints always return a JSON body; a `nil` result here means a
+/// network or auth failure upstream. An empty-body response would indicate an unexpected
+/// 204 No Content — token endpoints do not emit 204, so that branch guards against
+/// future API changes or misconfigured proxies stripping the body.
 private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) async -> String? {
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(type)"
     log("\(logPrefix) › POSTing \(endpoint)")

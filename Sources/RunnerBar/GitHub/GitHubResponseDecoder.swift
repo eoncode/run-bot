@@ -4,6 +4,9 @@
 import Foundation
 
 // MARK: - Error logging
+// Note: logErrorBody and extractNextURL are intentionally internal. Both are called
+// from GitHubURLSessionTransport across the file boundary introduced by this split.
+// The visibility is the minimum required; neither function has side-effects beyond logging.
 
 /// Logs the response body (up to 400 chars) for non-2xx responses.
 func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
