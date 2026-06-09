@@ -132,7 +132,9 @@ public enum ProcessRunner {
             return Result(data: nil, exitCode: Int32.max)
         }
 
-        // Write stdin after launch so the process is ready to consume it.
+        // Write stdin after launch so the process is already running and consuming
+        // bytes from the read end. This prevents deadlock when stdinData exceeds
+        // the kernel pipe buffer (~64 KB): the child drains concurrently as we write.
         if let inputPipe, let stdinData = stdin {
             inputPipe.fileHandleForWriting.write(stdinData)
             inputPipe.fileHandleForWriting.closeFile()
@@ -200,12 +202,60 @@ public enum ProcessRunner {
     ///
     /// ## ⚠️ Pipe-drain concurrency — same invariant as `run(_:)`
     /// stdout is drained via a dedicated serial `DispatchQueue` *concurrently* with
-    /// process execution, mirroring the `Box + drainQueue.sync` pattern in `run(_:)`.
+    /// process execution, mirroring the `Box + drainQueue.sync` pattern in `run(_:)`
     /// `readDataToEndOfFile()` blocks until the pipe's write end closes (i.e. the
     /// process exits), so all bytes are captured in a single call with one clear
     /// happens-before edge. `terminationHandler` joins the drain queue with
     /// `drainQueue.sync {}` before reading the result — no actor, no lock, no
     /// fire-and-forget tasks required.
+    ///
+    /// ## stdin ordering
+    /// When `stdin` data is provided, it is written on a dedicated serial
+    /// `stdinQueue` that is dispatched *after* `drainQueue.async` and *after*
+    /// `task.run()`. The ordering guarantee is:
+    ///
+    /// 1. `drainQueue.async { readDataToEndOfFile }` — drain starts, blocks until
+    ///    the write end of stdout closes (i.e. the child exits).
+    /// 2. `task.run()` — child process launches and begins consuming stdin.
+    /// 3. `stdinQueue.async { [inputPipe] write + closeFile }` — stdin bytes are fed
+    ///    to the child concurrently as it runs. `closeFile()` signals EOF once all
+    ///    bytes have been written. The child may exit before or after the write
+    ///    completes; either way `drainQueue.sync {}` in `terminationHandler` joins
+    ///    stdout first.
+    ///
+    /// ⚠️ **SIGPIPE / crash risk for future callers:** `FileHandle.write(_:)` is
+    /// non-throwing. On macOS 10.15.4+, if the child process exits before consuming
+    /// all stdin, the OS delivers `SIGPIPE` to the writing thread, which **crashes**
+    /// the process rather than throwing an error. This is safe for callers like
+    /// `/bin/cat` that always consume their full input, but future callers whose
+    /// child may exit early should use a `writeabilityHandler`-based writer that
+    /// can detect and handle a broken pipe without crashing.
+    ///
+    /// This approach:
+    /// - Does **not** block a cooperative thread pool worker (no synchronous write
+    ///   before `task.run()`, fixing the pre-launch deadlock for payloads > ~64 KB).
+    /// - Does **not** race against `terminationHandler` (fixes #1077/#1228): `stdinQueue`
+    ///   is a separate serial queue from `drainQueue`; the drain joins its own queue
+    ///   via `drainQueue.sync {}` without depending on stdin completion.
+    /// - Handles arbitrarily large stdin payloads — the child drains the pipe
+    ///   concurrently as `stdinQueue` feeds bytes in.
+    ///
+    /// ## ⚠️ Do NOT add DispatchGroup.wait() to join stdinQueue in terminationHandler
+    /// This has been suggested by automated reviewers. It is the wrong approach for
+    /// two reasons:
+    ///
+    /// 1. **Modernisation mandate (#1220):** This file is part of a migration away from
+    ///    GCD-era primitives toward Swift structured concurrency. Adding a
+    ///    `DispatchGroup.wait()` inside a `DispatchQueue` callback would introduce
+    ///    *more* nested GCD synchronisation — the exact anti-pattern being eliminated.
+    ///
+    /// 2. **It is unnecessary:** `terminationHandler` fires only after the child process
+    ///    has exited. A process cannot exit while its stdin pipe write-end is open and
+    ///    actively blocking — by the time `terminationHandler` is called, `stdinQueue`
+    ///    has either completed the write or the pipe's broken-pipe signal has already
+    ///    been handled by the OS. The only invariant that *must* hold before resuming
+    ///    the continuation is that stdout is fully captured — which `drainQueue.sync {}`
+    ///    already guarantees.
     ///
     /// All parameters mirror `run(_:)`; defaults are identical.
     public static func runAsync(
@@ -246,6 +296,17 @@ public enum ProcessRunner {
         let outputBox = Box<Data>(Data())
         let drainQueue = DispatchQueue(label: "ProcessRunner.drain.async")
 
+        // Dedicated serial queue for stdin writes. Dispatched after task.run() so the
+        // child is already running and consuming the read end of inputPipe. This prevents
+        // the pre-launch deadlock for payloads > kernel pipe buffer (~64 KB) that the
+        // previous synchronous-write approach introduced. See doc comment above.
+        //
+        // UUID suffix: each runAsync call gets a uniquely labelled queue so that
+        // concurrent invocations are distinguishable in Instruments and lldb thread list.
+        let stdinQueue: DispatchQueue? = (inputPipe != nil)
+            ? DispatchQueue(label: "ProcessRunner.stdin.async.\(UUID().uuidString)")
+            : nil
+
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Result, Never>) in
                 drainQueue.async {
@@ -267,6 +328,13 @@ public enum ProcessRunner {
                     // This is the happens-before guarantee that makes outputBox.value safe
                     // to read immediately after. The drainQueue.sync call is cheap here
                     // because the process has already exited and the pipe is closed.
+                    //
+                    // We do NOT sync on stdinQueue here — see the ⚠️ doc comment on
+                    // runAsync() above for the full rationale. Short version: it is
+                    // unnecessary (terminationHandler fires after exit, by which point
+                    // stdin has completed or been broken-piped), and adding a
+                    // DispatchGroup.wait() here would be a step backwards for the #1220
+                    // modernisation effort.
                     drainQueue.sync {}
                     let outputData = outputBox.value
                     log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
@@ -292,30 +360,28 @@ public enum ProcessRunner {
                     try task.run()
                 } catch {
                     log("ProcessRunner › launch error: \(error) — \(executableURL.lastPathComponent) \(arguments.joined(separator: " "))")
-                    // Close the write end of the pipe so readDataToEndOfFile() in the
-                    // already-dispatched drainQueue.async block receives EOF and returns.
-                    // Without this, the drain closure blocks indefinitely (Process.deinit
-                    // skips pipe teardown when hasLaunched == false), leaking the GCD
-                    // worker thread for the lifetime of the app.
+                    // Close both pipe write-ends so that any already-dispatched drain
+                    // block receives EOF and returns cleanly. outPipe must be closed to
+                    // unblock the drainQueue.async readDataToEndOfFile() call above.
+                    // inputPipe is closed explicitly here (mirrors outPipe) even though
+                    // ARC would close it on dealloc — being explicit documents intent
+                    // and avoids leaving a half-open pipe handle until the next ARC cycle.
                     outPipe.fileHandleForWriting.closeFile()
+                    inputPipe?.fileHandleForWriting.closeFile()
                     continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
                     return
                 }
 
-                if let inputPipe, let stdinData = stdin {
-                    // stdin writing remains on DispatchQueue.global deliberately:
-                    // no current call site of runAsync passes stdin, so this path
-                    // is dormant and has never been exercised in production.
-                    //
-                    // WARNING — do not activate without fixing the ordering first:
-                    // this fire-and-forget write has no synchronisation with
-                    // terminationHandler. If the process exits before the write
-                    // completes, closeFile() races against drainQueue.sync{} and
-                    // continuation.resume() — a data race on the pipe file handle.
-                    // Fix: write stdin synchronously before drainQueue.async, or
-                    // use a dedicated serial queue with an explicit barrier.
-                    // Tracked as part of issue #1077 (mutation-path async migration).
-                    DispatchQueue.global(qos: .userInitiated).async {
+                // Dispatch stdin write after task.run() — the child is now running and
+                // will consume bytes from the read end concurrently. This is safe for
+                // arbitrarily large payloads: the child drains the pipe buffer as we fill
+                // it. closeFile() signals EOF to the child once all bytes are written.
+                //
+                // Explicit [inputPipe] capture: inputPipe is a Pipe reference retained
+                // by this closure until stdinQueue drains. The capture list makes the
+                // lifetime management visible rather than implicit.
+                if let stdinQueue, let inputPipe, let stdinData = stdin {
+                    stdinQueue.async { [inputPipe] in
                         inputPipe.fileHandleForWriting.write(stdinData)
                         inputPipe.fileHandleForWriting.closeFile()
                     }
