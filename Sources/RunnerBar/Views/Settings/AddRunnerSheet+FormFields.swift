@@ -333,7 +333,7 @@ extension AddRunnerSheet {
             return
         }
 
-        detectedName = json.runnerName ?? url.lastPathComponent
+        detectedName = url.lastPathComponent
         detectedGitHubURL = json.gitHubUrl ?? ""
         isDuplicate = checkDuplicate(runnerName: detectedName)
 
