@@ -5,6 +5,7 @@ import RunnerBarCore
 
 // MARK: - InstallPathMap
 
+/// Install-path map construction for `RunnerStore`.
 extension RunnerStore {
     /// Lookup maps built from the local runner list, used by `fetchAndEnrichRunners`.
     struct InstallPathMap {

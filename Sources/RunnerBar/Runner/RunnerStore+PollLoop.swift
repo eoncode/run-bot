@@ -5,6 +5,7 @@ import Foundation
 
 // MARK: - Poll loop
 
+/// Poll-loop management for `RunnerStore`.
 extension RunnerStore {
     /// Starts (or restarts) the structured async poll loop.
     ///
