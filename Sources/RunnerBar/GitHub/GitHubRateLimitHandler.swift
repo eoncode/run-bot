@@ -27,39 +27,50 @@ import Foundation
 actor RateLimitActor {
     /// Whether the GitHub API is currently rate-limiting this client.
     private(set) var isLimited = false
-    /// The moment at which the rate-limit window expires (mirrors X-RateLimit-Reset).
+    /// The moment at which the rate-limit window expires.
+    /// Derived from the clamped delay (not the raw server timestamp) so that the
+    /// UI countdown and the internal auto-clear timer always agree.
     /// `nil` when the reset time is unknown.
     private(set) var resetDate: Date?
     /// Structured task that clears `isLimited` when it fires.
     private var resetTask: Task<Void, Never>?
+    /// Incremented on every `set(resetAt:)` call. Captured by each reset task
+    /// and compared in `didFire` to ensure a stale task from a cancelled window
+    /// cannot clear state that belongs to a newer rate-limit window.
+    private var generation = 0
 
     /// Arms the rate-limit flag and schedules an automatic reset.
     ///
     /// - Parameter resetAt: Unix timestamp from the `X-RateLimit-Reset` response header.
-    ///   When non-nil the reset fires precisely at that time; otherwise falls back to
-    ///   60 minutes from now.
+    ///   When non-nil the reset fires precisely at that time (clamped to [5, 7200] s);
+    ///   otherwise falls back to 60 minutes from now.
     func set(resetAt: TimeInterval?) {
         let delay: TimeInterval
-        let date: Date
         if let ts = resetAt {
             let secondsUntilReset = ts - Date().timeIntervalSince1970
             delay = min(max(secondsUntilReset, 5), 7200)
-            date = Date(timeIntervalSince1970: ts)
         } else {
             delay = 3600
-            date = Date().addingTimeInterval(delay)
         }
-        log("ghIsRateLimited › auto-reset scheduled in \(Int(delay))s (resetDate=\(date))")
+        // Derive resetDate from the clamped delay so the UI countdown matches
+        // the actual auto-clear time even when the raw server timestamp falls
+        // outside the [5, 7200] clamp range.
+        let date = Date().addingTimeInterval(delay)
+        log("RateLimitActor › arming: delay=\(Int(delay))s resetDate=\(date)")
+        generation &+= 1
+        let capturedGeneration = generation
         resetTask?.cancel()
         isLimited = true
         resetDate = date
-        resetTask = Task {
+        resetTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 try await Task.sleep(for: .seconds(delay))
             } catch {
+                // Cancelled — a newer set(resetAt:) has taken over.
                 return
             }
-            await self.didFire(scheduledDelay: delay)
+            await self.didFire(generation: capturedGeneration, scheduledDelay: delay)
         }
     }
 
@@ -80,11 +91,20 @@ actor RateLimitActor {
     // MARK: Private
 
     /// Fires when the `Task.sleep` in `set(resetAt:)` completes without cancellation.
-    private func didFire(scheduledDelay: TimeInterval) {
+    ///
+    /// The `generation` check guards against the following race: a task that has already
+    /// exited `Task.sleep` (so cancellation no longer stops it) arrives here *after* a
+    /// newer `set(resetAt:)` has incremented `self.generation`. Without the check it
+    /// would clear `isLimited` and `resetDate` for the newer, still-active window.
+    private func didFire(generation: Int, scheduledDelay: TimeInterval) {
+        guard generation == self.generation else {
+            log("RateLimitActor › stale didFire ignored (gen=\(generation) current=\(self.generation))")
+            return
+        }
         isLimited = false
         resetDate = nil
         resetTask = nil
-        log("ghIsRateLimited › auto-reset fired after \(Int(scheduledDelay))s")
+        log("RateLimitActor › auto-reset fired after \(Int(scheduledDelay))s")
     }
 }
 
