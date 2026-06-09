@@ -68,8 +68,10 @@ private actor RateLimitActor {
     }
 
     /// Clears the rate-limit flag and cancels any pending reset task.
+    /// Unconditional — no early-return guard — so `resetDate` is always
+    /// cleared even if `isLimited` is somehow false, keeping the two
+    /// properties in a consistent state regardless of call order.
     func clear() {
-        guard isLimited else { return }
         resetTask?.cancel()
         resetTask = nil
         isLimited = false
