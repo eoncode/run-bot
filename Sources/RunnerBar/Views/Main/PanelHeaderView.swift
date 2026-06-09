@@ -4,23 +4,6 @@
 import RunnerBarCore
 import SwiftUI
 
-// MARK: - SectionHeaderLabel
-/// Uppercase small-caps label used as a section divider inside the panel.
-struct SectionHeaderLabel: View {
-    /// The raw title string; displayed uppercased.
-    let title: String
-
-    /// Renders the uppercased title with section-caption font and secondary colour.
-    var body: some View {
-        Text(title.uppercased())
-            .font(RBFont.sectionCaption)
-            .foregroundColor(.secondary)
-            .padding(.horizontal, RBSpacing.md)
-            .padding(.top, 6)
-            .padding(.bottom, 2)
-    }
-}
-
 // MARK: - PanelHeaderView
 /// Top bar of the popover panel showing system stats and the settings/quit buttons.
 struct PanelHeaderView: View {
@@ -73,5 +56,22 @@ struct PanelHeaderView: View {
         .buttonStyle(.plain)
         .help("Quit RunnerBar")
         .accessibilityLabel("Quit RunnerBar")
+    }
+}
+
+// MARK: - SectionHeaderLabel
+/// Uppercase small-caps label used as a section divider inside the panel.
+struct SectionHeaderLabel: View {
+    /// The raw title string; displayed uppercased.
+    let title: String
+
+    /// Renders the uppercased title with section-caption font and secondary colour.
+    var body: some View {
+        Text(title.uppercased())
+            .font(RBFont.sectionCaption)
+            .foregroundColor(.secondary)
+            .padding(.horizontal, RBSpacing.md)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
     }
 }

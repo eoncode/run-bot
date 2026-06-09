@@ -1,6 +1,6 @@
 // PanelMainView+Subviews.swift
 // RunnerBar
-//
+
 // Retains only shared glue after extracting focused view files:
 //   - PanelHeaderView.swift  (PanelHeaderView, SectionHeaderLabel)
 //   - RunnerRowViews.swift   (PanelLocalRunnerRow, RunnerMetricsBadge, RunnerTypeIcon)

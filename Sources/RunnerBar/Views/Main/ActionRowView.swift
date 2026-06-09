@@ -32,7 +32,7 @@ struct ActionRowView: View {
             }
         } else {
             rowContainer {
-                glassCardBackground
+                Color.clear.glassCard(cornerRadius: RBRadius.card)
                 statusAccentBar
             }
         }
@@ -73,11 +73,6 @@ struct ActionRowView: View {
             .frame(width: 4)
             .frame(maxHeight: .infinity)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// Pre-macOS-26 glass card background used as the ZStack layer inside `rowContainer`.
-    @ViewBuilder private var glassCardBackground: some View {
-        Color.clear.glassCard(cornerRadius: RBRadius.card)
     }
 
     /// Sets the initial expand state based on the row's status at appear time.
