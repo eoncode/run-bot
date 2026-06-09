@@ -185,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ _: Notification) {
         log("AppDelegate › applicationDidFinishLaunching — START")
         configureGHAPI { endpoint in await ghAPI(endpoint) }
-        configureGHRaw { endpoint in urlSessionRaw(endpoint) }
+        configureGHRaw { endpoint in await urlSessionRawAsync(endpoint) }
         setupStatusItem()
         setupPanel()
         setupSignOutSubscription()
