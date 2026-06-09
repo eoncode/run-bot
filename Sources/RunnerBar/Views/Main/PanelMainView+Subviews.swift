@@ -347,7 +347,9 @@ struct ActionRowView: View {
         .padding(.vertical, 4)
     }
 
-    /// statusBadge wrapped in its own standalone GlassEffectContainer — scoped to badge only.
+    /// Trailing meta: time-ago · steps/total · elapsed (active only) · statusBadge.
+    ///
+    /// statusBadge is wrapped in its own standalone GlassEffectContainer — scoped to badge only.
     /// ⚠️ Do NOT expand this container to the row or rowContainer (#957).
     @ViewBuilder private func metaTrailing(tick tickSnapshot: Int) -> some View {
         if let start = group.firstJobStartedAt {
@@ -379,6 +381,7 @@ struct ActionRowView: View {
         }
     }
 
+    /// Badge view produced from the group’s current status and conclusion.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
         case .inProgress: StatusBadge(status: .inProgress, text: "IN PROGRESS")
@@ -396,9 +399,14 @@ struct ActionRowView: View {
 // MARK: - RowTapModifier
 /// Animation is always `.easeInOut(duration: 0.15)` — do NOT add `.bouncy` (#957).
 private struct RowTapModifier: ViewModifier {
+    /// The jobs for this row; tap is a no-op when empty.
     let jobs: [ActiveJob]
+    /// Drives the expand/collapse state of the parent row.
     @Binding var expandState: Bool?
+    /// Current row status, used to decide the post-collapse state.
     let rowStatus: RBStatus
+
+    /// Attaches the tap gesture that toggles expand state with a 0.15 s ease-in-out animation.
     func body(content: Content) -> some View {
         content.onTapGesture {
             guard !jobs.isEmpty else { return }
