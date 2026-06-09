@@ -368,9 +368,13 @@ private func extractNextURL(from header: String?) -> String? {
     return nil
 }
 
-// MARK: - Raw (log endpoints)
+// MARK: - Raw async (log endpoints)
 
-/// Fetches raw bytes from a GitHub API endpoint that 302-redirects to S3.
+/// Fetches raw bytes from a GitHub API endpoint that 302-redirects to S3, using async/await.
+///
+/// This is the primary transport for all `ghRaw` calls, replacing the
+/// DispatchSemaphore-based `urlSessionRaw`. It is non-blocking and natively
+/// cancellable via `Task.cancel()`.
 ///
 /// # Redirect safety
 /// GitHub's job-log endpoint (`/actions/jobs/{id}/logs`) returns 302 to a
@@ -381,6 +385,40 @@ private func extractNextURL(from header: String?) -> String? {
 /// never forwarded to S3. S3 authenticates purely via the pre-signed query
 /// params already embedded in the redirect URL. No custom redirect delegate is
 /// required or appropriate here.
+func urlSessionRawAsync(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
+    guard let token = githubToken() else {
+        log("urlSessionRawAsync › no token available"); return nil
+    }
+    let urlString = resolveURL(endpoint)
+    guard let url = URL(string: urlString) else {
+        log("urlSessionRawAsync › invalid URL: \(urlString)"); return nil
+    }
+    let req = makeRawRequest(url: url, token: token, timeout: timeout)
+    do {
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else { return nil }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
+            return nil
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            logErrorBody(data, endpoint: urlString, status: http.statusCode); return nil
+        }
+        clearRateLimitIfNeeded()
+        log("urlSessionRawAsync › \(endpoint) → \(data.count)b")
+        return data
+    } catch {
+        log("urlSessionRawAsync › \(urlString) network error: \(error.localizedDescription)")
+        return nil
+    }
+}
+
+// MARK: - Raw sync (mutation helpers — kept for non-async call sites)
+
+/// Fetches raw bytes from a GitHub API endpoint that 302-redirects to S3.
+///
+/// ⚠️ Legacy synchronous wrapper kept for non-async mutation call sites only.
+/// Prefer `urlSessionRawAsync` for all new async code.
 ///
 /// ⚠️ Must be called from a background thread.
 func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) -> Data? {
