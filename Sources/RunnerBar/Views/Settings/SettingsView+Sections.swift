@@ -1,10 +1,10 @@
 // SettingsView+Sections.swift
 // RunnerBar
-import RunnerBarCore
 import SwiftUI
 
 // MARK: - SettingsView sections extension
 // swiftlint:disable no_extension_access_modifier
+/// Section sub-views for `SettingsView` (account, management, general, and about).
 extension SettingsView {
 
     // MARK: - Account
