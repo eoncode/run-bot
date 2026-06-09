@@ -24,7 +24,7 @@ extension RunnerStore {
     }
 
     /// Builds four lookup maps from the local runner list.
-    func buildInstallPathMap(
+    private func buildInstallPathMap(
         scopes: [String],
         localRunners: [RunnerModel]
     ) -> InstallPathMap {
