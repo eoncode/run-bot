@@ -214,9 +214,7 @@ enum RBFont {
 /// are migrated to the `RB*` equivalents.
 /// Active call sites as of Batch 22: `SystemStatsView` (×2), `PanelMainView+Subviews` (×6),
 /// `InlineJobRowsView` (×3) — 11 total. Migrate those files before removing this shim.
-// periphery:ignore - deprecated shim with active call sites; remove after migrating SystemStatsView, PanelMainView+Subviews, InlineJobRowsView
-/// Deprecated backwards-compatibility namespace. Use `RBFont`, `RBSpacing`, and `RBRadius` directly.
-enum DesignTokens { // swiftlint:enable orphaned_doc_comment missing_docs
+enum DesignTokens { // periphery:ignore - deprecated shim with active call sites; remove after migrating SystemStatsView, PanelMainView+Subviews, InlineJobRowsView
     /// Font aliases forwarded from `RBFont`.
     /// - Note: Deprecated — use `RBFont` directly.
     @available(*, deprecated, renamed: "RBFont")
