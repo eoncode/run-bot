@@ -95,8 +95,6 @@ private let rateLimitActor = RateLimitActor()
 /// Whether the GitHub API is currently rate-limiting this client.
 ///
 /// Backed by `RateLimitActor`; must be `await`-ed from async contexts.
-/// Setting to `false` clears the actor; setting to `true` arms a 60-minute window
-/// (no X-RateLimit-Reset header is available at this call site).
 var ghIsRateLimited: Bool {
     get async { await rateLimitActor.isLimited }
 }
@@ -159,11 +157,6 @@ private func resolveURL(_ endpoint: String) -> String {
         : "\(GitHubConstants.apiBase)/\(endpoint.trimmingCharacters(in: slashCharacterSet))"
 }
 
-/// Clears the rate-limit flag after a successful (2xx) response.
-private func clearRateLimitIfNeeded() async {
-    await rateLimitActor.clear()
-}
-
 /// Logs the response body (up to 400 chars) for non-2xx responses.
 private func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
     guard let data, !data.isEmpty else { return }
@@ -210,6 +203,76 @@ private func handleRateLimitResponse(
     }
 }
 
+// MARK: - Shared execution core
+
+/// The result of a single URLSession round-trip through `urlSessionExecute`.
+private enum ExecuteResult {
+    /// 2xx response with optional body data (empty `Data()` for 204 No Content).
+    case success(Data)
+    /// Non-2xx response that is not a rate-limit; the request failed.
+    case httpError(Int)
+    /// 403 or 429 that triggered the rate-limit actor.
+    case rateLimited
+    /// Network-level error (timeout, no connectivity, etc.).
+    case networkError(Error)
+}
+
+/// Single shared implementation of the token-guard → URL-resolve → send → handle-response
+/// pipeline used by all public transport functions.
+///
+/// - Parameters:
+///   - endpoint: GitHub REST API endpoint (absolute URL or relative path).
+///   - timeout: URLSession timeout for the request.
+///   - configure: Closure that receives a base `URLRequest` and returns the
+///     fully-configured request to send (sets method, body, extra headers, etc.).
+///     Receives a `makeRequest`-style request by default; pass `useRawAccept: true`
+///     via the outer helper when a `v3.raw` Accept header is needed instead.
+///   - logTag: Short identifier used in log messages (e.g. `"urlSessionPost"`).
+///   - useRawAccept: When `true` the base request is built with
+///     `makeRawRequest` instead of `makeRequest`.
+private func urlSessionExecute(
+    _ endpoint: String,
+    timeout: TimeInterval,
+    logTag: String,
+    useRawAccept: Bool = false,
+    configure: (URLRequest) -> URLRequest = { $0 }
+) async -> ExecuteResult {
+    guard let token = githubToken() else {
+        log("\(logTag) › no token available")
+        return .networkError(URLError(.userAuthenticationRequired))
+    }
+    let urlString = resolveURL(endpoint)
+    guard let url = URL(string: urlString) else {
+        log("\(logTag) › invalid URL: \(urlString)")
+        return .networkError(URLError(.badURL))
+    }
+    let baseReq = useRawAccept
+        ? makeRawRequest(url: url, token: token, timeout: timeout)
+        : makeRequest(url: url, token: token, timeout: timeout)
+    let req = configure(baseReq)
+    do {
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            return .networkError(URLError(.badServerResponse))
+        }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            await handleRateLimitResponse(
+                statusCode: http.statusCode, data, response: http, endpoint: urlString
+            )
+            return .rateLimited
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            logErrorBody(data, endpoint: urlString, status: http.statusCode)
+            return .httpError(http.statusCode)
+        }
+        await rateLimitActor.clear()
+        return .success(data)
+    } catch {
+        log("\(logTag) › \(urlString) network error: \(error.localizedDescription)")
+        return .networkError(error)
+    }
+}
+
 // MARK: - Async GET (primary transport)
 
 /// Fetches a single GitHub API page using `URLSession.data(for:)` async/await.
@@ -224,36 +287,13 @@ private func handleRateLimitResponse(
 ///   is never forwarded to S3. No custom redirect delegate is required.
 /// - Rate limiting: a 403 with `X-RateLimit-Remaining: 0` or a 429 sets
 ///   `ghIsRateLimited` via `handleRateLimitResponse`. A successful response
-///   clears it via `clearRateLimitIfNeeded()`. The flag is also reset at the
+///   clears it via `rateLimitActor.clear()`. The flag is also reset at the
 ///   start of each poll cycle in `RunnerStore.fetch()`.
 func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
-    guard let token = githubToken() else {
-        log("urlSessionAPIAsync › no token available")
-        return nil
-    }
-    let urlString = resolveURL(endpoint)
-    guard let url = URL(string: urlString) else {
-        log("urlSessionAPIAsync › invalid URL: \(urlString)")
-        return nil
-    }
-    let req = makeRequest(url: url, token: token, timeout: timeout)
-    do {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { return nil }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-            return nil
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            logErrorBody(data, endpoint: urlString, status: http.statusCode)
-            return nil
-        }
-        await clearRateLimitIfNeeded()
-        return data
-    } catch {
-        log("urlSessionAPIAsync › \(urlString) network error: \(error.localizedDescription)")
-        return nil
-    }
+    guard case .success(let data) = await urlSessionExecute(
+        endpoint, timeout: timeout, logTag: "urlSessionAPIAsync"
+    ) else { return nil }
+    return data
 }
 
 /// Fetches and concatenates all pages for a GitHub paginated endpoint using
@@ -299,7 +339,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
                 break
             }
 
-            await clearRateLimitIfNeeded()
+            await rateLimitActor.clear()
             if let page = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                 allItems.append(contentsOf: page)
             } else {
@@ -362,34 +402,11 @@ private func extractNextURL(from header: String?) -> String? {
 /// params already embedded in the redirect URL. No custom redirect delegate is
 /// required or appropriate here.
 func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
-    guard let token = githubToken() else {
-        log("urlSessionRaw › no token available")
-        return nil
-    }
-    let urlString = resolveURL(endpoint)
-    guard let url = URL(string: urlString) else {
-        log("urlSessionRaw › invalid URL: \(urlString)")
-        return nil
-    }
-    let req = makeRawRequest(url: url, token: token, timeout: timeout)
-    do {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { return nil }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-            return nil
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            logErrorBody(data, endpoint: urlString, status: http.statusCode)
-            return nil
-        }
-        await clearRateLimitIfNeeded()
-        log("urlSessionRaw › \(endpoint) → \(data.count)b")
-        return data
-    } catch {
-        log("urlSessionRaw › \(urlString) network error: \(error.localizedDescription)")
-        return nil
-    }
+    guard case .success(let data) = await urlSessionExecute(
+        endpoint, timeout: timeout, logTag: "urlSessionRaw", useRawAccept: true
+    ) else { return nil }
+    log("urlSessionRaw › \(endpoint) → \(data.count)b")
+    return data
 }
 
 // MARK: - POST / DELETE / PUT (mutation)
@@ -402,106 +419,47 @@ func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data
 /// - `Data(…)`  — 2xx response with a body; decode as needed.
 @discardableResult
 func urlSessionPost(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
-    guard let token = githubToken() else {
-        log("urlSessionPost › no token available")
-        return nil
-    }
-    let urlString = resolveURL(endpoint)
-    guard let url = URL(string: urlString) else {
-        log("urlSessionPost › invalid URL: \(urlString)")
-        return nil
-    }
-    var req = makeRequest(url: url, token: token, timeout: timeout)
-    req.httpMethod = "POST"
-    if let body {
-        req.httpBody = body
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    }
-    do {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { return nil }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-            return nil
+    let result = await urlSessionExecute(endpoint, timeout: timeout, logTag: "urlSessionPost") { req in
+        var r = req
+        r.httpMethod = "POST"
+        if let body {
+            r.httpBody = body
+            r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        guard (200..<300).contains(http.statusCode) else {
-            logErrorBody(data, endpoint: urlString, status: http.statusCode)
-            return nil
-        }
-        await clearRateLimitIfNeeded()
-        log("urlSessionPost › \(endpoint) → \(http.statusCode)")
-        return data
-    } catch {
-        log("urlSessionPost › \(urlString) network error: \(error.localizedDescription)")
-        return nil
+        return r
     }
+    guard case .success(let data) = result else { return nil }
+    log("urlSessionPost › \(endpoint) → success")
+    return data
 }
 
 /// Sends a PUT to the given GitHub API endpoint with a JSON body. Returns the response body, or nil on failure.
 func urlSessionPut(_ endpoint: String, body: Data, timeout: TimeInterval = 30) async -> Data? {
-    guard let token = githubToken() else {
-        log("urlSessionPut › no token available")
-        return nil
+    let result = await urlSessionExecute(endpoint, timeout: timeout, logTag: "urlSessionPut") { req in
+        var r = req
+        r.httpMethod = "PUT"
+        r.httpBody = body
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return r
     }
-    let urlString = resolveURL(endpoint)
-    guard let url = URL(string: urlString) else {
-        log("urlSessionPut › invalid URL: \(urlString)")
-        return nil
-    }
-    var req = makeRequest(url: url, token: token, timeout: timeout)
-    req.httpMethod = "PUT"
-    req.httpBody = body
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    do {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { return nil }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-            return nil
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            logErrorBody(data, endpoint: urlString, status: http.statusCode)
-            return nil
-        }
-        await clearRateLimitIfNeeded()
-        log("urlSessionPut › \(endpoint) → \(http.statusCode)")
-        return data
-    } catch {
-        log("urlSessionPut › \(urlString) network error: \(error.localizedDescription)")
-        return nil
-    }
+    guard case .success(let data) = result else { return nil }
+    log("urlSessionPut › \(endpoint) → success")
+    return data
 }
 
 /// Sends a DELETE to the given GitHub API endpoint. Returns true on success (2xx).
 @discardableResult
 func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) async -> Bool {
-    guard let token = githubToken() else {
-        log("urlSessionDelete › no token available")
-        return false
+    let result = await urlSessionExecute(endpoint, timeout: timeout, logTag: "urlSessionDelete") { req in
+        var r = req
+        r.httpMethod = "DELETE"
+        return r
     }
-    let urlString = resolveURL(endpoint)
-    guard let url = URL(string: urlString) else {
-        log("urlSessionDelete › invalid URL: \(urlString)")
-        return false
+    if case .success = result {
+        log("urlSessionDelete › \(endpoint) → success")
+        return true
     }
-    var req = makeRequest(url: url, token: token, timeout: timeout)
-    req.httpMethod = "DELETE"
-    do {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { return false }
-        if http.statusCode == 403 || http.statusCode == 429 {
-            await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-            return false
-        }
-        let ok = (200..<300).contains(http.statusCode)
-        if !ok { logErrorBody(data, endpoint: urlString, status: http.statusCode) }
-        if ok { await clearRateLimitIfNeeded() }
-        log("urlSessionDelete › \(endpoint) → \(http.statusCode)")
-        return ok
-    } catch {
-        log("urlSessionDelete › \(urlString) network error: \(error.localizedDescription)")
-        return false
-    }
+    return false
 }
 
 // MARK: - Public API entry points (GET)
