@@ -88,6 +88,7 @@ final class RunnerStore {
         log("RunnerStore › init — complete, waiting for start()")
     }
 
+    /// Cancels the active poll task on deallocation.
     deinit {
         pollTask?.cancel()
     }
