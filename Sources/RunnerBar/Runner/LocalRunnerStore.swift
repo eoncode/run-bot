@@ -173,57 +173,72 @@ final class LocalRunnerStore: ObservableObject {
 
     // MARK: - Refresh
 
+    /// Fire-and-forget refresh. Spawns a Task and returns immediately.
+    ///
+    /// Use this from views and on-demand callers (e.g. SettingsView lifecycle actions)
+    /// that do not need to wait for completion.
+    ///
+    /// At app startup, prefer `refreshAsync()` so that `RunnerStore.start()` is only
+    /// called after `runners` is fully populated — ensuring cycle-1 `installPathMap`
+    /// is never empty and metrics appear on first runner appearance.
+    func refresh() {
+        log("LocalRunnerStore › refresh() — fire-and-forget wrapper")
+        Task { [weak self] in
+            await self?.performRefresh()
+        }
+    }
+
+    /// Awaitable refresh. Suspends until disk hydration + launchctl + GitHub enrichment
+    /// completes, then returns.
+    ///
+    /// Use ONLY at app startup in `AppDelegate+PanelSetup` so that `RunnerStore.start()`
+    /// is guaranteed to have a populated `runners` array before its first `fetch()` fires.
+    func refreshAsync() async {
+        await performRefresh()
+    }
+
+    /// Shared body for both `refresh()` and `refreshAsync()`.
     /// Hydrates runners from disk, marks live launchctl services, then enriches via GitHub API.
     ///
-    /// IMPORTANT: This is the ONLY way runners gets populated.
-    /// init() only loads runnerIndex (name→path). runners stays [] until refresh() runs.
-    /// Must be called:
-    ///   1. At app startup (AppDelegate+PanelSetup, BEFORE RunnerStore.start())
-    ///   2. On-demand from views that need a fresh scan (e.g. SettingsView lifecycle actions)
-    ///   3. From any view that needs a fresh scan (SettingsView, lifecycle actions)
-    func refresh() {
-        log("LocalRunnerStore › refresh() called — isScanning=\(isScanning) runnerIndex.count=\(runnerIndex.count) runners.count=\(runners.count)")
+    /// IMPORTANT: This is the ONLY way `runners` gets populated.
+    /// `init()` only loads `runnerIndex` (name→path). `runners` stays `[]` until this runs.
+    private func performRefresh() async {
+        log("LocalRunnerStore › performRefresh() — isScanning=\(isScanning) runnerIndex.count=\(runnerIndex.count) runners.count=\(runners.count)")
         guard !isScanning else {
-            log("LocalRunnerStore › refresh() — already scanning, skipping (isScanning=true)")
+            log("LocalRunnerStore › performRefresh() — already scanning, skipping (isScanning=true)")
             return
         }
         isScanning = true
         let index = runnerIndex
-        log("LocalRunnerStore › refresh() — starting Task with index=\(index.keys.sorted())")
-        Task { [weak self] in
-            guard let self else { return }
+        log("LocalRunnerStore › performRefresh() — starting with index=\(index.keys.sorted())")
 
-            // 1. Hydrate from installPath/.runner JSON
-            var hydrated: [RunnerModel] = index.compactMap { runnerModelFromIndex(name: $0.key, installPath: $0.value) }
-            log("LocalRunnerStore › refresh() hydrated \(hydrated.count) runner(s) from disk (index had \(index.count) entries)")
-            if hydrated.count != index.count {
-                let hydratedNames = Set(hydrated.map { $0.runnerName })
-                let missing = index.keys.filter { !hydratedNames.contains($0) }
-                log("LocalRunnerStore › ⚠️ refresh() — \(index.count - hydrated.count) runner(s) failed to hydrate (missing .runner JSON): \(missing)")
-            }
-
-            // 2. Mark live services via launchctl.
-            let liveLabels = await self.scanLiveServices()
-            log("LocalRunnerStore › refresh() — launchctl liveLabels.count=\(liveLabels.count): \(liveLabels)")
-            let isLive: (RunnerModel) -> Bool = { runner in
-                liveLabels.contains { $0.contains(runner.runnerName) }
-            }
-            hydrated = hydrated.map { runner in
-                let live = isLive(runner)
-#if DEBUG
-                log("LocalRunnerStore › refresh() — '\(runner.runnerName)' isRunning=\(live)")
-#endif
-                return runner.copying(isRunning: live)
-            }
-
-            // 3. Enrich via GitHub API (concurrent scope fetches)
-            log("LocalRunnerStore › refresh() — starting GitHub enrichment for \(hydrated.count) runner(s)")
-            let enriched = await RunnerStatusEnricher.shared.enrich(runners: hydrated)
-            log("LocalRunnerStore › refresh() — GitHub enrichment complete, \(enriched.count) runner(s) enriched")
-            log("LocalRunnerStore › refresh() — enriched apiIds=\(enriched.map { "\($0.runnerName)(apiId=\(String(describing: $0.apiId)) agentId=\(String(describing: $0.agentId)))" })")
-
-            self.applyRefreshResults(enriched)
+        // 1. Hydrate from installPath/.runner JSON
+        var hydrated: [RunnerModel] = index.compactMap { runnerModelFromIndex(name: $0.key, installPath: $0.value) }
+        log("LocalRunnerStore › performRefresh() hydrated \(hydrated.count) runner(s) from disk (index had \(index.count) entries)")
+        if hydrated.count != index.count {
+            let hydratedNames = Set(hydrated.map { $0.runnerName })
+            let missing = index.keys.filter { !hydratedNames.contains($0) }
+            log("LocalRunnerStore › ⚠️ performRefresh() — \(index.count - hydrated.count) runner(s) failed to hydrate (missing .runner JSON): \(missing)")
         }
+
+        // 2. Mark live services via launchctl.
+        let liveLabels = await scanLiveServices()
+        log("LocalRunnerStore › performRefresh() — launchctl liveLabels.count=\(liveLabels.count): \(liveLabels)")
+        hydrated = hydrated.map { runner in
+            let live = liveLabels.contains { $0.contains(runner.runnerName) }
+#if DEBUG
+            log("LocalRunnerStore › performRefresh() — '\(runner.runnerName)' isRunning=\(live)")
+#endif
+            return runner.copying(isRunning: live)
+        }
+
+        // 3. Enrich via GitHub API (concurrent scope fetches)
+        log("LocalRunnerStore › performRefresh() — starting GitHub enrichment for \(hydrated.count) runner(s)")
+        let enriched = await RunnerStatusEnricher.shared.enrich(runners: hydrated)
+        log("LocalRunnerStore › performRefresh() — GitHub enrichment complete, \(enriched.count) runner(s) enriched")
+        log("LocalRunnerStore › performRefresh() — enriched apiIds=\(enriched.map { "\($0.runnerName)(apiId=\(String(describing: $0.apiId)) agentId=\(String(describing: $0.agentId)))" })")
+
+        applyRefreshResults(enriched)
     }
 
     /// Applies enriched runner data back on the main actor and clears the scanning flag.
