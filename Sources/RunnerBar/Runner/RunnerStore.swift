@@ -415,7 +415,7 @@ final class RunnerStore {
 #endif
             LocalRunnerStore.shared.applyMetrics(
                 runner.metrics,
-                forAgentId: runner.id,
+                forRunnerId: runner.id,
                 name: runner.name
             )
         }
