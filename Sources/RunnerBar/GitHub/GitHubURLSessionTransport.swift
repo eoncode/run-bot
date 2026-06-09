@@ -124,7 +124,6 @@ func ghRateLimitSnapshot() async -> (isLimited: Bool, resetDate: Date?) {
     await rateLimitActor.snapshot()
 }
 
-
 // MARK: - Request builder
 
 /// Module-level constant reused by `resolveURL` to avoid allocating a new
