@@ -145,7 +145,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
         return nil
     }
     let isRateLimited = await ghIsRateLimited
-    if isRawRateLimited && !allItems.isEmpty {
+    if isRateLimited && !allItems.isEmpty {
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
