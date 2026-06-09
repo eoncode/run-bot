@@ -185,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ _: Notification) {
         log("AppDelegate › applicationDidFinishLaunching — START")
         configureGHAPI { endpoint in await ghAPI(endpoint) }
-        configureGHRaw { endpoint in urlSessionRaw(endpoint) }
+        configureGHRaw { endpoint in await urlSessionRawAsync(endpoint) }
         setupStatusItem()
         setupPanel()
         setupSignOutSubscription()
@@ -482,24 +482,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] event in
-            // Capture screen-coordinate synchronously at fire time.
-            // NSEvent.addGlobalMonitorForEvents delivers on the main thread,
-            // but Task { @MainActor } reschedules onto the cooperative queue —
-            // by the time the task runs, NSEvent.mouseLocation may reflect a
-            // different cursor position. Capturing here ensures the check uses
-            // the exact click that triggered this handler.
-            // NSEvent.mouseLocation is the primary path in practice — global monitor
-            // events for clicks on the desktop or other apps have event.window == nil,
-            // so convertToScreen is never called. Both paths capture synchronously at
-            // fire time, before the Task { @MainActor } hop, ensuring the coordinate
-            // reflects the exact click that triggered this handler.
             let screenLoc = event.window?.convertToScreen(
                 NSRect(origin: event.locationInWindow, size: .zero)
             ).origin ?? NSEvent.mouseLocation
             log("AppDelegate › outsideClickMonitor — FIRED type=\(event.type.rawValue) screenLoc=\(screenLoc)")
-            // Hop to MainActor for the correct isolation domain. Without this
-            // the Swift 6 closure may see stale values (the 'main actor-isolated
-            // property can not be referenced from a Sendable closure' warning).
             Task { @MainActor [weak self] in
                 guard let self else {
                     log("AppDelegate › outsideClickMonitor — self is nil, skipping")
@@ -510,19 +496,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log("AppDelegate › outsideClickMonitor — guard exit: panel not open")
                     return
                 }
-                // If a sheet is attached to the popover window (e.g. NSOpenPanel via
-                // beginSheetModal, or a SwiftUI .sheet), every click is directed at
-                // that sheet and should never dismiss the popover. The sheet is modal
-                // so no truly "outside" click is possible while it is open.
                 guard !self.hasActiveSheet else {
                     log("AppDelegate › outsideClickMonitor — guard exit: hasActiveSheet=true, skipping hidePanel")
                     return
                 }
-                // Ignore clicks that land inside the popover's own window.
-                // Global monitors fire for ALL clicks — including taps on
-                // interactive rows inside the popover — so without this check
-                // any tap inside the popover triggers hidePanel() before the
-                // row's action even runs.
                 guard let popoverWindow = self.popover?.contentViewController?.view.window else {
                     log("AppDelegate › outsideClickMonitor — WARNING: popoverWindow is nil, skipping hidePanel")
                     return
@@ -538,15 +515,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         log("AppDelegate › openPanel — outsideClickMonitor installed: \(String(describing: outsideClickMonitor))")
 
-        // Install app-switch observer. Fires when any app becomes frontmost,
-        // including RunnerBar itself.
-        //
-        // IMPORTANT — self-activation guard is intentional:
-        // `guard activatedApp != NSRunningApplication.current` prevents the
-        // popover from self-dismissing when RunnerBar regains focus after an
-        // NSOpenPanel picker closes (the picker re-activates its parent app,
-        // which would otherwise trigger hidePanel on the way back in).
-        // Do NOT remove this guard.
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -558,15 +526,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let appName = activatedApp.localizedName ?? "unknown"
             log("AppDelegate › workspaceObserver — FIRED activated=\(appName)")
-            // Do nothing when RunnerBar itself is the newly-activated app.
-            // This prevents the popover from self-dismissing when the user
-            // returns focus to RunnerBar (e.g. after dismissing a file picker).
             guard activatedApp != NSRunningApplication.current else {
                 log("AppDelegate › workspaceObserver — guard exit: RunnerBar self-activated, skipping hidePanel")
                 return
             }
-            // Hop to MainActor for the correct isolation domain (same fix as
-            // outsideClickMonitor).
             Task { @MainActor [weak self] in
                 guard let self else {
                     log("AppDelegate › workspaceObserver — self is nil, skipping")
@@ -577,8 +540,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     log("AppDelegate › workspaceObserver — guard exit: panel not open")
                     return
                 }
-                // Mirror the outsideClickMonitor guard: if a sheet is attached,
-                // an app-switch should not dismiss the popover either.
                 guard !self.hasActiveSheet else {
                     log("AppDelegate › workspaceObserver — guard exit: hasActiveSheet=true, skipping hidePanel")
                     return

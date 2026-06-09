@@ -1,7 +1,7 @@
 // GitHubTransportShim.swift
 // RunnerBarCore
 //
-// Provides module-level `ghAPI`, `ghRawTransport` symbols
+// Provides module-level `ghAPI`, `ghRaw` symbols
 // for RunnerBarCore consumers (WorkflowActionGroupFetch, RunnerStatusEnricher,
 // LogFetcher).
 //
@@ -20,9 +20,9 @@ import os
 /// Used for standard REST GET endpoints.
 public typealias GHAPITransport = @Sendable (_ endpoint: String) async -> Data?
 
-/// A synchronous raw-bytes fetch for GitHub log endpoints.
+/// An async raw-bytes fetch for GitHub log endpoints.
 /// These endpoints 302-redirect to S3; the transport must follow redirects.
-public typealias GHRawTransport = @Sendable (_ endpoint: String) -> Data?
+public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 
 // MARK: - Module-level state
 
@@ -48,7 +48,7 @@ public func configureGHAPI(
 
 /// Wire up the raw-bytes transport for log endpoints. Call once at launch.
 ///
-/// - Parameter rawTransport: Synchronous closure that fetches raw log bytes;
+/// - Parameter rawTransport: Async closure that fetches raw log bytes;
 ///   follows 302 redirects and returns `nil` on failure.
 public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
     rawTransportLock.withLock { $0 = rawTransport }
@@ -64,9 +64,10 @@ func ghAPI(_ endpoint: String) async -> Data? {
     return await transport(endpoint)
 }
 
-/// Returns the configured raw-bytes transport closure.
-/// Used by `LogFetcher` to fetch log data without importing the app target.
-/// - Note: Returns the closure itself, not the result of a call — callers invoke it directly.
-func ghRawTransport() -> GHRawTransport {
-    rawTransportLock.withLock { $0 }
+/// Calls the configured raw-bytes transport for the given endpoint.
+/// Reads the closure under the lock then awaits it outside —
+/// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
+func ghRaw(_ endpoint: String) async -> Data? {
+    let transport = rawTransportLock.withLock { $0 }
+    return await transport(endpoint)
 }
