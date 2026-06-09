@@ -4,6 +4,7 @@ import RunnerBarCore
 import SwiftUI
 
 // MARK: - SettingsView sections extension
+// swiftlint:disable:next no_extension_access_modifier
 extension SettingsView {
 
     // MARK: - Account
@@ -176,7 +177,7 @@ extension SettingsView {
     /// Toggle row that shows or hides the NSPopover anchor arrow.
     ///
     /// Extracted as its own computed var so it is a first-class child of
-    /// `generalSection`’s VStack, identical in structure to every other row.
+    /// `generalSection`'s VStack, identical in structure to every other row.
     var popoverArrowRow: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
