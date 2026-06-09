@@ -158,6 +158,7 @@ struct StatusBadgeBackground: ViewModifier {
 /// macOS 26+: accent colour tint + `.glassEffect(.regular, in: Capsule())`.
 /// macOS < 26: accent colour stroke border.
 struct BranchTagPillBackground: ViewModifier {
+    /// Applies the branch tag pill background: accent glass capsule on macOS 26+, accent stroke capsule on older OSes.
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 26, *) {
@@ -192,6 +193,7 @@ struct CardRowModifier: ViewModifier {
 }
 
 // MARK: - View extensions
+/// Convenience modifiers for applying design-system glass effects and backgrounds.
 extension View {
     /// Applies the `GlassCard` modifier with the given corner radius.
     func glassCard(cornerRadius: CGFloat = RBRadius.card) -> some View { modifier(GlassCard(cornerRadius: cornerRadius)) }
