@@ -51,6 +51,7 @@ public func fetchActionLogs(group: WorkflowActionGroup) async -> String? {
         for runID in runIDs {
             taskGroup.addTask {
                 guard let data = await ghRaw("repos/\(scope)/actions/runs/\(runID)/logs") else {
+                    log("fetchActionLogs › run \(runID) — ghRaw returned nil, skipping")
                     return []
                 }
                 return await unzipLogs(data)
@@ -87,7 +88,7 @@ public func fetchActionLogs(group: WorkflowActionGroup) async -> String? {
 ///   path without the `.txt` extension (e.g. `"1_Build"` for `1_Build.txt`) and
 ///   `text` is the file content. Returns `[]` if the write, unzip, or enumeration
 ///   step fails.
-public func unzipLogs(_ zipData: Data) async -> [(name: String, text: String)] {
+func unzipLogs(_ zipData: Data) async -> [(name: String, text: String)] {
     let fileManager = FileManager.default
     let tmp = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let zipFile = tmp.appendingPathComponent("logs.zip")
