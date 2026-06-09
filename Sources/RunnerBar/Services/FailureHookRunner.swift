@@ -216,13 +216,13 @@ enum FailureHookRunner {
     /// Token map:
     /// - `$LOCAL_PATH`     — absolute path from `ScopePreferencesStore.localRepoPath(for:)`
     /// - `$SCOPE`          — `owner/repo` string
-    /// - `$BRANCH`         — head branch of the first run
+    /// - `$BRANCH`         — head branch of the triggering run
     /// - `$COMMIT_SHA`     — full 40-char SHA of the triggering commit
-    /// - `$RUN_ID`         — GitHub Actions run ID of the first failed run
+    /// - `$RUN_ID`         — GitHub Actions run ID of the first *failed* run
     /// - `$WORKFLOW_NAME`  — display name of the workflow
-    /// - `$RUN_LINK`       — deep link to the Actions run page on GitHub
+    /// - `$RUN_LINK`       — deep link to the first failed run's Actions page on GitHub
     /// - `$COMMIT_LINK`    — deep link to the commit diff on GitHub
-    /// - `$BRANCH_LINK`    — deep link to the branch on GitHub
+    /// - `$BRANCH_LINK`    — deep link to the branch on GitHub (percent-encoded)
     /// - `$REPO_LINK`      — deep link to the repository root on GitHub
     /// - `$FAILURE_LOG`    — raw log tail (last 150 lines) of the first failed job
     private static func resolveTokens(
@@ -234,21 +234,32 @@ enum FailureHookRunner {
         let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
         let branch = group.headBranch ?? ""
         let sha = group.headSha
-        let firstRun = group.runs.first
-        let runID = firstRun.map { String($0.id) } ?? ""
+        let baseURL = "https://github.com/\(scope)"
+        // Use the first *failed* run for $RUN_ID and $RUN_LINK so they always
+        // point to an actionable failure, not an incidental successful run that
+        // happens to sit first in the array.
+        let failedRun = group.runs.first(where: {
+            guard let c = $0.conclusion else { return false }
+            return failureConclusions.contains(c.lowercased())
+        })
+        let failedRunID = failedRun.map { String($0.id) } ?? group.id
+        let runLink = failedRun?.htmlUrl ?? "\(baseURL)/actions/runs/\(failedRunID)"
         let workflowName = group.title
-        let runLink = firstRun?.htmlUrl ?? "https://github.com/\(scope)/actions"
-        let commitLink = "https://github.com/\(scope)/commit/\(sha)"
-        let branchLink = "https://github.com/\(scope)/tree/\(branch)"
-        let repoLink = "https://github.com/\(scope)"
+        let commitLink = "\(baseURL)/commit/\(sha)"
+        // Percent-encode the branch name so URLs remain valid for branches that
+        // contain slashes, spaces, or other special characters (e.g. feature/my-thing).
+        let encodedBranch = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
+        let branchLink = "\(baseURL)/tree/\(encodedBranch)"
+        let repoLink = baseURL
         let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
         let escapedLog = singleQuoteEscape(logContent)
+        log("FailureHookRunner › resolveTokens — $LOCAL_PATH='\(localPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)")
         return command
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
             .replacingOccurrences(of: "$SCOPE", with: scope)
             .replacingOccurrences(of: "$BRANCH", with: branch)
             .replacingOccurrences(of: "$COMMIT_SHA", with: sha)
-            .replacingOccurrences(of: "$RUN_ID", with: runID)
+            .replacingOccurrences(of: "$RUN_ID", with: failedRunID)
             .replacingOccurrences(of: "$WORKFLOW_NAME", with: workflowName)
             .replacingOccurrences(of: "$RUN_LINK", with: runLink)
             .replacingOccurrences(of: "$COMMIT_LINK", with: commitLink)
