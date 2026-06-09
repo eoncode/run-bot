@@ -165,7 +165,7 @@ struct AddRunnerSheet: View {
 
     // MARK: - State reset helpers
 
-    /// Resets all "Add new" form fields to their default values.
+    /// Resets all "Add new" form fields to their initial default values.
     func resetAddNewState() {
         runnerName       = ""
         labelsText       = "self-hosted,macOS"
@@ -217,15 +217,17 @@ struct AddRunnerSheet: View {
                 options: 0
             )
             try plistData.write(to: plistURL, options: .atomic)
-            log("AddRunnerSheet \u203a wrote LaunchAgent plist: \(plistURL.path)")
+            log("AddRunnerSheet › wrote LaunchAgent plist: \(plistURL.path)")
         } catch {
-            log("AddRunnerSheet \u203a failed to write LaunchAgent plist: \(error)")
+            log("AddRunnerSheet › failed to write LaunchAgent plist: \(error)")
         }
     }
 
     // MARK: - Process helpers (Add new)
 
     /// Invokes `config.sh` with the GitHub URL, registration token, runner name and labels.
+    ///
+    /// Delegates to `ProcessRunner.runAsync` — no blocking `waitUntilExit()` on the pool.
     func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) async -> Int32 {
@@ -238,25 +240,27 @@ struct AddRunnerSheet: View {
             mergeStderr: true,
             timeout: 120
         )
-        log("runRegistrationCommand \u203a exit=\(result.exitCode): \(result.output.prefix(500))")
+        log("runRegistrationCommand › exit=\(result.exitCode): \(result.output.prefix(500))")
         return result.exitCode
     }
 
     /// Launches `executable` with `args` asynchronously and returns the termination status.
+    ///
+    /// Delegates to `ProcessRunner.runAsync` — stderr is discarded (default `mergeStderr: false`).
     func runSimpleProcess(_ executable: String, args: [String]) async -> Int32 {
         let result = await ProcessRunner.runAsync(
             executableURL: URL(fileURLWithPath: executable),
             arguments: args,
             timeout: 120
         )
-        log("runSimpleProcess \u203a \(executable) exit \(result.exitCode)")
+        log("runSimpleProcess › \(executable) exit \(result.exitCode)")
         return result.exitCode
     }
 
     // MARK: - Register (Add new)
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
-    /// Downloads, unpacks, configures a new runner, registers with LocalRunnerStore, and dismisses.
+    /// Downloads, unpacks, configures a new runner, registers with `LocalRunnerStore`, and dismisses.
     func register() async {
         guard canRegister else { return }
         errorMessage = nil
@@ -273,7 +277,7 @@ struct AddRunnerSheet: View {
         let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
         guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
             isRegistering = false
-            errorMessage  = "Install directory must be inside your home folder (~/\u2026)."
+            errorMessage  = "Install directory must be inside your home folder (~/…)."
             return
         }
 
@@ -295,7 +299,7 @@ struct AddRunnerSheet: View {
         let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
         if !FileManager.default.fileExists(atPath: configPath) {
-            await setStep("Downloading runner package\u2026")
+            await setStep("Downloading runner package…")
             guard let downloadURL = await fetchRunnerDownloadURL() else {
                 isRegistering = false
                 errorMessage  = "Could not determine runner download URL. Check your internet connection."
@@ -312,7 +316,7 @@ struct AddRunnerSheet: View {
                 errorMessage = "Download failed."
                 return
             }
-            await setStep("Unpacking runner package\u2026")
+            await setStep("Unpacking runner package…")
             let tarResult = await runSimpleProcess(GitHubURIs.tarPath, args: ["xzf", tarPath, "-C", dir])
             try? FileManager.default.removeItem(atPath: tarPath)
             guard tarResult == 0 else {
@@ -322,7 +326,7 @@ struct AddRunnerSheet: View {
             }
         }
 
-        await setStep("Fetching registration token\u2026")
+        await setStep("Fetching registration token…")
         guard let token = await fetchRegistrationToken(scope: scope) else {
             isRegistering = false
             if currentScopeType == .org {
@@ -333,7 +337,7 @@ struct AddRunnerSheet: View {
             return
         }
 
-        await setStep("Configuring runner\u2026")
+        await setStep("Configuring runner…")
         let ghURL      = "\(GitHubURIs.base)\(scope)"
         let configExit = await runRegistrationCommand(
             dir: dir, ghURL: ghURL, token: token, name: name, labels: labels
@@ -344,7 +348,7 @@ struct AddRunnerSheet: View {
             return
         }
 
-        await setStep("Registering service\u2026")
+        await setStep("Registering service…")
         writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
         LocalRunnerStore.shared.add(runnerName: name, installPath: dir)
         isRegistering    = false
