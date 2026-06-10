@@ -359,14 +359,13 @@ actor RunnerStore {
 
         log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))")
 
-        let vm = viewModel
         let statusUpdate = onStatusUpdate
-        await MainActor.run {
-            vm.runners            = enrichedRunners
-            vm.jobs               = jobResult.display
-            vm.actions            = groupResult.display
-            vm.isRateLimited      = rateLimitSnapshot.isLimited
-            vm.rateLimitResetDate = rateLimitSnapshot.resetDate
+        await MainActor.run { [viewModel] in
+            viewModel.runners            = enrichedRunners
+            viewModel.jobs               = jobResult.display
+            viewModel.actions            = groupResult.display
+            viewModel.isRateLimited      = rateLimitSnapshot.isLimited
+            viewModel.rateLimitResetDate = rateLimitSnapshot.resetDate
             statusUpdate()
         }
     }

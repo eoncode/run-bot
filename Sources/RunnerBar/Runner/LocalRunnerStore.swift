@@ -22,16 +22,17 @@ actor LocalRunnerStore {
     // MARK: - Shared instance
 
     /// Backing storage. Set once at startup by `configure(viewModel:)` before any view
-    /// is mounted. `nonisolated(unsafe)` is safe here because it is written exactly once
-    /// on the main actor (inside `AppDelegate+PanelSetup.applicationDidFinishLaunching`)
-    /// before any concurrent read is possible.
-    nonisolated(unsafe) private static var _shared: LocalRunnerStore?
+    /// is mounted. `@MainActor` ensures the compiler enforces single-actor write discipline
+    /// without relying on `nonisolated(unsafe)` — any read from a non-`@MainActor` context
+    /// is a compile-time error rather than a silent data race.
+    @MainActor private(set) static var _shared: LocalRunnerStore?
 
-    /// The app-wide shared instance.
+    /// The app-wide shared instance. Must be called on the main actor.
     ///
     /// ⚠️ Must not be accessed before `configure(viewModel:)` is called from
     /// `AppDelegate+PanelSetup.applicationDidFinishLaunching`. Accessing it earlier
     /// produces a `fatalError` with a diagnostic message.
+    @MainActor
     static var shared: LocalRunnerStore {
         guard let instance = _shared else {
             fatalError(
@@ -50,8 +51,9 @@ actor LocalRunnerStore {
     /// replaces the previous instance).
     ///
     /// ⚠️ **Test suites that call this method must be marked `@Suite(.serialized)`.**
-    /// `_shared` is `nonisolated(unsafe)`; two test cases calling `configure(viewModel:)`
-    /// concurrently (Swift Testing's default parallel execution) will race on the write.
+    /// `_shared` is `@MainActor`; two test cases calling `configure(viewModel:)`
+    /// concurrently will race unless serialised. The compiler enforces `@MainActor`
+    /// access to `_shared`, so any off-actor write is a compile-time error.
     @MainActor
     static func configure(viewModel: RunnerViewModel) {
         _shared = LocalRunnerStore(viewModel: viewModel)

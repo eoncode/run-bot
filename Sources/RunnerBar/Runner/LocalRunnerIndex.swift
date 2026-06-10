@@ -8,7 +8,8 @@ import Foundation
 ///
 /// Pure persistence layer with no knowledge of the runner model — easily unit-testable in isolation.
 /// Non-isolated: owned exclusively by the `LocalRunnerStore` actor, which serializes all access.
-/// `UserDefaults` is internally thread-safe, so no UI/main-actor coordination is required.
+/// `UserDefaults` read/write of individual keys is thread-safe; this class uses no KVO or
+/// change notifications on `UserDefaults`, so no main-actor coordination is required.
 final class LocalRunnerIndex {
 
     // MARK: - Storage key
