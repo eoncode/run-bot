@@ -19,9 +19,8 @@ struct FailureHookCommandSheet: View {
     /// Called when the sheet should be dismissed, either after saving or on cancel.
     let onDismiss: () -> Void
 
-    /// The current contents of the command text editor, pre-seeded from persisted storage
-    /// or `exampleCommand` when no command has been saved yet.
-    @State private var commandText: String = ""
+    /// Draft command text owned by the parent `ScopeEditSheet` so Cancel there can discard it.
+    @Binding var commandText: String
 
     // $FAILURE_LOG is pre-resolved by FailureHookRunner in Swift before the command
     // reaches the shell — log content is single-quote-escaped so special characters
@@ -33,15 +32,11 @@ struct FailureHookCommandSheet: View {
     /// `FailureHookRunner.defaultCommand` so the editor is never blank on first open.
     private static let exampleCommand = FailureHookRunner.defaultCommand
 
-    /// Initialises the sheet for `scope`, pre-populating the editor with the persisted
-    /// command or `exampleCommand` when nothing has been saved yet.
-    init(scope: String, onDismiss: @escaping () -> Void) {
+    /// Initialises the sheet for `scope`.
+    init(scope: String, commandText: Binding<String>, onDismiss: @escaping () -> Void) {
         self.scope = scope
+        self._commandText = commandText
         self.onDismiss = onDismiss
-        let saved = ScopePreferencesStore.failureHookCommand(for: scope) ?? ""
-        log("FailureHookCommandSheet › init — scope=\(scope) savedCommand='\(saved)' isEmpty=\(saved.isEmpty)")
-        _commandText = State(initialValue: saved.isEmpty ? Self.exampleCommand : saved)
-        log("FailureHookCommandSheet › init — commandText seeded with '\(saved.isEmpty ? "exampleCommand" : "savedCommand")'")
     }
 
     /// Shell-variable tokens the user can insert into the command, e.g. `$SCOPE`, `$FAILURE_LOG`.
@@ -160,11 +155,10 @@ extension FailureHookCommandSheet {
 
 /// Action handlers for `FailureHookCommandSheet`: persisting the command, running a test in Terminal, and inserting variable tokens.
 extension FailureHookCommandSheet {
-    /// Persists `commandText` to `ScopePreferencesStore` and dismisses the sheet.
+    /// Closes the sheet; persistence is owned by `ScopeEditSheet.confirmSave()`.
     private func save() {
         log("FailureHookCommandSheet › save — scope=\(scope) commandText='\(commandText.prefix(200))'")
-        ScopePreferencesStore.setFailureHookCommand(commandText, for: scope)
-        log("FailureHookCommandSheet › save — done, dismissing")
+        log("FailureHookCommandSheet › save — staged in parent draft, dismissing")
         onDismiss()
     }
 
