@@ -30,7 +30,7 @@ struct PanelMainView: View {
     /// Called when the user taps the settings gear button.
     let onSelectSettings: () -> Void
     /// Panel open/close and transient-hide state from the environment.
-    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    @Environment(PanelVisibilityState.self) private var panelVisibilityState: PanelVisibilityState
     /// View model for CPU/memory stats displayed in the header.
     @StateObject private var systemStats = SystemStatsViewModel()
     /// Number of workflow rows currently shown in the actions section.

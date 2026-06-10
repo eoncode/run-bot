@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `PanelContainerView` and its dim overlay observe this object;
     /// removing it causes a runtime crash on sheet dismissal.
     func wrapEnv<V: View>(_ view: V) -> AnyView {
-        AnyView(view.environmentObject(panelVisibilityState))
+        AnyView(view.environment(panelVisibilityState))
     }
 
     // MARK: - Popover resize

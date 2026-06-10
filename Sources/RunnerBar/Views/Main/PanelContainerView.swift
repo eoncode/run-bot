@@ -96,7 +96,7 @@ struct PanelContainerView<Content: View>: View {
     ///
     /// isTransientHide is set by hidePanel() before isOpen = false to let
     /// onChange and the timer know NOT to clear isSheetActive.
-    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    @Environment(PanelVisibilityState.self) private var panelVisibilityState: PanelVisibilityState
 
     /// Creates a `PanelContainerView` wrapping the given content.
     /// - Parameter content: The child view to wrap inside the dim-overlay container.

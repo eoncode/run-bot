@@ -281,7 +281,7 @@ struct InlineJobRowsView: View {
         // Callers that require navigation provide a real implementation.
     }
     /// Tracks whether the panel popover is currently visible.
-    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    @Environment(PanelVisibilityState.self) private var panelVisibilityState: PanelVisibilityState
     /// The set of job IDs whose step lists are currently expanded.
     @State private var expandedJobIDs: Set<Int> = []
     /// A stable snapshot of `tick` captured at view evaluation time, used to key job row identity.
