@@ -19,17 +19,17 @@ final class SystemStatsViewModel {
     private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
     /// Rolling 60-sample history for disk-usage sparkline charts.
     private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Safety: only mutated on MainActor (start/stop). Captured as a local `let` in
+    /// Only mutated on MainActor (start/stop). Captured as a local `let` in
     /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
     /// must be called on the thread that installed the timer (main run loop).
-    nonisolated(unsafe) private var timer: Timer?
-    /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
+    nonisolated private var timer: Timer?
+    /// Accessed only from `sampleCPU()` (always called on MainActor) and
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
     /// Previous `processor_info_array_t` sample retained between `sampleCPU()` calls.
-    nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
-    /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
+    nonisolated private var prevCPUInfo: processor_info_array_t?
+    /// Same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     /// Entry count of `prevCPUInfo`, required by `vm_deallocate` for correct deallocation size.
-    nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
+    nonisolated private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries via `FileManager.attributesOfFileSystem`.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
