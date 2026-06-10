@@ -25,7 +25,7 @@ struct ScopesView: View {
     // MARK: - Observed stores
 
     /// Registered remote runner scopes (org / repo URLs).
-    @State private var scopeStore = ScopeStore.shared
+    @StateObject private var scopeStore = ScopeStore.shared
 
     // MARK: - Local UI state
 
@@ -96,4 +96,111 @@ struct ScopesView: View {
         }
     }
 
- 
+    /// Section header row with add button.
+    private var sectionHeader: some View {
+        HStack {
+            Text("Remote runner scopes")
+                .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
+            Spacer()
+            Button {
+                showAddScopeSheet = true
+            } label: {
+                Image(systemName: "plus").font(.caption).foregroundColor(Color.rbTextSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("Add a remote scope")
+            .accessibilityIdentifier("addScopeButton")
+        }
+        .padding(.horizontal, RBSpacing.md).padding(.top, 8).padding(.bottom, 2)
+    }
+
+    /// Subtitle describing what remote scopes are.
+    private var descriptionLabel: some View {
+        Text("GitHub repos or orgs whose runners are fetched via the API.")
+            .font(.caption).foregroundColor(Color.rbTextSecondary)
+            .padding(.horizontal, RBSpacing.md).padding(.bottom, 6)
+    }
+
+    /// Empty-state placeholder or populated list of scope rows.
+    @ViewBuilder
+    private var scopeList: some View {
+        if scopeStore.entries.isEmpty {
+            Text("No remote scopes added")
+                .font(.caption).foregroundColor(Color.rbTextSecondary)
+                .padding(.horizontal, RBSpacing.md).padding(.vertical, 4)
+        } else {
+            ForEach(scopeStore.entries) { entry in scopeRow(entry) }
+        }
+    }
+
+    // MARK: - Scope rows
+
+    /// Row view for a single remote scope entry.
+    private func scopeRow(_ entry: ScopeEntry) -> some View {
+        let isRepo = entry.scope.contains("/")
+        let displayName = ScopePreferencesStore.displayName(for: entry.scope)
+        return Button {
+            selectedScopeEntry = entry
+        } label: {
+            HStack(spacing: 8) {
+                Text(isRepo ? "Repo" : "Org")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextSecondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.rbSurfaceElevated))
+                    .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(displayName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if ScopePreferencesStore.alias(for: entry.scope) != nil {
+                        Text(entry.scope)
+                            .font(.caption2)
+                            .foregroundColor(Color.rbTextTertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                Spacer()
+                Text(entry.isEnabled ? "Active" : "Paused")
+                    .font(.caption2)
+                    .foregroundColor(entry.isEnabled ? Color.rbSuccess : Color.rbTextTertiary)
+                Toggle("", isOn: Binding(
+                    get: { entry.isEnabled },
+                    set: { ScopeStore.shared.setEnabled(entry.id, $0); RunnerStore.shared.start() }
+                ))
+                .toggleStyle(.switch)
+                .tint(Color.rbSuccess)
+                .labelsHidden()
+                .help(entry.isEnabled ? "Pause monitoring" : "Resume monitoring")
+                .scaleEffect(0.8, anchor: .trailing)
+                .buttonStyle(.borderless)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundColor(Color.rbTextTertiary)
+                Button {
+                    ScopePreferencesStore.cleanUp(scope: entry.scope)
+                    ScopeStore.shared.remove(id: entry.id)
+                    // Note: no explicit RunnerStore.shared.start() here —
+                    // ScopeStore.remove mutates activeScopes, which fires
+                    // withObservationTracking in _startObservingScopes and
+                    // restarts the poll loop automatically.
+                } label: {
+                    Image(systemName: "minus.circle")
+                        .font(.caption2)
+                        .foregroundColor(Color.rbDanger)
+                }
+                .buttonStyle(.borderless)
+                .help("Remove scope")
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, RBSpacing.md)
+        .padding(.vertical, 5)
+        .glassCard(cornerRadius: RBRadius.small)
+        .padding(.horizontal, RBSpacing.xs)
+        .opacity(entry.isEnabled ? 1.0 : 0.5)
+    }
+}
