@@ -106,11 +106,10 @@ final class ScopeStore {
         log("ScopeStore › removed scope id: \(id)")
     }
 
-    /// Toggles the `isEnabled` flag for the entry with the given ID and persists
-    /// the change. `RunnerStore` observes `activeScopes` via `withObservationTracking`,
-    /// so reassigning the `@Observable` `entries` array is enough to trigger a poll restart.
-    /// The element is replaced (not mutated in place) so the Observation system
-    /// reliably registers the change to the nested value-type field.
+    /// Mutates the `isEnabled` flag for the entry with the given ID in place
+    /// and persists the change. Swift's `@Observable` macro tracks per-property
+    /// access on `entries`, so the direct index assignment is sufficient to
+    /// trigger observation and cause `RunnerStore` to restart the poll loop.
     func setEnabled(_ id: UUID, _ enabled: Bool) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].isEnabled = enabled
