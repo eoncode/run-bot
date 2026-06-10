@@ -96,6 +96,14 @@ actor RunnerStore {
         Task { [weak self] in await self?._startObservingScopes() }
     }
 
+    // MARK: - Deinit
+
+    deinit {
+        pollTask?.cancel()
+        intervalObservationTask?.cancel()
+        scopeObservationTask?.cancel()
+    }
+
     // MARK: - Observation helpers (actor-isolated entry points)
 
     // internal (not private): called from `Task { await self?... }` in init,
@@ -125,13 +133,7 @@ actor RunnerStore {
                 // Prime the observation on the main thread.
                 Task { @MainActor in observe() }
             }
-            // withObservationTracking fires immediately on the first access inside
-            // the tracking block, emitting the current value into the stream before
-            // any real change occurs. Skip that synthetic first emission so we only
-            // react to genuine user-driven pollingInterval changes.
-            var isFirst = true
             for await newInterval in stream {
-                if isFirst { isFirst = false; continue }
                 guard !Task.isCancelled else { return }
                 log("RunnerStore › pollingInterval changed to \(newInterval) — restarting poll loop")
                 await self?.start()
@@ -159,12 +161,7 @@ actor RunnerStore {
                 }
                 Task { @MainActor in observe() }
             }
-            // withObservationTracking fires immediately on the first access inside
-            // the tracking block, emitting the current scopes before any real change.
-            // Skip that synthetic first emission so we only restart on genuine scope changes.
-            var isFirst = true
             for await _ in stream {
-                if isFirst { isFirst = false; continue }
                 guard !Task.isCancelled else { return }
                 log("RunnerStore › ScopeStore.activeScopes changed — restarting fetch")
                 await self?.start()
