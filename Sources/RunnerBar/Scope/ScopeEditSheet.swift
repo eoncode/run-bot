@@ -489,7 +489,14 @@ extension ScopeEditSheet {
             if response == .OK, let url = picker.url {
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
                 let abs = url.path
-                let tilde = abs.hasPrefix(home) ? "~/" + abs.dropFirst(home.count + 1) : abs
+                let tilde: String
+                if abs == home {
+                    tilde = "~/"
+                } else if abs.hasPrefix(home + "/") {
+                    tilde = "~/" + abs.dropFirst(home.count + 1)
+                } else {
+                    tilde = abs
+                }
                 log("[PICKER] openFolderPicker — user picked path=\(tilde)")
                 localRepoPath = tilde
             } else {
