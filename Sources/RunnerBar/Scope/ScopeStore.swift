@@ -113,14 +113,11 @@ final class ScopeStore {
         didMutate.send()
     }
 
-    /// Toggles the `isEnabled` flag for the entry with the given ID and
-    /// persists the change to `UserDefaults` immediately.
-    /// Does NOT send `didMutate` — enable/disable is not a structural change.
-    ///
-    /// `ScopeEntry` is a struct, so `entries[idx].isEnabled = enabled` replaces
-    /// Sends `didMutate` so `RunnerStore` restarts its poll loop when the active
-    /// scope set changes. Mutating a nested value-type field (`entries[idx].isEnabled`)
-    /// does not automatically trigger `didMutate` the way add/remove events do,
+    /// Toggles the `isEnabled` flag for the entry with the given ID,
+    /// persists the change to `UserDefaults`, and sends `didMutate` so
+    /// `RunnerStore` restarts its poll loop when the active scope set changes.
+    /// Mutating a nested value-type field (`entries[idx].isEnabled`) does not
+    /// automatically trigger `didMutate` the way add/remove events do,
     /// so the send is explicit.
     func setEnabled(_ id: UUID, _ enabled: Bool) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }

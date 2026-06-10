@@ -41,6 +41,10 @@ struct ScopeEditSheet: View {
     @Binding var isPresented: Bool
 
     /// Shared store providing the full list of scope entries.
+    /// `@State` holds a reference to the singleton — safe even though
+    /// `ScopeEditSheet` is recreated on each presentation, because `@State`
+    /// stores the reference itself (not a copy), so both presentations point
+    /// at the same `ScopeStore.shared` instance.
     @State private var scopeStore = ScopeStore.shared
     /// Controls visibility of the failure-hook configuration sheet.
     @State private var showHookSheet = false
