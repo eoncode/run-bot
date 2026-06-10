@@ -27,5 +27,6 @@ struct RingBuffer {
     }
 
     /// Elements in insertion order, oldest first.
+    // head is always in [0, capacity) — guaranteed by the modulo in append().
     var values: [Double] { Array(storage[head...] + storage[..<head]) }
 }
