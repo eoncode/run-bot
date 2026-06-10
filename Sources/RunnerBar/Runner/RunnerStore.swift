@@ -48,8 +48,8 @@ actor RunnerStore {
     private(set) var isRateLimited = false
     /// The exact moment the current rate-limit window expires, or `nil` when no
     /// rate-limit is active or the reset time is unknown.
-    // periphery:ignore - assigned in applyFetchResult and mirrored to RunnerViewModel; consumed externally via the view model
-    private(set) var rateLimitResetDate: Date?
+    /// Assigned in `applyFetchResult` and mirrored to `RunnerViewModel`; consumed externally via the view model.
+    private(set) var rateLimitResetDate: Date? // periphery:ignore
 
     /// Active structured poll task. Cancelled and replaced on every `start()` call.
     private var pollTask: Task<Void, Never>?
@@ -71,8 +71,8 @@ actor RunnerStore {
     // MARK: - Aggregate status
 
     /// The combined health status across all runners, derived from the current `runners` array.
-    // periphery:ignore - read by external consumers (e.g. AppDelegate) outside this file's analysis scope
-    var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
+    /// Read by external consumers (e.g. `AppDelegate`) outside this file's analysis scope.
+    var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) } // periphery:ignore
 
     // MARK: - Init
 
@@ -106,8 +106,11 @@ actor RunnerStore {
 
     // MARK: - Observation helpers (actor-isolated entry points)
 
-    // internal (not private): called from `Task { await self?... }` in init,
-    // which requires at least internal visibility to resolve the method reference.
+    /// Starts (or restarts) the `pollingInterval` observation loop.
+    ///
+    /// Internal (not private): called from `Task { await self?... }` in `init`,
+    /// which requires at least internal visibility to resolve the method reference.
+    /// Restarts the poll loop whenever `AppPreferencesStore.pollingInterval` changes.
     func _startObservingPreferences() {
         intervalObservationTask?.cancel()
         intervalObservationTask = Task { [weak self] in
@@ -141,8 +144,11 @@ actor RunnerStore {
         }
     }
 
-    // internal (not private): called from `Task { await self?... }` in init,
-    // which requires at least internal visibility to resolve the method reference.
+    /// Starts (or restarts) the `activeScopes` observation loop.
+    ///
+    /// Internal (not private): called from `Task { await self?... }` in `init`,
+    /// which requires at least internal visibility to resolve the method reference.
+    /// Restarts the poll loop whenever `ScopeStore.activeScopes` changes.
     func _startObservingScopes() {
         scopeObservationTask?.cancel()
         scopeObservationTask = Task { [weak self] in
