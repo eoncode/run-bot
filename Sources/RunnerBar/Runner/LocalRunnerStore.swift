@@ -48,6 +48,10 @@ actor LocalRunnerStore {
     /// Must be called **once**, on the main actor, before any view is mounted or any
     /// `refresh()` call is made. Safe to call multiple times in tests (each call
     /// replaces the previous instance).
+    ///
+    /// ⚠️ **Test suites that call this method must be marked `@Suite(.serialized)`.**
+    /// `_shared` is `nonisolated(unsafe)`; two test cases calling `configure(viewModel:)`
+    /// concurrently (Swift Testing's default parallel execution) will race on the write.
     @MainActor
     static func configure(viewModel: RunnerViewModel) {
         _shared = LocalRunnerStore(viewModel: viewModel)

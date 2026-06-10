@@ -168,7 +168,11 @@ struct ScopesView: View {
                     .foregroundColor(entry.isEnabled ? Color.rbSuccess : Color.rbTextTertiary)
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
-                    set: { ScopeStore.shared.setEnabled(entry.id, $0); onRestartPolling() }
+                    // onRestartPolling intentionally omitted: scope enable/disable is
+                    // observed internally by RunnerStore._startObservingScopes via
+                    // withObservationTracking. Calling onRestartPolling here would trigger
+                    // a second cancel+restart of the poll task on every toggle.
+                    set: { ScopeStore.shared.setEnabled(entry.id, $0) }
                 ))
                 .toggleStyle(.switch)
                 .tint(Color.rbSuccess)

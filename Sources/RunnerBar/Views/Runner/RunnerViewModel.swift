@@ -13,12 +13,18 @@ import Observation
 @MainActor
 @Observable
 final class RunnerViewModel {
-    /// The app-wide singleton. `RunnerStore` and `LocalRunnerStore` write into this instance.
+    /// ❌ Do not use. The single live instance is owned by `AppDelegate` as `observable`.
     ///
-    /// Declared `@MainActor` so the initialiser runs on the main actor, satisfying
-    /// Swift 6 strict concurrency. Stores capture it by reference; all
-    /// mutations go through `await MainActor.run { }`.
-    @MainActor static let shared = RunnerViewModel()
+    /// `RunnerStore` and `LocalRunnerStore` push state into `AppDelegate.observable` only;
+    /// this accessor is never updated and will silently return stale/empty data.
+    /// Inject `RunnerViewModel` explicitly via the environment or constructor instead.
+    @MainActor static var shared: RunnerViewModel {
+        fatalError(
+            "RunnerViewModel.shared must not be used. "
+            + "The live instance is AppDelegate.observable — inject it via the environment "
+            + "or pass it as a constructor argument."
+        )
+    }
 
     // MARK: - Observable state (pushed by RunnerStore)
     /// GitHub API-backed runners for the authenticated user's repos and orgs.
