@@ -21,7 +21,7 @@ struct ScopesView: View {
     // MARK: - Observed stores
 
     /// Registered remote runner scopes (org / repo URLs).
-    @StateObject private var scopeStore = ScopeStore.shared
+    @State private var scopeStore = ScopeStore.shared
 
     // MARK: - Local UI state
 

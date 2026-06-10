@@ -41,7 +41,7 @@ struct ScopeEditSheet: View {
     @Binding var isPresented: Bool
 
     /// Shared store providing the full list of scope entries.
-    @ObservedObject private var scopeStore = ScopeStore.shared
+    @State private var scopeStore = ScopeStore.shared
     /// Controls visibility of the failure-hook configuration sheet.
     @State private var showHookSheet = false
     /// Controls visibility of the branch-filter picker sheet.
