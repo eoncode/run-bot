@@ -116,22 +116,22 @@ actor RunnerStore {
         intervalObservationTask = Task { [weak self] in
             // Build an AsyncStream that fires on every pollingInterval change.
             // withObservationTracking must run on @MainActor because
-            // AppPreferencesStore is @MainActor-isolated.
+            // AppPreferencesStore is @MainActor.
             let stream: AsyncStream<Int> = AsyncStream { continuation in
-                // @MainActor ensures the withObservationTracking tracking block can legally
-                // access AppPreferencesStore.shared (which is @MainActor-isolated).
-                // @Sendable is intentionally omitted: Swift 6.2 rejects @Sendable on a
-                // synchronous @MainActor local function — the isolation already guarantees
-                // the sendability requirement.
-                @MainActor func observe() {
-                    // Each call to withObservationTracking registers one onChange.
-                    // We re-register inside the same @MainActor Task as the yield
-                    // so that observe() always runs on the main actor.
-                    // observe() must NOT be called bare outside the Task — onChange
-                    // fires on an unspecified thread and would crash off-main.
+                // observe is a @MainActor @Sendable closure so that:
+                //   (a) the withObservationTracking apply block can access
+                //       @MainActor-isolated AppPreferencesStore.shared, and
+                //   (b) it can be captured inside the @Sendable Task closure
+                //       in onChange without a SendableClosureCaptures error.
+                // The var is initialised to a no-op and then immediately
+                // replaced before the first call so the self-reference is valid.
+                var observe: @MainActor @Sendable () -> Void = {}
+                observe = { @MainActor @Sendable in
                     withObservationTracking {
                         _ = AppPreferencesStore.shared.pollingInterval
                     } onChange: {
+                        // onChange fires on an arbitrary thread; hop back to
+                        // @MainActor before yielding and re-registering.
                         Task { @MainActor in
                             continuation.yield(AppPreferencesStore.shared.pollingInterval)
                             observe()
@@ -158,12 +158,10 @@ actor RunnerStore {
         scopeObservationTask?.cancel()
         scopeObservationTask = Task { [weak self] in
             let stream: AsyncStream<[String]> = AsyncStream { continuation in
-                // @MainActor ensures the withObservationTracking tracking block can legally
-                // access ScopeStore.shared (which is @MainActor-isolated).
-                // @Sendable omitted for the same reason as in _startObservingPreferences.
-                @MainActor func observe() {
-                    // Re-register inside the same @MainActor Task as the yield.
-                    // See _startObservingPreferences for the full rationale.
+                // See _startObservingPreferences for the full rationale on
+                // @MainActor @Sendable closure var pattern.
+                var observe: @MainActor @Sendable () -> Void = {}
+                observe = { @MainActor @Sendable in
                     withObservationTracking {
                         _ = ScopeStore.shared.activeScopes
                     } onChange: {
