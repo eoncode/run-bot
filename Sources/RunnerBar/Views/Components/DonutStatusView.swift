@@ -17,6 +17,8 @@ import SwiftUI
 ///   `.linear(duration: 3).repeatForever(autoreverses: false)` — slower to
 ///   remain visually distinct from the in-progress shimmer.
 /// - Progress arc uses `trim(from: 0, to: fraction)` animated with `.easeInOut`.
+/// - Both rotation angles are reset to 0 before re-arming to avoid a SwiftUI
+///   no-op when the status re-enters the same state (target already == 360).
 ///
 /// Do NOT remove the repeatForever animations -- they are liveness indicators.
 /// Do NOT start rotation for states that do not own the animation -- wastes CPU/GPU.
@@ -80,20 +82,26 @@ struct DonutStatusView: View {
         }
     }
 
-    /// Starts the `repeatForever` rotation animation only when status is `.inProgress`.
-    /// Safe to call multiple times -- SwiftUI deduplicates identical in-flight animations.
+    /// Starts the `repeatForever` in-progress shimmer rotation.
+    /// Resets `rotationAngle` to 0 first so re-entry after a status round-trip
+    /// does not produce a SwiftUI no-op (target already 360).
+    /// Safe to call multiple times — guard ensures it only runs for `.inProgress`.
     private func startRotationIfNeeded() {
         guard status == .inProgress else { return }
+        rotationAngle = 0
         withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
             rotationAngle = 360
         }
     }
 
-    /// Starts the `repeatForever` queued-glow animation only when status is `.queued`.
-    /// Runs at 3 s/revolution — slower than the in-progress shimmer — so the two states
-    /// remain visually distinct. Safe to call multiple times.
+    /// Starts the `repeatForever` queued-glow rotation.
+    /// Resets `queuedRotation` to 0 first so re-entry (e.g. re-queued after failure)
+    /// does not produce a SwiftUI no-op (target already 360).
+    /// Runs at 3 s/revolution — slower than in-progress — so the two states stay
+    /// visually distinct. Safe to call multiple times.
     private func startQueuedAnimationIfNeeded() {
         guard status == .queued else { return }
+        queuedRotation = 0
         withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
             queuedRotation = 360
         }
