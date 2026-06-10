@@ -6,11 +6,18 @@ import SwiftUI
 
 // MARK: - RunnerDetailPopover
 
-/// Popover view for editing a single self-hosted runner.
+/// Sheet view for editing a single self-hosted runner.
 ///
 /// All editable fields are buffered in a `RunnerEditDraft` value; no
 /// persistence occurs here.  The parent is responsible for committing
 /// or discarding via the `onCommit` / `onCancel` callbacks.
+///
+/// Presented via `.sheet(item:)` from `LocalRunnersView` (#1262).
+/// The fixed `maxHeight: 520` on the ScrollView is intentional — it gives
+/// SwiftUI a concrete ceiling so `preferredContentSize` is computed from the
+/// view's own content rather than inherited from the parent panel window height.
+/// ❌ NEVER replace `maxHeight: 520` with `maxHeight: .infinity` here.
+/// Doing so causes the sheet to mirror the panel height instead of sizing itself.
 ///
 /// Replaces `RunnerDetailView` as part of #1001 (issue #988 fix).
 struct RunnerDetailPopover: View {
@@ -19,12 +26,12 @@ struct RunnerDetailPopover: View {
 
     /// The runner being edited (read-only identity + info fields).
     let runner: RunnerModel
-    /// Error message from the last commit attempt, forwarded by the parent (`SettingsView`).
+    /// Error message from the last commit attempt, forwarded by the parent (`LocalRunnersView`).
     /// `nil` while no error is active. Displayed in the footer so the user knows why OK did not close.
     let commitError: String?
     /// Called when the user taps OK. The caller runs the commit flow (Phase 3).
     let onCommit: (RunnerEditDraft) -> Void
-    /// Called when the user taps Cancel or the popover is dismissed externally.
+    /// Called when the user taps Cancel or the sheet is dismissed externally.
     let onCancel: () -> Void
 
     // MARK: - Draft state
@@ -46,7 +53,7 @@ struct RunnerDetailPopover: View {
 
     // MARK: - Init
 
-    /// Creates the popover, seeding the draft and info fields from `runner`.
+    /// Creates the sheet, seeding the draft and info fields from `runner`.
     init(
         runner: RunnerModel,
         commitError: String? = nil,
@@ -70,7 +77,10 @@ struct RunnerDetailPopover: View {
 
     // MARK: - Body
 
-    /// Root popover layout: header, form fields, and action bar.
+    /// Root sheet layout: header, scrollable form fields, and action bar.
+    ///
+    /// `maxHeight: 520` on the ScrollView is load-bearing — see type-level comment.
+    /// ❌ NEVER change to `maxHeight: .infinity`.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             popoverHeader
@@ -82,7 +92,7 @@ struct RunnerDetailPopover: View {
                 }
                 .padding(.bottom, 16)
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxHeight: 520)
             Divider()
             footerBar
         }
@@ -92,7 +102,7 @@ struct RunnerDetailPopover: View {
 
     // MARK: - Header
 
-    /// Popover header showing runner status dot and name (no back button).
+    /// Sheet header showing runner status dot and name (no back button).
     private var popoverHeader: some View {
         HStack(spacing: 6) {
             Circle()
@@ -110,9 +120,9 @@ struct RunnerDetailPopover: View {
 
     // MARK: - Footer
 
-    /// Cancel / OK action bar at the bottom of the popover.
+    /// Cancel / OK action bar at the bottom of the sheet.
     /// Shows `commitError` in red above the buttons when non-nil so the user
-    /// knows why OK did not close the popover.
+    /// knows why OK did not close the sheet.
     private var footerBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let error = commitError {
@@ -294,7 +304,7 @@ struct RunnerDetailPopover: View {
     }
 
     /// Status indicator colour from runner model.
-    /// Matches the 4-state logic in `SettingsView.localRunnerDotColor(for:)`.
+    /// Matches the 4-state logic in `LocalRunnersView.localRunnerDotColor(for:)`.
     private func dotColor(for runnerModel: RunnerModel) -> Color {
         switch runnerModel.statusColor {
         case .running: return Color.rbSuccess
