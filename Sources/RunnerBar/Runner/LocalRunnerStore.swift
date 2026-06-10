@@ -161,19 +161,15 @@ actor LocalRunnerStore {
 #endif
 
         guard let idx = runners.firstIndex(where: { runner in
-            if let rid = runnerId, let aid = runner.apiId {
-                if aid == rid {
-                    log("LocalRunnerStore › applyMetrics — MATCH via apiId=\(aid) for '\(runner.runnerName)'")
-                    return true
-                }
+            if let rid = runnerId, let aid = runner.apiId, aid == rid {  // Priority 1: GitHub REST API id
+                log("LocalRunnerStore › applyMetrics — MATCH via apiId=\(aid) for '\(runner.runnerName)'")
+                return true
             }
-            if let rid = runnerId, let aid = runner.agentId {
-                if aid == rid {
-                    log("LocalRunnerStore › applyMetrics — MATCH via agentId=\(aid) for '\(runner.runnerName)'")
-                    return true
-                }
+            if let rid = runnerId, let aid = runner.agentId, aid == rid {  // Priority 2: local AgentId
+                log("LocalRunnerStore › applyMetrics — MATCH via agentId=\(aid) for '\(runner.runnerName)'")
+                return true
             }
-            if runner.runnerName == name {
+            if runner.runnerName == name {  // Priority 3: name (last resort)
                 log("LocalRunnerStore › applyMetrics — MATCH via name='\(name)' for '\(runner.runnerName)'")
                 return true
             }
