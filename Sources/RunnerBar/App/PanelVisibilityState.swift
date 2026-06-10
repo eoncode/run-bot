@@ -54,9 +54,11 @@ import SwiftUI
 // ════════════════════════════════════════════════════════════════════════════════
 
 /// Observable wrapper for NSPanel open/closed state + one-shot height callback.
-/// - Note: Mutated exclusively on the main thread by AppDelegate — no `@MainActor`
-///   annotation is used because all call sites (AppDelegate + SwiftUI view callbacks)
-///   already run on the main thread.
+/// - Note: `@MainActor` enforces the main-thread constraint that was previously
+///   only documented. All mutation sites (AppDelegate, SwiftUI view callbacks)
+///   are already main-actor contexts, so this is a no-op at runtime but lets
+///   the compiler verify the invariant under Swift 6 strict concurrency.
+@MainActor
 @Observable
 final class PanelVisibilityState {
     /// `true` from immediately before the panel opens until after it closes.

@@ -24,6 +24,9 @@ import SwiftUI
 /// Root panel view rendered inside the NSPopover.
 struct PanelMainView: View {
     /// The view model driving runner and workflow data.
+    /// SAFE: lifetime is managed by `AppDelegate`, not SwiftUI. The hosting
+    /// `NSViewController` is never destroyed, so SwiftUI never re-creates
+    /// `PanelMainView`'s identity and `store` always points at the same instance.
     var store: RunnerViewModel
     /// Called when user taps a step row.
     let onStepTap: (ActiveJob, JobStep) -> Void
