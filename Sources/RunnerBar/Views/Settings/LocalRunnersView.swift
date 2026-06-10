@@ -222,10 +222,16 @@ struct LocalRunnersView: View {
     // MARK: - Lifecycle actions
 
     /// Optimistically marks the runner as running then delegates to `RunnerLifecycleService`.
+    ///
+    /// The optimistic update is awaited inline before the lifecycle service is called so the
+    /// runner row updates on the very next main-actor frame after the toggle fires. Previously
+    /// two independent `Task {}` blocks were used, which introduced an actor-hop latency
+    /// between the tap and the first visible state change.
     @MainActor private func performResume(runner: RunnerModel) {
         log("LocalRunnersView > performResume called runner=\(runner.runnerName)")
-        Task { await localRunnerStore.optimisticallySetRunning(runner.runnerName, isRunning: true) }
         Task {
+            // Await the optimistic update first — row reflects new state immediately.
+            await localRunnerStore.optimisticallySetRunning(runner.runnerName, isRunning: true)
             let result = await Task.detached(priority: .userInitiated) {
                 RunnerLifecycleService.shared.start(runner: runner)
             }.value
@@ -245,10 +251,16 @@ struct LocalRunnersView: View {
     }
 
     /// Optimistically marks the runner as stopped then delegates to `RunnerLifecycleService`.
+    ///
+    /// The optimistic update is awaited inline before the lifecycle service is called so the
+    /// runner row updates on the very next main-actor frame after the toggle fires. Previously
+    /// two independent `Task {}` blocks were used, which introduced an actor-hop latency
+    /// between the tap and the first visible state change.
     @MainActor private func performStop(runner: RunnerModel) {
         log("LocalRunnersView > performStop called runner=\(runner.runnerName)")
-        Task { await localRunnerStore.optimisticallySetRunning(runner.runnerName, isRunning: false) }
         Task {
+            // Await the optimistic update first — row reflects new state immediately.
+            await localRunnerStore.optimisticallySetRunning(runner.runnerName, isRunning: false)
             let result = await Task.detached(priority: .userInitiated) {
                 RunnerLifecycleService.shared.stop(runner: runner)
             }.value
