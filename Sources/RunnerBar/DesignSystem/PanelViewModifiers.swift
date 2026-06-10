@@ -21,7 +21,7 @@ import SwiftUI
 struct GlassCard: ViewModifier {
     /// Corner radius applied to the rounded rectangle shape. Defaults to `RBRadius.card`.
     var cornerRadius: CGFloat
-    /// Opacity of the fallback stroke border. Defaults to 0.15; use 0.25 for sections.
+    /// Opacity of the stroke border overlay. Defaults to 0.15; use 0.25 for sections.
     var strokeOpacity: Double
 
     /// Creates a `GlassCard` modifier with custom corner radius and stroke opacity.

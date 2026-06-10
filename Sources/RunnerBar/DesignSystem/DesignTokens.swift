@@ -78,6 +78,7 @@ extension Color {
     )
 
     /// Subtle border — low-contrast outline for cards and separators.
+    /// Light opacity bumped to 0.12 for better visibility on glass; dark stays at 0.06.
     static let rbBorderSubtle: Color = Color.adaptive(
         light: Color(white: 0.0).opacity(0.12),
         dark:  Color(white: 1.0).opacity(0.06)
