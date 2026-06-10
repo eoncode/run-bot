@@ -116,9 +116,11 @@ actor RunnerStore {
         intervalObservationTask = Task { [weak self] in
             // Build an AsyncStream that fires on every pollingInterval change.
             // withObservationTracking must run on @MainActor because
-            // AppPreferencesStore is @MainActor.
+            // AppPreferencesStore is @MainActor-isolated.
             let stream: AsyncStream<Int> = AsyncStream { continuation in
-                @Sendable func observe() {
+                // @MainActor so the withObservationTracking tracking block can legally
+                // access AppPreferencesStore.shared (which is @MainActor-isolated).
+                @MainActor @Sendable func observe() {
                     // Each call to withObservationTracking registers one onChange.
                     // We re-register inside the same @MainActor Task as the yield
                     // so that observe() always runs on the main actor.
@@ -153,7 +155,10 @@ actor RunnerStore {
         scopeObservationTask?.cancel()
         scopeObservationTask = Task { [weak self] in
             let stream: AsyncStream<[String]> = AsyncStream { continuation in
-                @Sendable func observe() {
+                // @MainActor so the withObservationTracking tracking block can legally
+                // access ScopeStore.shared (which is @MainActor-isolated).
+                // See _startObservingPreferences for the full rationale.
+                @MainActor @Sendable func observe() {
                     // Re-register inside the same @MainActor Task as the yield.
                     // See _startObservingPreferences for the full rationale.
                     withObservationTracking {
