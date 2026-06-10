@@ -30,8 +30,16 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 /// sheet presentation to the parent view bounds — i.e. the NSPopover panel size —
 /// instead of escaping to the window level. Lifting it to the root `VStack` causes
 /// AppKit to attach the sheet to `NSPopoverWindowFrame` directly, matching the
-/// behaviour of `AddRunnerSheet` and `AddScopeSheet`'s own outer presentation.
+/// behaviour of `AddRunnerSheet` and `AddScopeSheet`’s own outer presentation.
 /// ❌ NEVER move `.sheet(isPresented: $showScopeSelector)` back onto the Button.
+///
+/// ## Why no ScrollView in body
+/// The content is a fixed set of controls (segmented picker, one field or button,
+/// helper caption) that never needs to scroll. A `ScrollView` prevents SwiftUI from
+/// computing a real `preferredContentSize` for the sheet window — it reports the
+/// container height (the NSPopover panel size) instead of the content height.
+/// Replacing it with a plain `VStack` lets the sheet size itself intrinsically.
+/// ❌ NEVER wrap the content VStack in a ScrollView here.
 struct AddScopeSheet: View {
     /// Controls whether the sheet is shown.
     @Binding var isPresented: Bool
@@ -78,8 +86,8 @@ struct AddScopeSheet: View {
 
     /// Root layout: header, form fields, and footer action bar.
     ///
-    /// `.sheet(isPresented: $showScopeSelector)` is attached here at the root, not on the
-    /// picker Button — see type comment for the full explanation.
+    /// No ScrollView — see type comment for why. `.sheet(isPresented: $showScopeSelector)`
+    /// is attached at the root so AppKit attaches `RepoSelectorSheet` at window level.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Header ─────────────────────────────────────────────────────
@@ -91,93 +99,91 @@ struct AddScopeSheet: View {
 
             Divider()
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: RBSpacing.md) {
+            VStack(alignment: .leading, spacing: RBSpacing.md) {
 
-                    // ── Type toggle ──────────────────────────────────────────
-                    Picker("", selection: $scopeType) {
-                        ForEach(ScopeType.allCases) { t in
-                            Text(t.rawValue).tag(t)
-                        }
+                // ── Type toggle ──────────────────────────────────────────
+                Picker("", selection: $scopeType) {
+                    ForEach(ScopeType.allCases) { t in
+                        Text(t.rawValue).tag(t)
                     }
-                    .pickerStyle(.segmented)
-                    .onChange(of: scopeType) { _, _ in
-                        // Reset picker selection to the first item in the new segment (or "" if not
-                        // loaded yet). Also clear manualScope so the text field doesn't show stale
-                        // input from the previous segment when falling back to manual mode.
-                        selectedScope = pickerItems.first ?? ""
-                        manualScope = ""
-                        showScopeSelector = false
-                    }
-
-                    // ── Scope picker / text field ────────────────────────────
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(scopeType == .org ? "Organisation" : "Repository")
-                            .font(.caption)
-                            .foregroundColor(Color.rbTextSecondary)
-
-                        if isFetching {
-                            HStack(spacing: 8) {
-                                ProgressView().scaleEffect(0.7)
-                                Text("Fetching from GitHub\u{2026}")
-                                    .font(.caption)
-                                    .foregroundColor(Color.rbTextSecondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 6)
-                        } else if usesPickerForCurrentScope {
-                            // ── Searchable sheet trigger ─────────────────────
-                            // .sheet is on the root VStack, not here — see type comment.
-                            Button(action: { showScopeSelector = true }) {
-                                HStack {
-                                    Text(selectedScope.isEmpty ? "\u{2014} select \u{2014}" : selectedScope)
-                                        .font(.system(size: 12))
-                                        .foregroundColor(
-                                            selectedScope.isEmpty
-                                                ? Color.rbTextTertiary
-                                                : Color.rbTextPrimary
-                                        )
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(Color.rbTextTertiary)
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Color.rbSurface)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            TextField(
-                                scopeType == .org ? "e.g. myorg" : "e.g. myorg/myrepo",
-                                text: $manualScope
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12))
-                        }
-
-                        if let err = errorMessage {
-                            Text(err)
-                                .font(.caption)
-                                .foregroundColor(Color.rbDanger)
-                        }
-                    }
-
-                    // ── Helper caption ───────────────────────────────────────
-                    Text(scopeType == .org
-                         ? "Monitors all runners in the organisation."
-                         : "Monitors runners registered to this repository.")
-                    .font(.caption)
-                    .foregroundColor(Color.rbTextSecondary)
                 }
-                .padding(RBSpacing.md)
+                .pickerStyle(.segmented)
+                .onChange(of: scopeType) { _, _ in
+                    // Reset picker selection to the first item in the new segment (or "" if not
+                    // loaded yet). Also clear manualScope so the text field doesn't show stale
+                    // input from the previous segment when falling back to manual mode.
+                    selectedScope = pickerItems.first ?? ""
+                    manualScope = ""
+                    showScopeSelector = false
+                }
+
+                // ── Scope picker / text field ────────────────────────────
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(scopeType == .org ? "Organisation" : "Repository")
+                        .font(.caption)
+                        .foregroundColor(Color.rbTextSecondary)
+
+                    if isFetching {
+                        HStack(spacing: 8) {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Fetching from GitHub\u{2026}")
+                                .font(.caption)
+                                .foregroundColor(Color.rbTextSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                    } else if usesPickerForCurrentScope {
+                        // ── Searchable sheet trigger ─────────────────────
+                        // .sheet is on the root VStack, not here — see type comment.
+                        Button(action: { showScopeSelector = true }) {
+                            HStack {
+                                Text(selectedScope.isEmpty ? "\u{2014} select \u{2014}" : selectedScope)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(
+                                        selectedScope.isEmpty
+                                            ? Color.rbTextTertiary
+                                            : Color.rbTextPrimary
+                                    )
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(Color.rbTextTertiary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Color.rbSurface)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        TextField(
+                            scopeType == .org ? "e.g. myorg" : "e.g. myorg/myrepo",
+                            text: $manualScope
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                    }
+
+                    if let err = errorMessage {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(Color.rbDanger)
+                    }
+                }
+
+                // ── Helper caption ───────────────────────────────────────
+                Text(scopeType == .org
+                     ? "Monitors all runners in the organisation."
+                     : "Monitors runners registered to this repository.")
+                .font(.caption)
+                .foregroundColor(Color.rbTextSecondary)
             }
+            .padding(RBSpacing.md)
 
             Divider()
 
