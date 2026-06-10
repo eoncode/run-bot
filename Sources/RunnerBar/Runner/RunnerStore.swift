@@ -131,6 +131,13 @@ actor RunnerStore {
     /// body (PR Principle #4: no singleton access inside actor bodies).
     private let onStatusUpdate: @MainActor @Sendable () -> Void
 
+    // MARK: - Aggregate status
+
+    /// The combined health status across all runners, derived from the current `runners` array.
+    /// Read by external consumers (e.g. `AppDelegate`) outside this file's analysis scope.
+    /// periphery:ignore
+    var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
+
     // MARK: - Init
 
     /// Designated init for dependency injection.
