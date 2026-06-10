@@ -132,7 +132,7 @@ runner-bar/
 │           │   ├── AddRunnerSheet.swift       — sheet for registering a new self-hosted runner (token fetch, timeout, keyWindow handling)
 │           │   ├── AddScopeSheet.swift        — sheet for adding a new monitored scope (org/repo/user picker, manual entry)
 │           │   ├── FailureHookCommandSheet.swift — sheet for editing the failure-hook shell command and inserting variables
-│           │   ├── RunnerDetailPopover.swift  — sheet showing runner metadata (info + editable config); presented via .sheet(item:) from LocalRunnersView (#1262)
+│           │   ├── RunnerDetailPopover.swift  — popover showing runner metadata and a copy-to-pasteboard token action
 │           │   └── SettingsView.swift         — main Settings tab view (login, notifications, scopes, runners, failure hook)
 │           ├── Sheets/
 │           │   ├── BranchSelectorSheet.swift  — sheet for picking a branch filter for a runner scope
