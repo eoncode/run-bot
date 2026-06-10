@@ -396,9 +396,11 @@ struct AddRunnerSheet: View {
 
         setStep("Registering service…")
         writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
-        Task {
-            await localRunnerStore.add(runnerName: name, installPath: dir)
-        }
+        // Await directly — register() is already async, no Task wrapper needed.
+        // This guarantees add() completes before isPresented = false fires and
+        // onComplete() enqueues its refresh(), so the new runner row is always
+        // present in the actor's index before the scan runs.
+        await localRunnerStore.add(runnerName: name, installPath: dir)
         isRegistering    = false
         registrationStep = ""
         isPresented      = false
