@@ -201,10 +201,12 @@ extension AppDelegate: NSPopoverDelegate {
 
         // NOTE: The `RunnerStore.didUpdate` Combine sink has been removed.
         // `RunnerStore` is now a Swift actor that pushes state directly to
-        // `RunnerViewModel.shared` via `await MainActor.run { }` at the end
-        // of every fetch cycle, and calls `AppDelegate.updateStatusIcon()` inside
+        // the injected `viewModel` (AppDelegate.observable) via `await MainActor.run { }`
+        // at the end of every fetch cycle, and calls `AppDelegate.updateStatusIcon()` inside
         // that same `MainActor.run` block — so icon refresh is still driven once
         // per completed fetch cycle without any Combine subscription.
+        // ⚠️ `RunnerViewModel.shared` is a separate static instance and is NOT
+        // the push target; do not read live data from it.
 
         // FIX: Await LocalRunnerStore.refreshAsync() before starting the poll loop.
         //

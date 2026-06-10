@@ -104,34 +104,42 @@ actor RunnerStore {
         scopeObservationTask?.cancel()
     }
 
-    // MARK: - Observation helpers (actor-isolated entry points)
+    // MARK: - Observation helpers
 
     /// Starts (or restarts) the `pollingInterval` observation loop.
     ///
-    /// Internal (not private): called from `Task { await self?... }` in `init`,
-    /// which requires at least internal visibility to resolve the method reference.
-    /// Restarts the poll loop whenever `AppPreferencesStore.pollingInterval` changes.
-    func _startObservingPreferences() {
+    /// Private: the underscore-prefix signals "do not call externally", and `private`
+    /// enforces it at the compiler level. Swift `private` is file-scoped, so the
+    /// `Task { await self?._startObservingPreferences() }` call in `init` — which is
+    /// in the same file — resolves correctly without requiring `internal` visibility.
+    /// Making this `internal` would allow any file in the module to start a duplicate
+    /// observation loop, causing the poll loop to restart twice per change.
+    private func _startObservingPreferences() {
         intervalObservationTask?.cancel()
         intervalObservationTask = Task { [weak self] in
-            // The observe closure must be both @MainActor (to legally access
-            // AppPreferencesStore.shared, which is @MainActor-isolated) and @Sendable
-            // (because it is captured inside Task { @MainActor in }, which is @Sendable).
-            // Swift 6.2 rejects @Sendable on a local *func* that is also @MainActor, but a
-            // *closure* stored in a var with an explicit @MainActor @Sendable type accepts
-            // both attributes simultaneously.
+            // Build an AsyncStream that fires on every pollingInterval change.
+            // withObservationTracking must run on @MainActor because
+            // AppPreferencesStore is @MainActor.
             let stream: AsyncStream<Int> = AsyncStream { continuation in
+                // `observe` is a @MainActor @Sendable closure variable so that
+                // the recursive capture inside the @Sendable onChange Task is
+                // valid under Swift 6 strict concurrency checking.
+                // A nested `func observe()` would have type `() -> ()` which is
+                // not Sendable, causing a compile error at the capture site.
                 var observe: (@MainActor @Sendable () -> Void)!
-                observe = { @MainActor in
+                observe = { @MainActor @Sendable in
                     withObservationTracking {
                         _ = AppPreferencesStore.shared.pollingInterval
                     } onChange: {
+                        // onChange fires on an arbitrary thread; hop back to
+                        // @MainActor before yielding and re-registering.
                         Task { @MainActor in
                             continuation.yield(AppPreferencesStore.shared.pollingInterval)
                             observe()
                         }
                     }
                 }
+                // Prime the observation on the main thread.
                 Task { @MainActor in observe() }
             }
             for await newInterval in stream {
@@ -144,17 +152,16 @@ actor RunnerStore {
 
     /// Starts (or restarts) the `activeScopes` observation loop.
     ///
-    /// Internal (not private): called from `Task { await self?... }` in `init`,
-    /// which requires at least internal visibility to resolve the method reference.
-    /// Restarts the poll loop whenever `ScopeStore.activeScopes` changes.
-    func _startObservingScopes() {
+    /// Private for the same reason as `_startObservingPreferences` — see that
+    /// method's doc-comment for the full rationale.
+    private func _startObservingScopes() {
         scopeObservationTask?.cancel()
         scopeObservationTask = Task { [weak self] in
-            // Same @MainActor @Sendable closure pattern as _startObservingPreferences.
-            // See that method for the full rationale.
             let stream: AsyncStream<[String]> = AsyncStream { continuation in
+                // `observe` is a @MainActor @Sendable closure variable — see
+                // _startObservingPreferences for the full rationale.
                 var observe: (@MainActor @Sendable () -> Void)!
-                observe = { @MainActor in
+                observe = { @MainActor @Sendable in
                     withObservationTracking {
                         _ = ScopeStore.shared.activeScopes
                     } onChange: {
