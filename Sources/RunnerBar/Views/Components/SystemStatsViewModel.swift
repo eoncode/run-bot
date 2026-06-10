@@ -22,14 +22,16 @@ final class SystemStatsViewModel {
     /// Only mutated on MainActor (start/stop). Captured as a local `let` in
     /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
     /// must be called on the thread that installed the timer (main run loop).
-    nonisolated private var timer: Timer?
+    /// `@ObservationIgnored` excludes this from macro-generated tracking storage so
+    /// `nonisolated(unsafe)` can be applied for deinit access off the main actor.
+    @ObservationIgnored nonisolated(unsafe) private var timer: Timer?
     /// Accessed only from `sampleCPU()` (always called on MainActor) and
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
-    /// Previous `processor_info_array_t` sample retained between `sampleCPU()` calls.
-    nonisolated private var prevCPUInfo: processor_info_array_t?
+    /// `@ObservationIgnored` + `nonisolated(unsafe)` for same reason as `timer`.
+    @ObservationIgnored nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
     /// Same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     /// Entry count of `prevCPUInfo`, required by `vm_deallocate` for correct deallocation size.
-    nonisolated private var prevNumCPUInfo: mach_msg_type_number_t = 0
+    @ObservationIgnored nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries via `FileManager.attributesOfFileSystem`.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
