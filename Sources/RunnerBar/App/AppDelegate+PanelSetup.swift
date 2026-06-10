@@ -175,15 +175,8 @@ extension AppDelegate: NSPopoverDelegate {
     private func setupCombineSubscriptions() {
         log("AppDelegate › setupCombineSubscriptions — begin")
 
-        // $runners — local runner list changed on disk (added/removed runner config).
-        LocalRunnerStore.shared.$runners
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] runners in
-                guard let self else { return }
-                log("AppDelegate › LocalRunnerStore.$runners fired — count=\(runners.count)")
-                self.observable.reload()
-            }
-            .store(in: &cancellables)
+        // local runner list changes are now pushed directly from LocalRunnerStore
+        // into observable.localRunners via await MainActor.run — no Combine sink needed.
 
         // Everything below makes live network calls — skip entirely in UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else {
@@ -212,11 +205,11 @@ extension AppDelegate: NSPopoverDelegate {
         log("AppDelegate › setupCombineSubscriptions — scheduling async startup sequence")
         Task { [weak self] in
             guard let self else { return }
-            log("AppDelegate › startup — awaiting LocalRunnerStore.refreshAsync()")
-            await LocalRunnerStore.shared.refreshAsync()
-            log("AppDelegate › startup — refreshAsync() complete, starting RunnerStore poll loop")
-            await RunnerStore.shared.start()
-            log("AppDelegate › startup — RunnerStore poll loop started")
+            log("AppDelegate › startup — awaiting localRunnerStore.refreshAsync()")
+            await self.localRunnerStore.refreshAsync()
+            log("AppDelegate › startup — refreshAsync() complete, starting runnerStore poll loop")
+            await self.runnerStore.start()
+            log("AppDelegate › startup — runnerStore poll loop started")
         }
 
         // didMutate — scope changed; must restart the store entirely so it polls
@@ -230,7 +223,7 @@ extension AppDelegate: NSPopoverDelegate {
             .sink { [weak self] in
                 guard self != nil else { return }
                 log("AppDelegate › ScopeStore.didMutate — restarting RunnerStore (belt-and-suspenders)")
-                Task { await RunnerStore.shared.start() }
+                Task { [weak self] in await self?.runnerStore.start() }
             }
             .store(in: &cancellables)
 

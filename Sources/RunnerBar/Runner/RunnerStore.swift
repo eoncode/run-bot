@@ -18,12 +18,6 @@ import RunnerBarCore
 /// - `LocalRunnerStore` is `@MainActor`; reads are wrapped in `await MainActor.run { }`.
 actor RunnerStore {
 
-    // MARK: - Singleton
-
-    /// App-wide singleton.  Production code always uses this.
-    /// Tests may inject a custom `RunnerViewModel` via `init(viewModel:)` on a fresh instance.
-    static let shared = RunnerStore()
-
     // MARK: - State
 
     private(set) var runners: [Runner] = []
@@ -46,6 +40,9 @@ actor RunnerStore {
 
     /// The view model this store pushes updates into.
     private let viewModel: RunnerViewModel
+    /// Injected reference to the local runner store — avoids singleton cross-references
+    /// inside the actor body (Swift 6 / PR #1303 requirement).
+    private let localRunnerStore: LocalRunnerStore
 
     // MARK: - Aggregate status
 
@@ -53,19 +50,12 @@ actor RunnerStore {
 
     // MARK: - Init
 
-    private init() {
-        viewModel = RunnerViewModel.shared
-        // Kick off the @MainActor observation loops asynchronously; actor inits are
-        // synchronous and cannot themselves hop to @MainActor.
-        Task { await RunnerStore.shared._startObservingPreferences() }
-        Task { await RunnerStore.shared._startObservingScopes() }
-    }
-
-    /// Designated init for dependency injection in tests.
-    init(viewModel: RunnerViewModel) {
+    /// Designated init for dependency injection.
+    init(viewModel: RunnerViewModel, localRunnerStore: LocalRunnerStore) {
         self.viewModel = viewModel
-        Task { await RunnerStore.shared._startObservingPreferences() }
-        Task { await RunnerStore.shared._startObservingScopes() }
+        self.localRunnerStore = localRunnerStore
+        Task { [weak self] in await self?._startObservingPreferences() }
+        Task { [weak self] in await self?._startObservingScopes() }
     }
 
     // MARK: - Observation helpers (actor-isolated entry points)
@@ -85,8 +75,9 @@ actor RunnerStore {
                         withObservationTracking {
                             _ = AppPreferencesStore.shared.pollingInterval
                         } onChange: {
-                            let value = AppPreferencesStore.shared.pollingInterval
-                            continuation.yield(value)
+                            Task { @MainActor in
+                                continuation.yield(AppPreferencesStore.shared.pollingInterval)
+                            }
                             observe()
                         }
                     }
@@ -114,8 +105,9 @@ actor RunnerStore {
                         withObservationTracking {
                             _ = ScopeStore.shared.activeScopes
                         } onChange: {
-                            let value = ScopeStore.shared.activeScopes
-                            continuation.yield(value)
+                            Task { @MainActor in
+                                continuation.yield(ScopeStore.shared.activeScopes)
+                            }
                             observe()
                         }
                     }
@@ -143,8 +135,8 @@ actor RunnerStore {
         if scopes.isEmpty {
             log("RunnerStore › ⚠️ start called but activeScopes is EMPTY — actions will not load")
         }
-        let localCount = MainActor.assumeIsolated { LocalRunnerStore.shared.runners.count }
-        log("RunnerStore › start — LocalRunnerStore.shared.runners.count=\(localCount) at start() time")
+        let localCount = MainActor.assumeIsolated { localRunnerStore.runners.count }
+        log("RunnerStore › start — localRunnerStore.runners.count=\(localCount) at start() time")
         if localCount == 0 {
             log("RunnerStore › ⚠️ start — localRunners=0 at start time; installPathMap will be empty on first fetch.")
         }
@@ -203,7 +195,7 @@ actor RunnerStore {
         let snapPrevGroups   = prevLiveGroups
         let snapGroupCache   = actionGroupCache
         let snapSeenGroupIDs = seenGroupIDs
-        let localRunners     = await MainActor.run { LocalRunnerStore.shared.runners }
+        let localRunners     = await MainActor.run { localRunnerStore.runners }
         log("RunnerStore › fetch — localRunners.count=\(localRunners.count) (used for installPathMap)")
         if localRunners.isEmpty {
             log("RunnerStore › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty")
@@ -372,7 +364,7 @@ actor RunnerStore {
 #if DEBUG
                     log("RunnerStore › fetchAndEnrichRunners — applyMetrics to LocalRunnerStore: \(runner.name) id=\(runner.id) busy=\(runner.busy) metrics=\(String(describing: runner.metrics))")
 #endif
-                    LocalRunnerStore.shared.applyMetrics(
+                    localRunnerStore.applyMetrics(
                         runner.metrics,
                         forRunnerId: runner.id,
                         name: runner.name

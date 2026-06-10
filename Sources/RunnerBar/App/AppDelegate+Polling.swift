@@ -30,7 +30,7 @@ extension AppDelegate {
             .receive(on: DispatchQueue.main)
             .sink {
                 log("AppDelegate › didSignOut — restarting poll loop for env-token fallback")
-                Task { await RunnerStore.shared.start() }
+                Task { [weak self] in await self?.runnerStore.start() }
             }
             .store(in: &cancellables)
     }

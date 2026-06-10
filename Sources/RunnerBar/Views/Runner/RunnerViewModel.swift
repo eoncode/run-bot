@@ -17,10 +17,10 @@ import Observation
 final class RunnerViewModel {
     /// The app-wide singleton. `RunnerStore` writes into this instance.
     ///
-    /// `nonisolated(unsafe)` lets `RunnerStore.init` (a nonisolated actor context)
-    /// capture this reference without an `await`. The instance itself is `@MainActor`
-    /// and all mutations go through `await MainActor.run { }` in `RunnerStore`.
-    nonisolated(unsafe) static let shared = RunnerViewModel()
+    /// Declared `@MainActor` so the initialiser runs on the main actor, satisfying
+    /// Swift 6 strict concurrency. `RunnerStore` captures it by reference; all
+    /// mutations go through `await MainActor.run { }`.
+    @MainActor static let shared = RunnerViewModel()
 
     // MARK: - Observable state
     /// GitHub API-backed runners for the authenticated user's repos and orgs.

@@ -35,6 +35,9 @@ struct SettingsView: View {
     // periphery:ignore - injected by caller; read indirectly via passed closures
     /// The shared runner view-model; observed for remote runner list updates.
     var store: RunnerViewModel
+    /// Called when a scope change requires the poll loop to restart.
+    /// Forwarded to `ScopesView` and `AddScopeSheet` so neither view references `RunnerStore`.
+    var onRestartPolling: () -> Void = {}
 
     // MARK: - Observed stores
     // These singleton preference stores are `@Observable` types. The view keeps
@@ -97,7 +100,7 @@ struct SettingsView: View {
                     isAuthenticated: isOAuthAuthenticated || isCLIAuthenticated
                 )
             } else if showScopes {
-                ScopesView(onBack: { showScopes = false })
+                ScopesView(onBack: { showScopes = false }, onRestartPolling: onRestartPolling)
             } else {
                 settingsBody
             }

@@ -62,7 +62,10 @@ extension AppDelegate {
                 self?.panelSheetState.clearRunnerSheet()
                 self?.navigate(to: self?.mainView() ?? AnyView(EmptyView()))
             },
-            store: observable
+            store: observable,
+            onRestartPolling: { [weak self] in
+                Task { await self?.runnerStore.start() }
+            }
         )
         // PanelContainerView needed here too: sheets are presented from SettingsView.
         return wrapEnv(PanelContainerView(content: inner))

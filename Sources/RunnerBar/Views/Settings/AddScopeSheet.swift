@@ -43,6 +43,9 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 struct AddScopeSheet: View {
     /// Controls whether the sheet is shown.
     @Binding var isPresented: Bool
+    /// Called after a scope is added so the poll loop can restart.
+    /// Injected by the caller; avoids a direct `RunnerStore` reference in the view.
+    var onRestartPolling: () -> Void = {}
 
     /// Whether the scope is org-level or repo-level.
     @State private var scopeType: ScopeType = .org
@@ -261,7 +264,7 @@ struct AddScopeSheet: View {
         let scope = effectiveScope
         guard !scope.isEmpty else { return }
         ScopeStore.shared.add(scope)
-        Task { await RunnerStore.shared.start() }
+        onRestartPolling()
         log("AddScopeSheet \u{203a} added scope: \(scope)")
         isPresented = false
     }
