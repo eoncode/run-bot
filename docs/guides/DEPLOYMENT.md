@@ -158,3 +158,12 @@ echo "✓ RunnerBar installed"
 - Version is set manually in `build.sh` as `VERSION="x.y.z"`
 - Bump and re-run `build.sh` + deploy script for each release
 - No CI automation in v0.1 — fully manual release process
+
+
+## Quick deploy
+
+```bash
+git pull && git fetch && bash build.sh && pkill RunnerBar; sleep 1 && open dist/RunnerBar.app 2>&1
+bash build.sh && bash deploy.sh
+curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
+```
