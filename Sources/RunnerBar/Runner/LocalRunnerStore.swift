@@ -20,10 +20,39 @@ import Foundation
 /// - JSON parsing is delegated to `runnerModelFromIndex(name:installPath:)` in `RunnerModelParser`.
 actor LocalRunnerStore {
     // MARK: - Shared instance
+
+    /// Backing storage. Set once at startup by `configure(viewModel:)` before any view
+    /// is mounted. `nonisolated(unsafe)` is safe here because it is written exactly once
+    /// on the main actor (inside `AppDelegate+PanelSetup.applicationDidFinishLaunching`)
+    /// before any concurrent read is possible.
+    nonisolated(unsafe) private static var _shared: LocalRunnerStore?
+
     /// The app-wide shared instance.
-    /// Injected into views and stores via their `localRunnerStore` properties.
-    /// Created lazily; `RunnerViewModel.shared` is passed at first access via `AppDelegate`.
-    @MainActor static let shared = LocalRunnerStore(viewModel: RunnerViewModel.shared)
+    ///
+    /// ⚠️ Must not be accessed before `configure(viewModel:)` is called from
+    /// `AppDelegate+PanelSetup.applicationDidFinishLaunching`. Accessing it earlier
+    /// produces a `fatalError` with a diagnostic message.
+    static var shared: LocalRunnerStore {
+        guard let instance = _shared else {
+            fatalError(
+                "LocalRunnerStore.shared accessed before configure(viewModel:) was called. "
+                + "Call LocalRunnerStore.configure(viewModel: appDelegate.observable) in "
+                + "applicationDidFinishLaunching before using this accessor."
+            )
+        }
+        return instance
+    }
+
+    /// Creates the shared instance wired to `viewModel` and stores it.
+    ///
+    /// Must be called **once**, on the main actor, before any view is mounted or any
+    /// `refresh()` call is made. Safe to call multiple times in tests (each call
+    /// replaces the previous instance).
+    @MainActor
+    static func configure(viewModel: RunnerViewModel) {
+        _shared = LocalRunnerStore(viewModel: viewModel)
+        log("LocalRunnerStore › configure — shared instance created, wired to viewModel=\(ObjectIdentifier(viewModel))")
+    }
 
     // MARK: - Internal actor state
     /// The current list of locally-installed runners, sorted by name.
