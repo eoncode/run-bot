@@ -94,39 +94,39 @@ actor LocalRunnerStore {
     }
 
     /// Immediately reflects a start/stop action before the next refresh cycle.
-    func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) {
+    func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) async {
         log("LocalRunnerStore › optimisticallySetRunning '\(runnerName)' isRunning=\(isRunning)")
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else {
             log("LocalRunnerStore › ⚠️ optimisticallySetRunning — '\(runnerName)' not found in runners (count=\(runners.count))")
             return
         }
         runners[idx] = runners[idx].copying(isRunning: isRunning)
-        pushRunners()
+        await pushRunners()
     }
 
     /// Sets or clears the lifecycle warning badge for a runner.
-    func setLifecycleWarning(_ runnerName: String, warning: String?) {
+    func setLifecycleWarning(_ runnerName: String, warning: String?) async {
         log("LocalRunnerStore › setLifecycleWarning '\(runnerName)' warning=\(String(describing: warning))")
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else {
             log("LocalRunnerStore › ⚠️ setLifecycleWarning — '\(runnerName)' not found in runners (count=\(runners.count))")
             return
         }
         runners[idx] = runners[idx].copying(lifecycleWarning: warning)
-        pushRunners()
+        await pushRunners()
     }
 
     /// Immediately removes `runnerName` from the index and display list without waiting for a refresh.
-    func optimisticallyRemove(_ runnerName: String) {
+    func optimisticallyRemove(_ runnerName: String) async {
         log("LocalRunnerStore › optimisticallyRemove '\(runnerName)'")
         unregister(name: runnerName)
         let beforeCount = runners.count
         runners.removeAll { $0.runnerName == runnerName }
         log("LocalRunnerStore › optimisticallyRemove '\(runnerName)' — runners \(beforeCount)→\(runners.count)")
-        pushRunners()
+        await pushRunners()
     }
 
     /// Rolls back an `optimisticallyRemove` by re-registering the runner and restoring it.
-    func optimisticallyRestore(_ runner: RunnerModel) {
+    func optimisticallyRestore(_ runner: RunnerModel) async {
         log("LocalRunnerStore › optimisticallyRestore '\(runner.runnerName)' installPath=\(String(describing: runner.installPath))")
         if let installPath = runner.installPath {
             register(name: runner.runnerName, installPath: installPath)
@@ -139,7 +139,7 @@ actor LocalRunnerStore {
         } else {
             log("LocalRunnerStore › optimisticallyRestore — '\(runner.runnerName)' already present, skipped append")
         }
-        pushRunners()
+        await pushRunners()
     }
 
     // MARK: - Metrics write-back
@@ -150,7 +150,7 @@ actor LocalRunnerStore {
     ///   1. runner.apiId   == runnerId (GitHub REST API id — org runners use this)
     ///   2. runner.agentId == runnerId (local .runner JSON AgentId — repo runners use this)
     ///   3. runner.runnerName == name  (name-only last resort)
-    func applyMetrics(_ metrics: RunnerMetrics?, forRunnerId runnerId: Int?, name: String) {
+    func applyMetrics(_ metrics: RunnerMetrics?, forRunnerId runnerId: Int?, name: String) async {
 #if DEBUG
         log("LocalRunnerStore › applyMetrics — called with runnerId=\(String(describing: runnerId)) name=\(name) metrics=\(String(describing: metrics))")
         log("LocalRunnerStore › applyMetrics — runners.count=\(runners.count) candidates=\(runners.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
@@ -180,7 +180,7 @@ actor LocalRunnerStore {
         }
         log("LocalRunnerStore › applyMetrics — writing metrics=\(String(describing: metrics)) to '\(runners[idx].runnerName)'")
         runners[idx] = runners[idx].copying(metrics: metrics)
-        pushRunners()
+        await pushRunners()
     }
 
     // MARK: - Refresh
@@ -274,9 +274,9 @@ actor LocalRunnerStore {
         var metricsByName:    [String: RunnerMetrics] = [:]
         for runner in runners {
             guard runner.isBusy, let m = runner.metrics else { continue }
-            if let id = runner.apiId   { metricsByApiId[id]   = m }
-            if let id = runner.agentId { metricsByAgentId[id] = m }
-            metricsByName[runner.runnerName] = m
+            if let id = runner.apiId   { metricsByApiId[id]   = m }  // Priority 1: GitHub REST API id
+            if let id = runner.agentId { metricsByAgentId[id] = m }  // Priority 2: local AgentId
+            metricsByName[runner.runnerName] = m                      // Priority 3: name (last resort)
         }
 #if DEBUG
         log("LocalRunnerStore › applyRefreshResults — preserved metrics: byApiId=\(metricsByApiId.keys.sorted()) byAgentId=\(metricsByAgentId.keys.sorted()) byName=\(metricsByName.keys.sorted())")
@@ -322,9 +322,14 @@ actor LocalRunnerStore {
 
     /// Pushes the current `runners` snapshot to `viewModel.localRunners` on the main actor.
     /// Called after every optimistic mutation so views update immediately.
-    private func pushRunners() {
+    ///
+    /// `async` + direct `await MainActor.run` (not a fire-and-forget Task) guarantees
+    /// that two rapid mutations deliver their snapshots in actor-serialised order.
+    /// A detached Task would allow a later mutation's push to arrive before an earlier
+    /// one, silently reverting the UI (e.g. Stop → Remove race).
+    private func pushRunners() async {
         let snapshot = runners
-        Task { await MainActor.run { [viewModel] in viewModel.localRunners = snapshot } }
+        await MainActor.run { [viewModel] in viewModel.localRunners = snapshot }
     }
 
     // MARK: - launchctl scan
