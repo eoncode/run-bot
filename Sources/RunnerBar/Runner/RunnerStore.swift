@@ -1,6 +1,5 @@
 // RunnerStore.swift
 // RunnerBar
-import AppKit
 import Foundation
 import RunnerBarCore
 
@@ -17,6 +16,9 @@ import RunnerBarCore
 ///   picks up the mutation automatically — no Combine `PassthroughSubject` needed.
 /// - `LocalRunnerStore` is an `actor`; its state is read via the main-actor snapshot
 ///   pushed to `RunnerViewModel`, not by crossing the actor boundary synchronously.
+/// - Status-icon refresh is triggered via the injected `onStatusUpdate` callback rather
+///   than accessing `NSApp.delegate` directly (PR Principle #4: no singleton access
+///   inside actor bodies).
 actor RunnerStore {
 
     // MARK: - State
@@ -61,6 +63,10 @@ actor RunnerStore {
     /// Injected reference to the local runner store — avoids singleton cross-references
     /// inside the actor body (Swift 6 / PR #1303 requirement).
     private let localRunnerStore: LocalRunnerStore
+    /// Called on the main actor at the end of every fetch cycle to refresh the status-bar
+    /// icon. Injected at init to avoid accessing `NSApp.delegate` from inside the actor
+    /// body (PR Principle #4: no singleton access inside actor bodies).
+    private let onStatusUpdate: @MainActor @Sendable () -> Void
 
     // MARK: - Aggregate status
 
@@ -71,9 +77,21 @@ actor RunnerStore {
     // MARK: - Init
 
     /// Designated init for dependency injection.
-    init(viewModel: RunnerViewModel, localRunnerStore: LocalRunnerStore) {
+    ///
+    /// - Parameters:
+    ///   - viewModel: The view model this store pushes UI state into.
+    ///   - localRunnerStore: The local runner store used for metrics write-back.
+    ///   - onStatusUpdate: Closure called on the main actor after every fetch cycle
+    ///     to update the status-bar icon. Typically `{ AppDelegate.shared.updateStatusIcon() }`
+    ///     or equivalent — injected here so the actor body never touches `NSApp.delegate`.
+    init(
+        viewModel: RunnerViewModel,
+        localRunnerStore: LocalRunnerStore,
+        onStatusUpdate: @escaping @MainActor @Sendable () -> Void
+    ) {
         self.viewModel = viewModel
         self.localRunnerStore = localRunnerStore
+        self.onStatusUpdate = onStatusUpdate
         Task { [weak self] in await self?._startObservingPreferences() }
         Task { [weak self] in await self?._startObservingScopes() }
     }
@@ -92,9 +110,9 @@ actor RunnerStore {
                 @Sendable func observe() {
                     // Each call to withObservationTracking registers one onChange.
                     // We re-register inside the same @MainActor Task as the yield
-                    // so that `assumeIsolated` inside observe() is always safe.
+                    // so that observe() always runs on the main actor.
                     // observe() must NOT be called bare outside the Task — onChange
-                    // fires on an unspecified thread and assumeIsolated would trap.
+                    // fires on an unspecified thread and would crash off-main.
                     withObservationTracking {
                         _ = AppPreferencesStore.shared.pollingInterval
                     } onChange: {
@@ -107,7 +125,10 @@ actor RunnerStore {
                 // Prime the observation on the main thread.
                 Task { @MainActor in observe() }
             }
-            // Skip the initial value emitted at observation setup — only react to changes.
+            // withObservationTracking fires immediately on the first access inside
+            // the tracking block, emitting the current value into the stream before
+            // any real change occurs. Skip that synthetic first emission so we only
+            // react to genuine user-driven pollingInterval changes.
             var isFirst = true
             for await newInterval in stream {
                 if isFirst { isFirst = false; continue }
@@ -138,7 +159,9 @@ actor RunnerStore {
                 }
                 Task { @MainActor in observe() }
             }
-            // Skip the initial value emitted at observation setup — only react to changes.
+            // withObservationTracking fires immediately on the first access inside
+            // the tracking block, emitting the current scopes before any real change.
+            // Skip that synthetic first emission so we only restart on genuine scope changes.
             var isFirst = true
             for await _ in stream {
                 if isFirst { isFirst = false; continue }
@@ -289,22 +312,17 @@ actor RunnerStore {
         isRateLimited = rateLimitSnapshot.isLimited
         rateLimitResetDate = rateLimitSnapshot.resetDate
 
-        let snapshotRunners     = enrichedRunners
-        let snapshotJobs        = jobResult.display
-        let snapshotActions     = groupResult.display
-        let snapshotRateLimited = rateLimitSnapshot.isLimited
-        let snapshotResetDate   = rateLimitSnapshot.resetDate
-
-        log("RunnerStore › fetch complete — actions=\(snapshotActions.count) jobs=\(snapshotJobs.count) runners=\(snapshotRunners.count) isRateLimited=\(snapshotRateLimited) rateLimitResetDate=\(String(describing: snapshotResetDate))")
+        log("RunnerStore › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))")
 
         let vm = viewModel
+        let statusUpdate = onStatusUpdate
         await MainActor.run {
-            vm.runners         = snapshotRunners
-            vm.jobs            = snapshotJobs
-            vm.actions         = snapshotActions
-            vm.isRateLimited   = snapshotRateLimited
-            vm.rateLimitResetDate = snapshotResetDate
-            (NSApp.delegate as? AppDelegate)?.updateStatusIcon()
+            vm.runners            = enrichedRunners
+            vm.jobs               = jobResult.display
+            vm.actions            = groupResult.display
+            vm.isRateLimited      = rateLimitSnapshot.isLimited
+            vm.rateLimitResetDate = rateLimitSnapshot.resetDate
+            statusUpdate()
         }
     }
 
