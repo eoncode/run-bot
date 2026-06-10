@@ -20,36 +20,55 @@ private struct TreeLineLeader: View {
     let isLast: Bool
     /// Horizontal indent from the left edge to the vertical bar centre.
     var indent: CGFloat = 0
-    /// Colour of the tree connector lines.
-    private let lineColor = Color.secondary.opacity(0.3)
+    /// When `true`, the bar and elbow pulse with a blue glow indicating live in-progress activity.
+    /// Animation is only started when `isActive` is `true` — zero GPU cost for static rows.
+    var isActive: Bool = false
     /// Width of the vertical bar stroke.
     private let barWidth: CGFloat = 1
     /// Horizontal reach of the elbow arm.
     private let elbowWidth: CGFloat = 10
     /// Size of the arrowhead at the elbow tip.
     private let arrowSize: CGFloat = 4
+    /// Animated opacity driving the glow pulse; only mutated when `isActive` is `true`.
+    @State private var glowOpacity: Double = 0.3
     /// Draws the vertical bar and elbow arrow using a `Canvas`.
     var body: some View {
         Canvas { ctx, size in
             let midY = size.height / 2
             let barX = indent
+            let strokeColor: Color = isActive
+                ? Color.rbBlue.opacity(glowOpacity)
+                : Color.secondary.opacity(0.3)
             var vertPath = Path()
             vertPath.move(to: CGPoint(x: barX, y: 0))
             vertPath.addLine(to: CGPoint(x: barX, y: isLast ? midY : size.height))
-            ctx.stroke(vertPath, with: .color(lineColor), lineWidth: barWidth)
+            ctx.stroke(vertPath, with: .color(strokeColor), lineWidth: barWidth)
             let arrowTip = CGPoint(x: barX + elbowWidth, y: midY)
             var elbowPath = Path()
             elbowPath.move(to: CGPoint(x: barX, y: midY))
             elbowPath.addLine(to: CGPoint(x: arrowTip.x - arrowSize, y: midY))
-            ctx.stroke(elbowPath, with: .color(lineColor), lineWidth: barWidth)
+            ctx.stroke(elbowPath, with: .color(strokeColor), lineWidth: barWidth)
             var arrow = Path()
             arrow.move(to: arrowTip)
             arrow.addLine(to: CGPoint(x: arrowTip.x - arrowSize, y: midY - arrowSize / 2))
             arrow.addLine(to: CGPoint(x: arrowTip.x - arrowSize, y: midY + arrowSize / 2))
             arrow.closeSubpath()
-            ctx.fill(arrow, with: .color(lineColor))
+            ctx.fill(arrow, with: .color(strokeColor))
         }
         .frame(width: indent + elbowWidth + 2)
+        .onAppear { startGlowIfNeeded() }
+        .onChange(of: isActive) { _, _ in startGlowIfNeeded() }
+    }
+    /// Starts the breathing pulse when `isActive` is `true`; resets to static opacity otherwise.
+    /// Safe to call multiple times — SwiftUI deduplicates identical in-flight animations.
+    private func startGlowIfNeeded() {
+        guard isActive else {
+            glowOpacity = 0.3
+            return
+        }
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+            glowOpacity = 0.75
+        }
     }
 }
 
@@ -108,7 +127,7 @@ private struct StepRowView: View {
     /// Lays out the tree connector and step content side by side.
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            TreeLineLeader(isLast: isLast, indent: dotIndent)
+            TreeLineLeader(isLast: isLast, indent: dotIndent, isActive: step.status == .inProgress)
                 .frame(maxHeight: .infinity)
             stepContent
         }
@@ -190,7 +209,7 @@ private struct JobRowCard: View {
     /// Renders the job tree connector, card header, and optional expanded step list.
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            TreeLineLeader(isLast: isLast && !isExpanded, indent: dotIndent)
+            TreeLineLeader(isLast: isLast && !isExpanded, indent: dotIndent, isActive: status == .inProgress)
                 .frame(maxHeight: .infinity)
             VStack(alignment: .leading, spacing: 0) {
                 jobHeader
