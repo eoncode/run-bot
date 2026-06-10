@@ -57,6 +57,10 @@ private struct TreeLineLeader: View {
         }
         .frame(width: indent + elbowWidth + 2)
         .onAppear { startGlowIfNeeded() }
+        // NOTE: A reviewer suggested the zero-argument form `.onChange(of: isActive) { startGlowIfNeeded() }`
+        // (PR #1272 r3388880556). Declined: the `{ _, _ in }` form is used consistently across every
+        // other onChange call in this codebase (DonutStatusView, ActionRowView). Switching here would
+        // be the only exception and would harm project-wide style consistency.
         .onChange(of: isActive) { _, _ in startGlowIfNeeded() }
     }
     /// Starts the breathing pulse when `isActive` is `true`; resets to static opacity otherwise.
