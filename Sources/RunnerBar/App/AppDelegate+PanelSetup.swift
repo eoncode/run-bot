@@ -184,6 +184,21 @@ extension AppDelegate: NSPopoverDelegate {
             return
         }
 
+        // Wire LocalRunnerStore.shared to this AppDelegate's RunnerViewModel instance.
+        //
+        // ⚠️ Must be called before the startup Task below (and before any other
+        // LocalRunnerStore.shared access). LocalRunnerStore no longer self-initialises
+        // with RunnerViewModel.shared — that singleton was a different object from
+        // AppDelegate.observable and caused localRunners to push into a view model
+        // that no SwiftUI view observed (permanent empty local-runner list).
+        //
+        // ❌ NEVER move this call inside the Task — AppDelegate.localRunnerStore
+        //    is a computed `lazy var` backed by `LocalRunnerStore.shared`. The first
+        //    access to `localRunnerStore` (inside the Task) must find the instance
+        //    already configured, or it fatalErrors.
+        LocalRunnerStore.configure(viewModel: observable)
+        log("AppDelegate › setupCombineSubscriptions — LocalRunnerStore.configure(viewModel:) called")
+
         // NOTE: The `RunnerStore.didUpdate` Combine sink has been removed.
         // `RunnerStore` is now a Swift actor that pushes state directly to
         // `RunnerViewModel.shared` via `await MainActor.run { }` at the end
