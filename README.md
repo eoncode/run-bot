@@ -45,20 +45,23 @@
 ## Features
 
 **🚦 Workflow status**
-- Live run status across all your repos and orgs
-- Drill into jobs and steps, copy logs at any level
-- Re-run, re-run failed, or cancel from the popover
-- Right-click a run to copy YAML, SHA, or open in browser
+- Live run status across all your repos and orgs — expand any run into a full **Workflow → Jobs → Steps** tree with elapsed time and live progress
+- Drill into jobs and steps; copy logs at the workflow, job, or step level
+- Re-run all, re-run failed jobs, or cancel directly from the panel or right-click context menu
+- Right-click a run to open the workflow or commit on GitHub
 
 **🏃 Local runner manager**
-- Auto-discovers runners on this Mac (LaunchAgents, `.runner` files, launchctl)
-- Start, stop, add, and remove runners without touching Terminal or github.com
+- Provision new runners in one click — the app handles the token, the install script, and the registration with GitHub
+- Add pre-existing runners already on your Mac
+- Start, stop, and deregister runners directly from the UI — no Terminal or github.com required
+- Active runners show live **CPU & memory** badges while a job is in progress
 
 **🪝 Failure hooks**
-- When a run fails, automatically fire a shell command in Terminal
-- Tokens like `$FAILURE_LOG`, `$LOCAL_PATH`, `$BRANCH`, `$RUN_LINK` are substituted before the command runs
-- Default: `cd $LOCAL_PATH && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo`
-- Optionally filter by branch
+- When a run fails, automatically fire a custom shell command in Terminal
+- Tokens substituted before the command runs: `$SCOPE`, `$LOCAL_PATH`, `$BRANCH`, `$RUN_ID`, `$COMMIT_SHA`, `$WORKFLOW_NAME`, `$FAILURE_LOG`, `$RUN_LINK`, `$COMMIT_LINK`, `$BRANCH_LINK`, `$REPO_LINK`
+- Works with any AI CLI — Claude Code, Gemini, Aider, Codex, or anything that accepts terminal input
+- Configurable per repo or org; optionally filter by branch
+- **Test** button fires the command immediately from the settings sheet
 
 ---
 
@@ -79,14 +82,6 @@ curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 - [PRIVACY.md](docs/PRIVACY.md) — OAuth scopes, token storage, data handling
 
 ---
-
-## Quick deploy
-
-```bash
-git pull && git fetch && bash build.sh && pkill RunnerBar; sleep 1 && open dist/RunnerBar.app 2>&1
-bash build.sh && bash deploy.sh
-curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
-```
 
 **Test a branch:**
 ```bash
