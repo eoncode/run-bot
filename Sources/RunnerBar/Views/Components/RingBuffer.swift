@@ -15,6 +15,7 @@ struct RingBuffer {
     ///   - capacity: Number of slots in the buffer.
     ///   - fill: Initial value for every slot (default `0`).
     init(capacity: Int, fill: Double = 0) {
+        precondition(capacity > 0, "RingBuffer capacity must be positive")
         self.storage = Array(repeating: fill, count: capacity)
     }
 

@@ -16,6 +16,9 @@ import SwiftUI
 struct FailureHookCommandSheet: View {
     /// The scope (org/repo slug) whose failure-hook command is being edited.
     let scope: String
+    /// The unsaved local-repo path draft from `ScopeEditSheet`, used by `testCommand()`
+    /// so the test reflects the path the user will actually save, not the last persisted value.
+    let localRepoPath: String
     /// Called when the sheet should be dismissed, either after saving or on cancel.
     let onDismiss: () -> Void
 
@@ -27,8 +30,9 @@ struct FailureHookCommandSheet: View {
     @State private var draft: String
 
     /// Initialises the sheet for `scope`, seeding the local editor from `commandText`.
-    init(scope: String, commandText: Binding<String>, onDismiss: @escaping () -> Void) {
+    init(scope: String, localRepoPath: String, commandText: Binding<String>, onDismiss: @escaping () -> Void) {
         self.scope = scope
+        self.localRepoPath = localRepoPath
         self._commandText = commandText
         self.onDismiss = onDismiss
         // Show the default command as a starting point when nothing has been saved yet,
@@ -165,7 +169,9 @@ extension FailureHookCommandSheet {
     /// (`$FAILURE_LOG`, `$BRANCH`, `$RUN_ID`, etc.) are left as-is and will appear
     /// literally in the terminal window during a test run.
     private func testCommand() {
-        let localPath = ScopePreferencesStore.localRepoPath(for: scope) ?? ""
+        // Use the unsaved draft path passed from ScopeEditSheet, not the persisted store value,
+        // so the test reflects what the hook will actually use after Save.
+        let localPath = localRepoPath
         let resolved = draft
             .replacingOccurrences(of: "$LOCAL_PATH", with: localPath)
             .replacingOccurrences(of: "$SCOPE", with: scope)

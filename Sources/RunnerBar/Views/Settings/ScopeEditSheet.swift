@@ -119,7 +119,7 @@ struct ScopeEditSheet: View {
             if hostWindow == nil, let w { hostWindow = w }
         })
         .sheet(isPresented: $showHookSheet) {
-            FailureHookCommandSheet(scope: scope, commandText: $hookCommand) { showHookSheet = false }
+            FailureHookCommandSheet(scope: scope, localRepoPath: localRepoPath, commandText: $hookCommand) { showHookSheet = false }
         }
         .sheet(isPresented: $showBranchSheet) {
             BranchSelectorSheet(
