@@ -5,8 +5,10 @@ import Foundation
 // MARK: - RingBuffer
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {
-    /// Backing array storing samples in insertion order (index 0 = oldest).
+    /// Backing store; slots are overwritten in round-robin order.
     private var storage: [Double]
+    /// Index of the oldest element (next write position).
+    private var head = 0
 
     /// Creates a new ring buffer pre-filled with `fill`.
     /// - Parameters:
@@ -16,13 +18,13 @@ struct RingBuffer {
         self.storage = Array(repeating: fill, count: capacity)
     }
 
-    /// Drops the oldest element and appends `value` at the tail.
+    /// Overwrites the oldest slot with `value` in O(1).
     /// - Parameter value: The new sample to insert.
     mutating func append(_ value: Double) {
-        storage.removeFirst()
-        storage.append(value)
+        storage[head] = value
+        head = (head + 1) % storage.count
     }
 
     /// Elements in insertion order, oldest first.
-    var values: [Double] { storage }
+    var values: [Double] { Array(storage[head...] + storage[..<head]) }
 }
