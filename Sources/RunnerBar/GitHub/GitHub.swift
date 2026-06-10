@@ -200,7 +200,7 @@ private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
     }
     if !current.isEmpty { sections.append(current.joined(separator: "\n")) }
     log("parseStepLog › parsed \(sections.count) section(s) from log")
-    if sections.isEmpty || (sections.count == 1 && !sections[0].contains("##[group]")) {
+    if sections.isEmpty {
         log("parseStepLog › no group markers, returning full raw log")
         return cleaned
     }
