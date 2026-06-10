@@ -38,7 +38,7 @@ struct FailureHookCommandSheet: View {
     }
 
     /// Shell-variable tokens the user can insert into the command, e.g. `$SCOPE`, `$FAILURE_LOG`.
-    /// Rendered as pill buttons in `pillSection`; tapping a pill appends the token to `commandText`.
+    /// Rendered as pill buttons in `pillSection`; tapping a pill appends the token to `draft`.
     private let variables: [String] = [
         "$SCOPE", "$LOCAL_PATH", "$BRANCH", "$RUN_ID", "$COMMIT_SHA",
         "$WORKFLOW_NAME", "$FAILURE_LOG",
@@ -91,7 +91,7 @@ extension FailureHookCommandSheet {
             .padding(.horizontal, 16)
     }
 
-    /// Flow-wrapped pill buttons that append a variable token to `commandText`.
+    /// Flow-wrapped pill buttons that append a variable token to `draft`.
     var pillSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Insert variable:")
@@ -173,7 +173,7 @@ extension FailureHookCommandSheet {
         TerminalLauncher.open(command: resolved)
     }
 
-    /// Appends `variable` to `commandText`, separated by a space.
+    /// Appends `variable` to `draft`, separated by a space.
     /// NOTE: `TextEditor` exposes no public cursor-position API on macOS, so the
     /// token is always appended rather than inserted at the caret.
     private func insertVariable(_ variable: String) {
