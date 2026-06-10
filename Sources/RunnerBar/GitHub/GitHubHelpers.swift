@@ -1,4 +1,4 @@
-// GitHub.swift
+// GitHubHelpers.swift
 // RunnerBar
 import Foundation
 import os

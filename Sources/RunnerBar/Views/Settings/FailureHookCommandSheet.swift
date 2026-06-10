@@ -8,7 +8,7 @@ import SwiftUI
 // #544: Sheet for editing the per-scope failure hook command.
 // #546: Added Test button + $LOCAL_PATH token.
 //
-// Presented from ScopeDetailView when user taps the Command row.
+// Presented from ScopeEditSheet when user taps the Command row.
 // Uses TextEditor (tall, monospaced) with variable pill buttons that insert at cursor.
 
 /// Sheet for editing the shell command run by `FailureHookRunner` when a workflow fails.

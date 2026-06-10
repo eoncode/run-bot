@@ -1,4 +1,4 @@
-// ScopeDetailView.swift
+// ScopeEditSheet.swift
 // RunnerBar
 import RunnerBarCore
 import SwiftUI
