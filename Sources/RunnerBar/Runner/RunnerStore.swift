@@ -15,27 +15,44 @@ import RunnerBarCore
 /// - After every fetch cycle, results are pushed to the injected `RunnerViewModel` on the
 ///   main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
 ///   picks up the mutation automatically — no Combine `PassthroughSubject` needed.
-/// - `LocalRunnerStore` is `@MainActor`; reads are wrapped in `await MainActor.run { }`.
+/// - `LocalRunnerStore` is an `actor`; its state is read via the main-actor snapshot
+///   pushed to `RunnerViewModel`, not by crossing the actor boundary synchronously.
 actor RunnerStore {
 
     // MARK: - State
 
+    /// Runners currently shown in the panel.
     private(set) var runners: [Runner] = []
+    /// Jobs currently shown in the panel, including dimmed completed entries.
     private(set) var jobs: [ActiveJob] = []
+    /// Workflow action groups currently shown in the panel.
     private(set) var actions: [WorkflowActionGroup] = []
 
+    /// Live-job snapshot from the previous poll, used to detect vanished jobs.
     private var prevLiveJobs: [Int: ActiveJob] = [:]
+    /// Completed-job cache keyed by job ID; capped at `PollResultBuilder.jobCacheLimit`.
     private var completedCache: [Int: ActiveJob] = [:]
+    /// Live-group snapshot from the previous poll, used to detect vanished groups.
     private var prevLiveGroups: [String: WorkflowActionGroup] = [:]
+    /// Group cache keyed by group ID; capped at `PollResultBuilder.groupCacheLimit`.
     private var actionGroupCache: [String: WorkflowActionGroup] = [:]
     /// IDs of action groups whose failure hook has already fired.
+    ///
+    /// Kept separate from `actionGroupCache` so that cache eviction does not re-arm
+    /// the hook for old completed groups still present in GitHub's last-completed feed.
     private var seenGroupIDs: Set<String> = []
 
+    /// Whether the GitHub API is currently rate-limiting this client.
     private(set) var isRateLimited = false
+    /// The exact moment the current rate-limit window expires, or `nil` when no
+    /// rate-limit is active or the reset time is unknown.
     private(set) var rateLimitResetDate: Date?
 
+    /// Active structured poll task. Cancelled and replaced on every `start()` call.
     private var pollTask: Task<Void, Never>?
+    /// Observation task that restarts the poll loop when `pollingInterval` changes.
     private var intervalObservationTask: Task<Void, Never>?
+    /// Observation task that restarts the poll loop when active scopes change.
     private var scopeObservationTask: Task<Void, Never>?
 
     /// The view model this store pushes updates into.
@@ -46,6 +63,7 @@ actor RunnerStore {
 
     // MARK: - Aggregate status
 
+    /// The combined health status across all runners, derived from the current `runners` array.
     var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
 
     // MARK: - Init
@@ -169,6 +187,9 @@ actor RunnerStore {
         }
     }
 
+    /// Computes the delay before the next poll: 10 s while jobs/actions are active,
+    /// otherwise the user's configured idle interval (clamped to ≥ 10 s). Also widened
+    /// to the idle interval while rate-limited.
     private func nextPollInterval() -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
         let hasActiveActions = actions.contains {
@@ -183,6 +204,9 @@ actor RunnerStore {
 
     // MARK: - Fetch
 
+    /// Performs one full poll cycle: snapshots active scopes and local runners,
+    /// fetches and enriches runners/jobs/action groups, then applies the result
+    /// to actor state and pushes it to `RunnerViewModel`.
     func fetch() async {
         await clearGhRateLimit()
 
@@ -233,6 +257,8 @@ actor RunnerStore {
 
     // MARK: - Apply result
 
+    /// Merges a completed fetch into actor state (runners, jobs, action groups, rate-limit)
+    /// and pushes the resulting snapshot to `RunnerViewModel` on the main actor.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -271,6 +297,9 @@ actor RunnerStore {
 
     // MARK: - fetchAndEnrichRunners
 
+    /// Fetches runners for the given scopes, resolves install paths, and enriches each
+    /// runner with live metrics. Writes busy-runner metrics back to `LocalRunnerStore`
+    /// and returns the enriched runner list.
     func fetchAndEnrichRunners(
         scopes: [String],
         localRunners: [RunnerModel],
