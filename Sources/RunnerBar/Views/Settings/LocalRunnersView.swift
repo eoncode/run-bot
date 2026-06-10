@@ -26,7 +26,8 @@ struct LocalRunnersView: View {
 
     /// The local runner actor. Used only for mutations (refresh, optimistic updates).
     /// Observed state (`localRunners`, `isLocalScanning`) is read from `store` instead.
-    private var localRunnerStore: LocalRunnerStore { LocalRunnerStore.shared }
+    /// Injected by the caller; defaults to `LocalRunnerStore.shared` at the `SettingsView` boundary.
+    var localRunnerStore: LocalRunnerStore = .shared
 
     // MARK: - Local UI state
 

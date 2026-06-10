@@ -22,7 +22,7 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 /// a searchable `RepoSelectorSheet` when authenticated (populated from the
 /// GitHub API) with a plain `TextField` fallback, and Cancel / Add buttons.
 ///
-/// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
+/// On confirmation calls `ScopeStore.shared.add(_:)` then invokes `onRestartPolling`.
 ///
 /// ## Why `.sheet` is on the root VStack, not the picker Button
 /// `RepoSelectorSheet` is presented via `.sheet(isPresented: $showScopeSelector)`.
