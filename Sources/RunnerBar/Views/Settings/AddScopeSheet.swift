@@ -23,6 +23,15 @@ private enum ScopeType: String, CaseIterable, Identifiable {
 /// GitHub API) with a plain `TextField` fallback, and Cancel / Add buttons.
 ///
 /// On confirmation calls `ScopeStore.shared.add(_:)` + `RunnerStore.shared.start()`.
+///
+/// ## Why `.sheet` is on the root VStack, not the picker Button
+/// `RepoSelectorSheet` is presented via `.sheet(isPresented: $showScopeSelector)`.
+/// Attaching that modifier to the `Button` (nested inside a `ScrollView`) constrains
+/// sheet presentation to the parent view bounds — i.e. the NSPopover panel size —
+/// instead of escaping to the window level. Lifting it to the root `VStack` causes
+/// AppKit to attach the sheet to `NSPopoverWindowFrame` directly, matching the
+/// behaviour of `AddRunnerSheet` and `AddScopeSheet`'s own outer presentation.
+/// ❌ NEVER move `.sheet(isPresented: $showScopeSelector)` back onto the Button.
 struct AddScopeSheet: View {
     /// Controls whether the sheet is shown.
     @Binding var isPresented: Bool
@@ -43,7 +52,8 @@ struct AddScopeSheet: View {
     @State private var errorMessage: String?
     /// `true` when the picker is shown instead of the text field.
     @State private var usePicker = false
-    /// `true` while the scope-selector popover is presented.
+    /// `true` while the scope-selector sheet is presented.
+    /// Bound to the root-level `.sheet` modifier (see type comment for why).
     @State private var showScopeSelector = false
 
     /// The list of picker options matching the current `scopeType` (orgs or repos).
@@ -67,6 +77,9 @@ struct AddScopeSheet: View {
     private var canAdd: Bool { !effectiveScope.isEmpty }
 
     /// Root layout: header, form fields, and footer action bar.
+    ///
+    /// `.sheet(isPresented: $showScopeSelector)` is attached here at the root, not on the
+    /// picker Button — see type comment for the full explanation.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ── Header ─────────────────────────────────────────────────────
@@ -114,6 +127,7 @@ struct AddScopeSheet: View {
                             .padding(.vertical, 6)
                         } else if usesPickerForCurrentScope {
                             // ── Searchable sheet trigger ─────────────────────
+                            // .sheet is on the root VStack, not here — see type comment.
                             Button(action: { showScopeSelector = true }) {
                                 HStack {
                                     Text(selectedScope.isEmpty ? "\u{2014} select \u{2014}" : selectedScope)
@@ -139,17 +153,6 @@ struct AddScopeSheet: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .sheet(isPresented: $showScopeSelector) {
-                                RepoSelectorSheet(
-                                    items: pickerItems,
-                                    label: scopeType == .org ? "Organisation" : "Repository",
-                                    onDismiss: { showScopeSelector = false },
-                                    onSelect: { item in
-                                        // No dismiss here -- RepoSelectorSheet.itemRow calls onDismiss after onSelect.
-                                        selectedScope = item
-                                    }
-                                )
-                            }
                         } else {
                             TextField(
                                 scopeType == .org ? "e.g. myorg" : "e.g. myorg/myrepo",
@@ -197,6 +200,20 @@ struct AddScopeSheet: View {
             .padding(.vertical, RBSpacing.sm)
         }
         .frame(width: 420)
+        // #1263: .sheet is here at the root so AppKit attaches RepoSelectorSheet as a child
+        // sheet of NSPopoverWindowFrame, escaping the view-hierarchy bounds constraint.
+        // See type comment for full rationale. ❌ Do not move this back onto the Button.
+        .sheet(isPresented: $showScopeSelector) {
+            RepoSelectorSheet(
+                items: pickerItems,
+                label: scopeType == .org ? "Organisation" : "Repository",
+                onDismiss: { showScopeSelector = false },
+                onSelect: { item in
+                    // No dismiss here -- RepoSelectorSheet.itemRow calls onDismiss after onSelect.
+                    selectedScope = item
+                }
+            )
+        }
         .onAppear(perform: fetchScopeOptions)
     }
 
