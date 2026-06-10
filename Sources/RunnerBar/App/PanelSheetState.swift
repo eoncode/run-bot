@@ -1,6 +1,6 @@
 // PanelSheetState.swift
 // RunnerBar
-import Combine
+import Observation
 import RunnerBarCore
 
 // MARK: - PanelSheetState
@@ -12,9 +12,10 @@ import RunnerBarCore
 /// object keeps the user's sheet intent outside the transient SettingsView
 /// state so hiding the status-bar panel can be restored on the next open.
 @MainActor
-final class PanelSheetState: ObservableObject {
+@Observable
+final class PanelSheetState {
     /// The runner currently selected for the runner detail sheet.
-    @Published var editingRunner: RunnerModel?
+    var editingRunner: RunnerModel?
 
     /// Backing store for captureTransientHideState() — persists sheet intent
     /// across NSPopover hide/show cycles. See type doc for NSPopover teardown context.
