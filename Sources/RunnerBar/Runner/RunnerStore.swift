@@ -131,13 +131,6 @@ actor RunnerStore {
     /// body (PR Principle #4: no singleton access inside actor bodies).
     private let onStatusUpdate: @MainActor @Sendable () -> Void
 
-    // MARK: - Aggregate status
-
-    /// The combined health status across all runners, derived from the current `runners` array.
-    /// Read by external consumers (e.g. `AppDelegate`) outside this file's analysis scope.
-    /// periphery:ignore
-    var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
-
     // MARK: - Init
 
     /// Designated init for dependency injection.
@@ -148,6 +141,13 @@ actor RunnerStore {
     ///   - onStatusUpdate: Closure called on the main actor after every fetch cycle
     ///     to update the status-bar icon. Typically `{ AppDelegate.shared.updateStatusIcon() }`
     ///     or equivalent — injected here so the actor body never touches `NSApp.delegate`.
+    ///
+    /// - Note: The two observation Tasks capture `self` directly (no `[weak self]`).
+    ///   Actors are not classes and cannot form reference cycles through their own
+    ///   isolated Tasks. Using `[weak self]` was incorrect here: if the actor were
+    ///   deallocated before the Task hopped back onto the actor executor, the
+    ///   observation would silently never start. `deinit` cancels both tasks,
+    ///   so the Tasks never outlive the actor.
     init(
         viewModel: RunnerViewModel,
         localRunnerStore: LocalRunnerStore,
@@ -156,8 +156,8 @@ actor RunnerStore {
         self.viewModel = viewModel
         self.localRunnerStore = localRunnerStore
         self.onStatusUpdate = onStatusUpdate
-        Task { [weak self] in await self?._startObservingPreferences() }
-        Task { [weak self] in await self?._startObservingScopes() }
+        Task { await self._startObservingPreferences() }
+        Task { await self._startObservingScopes() }
     }
 
     // MARK: - Deinit
