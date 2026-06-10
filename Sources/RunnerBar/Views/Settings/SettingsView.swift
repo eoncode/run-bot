@@ -37,12 +37,9 @@ struct SettingsView: View {
     @ObservedObject var store: RunnerViewModel
 
     // MARK: - Observed stores
-    // @StateObject — NOT @ObservedObject — because these are singleton instances
-    // assigned inline. @ObservedObject re-creates its subscription wrapper on every
-    // render cycle; when the singleton publishes a change SwiftUI re-renders, tears
-    // down the wrapper, re-subscribes, and can fire objectWillChange again before the
-    // render settles → infinite glitchy loop. @StateObject is owned by SwiftUI for the
-    // lifetime of this view's identity, so the subscription is stable.
+    // These singleton preference stores are now `@Observable` types. The view keeps
+    // stable references to the shared instances with `@State`, while SwiftUI tracks
+    // field reads from the Observation system.
     // store (RunnerViewModel) is injected by the caller and must stay @ObservedObject.
     //
     // NOTE: These properties (and the @State vars below) are `internal` rather than
@@ -51,9 +48,9 @@ struct SettingsView: View {
     // within the same type. See SE-0169. signOutCancellable is the sole exception —
     // it is not referenced in the extension and intentionally stays `private`.
     /// App-wide preferences (notifications, update channel, etc.).
-    @StateObject var settings = AppPreferencesStore.shared
+    @State var settings = AppPreferencesStore.shared
     /// Notification opt-in preferences per scope.
-    @StateObject var notifications = NotificationPreferences.shared
+    @State var notifications = NotificationPreferences.shared
 
     // MARK: - Local UI state
     /// Mirrors `LoginItem.isEnabled`; toggled by the Launch at Login switch.

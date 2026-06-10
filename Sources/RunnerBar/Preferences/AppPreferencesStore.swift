@@ -1,13 +1,14 @@
 // AppPreferencesStore.swift
 // RunnerBar
-import Combine
 import Foundation
+import Observation
 
 // MARK: - AppPreferencesStore
 
 /// Persists general app settings to UserDefaults.
 @MainActor
-final class AppPreferencesStore: ObservableObject {
+@Observable
+final class AppPreferencesStore {
     /// Shared singleton — use this instead of calling init directly.
     static let shared = AppPreferencesStore()
 
@@ -30,7 +31,7 @@ final class AppPreferencesStore: ObservableObject {
     /// the clamped value — this re-entrancy is intentional and safe because
     /// `AppPreferencesStore` is `@MainActor`-isolated (all mutations are serialised
     /// on the main queue, so the recursive assignment cannot interleave).
-    @Published var pollingInterval: Int {
+    var pollingInterval: Int {
         didSet {
             let clamped = pollingInterval.clamped(to: Self.pollingRange)
             if clamped != pollingInterval {
@@ -46,7 +47,7 @@ final class AppPreferencesStore: ObservableObject {
     /// Retained for UserDefaults backwards-compatibility only — no longer surfaced
     /// in the UI (#510). Do not remove: removing would break the stored key for
     /// users upgrading from older versions.
-    @Published var showDimmedRunners: Bool {
+    var showDimmedRunners: Bool {
         didSet { UserDefaults.standard.set(showDimmedRunners, forKey: Key.showDimmedRunners) }
     }
 
@@ -58,7 +59,7 @@ final class AppPreferencesStore: ObservableObject {
     ///
     /// Takes effect on the next `openPanel()` call — the arrow state is baked in
     /// at `popover.show()` time and cannot be changed mid-session.
-    @Published var showPopoverArrow: Bool {
+    var showPopoverArrow: Bool {
         didSet { UserDefaults.standard.set(showPopoverArrow, forKey: Key.showPopoverArrow) }
     }
 

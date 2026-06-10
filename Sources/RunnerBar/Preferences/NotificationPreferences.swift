@@ -1,13 +1,14 @@
 // NotificationPreferences.swift
 // RunnerBar
-import Combine
 import Foundation
+import Observation
 
 // MARK: - NotificationPreferences
 
 /// Persists notification preferences to UserDefaults.
 @MainActor
-final class NotificationPreferences: ObservableObject {
+@Observable
+final class NotificationPreferences {
     /// Shared singleton — use this instead of calling init directly.
     static let shared = NotificationPreferences()
 
@@ -20,12 +21,12 @@ final class NotificationPreferences: ObservableObject {
     }
 
     /// Whether the user wants a notification when a job succeeds.
-    @Published var notifyOnSuccess: Bool {
+    var notifyOnSuccess: Bool {
         didSet { UserDefaults.standard.set(notifyOnSuccess, forKey: Key.notifyOnSuccess) }
     }
 
     /// Whether the user wants a notification when a job fails.
-    @Published var notifyOnFailure: Bool {
+    var notifyOnFailure: Bool {
         didSet { UserDefaults.standard.set(notifyOnFailure, forKey: Key.notifyOnFailure) }
     }
 
