@@ -105,13 +105,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The owned observable view-model passed into every SwiftUI view via the environment.
     /// `RunnerStore` and `LocalRunnerStore` push updates into this instance via `await MainActor.run { }`.
     let observable = RunnerViewModel()
-    /// Owned `RunnerStore` actor — injected with `observable` at init so no singleton
-    /// cross-references exist inside the actor body (Swift 6 / PR #1303 requirement).
-    /// Owned `LocalRunnerStore` — still a `@MainActor` class until Commit 2 converts it to an actor.
+    /// Owned `LocalRunnerStore` actor — injected with `observable` so all state
+    /// pushes land in the view model that SwiftUI actually observes.
     let localRunnerStore: LocalRunnerStore = .shared
-    /// Owned `RunnerStore` actor — injected with `observable` and `localRunnerStore` so no
-    /// singleton cross-references exist inside the actor body (Swift 6 / PR #1303).
-    lazy var runnerStore: RunnerStore = RunnerStore(viewModel: observable, localRunnerStore: localRunnerStore)
+    /// Owned `RunnerStore` actor — injected with `observable`, `localRunnerStore`, and an
+    /// `onStatusUpdate` closure so the actor body never touches `NSApp.delegate` directly
+    /// (Swift 6 / PR #1303 Principle #4: no singleton access inside actor bodies).
+    lazy var runnerStore: RunnerStore = RunnerStore(
+        viewModel: observable,
+        localRunnerStore: localRunnerStore,
+        onStatusUpdate: { [weak self] in self?.updateStatusIcon() }
+    )
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?
