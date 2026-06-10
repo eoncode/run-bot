@@ -60,12 +60,18 @@ private struct TreeLineLeader: View {
         .onChange(of: isActive) { _, _ in startGlowIfNeeded() }
     }
     /// Starts the breathing pulse when `isActive` is `true`; resets to static opacity otherwise.
-    /// Safe to call multiple times — SwiftUI deduplicates identical in-flight animations.
     private func startGlowIfNeeded() {
         guard isActive else {
-            glowOpacity = 0.3
+            // withAnimation(nil) opts out of any ambient transaction (e.g. parent
+            // handleStatusChange uses .easeInOut(0.15)), guaranteeing an instant
+            // snap-back with no ghost glow after the job completes.
+            withAnimation(nil) { glowOpacity = 0.3 }
             return
         }
+        // Reset synchronously before starting the new curve. This cancels any
+        // in-flight repeatForever from a previous in-progress run (e.g. a retry),
+        // preventing two conflicting animation curves layering on glowOpacity.
+        glowOpacity = 0.3
         withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
             glowOpacity = 0.75
         }
