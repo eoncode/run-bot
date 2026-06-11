@@ -8,7 +8,11 @@ import Testing
 // MARK: - Test doubles
 
 /// Spy conformance for `RunnerLabelsService`.
-final class SpyLabelsService: RunnerLabelsService, @unchecked Sendable {
+///
+/// Implemented as an `actor` so Swift's compiler enforces isolation without
+/// requiring `@unchecked Sendable`. The `result` and recorded-call properties
+/// are accessed from the test body before/after `execute(...)` — never concurrently.
+actor SpyLabelsService: RunnerLabelsService {
     var result: [String]? = []
     private(set) var callCount = 0
     private(set) var lastScope: String?
@@ -25,7 +29,9 @@ final class SpyLabelsService: RunnerLabelsService, @unchecked Sendable {
 }
 
 /// Spy conformance for `RunnerConfigStoreProtocol`.
-final class SpyConfigStore: RunnerConfigStoreProtocol, @unchecked Sendable {
+///
+/// Implemented as an `actor` — see `SpyLabelsService` for rationale.
+actor SpyConfigStore: RunnerConfigStoreProtocol {
     var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
     var shouldThrowOnSave = false
     private(set) var saveCalled = false
@@ -40,7 +46,9 @@ final class SpyConfigStore: RunnerConfigStoreProtocol, @unchecked Sendable {
 }
 
 /// Spy conformance for `RunnerProxyStoreProtocol`.
-final class SpyProxyStore: RunnerProxyStoreProtocol, @unchecked Sendable {
+///
+/// Implemented as an `actor` — see `SpyLabelsService` for rationale.
+actor SpyProxyStore: RunnerProxyStoreProtocol {
     var shouldThrowOnSave = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerProxyConfig?
@@ -101,9 +109,9 @@ struct SaveRunnerEditsUseCaseTests {
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
         #expect(result == .success)
-        #expect(labels.callCount == 0)
-        #expect(!config.saveCalled)
-        #expect(!proxy.saveCalled)
+        #expect(await labels.callCount == 0)
+        #expect(await !config.saveCalled)
+        #expect(await !proxy.saveCalled)
     }
 
     @Test("aborts entire commit when labels API returns nil")
@@ -114,7 +122,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.labelsText = "ci, fast"
 
         let labels  = SpyLabelsService()
-        labels.result = nil
+        await labels.$result.set(nil) // actor-isolated setter
         let config  = SpyConfigStore()
         let proxy   = SpyProxyStore()
         let useCase = makeUseCase(labels: labels, config: config, proxy: proxy)
@@ -127,8 +135,8 @@ struct SaveRunnerEditsUseCaseTests {
         }
         #expect(msgs.count == 1)
         #expect(msgs[0].contains("GitHub API"))
-        #expect(!config.saveCalled)
-        #expect(!proxy.saveCalled)
+        #expect(await !config.saveCalled)
+        #expect(await !proxy.saveCalled)
     }
 
     @Test("accumulates JSON error but continues to proxy step")
@@ -140,7 +148,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.proxyUrl   = "http://proxy.example.com"
 
         let config  = SpyConfigStore()
-        config.shouldThrowOnSave = true
+        await config.$shouldThrowOnSave.set(true)
         let proxy   = SpyProxyStore()
         let useCase = makeUseCase(config: config, proxy: proxy)
 
@@ -151,7 +159,7 @@ struct SaveRunnerEditsUseCaseTests {
             return
         }
         #expect(msgs.contains(where: { $0.contains(".runner JSON") }))
-        #expect(proxy.saveCalled)
+        #expect(await proxy.saveCalled)
     }
 
     @Test("accumulates proxy error independently of JSON success")
@@ -162,7 +170,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.proxyUrl = "http://proxy.example.com"
 
         let proxy   = SpyProxyStore()
-        proxy.shouldThrowOnSave = true
+        await proxy.$shouldThrowOnSave.set(true)
         let useCase = makeUseCase(proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
@@ -182,16 +190,16 @@ struct SaveRunnerEditsUseCaseTests {
         draft.labelsText = "gpu, large"
 
         let labels  = SpyLabelsService()
-        labels.result = ["gpu", "large"]
+        await labels.$result.set(["gpu", "large"])
         let useCase = makeUseCase(labels: labels)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
         #expect(result == .success)
-        #expect(labels.callCount == 1)
-        #expect(labels.lastScope == "myorg/myrepo")
-        #expect(labels.lastRunnerID == 99)
-        #expect(labels.lastLabels == ["gpu", "large"])
+        #expect(await labels.callCount == 1)
+        #expect(await labels.lastScope == "myorg/myrepo")
+        #expect(await labels.lastRunnerID == 99)
+        #expect(await labels.lastLabels == ["gpu", "large"])
     }
 
     @Test("returns failure when installPath is nil and JSON changes pending")
