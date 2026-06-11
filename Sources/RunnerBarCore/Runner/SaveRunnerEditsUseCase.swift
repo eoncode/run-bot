@@ -130,16 +130,4 @@ public struct SaveRunnerEditsUseCase: Sendable {
 
         return errors.isEmpty ? .success : .failure(errors)
     }
-
-    // MARK: - Private helpers
-
-    /// Extracts `owner/repo` or `orgName` scope from a GitHub HTML URL.
-    /// Returns `nil` if the URL cannot be parsed.
-    private func scopeFromHtmlUrl(_ url: String) -> String? {
-        guard let u = URL(string: url) else { return nil }
-        let parts = u.pathComponents.filter { $0 != "/" }
-        if parts.count >= 2 { return parts[0] + "/" + parts[1] }
-        if parts.count == 1 { return parts[0] }
-        return nil
-    }
 }
