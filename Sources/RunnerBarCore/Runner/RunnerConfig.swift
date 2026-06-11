@@ -48,13 +48,20 @@ public struct RunnerConfig: Codable, Sendable {
     /// (e.g. `"workFolder"`, `"agentId"`). PascalCase mappings will cause `keyNotFound`
     /// on every existing install.
     public enum CodingKeys: String, CodingKey {
-        case workFolder           = "workFolder"
-        case disableUpdate        = "disableUpdate"
-        case platform             = "platform"
-        case platformArchitecture = "platformArchitecture"
-        case agentVersion         = "agentVersion"
-        case ephemeral            = "ephemeral"
-        case agentId              = "agentId"
+        /// JSON key: `workFolder`
+        case workFolder
+        /// JSON key: `disableUpdate`
+        case disableUpdate
+        /// JSON key: `platform`
+        case platform
+        /// JSON key: `platformArchitecture`
+        case platformArchitecture
+        /// JSON key: `agentVersion`
+        case agentVersion
+        /// JSON key: `ephemeral`
+        case ephemeral
+        /// JSON key: `agentId`
+        case agentId
     }
 
     // MARK: - Init

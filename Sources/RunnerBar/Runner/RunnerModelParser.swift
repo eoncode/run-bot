@@ -79,7 +79,9 @@ private struct RunnerDiscoveryFields: Decodable {
     let runnerName: String?
 
     private enum CodingKeys: String, CodingKey {
+        /// JSON key: `gitHubUrl`
         case gitHubUrl
+        /// JSON key: `AgentName`
         case runnerName = "AgentName"
     }
 }
