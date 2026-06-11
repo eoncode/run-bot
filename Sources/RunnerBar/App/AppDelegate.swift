@@ -102,8 +102,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The SwiftUI hosting controller embedded inside `popover`. Its `rootView` is
     /// swapped on navigation; the controller itself is never recreated.
     var hostingController: NSHostingController<AnyView>?
-    /// The shared observable view-model passed into every SwiftUI view via the environment.
+    /// The owned observable view-model passed into every SwiftUI view via the environment.
+    /// `RunnerStore` and `LocalRunnerStore` push updates into this instance via `await MainActor.run { }`.
     let observable = RunnerViewModel()
+    /// Owned `LocalRunnerStore` actor — injected with `observable` so all state
+    /// pushes land in the view model that SwiftUI actually observes.
+    ///
+    /// `lazy var` is required: `LocalRunnerStore.shared` is only valid after
+    /// `LocalRunnerStore.configure(viewModel:)` is called in
+    /// `applicationDidFinishLaunching`. A `let` default would be evaluated
+    /// eagerly during `AppDelegate.init()` — before `configure()` runs —
+    /// triggering the `fatalError` guard inside `LocalRunnerStore.shared`.
+    lazy var localRunnerStore: LocalRunnerStore = .shared
+    /// Owned `RunnerStore` actor — injected with `observable`, `localRunnerStore`, and an
+    /// `onStatusUpdate` closure so the actor body never touches `NSApp.delegate` directly
+    /// (Swift 6 / PR #1303 Principle #4: no singleton access inside actor bodies).
+    lazy var runnerStore: RunnerStore = RunnerStore(
+        viewModel: observable,
+        localRunnerStore: localRunnerStore,
+        onStatusUpdate: { [weak self] in self?.updateStatusIcon() }
+    )
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?
@@ -357,8 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ⚠️ show() is called ONCE per open. Resize is done via contentSize only.
     func openPanel() {
         guard let button = statusItem?.button, let popover else { return }
-        log("AppDelegate › openPanel — seeding observable")
-        observable.reload()
+        log("AppDelegate › openPanel — LocalRunnerStore pushes state on every cycle, no seed needed")
         panelIsOpen = true
         panelVisibilityState.isOpen = true
         if !restorePopoverWindowsPreservingSheetsIfNeeded() {

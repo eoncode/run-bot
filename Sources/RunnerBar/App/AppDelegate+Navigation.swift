@@ -62,7 +62,10 @@ extension AppDelegate {
                 self?.panelSheetState.clearRunnerSheet()
                 self?.navigate(to: self?.mainView() ?? AnyView(EmptyView()))
             },
-            store: observable
+            store: observable,
+            onRestartPolling: { [weak self] in
+                Task { await self?.runnerStore.start() }
+            }
         )
         // PanelContainerView needed here too: sheets are presented from SettingsView.
         return wrapEnv(PanelContainerView(content: inner))
@@ -88,13 +91,19 @@ extension AppDelegate {
         case .settings:
             return settingsView()
         case .stepLog(let job, let step):
-            // TODO(#1099): This guard checks the live store which is empty until the first // NOSONAR
-            // poll (~2–5 s after launch). A user who reopens the app quickly after
-            // viewing a step log will always fail this guard and land on main instead.
-            // Preferred fix: let StepLogView render a loading/empty state and remove
-            // this guard. Alternative: persist the last-seen job ID and validate against
-            // that (more state management complexity, better UX correctness).
-            guard RunnerStore.shared.jobs.contains(where: { $0.id == job.id }) else { return nil }
+            // TODO(#1099): This guard checks the live snapshot in RunnerViewModel which is
+            // empty until the first poll (~2–5 s after launch). A user who reopens the app
+            // quickly after viewing a step log will always fail this guard and land on main.
+            // Preferred fix: let StepLogView render a loading/empty state and remove this guard.
+            // Alternative: persist the last-seen job ID and validate against that.
+            //
+            // RunnerStore is now a Swift actor; its `jobs` property cannot be read
+            // synchronously from the main actor. We read from `observable` (AppDelegate's
+            // injected RunnerViewModel instance) instead, which holds the last-pushed
+            // snapshot and is already @MainActor-isolated.
+            // ⚠️ Do NOT replace `observable` with `RunnerViewModel.shared` —
+            //    that accessor is a fatalError trap in this codebase.
+            guard observable.jobs.contains(where: { $0.id == job.id }) else { return nil }
             // No PanelContainerView here — StepLogView has no sheets.
             return wrapEnv(StepLogView(
                 job: job,

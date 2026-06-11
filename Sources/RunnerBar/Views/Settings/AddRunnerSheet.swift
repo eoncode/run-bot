@@ -56,6 +56,11 @@ struct AddRunnerSheet: View {
     @Binding var isPresented: Bool
     /// Called when registration or import completes successfully.
     let onComplete: () -> Void
+    /// Injected local runner store — avoids direct `.shared` references inside the sheet.
+    var localRunnerStore: LocalRunnerStore = .shared
+    /// View model used for synchronous duplicate checks against `localRunners` already
+    /// pushed to the UI layer — avoids crossing the actor boundary in computed properties.
+    var store: RunnerViewModel = .shared
 
     // MARK: - Add Mode
 
@@ -340,8 +345,7 @@ struct AddRunnerSheet: View {
         let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
         if !FileManager.default.fileExists(atPath: configPath) {
-            // TODO: setStep() is synchronous — remove spurious `await` from all setStep() calls in this function
-            await setStep("Downloading runner package…")
+            setStep("Downloading runner package…")
             guard let downloadURL = await fetchRunnerDownloadURL() else {
                 isRegistering = false
                 errorMessage  = "Could not determine runner download URL. Check your internet connection."
@@ -358,7 +362,7 @@ struct AddRunnerSheet: View {
                 errorMessage = "Download failed."
                 return
             }
-            await setStep("Unpacking runner package…")
+            setStep("Unpacking runner package…")
             let tarResult = await runSimpleProcess(GitHubURIs.tarPath, args: ["xzf", tarPath, "-C", dir])
             try? FileManager.default.removeItem(atPath: tarPath)
             guard tarResult == 0 else {
@@ -368,7 +372,7 @@ struct AddRunnerSheet: View {
             }
         }
 
-        await setStep("Fetching registration token…")
+        setStep("Fetching registration token…")
         guard let token = await fetchRegistrationToken(scope: scope) else {
             isRegistering = false
             if currentScopeType == .org {
@@ -379,7 +383,7 @@ struct AddRunnerSheet: View {
             return
         }
 
-        await setStep("Configuring runner…")
+        setStep("Configuring runner…")
         let ghURL      = "\(GitHubURIs.base)\(scope)"
         let configExit = await runRegistrationCommand(
             dir: dir, ghURL: ghURL, token: token, name: name, labels: labels
@@ -390,9 +394,13 @@ struct AddRunnerSheet: View {
             return
         }
 
-        await setStep("Registering service…")
+        setStep("Registering service…")
         writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
-        LocalRunnerStore.shared.add(runnerName: name, installPath: dir)
+        // Await directly — register() is already async, no Task wrapper needed.
+        // This guarantees add() completes before isPresented = false fires and
+        // onComplete() enqueues its refresh(), so the new runner row is always
+        // present in the actor's index before the scan runs.
+        await localRunnerStore.add(runnerName: name, installPath: dir)
         isRegistering    = false
         registrationStep = ""
         isPresented      = false

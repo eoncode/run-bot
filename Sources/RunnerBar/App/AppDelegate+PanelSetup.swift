@@ -175,15 +175,8 @@ extension AppDelegate: NSPopoverDelegate {
     private func setupCombineSubscriptions() {
         log("AppDelegate › setupCombineSubscriptions — begin")
 
-        // $runners — local runner list changed on disk (added/removed runner config).
-        LocalRunnerStore.shared.$runners
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] runners in
-                guard let self else { return }
-                log("AppDelegate › LocalRunnerStore.$runners fired — count=\(runners.count)")
-                self.observable.reload()
-            }
-            .store(in: &cancellables)
+        // local runner list changes are now pushed directly from LocalRunnerStore
+        // into observable.localRunners via await MainActor.run — no Combine sink needed.
 
         // Everything below makes live network calls — skip entirely in UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else {
@@ -191,16 +184,29 @@ extension AppDelegate: NSPopoverDelegate {
             return
         }
 
-        // didUpdate — API poll cycle complete; refresh icon and view-model.
-        RunnerStore.shared.didUpdate
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard let self else { return }
-                log("AppDelegate › didUpdate fired — panelIsOpen=\(self.panelIsOpen) actions=\(RunnerStore.shared.actions.count) jobs=\(RunnerStore.shared.jobs.count)")
-                self.updateStatusIcon()
-                self.observable.reload()
-            }
-            .store(in: &cancellables)
+        // Wire LocalRunnerStore.shared to this AppDelegate's RunnerViewModel instance.
+        //
+        // ⚠️ Must be called before the startup Task below (and before any other
+        // LocalRunnerStore.shared access). LocalRunnerStore no longer self-initialises
+        // with RunnerViewModel.shared — that singleton was a different object from
+        // AppDelegate.observable and caused localRunners to push into a view model
+        // that no SwiftUI view observed (permanent empty local-runner list).
+        //
+        // ❌ NEVER move this call inside the Task — AppDelegate.localRunnerStore
+        //    is a computed `lazy var` backed by `LocalRunnerStore.shared`. The first
+        //    access to `localRunnerStore` (inside the Task) must find the instance
+        //    already configured, or it fatalErrors.
+        LocalRunnerStore.configure(viewModel: observable)
+        log("AppDelegate › setupCombineSubscriptions — LocalRunnerStore.configure(viewModel:) called")
+
+        // NOTE: The `RunnerStore.didUpdate` Combine sink has been removed.
+        // `RunnerStore` is now a Swift actor that pushes state directly to
+        // the injected `viewModel` (AppDelegate.observable) via `await MainActor.run { }`
+        // at the end of every fetch cycle, and calls `AppDelegate.updateStatusIcon()` inside
+        // that same `MainActor.run` block — so icon refresh is still driven once
+        // per completed fetch cycle without any Combine subscription.
+        // ℹ️ `RunnerViewModel.shared` is a fatalError accessor — the live instance
+        // is AppDelegate.observable, injected explicitly into both stores.
 
         // FIX: Await LocalRunnerStore.refreshAsync() before starting the poll loop.
         //
@@ -216,28 +222,17 @@ extension AppDelegate: NSPopoverDelegate {
         log("AppDelegate › setupCombineSubscriptions — scheduling async startup sequence")
         Task { [weak self] in
             guard let self else { return }
-            log("AppDelegate › startup — awaiting LocalRunnerStore.refreshAsync()")
-            await LocalRunnerStore.shared.refreshAsync()
-            log("AppDelegate › startup — refreshAsync() complete, starting RunnerStore poll loop")
-            RunnerStore.shared.start()
-            log("AppDelegate › startup — RunnerStore poll loop started")
+            log("AppDelegate › startup — awaiting localRunnerStore.refreshAsync()")
+            await self.localRunnerStore.refreshAsync()
+            log("AppDelegate › startup — refreshAsync() complete, starting runnerStore poll loop")
+            await self.runnerStore.start()
+            log("AppDelegate › startup — runnerStore poll loop started")
         }
 
-        // didMutate — scope changed; must restart the store entirely so it polls
-        // the correct repos from the beginning.
-        // [weak self] is not needed here — this closure uses no instance members.
-        // RunnerStore.shared.start() is a static singleton call; log() is a free
-        // function. The capture is kept only for consistency with other sinks in
-        // this file, but self is intentionally unused after the guard.
-        ScopeStore.shared.didMutate
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard self != nil else { return }
-                log("AppDelegate › ScopeStore.didMutate — restarting RunnerStore")
-                RunnerStore.shared.start()
-            }
-            .store(in: &cancellables)
-
+        // Scope changes (add / remove / enable toggle) restart RunnerStore so it polls
+        // the correct repos from the beginning. RunnerStore observes
+        // ScopeStore.activeScopes internally via withObservationTracking/AsyncStream,
+        // so no Combine sink is needed here — the actor's own observer handles it.
         log("AppDelegate › setupCombineSubscriptions — complete")
     }
 }

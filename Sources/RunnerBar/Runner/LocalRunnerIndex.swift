@@ -7,8 +7,9 @@ import Foundation
 /// Owns the `UserDefaults`-backed name → install-path index for locally-registered runners.
 ///
 /// Pure persistence layer with no knowledge of the runner model — easily unit-testable in isolation.
-/// All mutating methods are `@MainActor` so callers do not need to coordinate access.
-@MainActor
+/// Non-isolated: owned exclusively by the `LocalRunnerStore` actor, which serializes all access.
+/// `UserDefaults` read/write of individual keys is thread-safe; this class uses no KVO or
+/// change notifications on `UserDefaults`, so no main-actor coordination is required.
 final class LocalRunnerIndex {
 
     // MARK: - Storage key
