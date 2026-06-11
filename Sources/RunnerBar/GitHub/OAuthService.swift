@@ -32,19 +32,6 @@ import Foundation
 final class OAuthService {
     /// The shared singleton instance.
     static let shared = OAuthService()
-    /// Private initialiser — use `shared`.
-    private init() {
-        let (stream, cont) = OAuthService.makeSignOutStreamStatic()
-        didSignOut = stream
-        signOutContinuation = cont
-    }
-
-    /// Static factory used from `init()` (before `self` is fully initialised).
-    private static func makeSignOutStreamStatic() -> (AsyncStream<Void>, AsyncStream<Void>.Continuation) {
-        var cont: AsyncStream<Void>.Continuation!
-        let stream = AsyncStream<Void> { cont = $0 }
-        return (stream, cont)
-    }
 
     /// The OAuth redirect URI. Must match the value registered in the GitHub OAuth app settings.
     /// Sourced from `GitHubConstants.oauthRedirectURI` — do not duplicate this string inline.
@@ -85,11 +72,28 @@ final class OAuthService {
     /// Register once in SettingsView.onAppearAction — do NOT re-assign in signIn().
     var onCompletion: ((Bool) -> Void)?
 
-    /// Emits on the main thread after a successful sign-out.
-    /// Observe via `for await _ in OAuthService.shared.didSignOut { ... }` inside a `Task`.
-    let didSignOut: AsyncStream<Void>
-    /// Continuation for `didSignOut` — fire via `signOutContinuation?.yield(())`.
-    private var signOutContinuation: AsyncStream<Void>.Continuation?
+    // MARK: - Sign-out multicast
+    //
+    // Each caller receives its own dedicated AsyncStream via makeSignOutStream().
+    // signOut() yields to every registered continuation, restoring the multicast
+    // semantics of the old PassthroughSubject without reintroducing Combine.
+    // AsyncStream is single-consumer — sharing one stream across multiple Tasks
+    // would deliver each event to only one consumer (whichever wakes first).
+
+    /// Registered continuations — one per active consumer (AppDelegate, SettingsView, …).
+    private var signOutContinuations: [AsyncStream<Void>.Continuation] = []
+
+    /// Returns a new `AsyncStream<Void>` that fires once per `signOut()` call.
+    /// Each call site must request its own stream; the streams are multicasted.
+    /// Observe via:
+    /// ```swift
+    /// Task { for await _ in OAuthService.shared.makeSignOutStream() { … } }
+    /// ```
+    func makeSignOutStream() -> AsyncStream<Void> {
+        let (stream, cont) = AsyncStream<Void>.makeStream()
+        signOutContinuations.append(cont)
+        return stream
+    }
 
     // MARK: Sign In
 
@@ -140,8 +144,8 @@ final class OAuthService {
         let deleted = Keychain.delete()
         log("OAuthService › signOut — Keychain.delete result=\(deleted)")
         if deleted {
-            log("OAuthService › signOut — emitting didSignOut")
-            signOutContinuation?.yield(())
+            log("OAuthService › signOut — emitting didSignOut to \(signOutContinuations.count) consumer(s)")
+            signOutContinuations.forEach { $0.yield(()) }
         } else {
             log("OAuthService › signOut: Keychain.delete failed — sign-out suppressed to prevent ghost sign-in")
         }

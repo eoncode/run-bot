@@ -177,7 +177,7 @@ struct SettingsView: View {
             isSigningIn = false
         }
         signOutTask = Task { @MainActor in
-            for await _ in OAuthService.shared.didSignOut {
+            for await _ in OAuthService.shared.makeSignOutStream() {
                 let postToken = githubToken()
                 log("SettingsView › didSignOut — githubToken post-signout=\(postToken != nil ? "present(len=\(postToken!.count))" : "nil")")
                 isOAuthAuthenticated = false
