@@ -147,11 +147,21 @@ actor RunnerProxyStore {
             DispatchQueue.global(qos: .utility).async {
                 var messages: [String] = []
 
-                do    { try Self.writeProxyURL(url, to: proxyURL) }
-                catch { let m = ".proxy write error: \(error)"; log("RunnerProxyStore › \(m)"); messages.append(m) }
+                do {
+                    try Self.writeProxyURL(url, to: proxyURL)
+                } catch {
+                    let m = ".proxy write error: \(error)"
+                    log("RunnerProxyStore › \(m)")
+                    messages.append(m)
+                }
 
-                do    { try Self.writeProxyCredentials(user: user, secret: proxySecretVal, to: credURL) }
-                catch { let m = ".proxycredentials write error: \(error)"; log("RunnerProxyStore › \(m)"); messages.append(m) }
+                do {
+                    try Self.writeProxyCredentials(user: user, secret: proxySecretVal, to: credURL)
+                } catch {
+                    let m = ".proxycredentials write error: \(error)"
+                    log("RunnerProxyStore › \(m)")
+                    messages.append(m)
+                }
 
                 if messages.isEmpty {
                     continuation.resume()
