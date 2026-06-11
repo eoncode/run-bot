@@ -157,10 +157,14 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
     ///
     /// Expects the first line to be the username and the second line (if present)
     /// to be the password. Missing lines yield empty strings.
+    ///
+    /// Trims `.whitespacesAndNewlines` (not just `.newlines`) so that files written
+    /// with `\r\n` line endings (e.g. by Windows-based credential tools) do not leave
+    /// a trailing `\r` on each component — which would silently break proxy authentication.
     private static func parseCredentialLines(_ content: String) -> (user: String, password: String) {
         let lines      = content.components(separatedBy: "\n")
-        let user       = lines.first.map { $0.trimmingCharacters(in: .newlines) } ?? ""
-        let credential = lines.indices.contains(1) ? lines[1].trimmingCharacters(in: .newlines) : ""
+        let user       = lines.first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        let credential = lines.indices.contains(1) ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
         return (user, credential)
     }
 
