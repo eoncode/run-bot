@@ -18,6 +18,7 @@ final class RunnerViewModel {
     /// `RunnerStore` and `LocalRunnerStore` push state into `AppDelegate.observable` only;
     /// this accessor is never updated and will silently return stale/empty data.
     /// Inject `RunnerViewModel` explicitly via the environment or constructor instead.
+    // periphery:ignore — intentional fatalError trap; zero callers is the correct state
     @MainActor static var shared: RunnerViewModel {
         fatalError(
             "RunnerViewModel.shared must not be used. "
