@@ -68,9 +68,35 @@ public actor RunnerConfigStore {
     }
 
     /// Saves the typed runner config to `installPath/.runner`.
+    ///
+    /// Performs a read-modify-write merge so unknown agent-managed keys already
+    /// present in `.runner` are preserved instead of being dropped on save.
     public func save(_ config: RunnerConfig, at installPath: String) async throws {
         let url = runnerConfigURL(for: installPath)
-        let data = try encoder.encode(config)
+
+        var raw: [String: Any] = [:]
+        if let existingData = try? Data(contentsOf: url) {
+            let data: Data
+            if existingData.prefix(3).elementsEqual([0xEF, 0xBB, 0xBF]) {
+                data = Data(existingData.dropFirst(3))
+            } else {
+                data = existingData
+            }
+            if let object = try? JSONSerialization.jsonObject(with: data),
+               let dict = object as? [String: Any] {
+                raw = dict
+            }
+        }
+
+        raw[RunnerConfig.CodingKeys.workFolder.rawValue] = config.workFolder
+        raw[RunnerConfig.CodingKeys.disableUpdate.rawValue] = config.disableUpdate
+        raw[RunnerConfig.CodingKeys.platform.rawValue] = config.platform
+        raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = config.platformArchitecture
+        raw[RunnerConfig.CodingKeys.agentVersion.rawValue] = config.agentVersion
+        raw[RunnerConfig.CodingKeys.ephemeral.rawValue] = config.ephemeral
+        raw[RunnerConfig.CodingKeys.agentId.rawValue] = config.agentId
+
+        let data = try JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: url, options: .atomic)
         log("RunnerConfigStore › saved config to \(url.path)")
     }
