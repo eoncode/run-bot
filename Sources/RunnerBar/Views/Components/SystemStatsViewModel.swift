@@ -1,34 +1,37 @@
 // SystemStatsViewModel.swift
 // RunnerBar
-import Combine
 @preconcurrency import Darwin
 import Foundation
+import Observation
 import RunnerBarCore
 
 // MARK: - SystemStatsViewModel
 /// Observable view-model that periodically samples CPU, memory, and disk metrics.
 /// Call `start()` when the owning view appears and `stop()` when it disappears.
 @MainActor
-final class SystemStatsViewModel: ObservableObject {
+@Observable
+final class SystemStatsViewModel {
     /// Latest sampled snapshot, ready for display.
-    @Published private(set) var stats: SystemStats = .zero
+    private(set) var stats: SystemStats = .zero
     /// Rolling 60-sample history for CPU sparkline charts.
-    @Published private(set) var cpuHistory: RingBuffer = RingBuffer(capacity: 60)
+    private(set) var cpuHistory: RingBuffer = RingBuffer(capacity: 60)
     /// Rolling 60-sample history for memory-usage sparkline charts.
-    @Published private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
+    private(set) var memHistory: RingBuffer = RingBuffer(capacity: 60)
     /// Rolling 60-sample history for disk-usage sparkline charts.
-    @Published private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
-    /// Safety: only mutated on MainActor (start/stop). Captured as a local `let` in
+    private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
+    /// Only mutated on MainActor (start/stop). Captured as a local `let` in
     /// deinit before dispatching invalidation to the main run loop — Timer.invalidate()
     /// must be called on the thread that installed the timer (main run loop).
-    nonisolated(unsafe) private var timer: Timer?
-    /// Safety: accessed only from `sampleCPU()` (always called on MainActor) and
+    /// `@ObservationIgnored` excludes this from macro-generated tracking storage so
+    /// `nonisolated(unsafe)` can be applied for deinit access off the main actor.
+    @ObservationIgnored nonisolated(unsafe) private var timer: Timer?
+    /// Accessed only from `sampleCPU()` (always called on MainActor) and
     /// `deinit` (which implies no other references exist, so no concurrent access is possible).
-    /// Previous `processor_info_array_t` sample retained between `sampleCPU()` calls.
-    nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
-    /// Safety: same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
+    /// `@ObservationIgnored` + `nonisolated(unsafe)` for same reason as `timer`.
+    @ObservationIgnored nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
+    /// Same as `prevCPUInfo` — MainActor during sampling, no concurrency in deinit.
     /// Entry count of `prevCPUInfo`, required by `vm_deallocate` for correct deallocation size.
-    nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
+    @ObservationIgnored nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries via `FileManager.attributesOfFileSystem`.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 

@@ -2,6 +2,7 @@
 // RunnerBar
 import Combine
 import Foundation
+import Observation
 
 // MARK: - ScopeStore
 
@@ -10,10 +11,10 @@ import Foundation
 /// Migration: if the legacy `"scopes"` key (plain `[String]`) is present on first
 /// launch it is converted to `[ScopeEntry]` (all enabled) and the old key is deleted.
 ///
-/// Conforms to `ObservableObject` — SwiftUI views should use `@ObservedObject`.
-/// Subscribe to `didMutate` to be notified after any structural change (add / remove).
+/// Subscribe to `didMutate` to be notified after any structural change (add / remove / enable toggle).
 @MainActor
-final class ScopeStore: ObservableObject {
+@Observable
+final class ScopeStore {
     /// Shared singleton — single source of truth for all scope operations.
     static let shared = ScopeStore()
 
@@ -31,7 +32,7 @@ final class ScopeStore: ObservableObject {
     /// `private(set)` — mutate only through the designated methods on this type
     /// (`add(_:)`, `remove(id:)`, `setEnabled(_:_:)`). `load()` via `init()` is
     /// the only other write path; it assigns during initialisation only.
-    @Published private(set) var entries: [ScopeEntry] = []
+    private(set) var entries: [ScopeEntry] = []
 
     /// Scopes that are currently enabled — used by `RunnerStore` for polling.
     var activeScopes: [String] { entries.filter(\.isEnabled).map(\.scope) }
@@ -112,20 +113,17 @@ final class ScopeStore: ObservableObject {
         didMutate.send()
     }
 
-    /// Toggles the `isEnabled` flag for the entry with the given ID and
-    /// persists the change to `UserDefaults` immediately.
-    /// Does NOT send `didMutate` — enable/disable is not a structural change.
-    ///
-    /// `ScopeEntry` is a struct, so `entries[idx].isEnabled = enabled` replaces
-    /// the array value and `@Published` fires `objectWillChange` automatically.
-    /// The explicit `objectWillChange.send()` below is a belt-and-suspenders call
-    /// that ensures `RunnerStore`'s Combine subscription triggers a polling restart
-    /// even if the value-type contract changes in future.
+    /// Toggles the `isEnabled` flag for the entry with the given ID,
+    /// persists the change to `UserDefaults`, and sends `didMutate` so
+    /// `RunnerStore` restarts its poll loop when the active scope set changes.
+    /// Mutating a nested value-type field (`entries[idx].isEnabled`) does not
+    /// automatically trigger `didMutate` the way add/remove events do,
+    /// so the send is explicit.
     func setEnabled(_ id: UUID, _ enabled: Bool) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].isEnabled = enabled
         persist()
         log("ScopeStore › scope \(entries[idx].scope) isEnabled=\(enabled)")
-        objectWillChange.send()
+        didMutate.send()
     }
 }

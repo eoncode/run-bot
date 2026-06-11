@@ -72,17 +72,16 @@ final class RunnerStore {
     /// Private initialiser — use `shared`.
     private init() {
         log("RunnerStore › init")
-        intervalCancellable = AppPreferencesStore.shared.$pollingInterval
-            .dropFirst(1)
+        intervalCancellable = AppPreferencesStore.shared.didChangePollingInterval
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newInterval in
                 log("RunnerStore › pollingInterval changed to \(newInterval) — restarting poll loop")
                 self?.start()
             }
-        scopeCancellable = ScopeStore.shared.objectWillChange
+        scopeCancellable = ScopeStore.shared.didMutate
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
-                log("RunnerStore › ScopeStore.objectWillChange — restarting fetch")
+                log("RunnerStore › ScopeStore.didMutate — restarting fetch")
                 self?.start()
             }
         log("RunnerStore › init — complete, waiting for start()")

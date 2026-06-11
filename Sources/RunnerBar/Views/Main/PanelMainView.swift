@@ -24,15 +24,18 @@ import SwiftUI
 /// Root panel view rendered inside the NSPopover.
 struct PanelMainView: View {
     /// The view model driving runner and workflow data.
-    @ObservedObject var store: RunnerViewModel
+    /// SAFE: lifetime is managed by `AppDelegate`, not SwiftUI. The hosting
+    /// `NSViewController` is never destroyed, so SwiftUI never re-creates
+    /// `PanelMainView`'s identity and `store` always points at the same instance.
+    var store: RunnerViewModel
     /// Called when user taps a step row.
     let onStepTap: (ActiveJob, JobStep) -> Void
     /// Called when the user taps the settings gear button.
     let onSelectSettings: () -> Void
     /// Panel open/close and transient-hide state from the environment.
-    @EnvironmentObject private var panelVisibilityState: PanelVisibilityState
+    @Environment(PanelVisibilityState.self) private var panelVisibilityState: PanelVisibilityState
     /// View model for CPU/memory stats displayed in the header.
-    @StateObject private var systemStats = SystemStatsViewModel()
+    @State private var systemStats = SystemStatsViewModel()
     /// Number of workflow rows currently shown in the actions section.
     @State private var visibleCount: Int = 10
     /// Increments every second to drive relative-time label refreshes without re-polling.
@@ -46,7 +49,7 @@ struct PanelMainView: View {
         onStepTap: @escaping (ActiveJob, JobStep) -> Void,
         onSelectSettings: @escaping () -> Void
     ) {
-        _store = ObservedObject(wrappedValue: store)
+        self.store = store
         self.onStepTap = onStepTap
         self.onSelectSettings = onSelectSettings
     }

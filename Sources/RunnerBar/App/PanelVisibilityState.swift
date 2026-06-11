@@ -1,5 +1,6 @@
 // PanelVisibilityState.swift
 // RunnerBar
+import Observation
 import SwiftUI
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -14,7 +15,7 @@ import SwiftUI
 // WHY NOT A PLAIN Bool PROP:
 // AppDelegate constructs PanelMainView (via mainView()) BEFORE the panel
 // opens. Any plain `var isPanelOpen: Bool` prop is therefore always `false`
-// at the point InlineJobRowsView evaluates it. This @EnvironmentObject is
+// at the point InlineJobRowsView evaluates it. This @Observable object is
 // mutated by AppDelegate immediately before NSPanel.show() and after
 // NSPanel.close(), so the value seen inside the view is always live.
 //
@@ -53,12 +54,15 @@ import SwiftUI
 // ════════════════════════════════════════════════════════════════════════════════
 
 /// Observable wrapper for NSPanel open/closed state + one-shot height callback.
-/// - Note: Mutated exclusively on the main thread by AppDelegate — no `@MainActor`
-///   annotation is used because all call sites (AppDelegate + SwiftUI view callbacks)
-///   already run on the main thread.
-final class PanelVisibilityState: ObservableObject {
+/// - Note: `@MainActor` enforces the main-thread constraint that was previously
+///   only documented. All mutation sites (AppDelegate, SwiftUI view callbacks)
+///   are already main-actor contexts, so this is a no-op at runtime but lets
+///   the compiler verify the invariant under Swift 6 strict concurrency.
+@MainActor
+@Observable
+final class PanelVisibilityState {
     /// `true` from immediately before the panel opens until after it closes.
-    @Published var isOpen: Bool = false
+    var isOpen: Bool = false
 
     /// Set to `true` by `hidePanel()` BEFORE it sets `isOpen = false`.
     /// Set back to `false` by `PanelContainerView.onChange` when `isOpen` becomes `true` again.

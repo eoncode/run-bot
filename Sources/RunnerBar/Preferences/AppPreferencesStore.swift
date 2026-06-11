@@ -1,13 +1,16 @@
 // AppPreferencesStore.swift
 // RunnerBar
+// Combine retained for PassthroughSubject bridge — see didChangePollingInterval.
 import Combine
 import Foundation
+import Observation
 
 // MARK: - AppPreferencesStore
 
 /// Persists general app settings to UserDefaults.
 @MainActor
-final class AppPreferencesStore: ObservableObject {
+@Observable
+final class AppPreferencesStore {
     /// Shared singleton — use this instead of calling init directly.
     static let shared = AppPreferencesStore()
 
@@ -24,13 +27,21 @@ final class AppPreferencesStore: ObservableObject {
     /// Valid range for the polling interval in seconds. Minimum 10 s, maximum 300 s.
     static let pollingRange: ClosedRange<Int> = 10 ... 300
 
+    // periphery:ignore
+    /// Emits the new clamped `pollingInterval` value after every confirmed change.
+    /// `RunnerStore` subscribes to restart its poll loop when the interval changes.
+    /// Uses a subject rather than `@Published` because `AppPreferencesStore` is now
+    /// `@Observable` (no `objectWillChange` publisher available).
+    @ObservationIgnored
+    let didChangePollingInterval = PassthroughSubject<Int, Never>()
+
     /// How often (in seconds) RunnerBar polls GitHub. Clamped to 10–300 s.
     ///
     /// Setting this property out-of-range triggers a second `didSet` call with
     /// the clamped value — this re-entrancy is intentional and safe because
     /// `AppPreferencesStore` is `@MainActor`-isolated (all mutations are serialised
     /// on the main queue, so the recursive assignment cannot interleave).
-    @Published var pollingInterval: Int {
+    var pollingInterval: Int {
         didSet {
             let clamped = pollingInterval.clamped(to: Self.pollingRange)
             if clamped != pollingInterval {
@@ -38,6 +49,7 @@ final class AppPreferencesStore: ObservableObject {
                 return
             }
             UserDefaults.standard.set(pollingInterval, forKey: Key.pollingInterval)
+            didChangePollingInterval.send(pollingInterval)
         }
     }
 
@@ -46,7 +58,7 @@ final class AppPreferencesStore: ObservableObject {
     /// Retained for UserDefaults backwards-compatibility only — no longer surfaced
     /// in the UI (#510). Do not remove: removing would break the stored key for
     /// users upgrading from older versions.
-    @Published var showDimmedRunners: Bool {
+    var showDimmedRunners: Bool {
         didSet { UserDefaults.standard.set(showDimmedRunners, forKey: Key.showDimmedRunners) }
     }
 
@@ -58,7 +70,7 @@ final class AppPreferencesStore: ObservableObject {
     ///
     /// Takes effect on the next `openPanel()` call — the arrow state is baked in
     /// at `popover.show()` time and cannot be changed mid-session.
-    @Published var showPopoverArrow: Bool {
+    var showPopoverArrow: Bool {
         didSet { UserDefaults.standard.set(showPopoverArrow, forKey: Key.showPopoverArrow) }
     }
 
