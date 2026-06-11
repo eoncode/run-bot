@@ -127,16 +127,21 @@ actor RunnerProxyStore {
         let proxyURL = base.appendingPathComponent(".proxy")
         let credURL  = base.appendingPathComponent(".proxycredentials")
 
+        // Trim defensively here so no call site can accidentally write whitespace to disk.
+        let url      = config.url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user     = config.user.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = config.password.trimmingCharacters(in: .whitespacesAndNewlines)
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             DispatchQueue.global(qos: .utility).async {
                 var messages: [String] = []
 
                 // .proxy
                 do {
-                    if config.url.isEmpty {
+                    if url.isEmpty {
                         try Self.removeIfPresent(at: proxyURL)
                     } else {
-                        try (config.url + "\n").write(to: proxyURL, atomically: true, encoding: .utf8)
+                        try (url + "\n").write(to: proxyURL, atomically: true, encoding: .utf8)
                     }
                 } catch {
                     let msg = ".proxy write error: \(error)"
@@ -146,10 +151,10 @@ actor RunnerProxyStore {
 
                 // .proxycredentials
                 do {
-                    if config.user.isEmpty && config.password.isEmpty {
+                    if user.isEmpty && password.isEmpty {
                         try Self.removeIfPresent(at: credURL)
                     } else {
-                        let content = config.user + "\n" + config.password + "\n"
+                        let content = user + "\n" + password + "\n"
                         try content.write(to: credURL, atomically: true, encoding: .utf8)
                     }
                 } catch {

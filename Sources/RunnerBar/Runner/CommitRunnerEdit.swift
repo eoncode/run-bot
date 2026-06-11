@@ -85,9 +85,9 @@ func commitRunnerEdit(
         }
         log("commitRunnerEdit › writing proxy files installPath=\(installPath)")
         let proxyConfig = RunnerProxyConfig(
-            url: draft.proxyUrl.trimmingCharacters(in: .whitespacesAndNewlines),
-            user: draft.proxyUser.trimmingCharacters(in: .whitespacesAndNewlines),
-            password: draft.proxyPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+            url: draft.proxyUrl,
+            user: draft.proxyUser,
+            password: draft.proxyPassword
         )
         do {
             try await RunnerProxyStore.shared.save(proxyConfig, at: installPath)
