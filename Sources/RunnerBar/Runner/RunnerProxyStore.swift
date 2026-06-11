@@ -122,6 +122,10 @@ actor RunnerProxyStore {
     /// - `.proxy` is written as `url + "\n"`, or removed when `config.url` is empty.
     /// - `.proxycredentials` is written as `user + "\n" + password + "\n"`,
     ///   or removed when both `config.user` and `config.password` are empty.
+    /// - Note: All three fields are trimmed of leading/trailing whitespace before
+    ///   writing. This is intentional and matches `load(at:)`'s read behaviour,
+    ///   ensuring a round-trip through load → save is idempotent. Callers should
+    ///   not rely on preserving surrounding whitespace in proxy credentials.
     func save(_ config: RunnerProxyConfig, at installPath: String) async throws {
         let base     = URL(fileURLWithPath: installPath)
         let proxyURL = base.appendingPathComponent(".proxy")
