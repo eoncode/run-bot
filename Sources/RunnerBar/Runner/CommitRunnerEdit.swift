@@ -1,4 +1,5 @@
 // CommitRunnerEdit.swift
 // RunnerBar
-// CommitResult and SaveRunnerEditsUseCase have moved to RunnerBarCore.
-// This file is intentionally empty — kept so git history shows the migration path.
+// Intentionally empty. CommitResult has moved to RunnerBarCore/Runner/CommitResult.swift
+// and SaveRunnerEditsUseCase has moved to RunnerBarCore/Runner/SaveRunnerEditsUseCase.swift.
+// File retained for git history continuity only.

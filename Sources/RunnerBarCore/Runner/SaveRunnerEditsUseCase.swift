@@ -14,7 +14,14 @@ import Foundation
 /// 2. **Runner JSON** — writes `workFolder` + `disableUpdate` via `configStore`.
 /// 3. **Proxy files** — writes `.proxy` + `.proxycredentials` via `proxyStore`.
 ///
-/// JSON and proxy errors are accumulated; labels abort early.
+/// **Error semantics:**
+/// - Labels failure → immediate abort (steps 2 and 3 are skipped entirely).
+/// - JSON and proxy errors → accumulated; both steps always run when applicable.
+/// - `installPath == nil` while a JSON *or* proxy change is pending → immediate
+///   abort with the accumulated errors so far. This is intentional: without a
+///   known install path there is no safe target for any further writes, so
+///   continuing would be a no-op anyway. The `missingInstallPathForJSON` and
+///   `missingInstallPathForProxy` tests document this behaviour explicitly.
 ///
 /// All dependencies are injected — no singletons are accessed inside `execute(...)`.
 /// Use `RunnerConfigStore.shared`, `RunnerProxyStore.shared`, and
@@ -79,6 +86,9 @@ public struct SaveRunnerEditsUseCase: Sendable {
         let workFolderChanged = draft.trimmedWorkFolder != original.trimmedWorkFolder
         let autoUpdateChanged = draft.autoUpdate != original.autoUpdate
         if workFolderChanged || autoUpdateChanged {
+            // Early return when installPath is nil: there is no safe target for
+            // any further writes, so continuing would be a no-op. The proxy step
+            // is also skipped — see the "Error semantics" section in the type doc.
             guard let installPath = runner.installPath else {
                 errors.append("Install path unknown — cannot write runner JSON")
                 return .failure(errors)
@@ -98,6 +108,7 @@ public struct SaveRunnerEditsUseCase: Sendable {
             || draft.proxyUser != original.proxyUser
             || draft.proxyPassword != original.proxyPassword
         if proxyChanged {
+            // Same early-return rationale as Step 2.
             guard let installPath = runner.installPath else {
                 errors.append("Install path unknown — cannot write proxy files")
                 return .failure(errors)
