@@ -13,11 +13,14 @@ import Testing
 /// requiring `@unchecked Sendable`. The `result` and recorded-call properties
 /// are accessed from the test body before/after `execute(...)` — never concurrently.
 actor SpyLabelsService: RunnerLabelsService {
-    var result: [String]? = []
+    private var result: [String]? = []
     private(set) var callCount = 0
     private(set) var lastScope: String?
     private(set) var lastRunnerID: Int?
     private(set) var lastLabels: [String]?
+
+    /// Configures the value returned by `patch(...)`. Call from the test body before `execute`.
+    func setUp(result: [String]?) { self.result = result }
 
     func patch(scope: String, runnerID: Int, labels: [String]) async -> [String]? {
         callCount += 1
@@ -33,9 +36,12 @@ actor SpyLabelsService: RunnerLabelsService {
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyConfigStore: RunnerConfigStoreProtocol {
     var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
-    var shouldThrowOnSave = false
+    private var shouldThrowOnSave = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerConfig?
+
+    /// Configures whether `save(...)` throws. Call from the test body before `execute`.
+    func setUp(shouldThrowOnSave: Bool) { self.shouldThrowOnSave = shouldThrowOnSave }
 
     func load(at installPath: String) async throws -> RunnerConfig { loadResult }
     func save(_ config: RunnerConfig, at installPath: String) async throws {
@@ -49,9 +55,12 @@ actor SpyConfigStore: RunnerConfigStoreProtocol {
 ///
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyProxyStore: RunnerProxyStoreProtocol {
-    var shouldThrowOnSave = false
+    private var shouldThrowOnSave = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerProxyConfig?
+
+    /// Configures whether `save(...)` throws. Call from the test body before `execute`.
+    func setUp(shouldThrowOnSave: Bool) { self.shouldThrowOnSave = shouldThrowOnSave }
 
     func load(at installPath: String) async -> RunnerProxyConfig { RunnerProxyConfig() }
     func save(_ config: RunnerProxyConfig, at installPath: String) async throws {
@@ -122,7 +131,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.labelsText = "ci, fast"
 
         let labels  = SpyLabelsService()
-        await labels.result = nil
+        await labels.setUp(result: nil)
         let config  = SpyConfigStore()
         let proxy   = SpyProxyStore()
         let useCase = makeUseCase(labels: labels, config: config, proxy: proxy)
@@ -148,7 +157,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.proxyUrl   = "http://proxy.example.com"
 
         let config  = SpyConfigStore()
-        await config.shouldThrowOnSave = true
+        await config.setUp(shouldThrowOnSave: true)
         let proxy   = SpyProxyStore()
         let useCase = makeUseCase(config: config, proxy: proxy)
 
@@ -170,7 +179,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.proxyUrl = "http://proxy.example.com"
 
         let proxy   = SpyProxyStore()
-        await proxy.shouldThrowOnSave = true
+        await proxy.setUp(shouldThrowOnSave: true)
         let useCase = makeUseCase(proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
@@ -190,7 +199,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.labelsText = "gpu, large"
 
         let labels  = SpyLabelsService()
-        await labels.result = ["gpu", "large"]
+        await labels.setUp(result: ["gpu", "large"])
         let useCase = makeUseCase(labels: labels)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
