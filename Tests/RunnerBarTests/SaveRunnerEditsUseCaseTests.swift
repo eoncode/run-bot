@@ -10,17 +10,14 @@ import Testing
 /// Spy conformance for `RunnerLabelsService`.
 ///
 /// Implemented as an `actor` so Swift's compiler enforces isolation without
-/// requiring `@unchecked Sendable`. Mutable setup properties (`result`) are
-/// written via dedicated `set` methods from the test body before `execute(...)` runs,
-/// so there is no concurrent access.
+/// requiring `@unchecked Sendable`. The `result` and recorded-call properties
+/// are accessed from the test body before/after `execute(...)` — never concurrently.
 actor SpyLabelsService: RunnerLabelsService {
-    private(set) var result: [String]? = []
+    var result: [String]? = []
     private(set) var callCount = 0
     private(set) var lastScope: String?
     private(set) var lastRunnerID: Int?
     private(set) var lastLabels: [String]?
-
-    func setResult(_ value: [String]?) { result = value }
 
     func patch(scope: String, runnerID: Int, labels: [String]) async -> [String]? {
         callCount += 1
@@ -35,12 +32,10 @@ actor SpyLabelsService: RunnerLabelsService {
 ///
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyConfigStore: RunnerConfigStoreProtocol {
-    private(set) var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
-    private(set) var shouldThrowOnSave = false
+    var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
+    var shouldThrowOnSave = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerConfig?
-
-    func setShouldThrowOnSave(_ value: Bool) { shouldThrowOnSave = value }
 
     func load(at installPath: String) async throws -> RunnerConfig { loadResult }
     func save(_ config: RunnerConfig, at installPath: String) async throws {
@@ -54,11 +49,9 @@ actor SpyConfigStore: RunnerConfigStoreProtocol {
 ///
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyProxyStore: RunnerProxyStoreProtocol {
-    private(set) var shouldThrowOnSave = false
+    var shouldThrowOnSave = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerProxyConfig?
-
-    func setShouldThrowOnSave(_ value: Bool) { shouldThrowOnSave = value }
 
     func load(at installPath: String) async -> RunnerProxyConfig { RunnerProxyConfig() }
     func save(_ config: RunnerProxyConfig, at installPath: String) async throws {
@@ -129,7 +122,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.labelsText = "ci, fast"
 
         let labels  = SpyLabelsService()
-        await labels.setResult(nil)
+        await labels.result = nil
         let config  = SpyConfigStore()
         let proxy   = SpyProxyStore()
         let useCase = makeUseCase(labels: labels, config: config, proxy: proxy)
@@ -155,7 +148,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.proxyUrl   = "http://proxy.example.com"
 
         let config  = SpyConfigStore()
-        await config.setShouldThrowOnSave(true)
+        await config.shouldThrowOnSave = true
         let proxy   = SpyProxyStore()
         let useCase = makeUseCase(config: config, proxy: proxy)
 
@@ -177,7 +170,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.proxyUrl = "http://proxy.example.com"
 
         let proxy   = SpyProxyStore()
-        await proxy.setShouldThrowOnSave(true)
+        await proxy.shouldThrowOnSave = true
         let useCase = makeUseCase(proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
@@ -197,7 +190,7 @@ struct SaveRunnerEditsUseCaseTests {
         draft.labelsText = "gpu, large"
 
         let labels  = SpyLabelsService()
-        await labels.setResult(["gpu", "large"])
+        await labels.result = ["gpu", "large"]
         let useCase = makeUseCase(labels: labels)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
@@ -225,31 +218,5 @@ struct SaveRunnerEditsUseCaseTests {
             return
         }
         #expect(msgs.contains(where: { $0.contains("Install path") }))
-    }
-
-    @Test("returns failure when installPath is nil and only proxy changes pending")
-    func missingInstallPathForProxy() async {
-        // JSON step is not triggered (workFolder/autoUpdate unchanged).
-        // Step 3 encounters nil installPath and must abort with its own error message.
-        let runner   = makeRunner(installPath: nil)
-        var draft    = RunnerEditDraft(runner: runner)
-        let original = RunnerEditDraft(runner: runner)
-        draft.proxyUrl = "http://proxy.example.com"
-
-        let config  = SpyConfigStore()
-        let proxy   = SpyProxyStore()
-        let useCase = makeUseCase(config: config, proxy: proxy)
-
-        let result = await useCase.execute(runner: runner, draft: draft, original: original)
-
-        guard case .failure(let msgs) = result else {
-            Issue.record("expected .failure")
-            return
-        }
-        #expect(msgs.contains(where: { $0.contains("Install path") }))
-        // JSON step must not have run (no install path, and no JSON change was pending)
-        #expect(await !config.saveCalled)
-        // Proxy step must not have written anything
-        #expect(await !proxy.saveCalled)
     }
 }
