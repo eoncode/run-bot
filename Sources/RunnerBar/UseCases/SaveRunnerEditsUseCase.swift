@@ -4,24 +4,11 @@
 import Foundation
 import RunnerBarCore
 
-// MARK: - RunnerLabelsService
-
-/// Abstraction over the `patchRunnerLabels` network call.
-///
-/// Inject a test double in unit tests; use `DefaultRunnerLabelsService` in production.
-/// Returns the updated label names on success, `nil` on any failure — matching
-/// the underlying `patchRunnerLabels` free function signature.
-protocol RunnerLabelsService: Sendable {
-    /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
-    /// - Returns: The updated label names on success, `nil` on any API failure.
-    func patch(scope: String, runnerID: Int, labels: [String]) async -> [String]?
-}
-
 // MARK: - DefaultRunnerLabelsService
 
-/// Live conformance that delegates directly to `patchRunnerLabels`.
+/// Live conformance of `RunnerLabelsService` that delegates to `patchRunnerLabels`.
 ///
-/// Used in production; inject a stub in unit tests instead.
+/// Used in production; inject a `SpyLabelsService` stub in unit tests instead.
 struct DefaultRunnerLabelsService: RunnerLabelsService {
     /// Calls the `patchRunnerLabels` free function from `GitHubURLSessionTransport`.
     func patch(scope: String, runnerID: Int, labels: [String]) async -> [String]? {
@@ -52,9 +39,9 @@ struct SaveRunnerEditsUseCase: Sendable {
     // MARK: Dependencies
 
     /// Store for reading and writing the `.runner` JSON config file.
-    let configStore: RunnerConfigStore
+    let configStore: any RunnerConfigStoreProtocol
     /// Store for reading and writing `.proxy` / `.proxycredentials` files.
-    let proxyStore: RunnerProxyStore
+    let proxyStore: any RunnerProxyStoreProtocol
     /// Service for updating runner labels via the GitHub API.
     let labelsService: any RunnerLabelsService
 

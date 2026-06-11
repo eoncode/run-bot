@@ -8,7 +8,6 @@ import Testing
 // MARK: - Test doubles
 
 /// Spy conformance for `RunnerLabelsService`.
-/// Records calls and returns a configurable result.
 final class SpyLabelsService: RunnerLabelsService, @unchecked Sendable {
     var result: [String]? = []
     private(set) var callCount = 0
@@ -25,17 +24,14 @@ final class SpyLabelsService: RunnerLabelsService, @unchecked Sendable {
     }
 }
 
-/// Spy conformance for `RunnerConfigStore`.
-/// Records save calls; `load` returns a configurable `RunnerConfig`.
+/// Spy conformance for `RunnerConfigStoreProtocol`.
 final class SpyConfigStore: RunnerConfigStoreProtocol, @unchecked Sendable {
     var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
     var shouldThrowOnSave = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerConfig?
 
-    func load(at installPath: String) async throws -> RunnerConfig {
-        loadResult
-    }
+    func load(at installPath: String) async throws -> RunnerConfig { loadResult }
     func save(_ config: RunnerConfig, at installPath: String) async throws {
         if shouldThrowOnSave { throw TestError.saveFailed }
         saveCalled = true
@@ -43,8 +39,7 @@ final class SpyConfigStore: RunnerConfigStoreProtocol, @unchecked Sendable {
     }
 }
 
-/// Spy conformance for `RunnerProxyStore`.
-/// Records save calls; `load` returns an empty config.
+/// Spy conformance for `RunnerProxyStoreProtocol`.
 final class SpyProxyStore: RunnerProxyStoreProtocol, @unchecked Sendable {
     var shouldThrowOnSave = false
     private(set) var saveCalled = false
@@ -62,8 +57,6 @@ enum TestError: Error { case saveFailed }
 
 // MARK: - Helpers
 
-/// Minimal `RunnerModel` stub for use in tests.
-/// Adjust fields as needed for each scenario.
 private func makeRunner(
     runnerName: String = "test-runner",
     agentId: Int? = 42,
@@ -72,15 +65,22 @@ private func makeRunner(
 ) -> RunnerModel {
     RunnerModel(
         runnerName: runnerName,
-        agentId: agentId,
         gitHubUrl: gitHubUrl,
-        installPath: installPath
+        agentId: agentId,
+        workFolder: nil,
+        installPath: installPath,
+        isRunning: false
     )
 }
 
-/// Returns a zeroed `RunnerEditDraft` (no labels, default workFolder, autoUpdate=true, empty proxy).
-private func makeDraft(runner: RunnerModel) -> RunnerEditDraft {
-    RunnerEditDraft(runner: runner)
+// MARK: - UseCase factory
+
+private func makeUseCase(
+    labels: SpyLabelsService = SpyLabelsService(),
+    config: SpyConfigStore = SpyConfigStore(),
+    proxy: SpyProxyStore = SpyProxyStore()
+) -> SaveRunnerEditsUseCase {
+    SaveRunnerEditsUseCase(configStore: config, proxyStore: proxy, labelsService: labels)
 }
 
 // MARK: - Tests
@@ -88,17 +88,15 @@ private func makeDraft(runner: RunnerModel) -> RunnerEditDraft {
 @Suite("SaveRunnerEditsUseCase")
 struct SaveRunnerEditsUseCaseTests {
 
-    // MARK: All-success path
-
     @Test("returns .success when no fields changed")
     func noChanges() async {
-        let runner = makeRunner()
-        let draft = makeDraft(runner: runner)
-        let original = makeDraft(runner: runner)
-        let labels = SpyLabelsService()
-        let config = SpyConfigStore()
-        let proxy  = SpyProxyStore()
-        let useCase = SaveRunnerEditsUseCase(configStore: config, proxyStore: proxy, labelsService: labels)
+        let runner   = makeRunner()
+        let draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        let labels   = SpyLabelsService()
+        let config   = SpyConfigStore()
+        let proxy    = SpyProxyStore()
+        let useCase  = makeUseCase(labels: labels, config: config, proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
@@ -108,20 +106,18 @@ struct SaveRunnerEditsUseCaseTests {
         #expect(!proxy.saveCalled)
     }
 
-    // MARK: Labels abort path
-
     @Test("aborts entire commit when labels API returns nil")
     func labelsAPIFailureAborts() async {
-        let runner = makeRunner()
-        var draft    = makeDraft(runner: runner)
-        let original = makeDraft(runner: runner)
+        let runner   = makeRunner()
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
         draft.labelsText = "ci, fast"
 
-        let labels = SpyLabelsService()
-        labels.result = nil  // simulate API failure
-        let config = SpyConfigStore()
-        let proxy  = SpyProxyStore()
-        let useCase = SaveRunnerEditsUseCase(configStore: config, proxyStore: proxy, labelsService: labels)
+        let labels  = SpyLabelsService()
+        labels.result = nil
+        let config  = SpyConfigStore()
+        let proxy   = SpyProxyStore()
+        let useCase = makeUseCase(labels: labels, config: config, proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
@@ -131,28 +127,22 @@ struct SaveRunnerEditsUseCaseTests {
         }
         #expect(msgs.count == 1)
         #expect(msgs[0].contains("GitHub API"))
-        // JSON and proxy must NOT have been called after labels abort
         #expect(!config.saveCalled)
         #expect(!proxy.saveCalled)
     }
 
-    // MARK: JSON-fail-continues path
-
     @Test("accumulates JSON error but continues to proxy step")
     func jsonWriteFailureContinues() async {
-        let runner = makeRunner()
-        var draft    = makeDraft(runner: runner)
-        let original = makeDraft(runner: runner)
-        // Change workFolder to trigger JSON write
+        let runner   = makeRunner()
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
         draft.workFolder = "custom_work"
-        // Change proxy URL to trigger proxy write
-        draft.proxyUrl = "http://proxy.example.com"
+        draft.proxyUrl   = "http://proxy.example.com"
 
-        let labels = SpyLabelsService()
-        let config = SpyConfigStore()
-        config.shouldThrowOnSave = true  // make JSON step fail
-        let proxy = SpyProxyStore()
-        let useCase = SaveRunnerEditsUseCase(configStore: config, proxyStore: proxy, labelsService: labels)
+        let config  = SpyConfigStore()
+        config.shouldThrowOnSave = true
+        let proxy   = SpyProxyStore()
+        let useCase = makeUseCase(config: config, proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
@@ -160,26 +150,20 @@ struct SaveRunnerEditsUseCaseTests {
             Issue.record("expected .failure, got .success")
             return
         }
-        // JSON error accumulated
         #expect(msgs.contains(where: { $0.contains(".runner JSON") }))
-        // Proxy step still ran
         #expect(proxy.saveCalled)
     }
 
-    // MARK: Proxy-fail-continues path
-
     @Test("accumulates proxy error independently of JSON success")
     func proxyWriteFailureAccumulated() async {
-        let runner = makeRunner()
-        var draft    = makeDraft(runner: runner)
-        let original = makeDraft(runner: runner)
+        let runner   = makeRunner()
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
         draft.proxyUrl = "http://proxy.example.com"
 
-        let labels = SpyLabelsService()
-        let config = SpyConfigStore()
-        let proxy  = SpyProxyStore()
-        proxy.shouldThrowOnSave = true  // make proxy step fail
-        let useCase = SaveRunnerEditsUseCase(configStore: config, proxyStore: proxy, labelsService: labels)
+        let proxy   = SpyProxyStore()
+        proxy.shouldThrowOnSave = true
+        let useCase = makeUseCase(proxy: proxy)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
@@ -190,22 +174,16 @@ struct SaveRunnerEditsUseCaseTests {
         #expect(msgs.contains(where: { $0.contains("proxy") }))
     }
 
-    // MARK: Labels success path
-
-    @Test("calls labelsService with correct scope and runnerID when labels changed")
+    @Test("calls labelsService with correct scope and runnerID")
     func labelsCalledWithCorrectArgs() async {
-        let runner = makeRunner(agentId: 99, gitHubUrl: "https://github.com/myorg/myrepo")
-        var draft    = makeDraft(runner: runner)
-        let original = makeDraft(runner: runner)
+        let runner   = makeRunner(agentId: 99, gitHubUrl: "https://github.com/myorg/myrepo")
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
         draft.labelsText = "gpu, large"
 
-        let labels = SpyLabelsService()
+        let labels  = SpyLabelsService()
         labels.result = ["gpu", "large"]
-        let useCase = SaveRunnerEditsUseCase(
-            configStore: SpyConfigStore(),
-            proxyStore: SpyProxyStore(),
-            labelsService: labels
-        )
+        let useCase = makeUseCase(labels: labels)
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
@@ -216,20 +194,14 @@ struct SaveRunnerEditsUseCaseTests {
         #expect(labels.lastLabels == ["gpu", "large"])
     }
 
-    // MARK: Missing installPath guard
-
-    @Test("returns failure immediately when installPath is nil and JSON changes pending")
+    @Test("returns failure when installPath is nil and JSON changes pending")
     func missingInstallPathForJSON() async {
-        let runner = makeRunner(installPath: nil)
-        var draft    = makeDraft(runner: runner)
-        let original = makeDraft(runner: runner)
+        let runner   = makeRunner(installPath: nil)
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
         draft.workFolder = "other"
 
-        let useCase = SaveRunnerEditsUseCase(
-            configStore: SpyConfigStore(),
-            proxyStore: SpyProxyStore(),
-            labelsService: SpyLabelsService()
-        )
+        let useCase = makeUseCase()
 
         let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
