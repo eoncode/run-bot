@@ -9,18 +9,22 @@ import RunnerBarCore
 /// to be injected into `RunnerStore` without going through the live singleton.
 @MainActor
 protocol AppPreferencesStoreProtocol: AnyObject {
+    /// The polling interval (in seconds) used by `RunnerStore` to schedule fetch cycles.
     var pollingInterval: Int { get }
 }
 
+/// Conforms `AppPreferencesStore` to `AppPreferencesStoreProtocol` for live use.
 extension AppPreferencesStore: AppPreferencesStoreProtocol {}
 
 /// Protocol that abstracts the active-scopes store, allowing test doubles
 /// to be injected into `RunnerStore` without going through the live singleton.
 @MainActor
 protocol ScopeStoreProtocol: AnyObject {
+    /// The currently active scope identifiers used to filter runner polling.
     var activeScopes: [String] { get }
 }
 
+/// Conforms `ScopeStore` to `ScopeStoreProtocol` for live use.
 extension ScopeStore: ScopeStoreProtocol {}
 
 // MARK: - Observation helpers
