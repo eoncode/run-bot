@@ -28,7 +28,7 @@ extension AppDelegate {
     func setupSignOutSubscription() {
         OAuthService.shared.didSignOut
             .receive(on: DispatchQueue.main)
-            .sink {
+            .sink { [weak self] in
                 log("AppDelegate › didSignOut — restarting poll loop for env-token fallback")
                 Task { [weak self] in await self?.runnerStore.start() }
             }
