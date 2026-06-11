@@ -283,17 +283,18 @@ struct LocalRunnersView: View {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil
         removeErrorMessage = nil
-        Task { await localRunnerStore.optimisticallyRemove(runner.runnerName) }
-        // Task.detached is required here for two independent reasons:
-        //   1. The surrounding context inherits @MainActor isolation from the view; a plain
-        //      Task { } would run remove() on the main actor and block the UI.
-        //   2. RunnerLifecycleService.remove calls runScriptWithOutput, which uses a
-        //      synchronous Process + waitUntilExit. That blocking call must stay off the
-        //      cooperative thread pool regardless of actor isolation.
+        // optimisticallyRemove is awaited inline at the top of the same Task so that
+        // the removal is always visible before the lifecycle call starts. A separate
+        // fire-and-forget Task risks the rollback path (optimisticallyRestore) running
+        // before optimisticallyRemove, leaving the row permanently deleted on failure.
+        // Task.detached is used for RunnerLifecycleService.remove because
+        // runScriptWithOutput calls synchronous Process + waitUntilExit, which must
+        // stay off the cooperative thread pool regardless of actor isolation.
         // TODO (Batch C): Once runScriptWithOutput is migrated to AsyncProcess /
-        // CheckedContinuation+DispatchQueue.global, reason 2 is resolved and Task.detached
-        // can be replaced with a plain Task { } (which resolves reason 1 automatically).
+        // CheckedContinuation+DispatchQueue.global, Task.detached can be replaced
+        // with a plain Task { } here.
         Task {
+            await localRunnerStore.optimisticallyRemove(runner.runnerName)
             let ok = await Task.detached(priority: .userInitiated) {
                 await RunnerLifecycleService.shared.remove(runner: runner)
             }.value
@@ -358,15 +359,11 @@ struct LocalRunnersView: View {
                 // compares against actual persisted values, not model defaults.
                 // (#1001 fix: was RunnerEditDraft(runner: runner) which left
                 // autoUpdate=true and proxy fields empty regardless of disk state.)
-                var original = RunnerEditDraft(runner: runner)
-                if let installPath = runner.installPath {
-                    original.load(installPath: installPath)
-                }
-                // Task.detached keeps the blocking file-I/O in commitRunnerEdit
-                // (patchRunnerJSONMulti, writeProxyFiles) off the main thread.
-                // RunnerEditDraft: Sendable so `original` crosses the isolation
-                // boundary without a Swift 6 data-race diagnostic.
-                Task.detached(priority: .userInitiated) {
+                Task(priority: .userInitiated) {
+                    var original = RunnerEditDraft(runner: runner)
+                    if let installPath = runner.installPath {
+                        await original.load(installPath: installPath)
+                    }
                     let result = await commitRunnerEdit(runner: runner, draft: draft, original: original)
                     await MainActor.run {
                         isCommitting = false
