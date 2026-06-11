@@ -40,12 +40,6 @@ public actor RunnerConfigStore {
 
     /// Decoder used for reading `.runner` JSON.
     private let decoder = JSONDecoder()
-    /// Encoder used for writing `.runner` JSON (pretty-printed, sorted keys).
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }()
 
     // MARK: Init
 
