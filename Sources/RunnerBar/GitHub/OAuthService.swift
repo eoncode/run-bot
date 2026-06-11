@@ -1,7 +1,6 @@
 // OAuthService.swift
 // RunnerBar
 import AppKit
-import Combine
 import Foundation
 
 // MARK: - OAuthService
@@ -35,7 +34,16 @@ final class OAuthService {
     static let shared = OAuthService()
     /// Private initialiser — use `shared`.
     private init() {
-        // Singleton — intentionally empty; default property values are sufficient.
+        let (stream, cont) = OAuthService.makeSignOutStreamStatic()
+        didSignOut = stream
+        signOutContinuation = cont
+    }
+
+    /// Static factory used from `init()` (before `self` is fully initialised).
+    private static func makeSignOutStreamStatic() -> (AsyncStream<Void>, AsyncStream<Void>.Continuation) {
+        var cont: AsyncStream<Void>.Continuation!
+        let stream = AsyncStream<Void> { cont = $0 }
+        return (stream, cont)
     }
 
     /// The OAuth redirect URI. Must match the value registered in the GitHub OAuth app settings.
@@ -78,8 +86,12 @@ final class OAuthService {
     var onCompletion: ((Bool) -> Void)?
 
     /// Emits on the main thread after a successful sign-out.
-    /// Subscribe via `.sink { }.store(in: &cancellables)` — do NOT use a raw closure.
-    let didSignOut = PassthroughSubject<Void, Never>()
+    /// Observe via `for await _ in OAuthService.shared.didSignOut { ... }` inside a `Task`.
+    let didSignOut: AsyncStream<Void>
+    /// Continuation for `didSignOut` — fire via `signOutContinuation?.yield(())`.
+    private var signOutContinuation: AsyncStream<Void>.Continuation?
+
+
 
     // MARK: Sign In
 
@@ -131,7 +143,7 @@ final class OAuthService {
         log("OAuthService › signOut — Keychain.delete result=\(deleted)")
         if deleted {
             log("OAuthService › signOut — emitting didSignOut")
-            didSignOut.send()
+            signOutContinuation?.yield(())
         } else {
             log("OAuthService › signOut: Keychain.delete failed — sign-out suppressed to prevent ghost sign-in")
         }

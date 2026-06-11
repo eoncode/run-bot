@@ -2,7 +2,6 @@
 // RunnerBar
 
 import AppKit
-import Combine
 import SwiftUI
 
 // MARK: - NSPopover architecture note
@@ -147,8 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// NSWorkspace observer installed by `openPanel()` to hide the popover when
     /// another app is activated. Removed by `tearDownOpenState()`.
     var workspaceObserver: NSObjectProtocol?
-    /// Combine cancellable bag for all long-lived subscriptions wired in `setupCombineSubscriptions()`.
-    var cancellables = Set<AnyCancellable>()
+    /// Task retained for the sign-out listener started in `setupSignOutSubscription()`.
+    var signOutTask: Task<Void, Never>?
 
     // Regression guard — see ARCHITECTURE.md §panelVisibilityState.
     /// Shared observable that tracks whether the panel is open.
