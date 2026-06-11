@@ -27,6 +27,10 @@ func runnerModelFromIndex(name: String, installPath: String) -> RunnerModel? {
     }
 
     // Strip UTF-8 BOM (0xEF 0xBB 0xBF) — runner agent writes BOM-prefixed JSON.
+    // Note: RunnerConfigStore.load(at:) performs identical BOM stripping for the
+    // edit/save path. This copy is intentional — runnerModelFromIndex is a sync
+    // discovery function that reads its own Data directly and cannot use the async
+    // store API. If BOM handling ever changes, update both sites. (#1298)
     let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
     if data.prefix(3).elementsEqual(bom) {
         data = data.dropFirst(3)

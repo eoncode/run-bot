@@ -8,12 +8,16 @@ import Foundation
 public enum RunnerConfigStoreError: LocalizedError {
     /// The `.runner` file could not be decoded into `RunnerConfig`.
     case decodeFailed(String)
+    /// The updated config could not be serialised or written to disk.
+    case writeFailed(String, any Error)
 
     /// A human-readable description of the error.
     public var errorDescription: String? {
         switch self {
         case .decodeFailed(let installPath):
             "Failed to decode runner configuration at \(installPath)/.runner"
+        case .writeFailed(let installPath, let underlying):
+            "Failed to write runner configuration at \(installPath)/.runner: \(underlying.localizedDescription)"
         }
     }
 }
@@ -96,8 +100,13 @@ public actor RunnerConfigStore {
         raw[RunnerConfig.CodingKeys.ephemeral.rawValue] = config.ephemeral
         raw[RunnerConfig.CodingKeys.agentId.rawValue] = config.agentId
 
-        let data = try JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: url, options: .atomic)
+        do {
+            let data = try JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: url, options: .atomic)
+        } catch {
+            log("RunnerConfigStore › save failed for \(url.path): \(error)")
+            throw RunnerConfigStoreError.writeFailed(installPath, error)
+        }
         log("RunnerConfigStore › saved config to \(url.path)")
     }
 

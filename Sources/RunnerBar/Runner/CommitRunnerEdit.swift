@@ -122,13 +122,13 @@ private func writeProxyFiles(
 
     do {
         if url.isEmpty {
-            try? FileManager.default.removeItem(at: proxyURL)
+            removeIfPresent(at: proxyURL)
         } else {
             try (url + "\n").write(to: proxyURL, atomically: true, encoding: .utf8)
         }
 
         if user.isEmpty && password.isEmpty {
-            try? FileManager.default.removeItem(at: credURL)
+            removeIfPresent(at: credURL)
         } else {
             let content = user + "\n" + password + "\n"
             try content.write(to: credURL, atomically: true, encoding: .utf8)
@@ -137,5 +137,18 @@ private func writeProxyFiles(
     } catch {
         log("writeProxyFiles › write error: \(error)")
         return false
+    }
+}
+
+/// Removes the file at `url` if it exists, ignoring `NSFileNoSuchFileError`.
+/// Any other error (e.g. permissions) is logged and re-thrown so callers
+/// can distinguish a missing file (harmless) from a genuine I/O failure.
+private func removeIfPresent(at url: URL) {
+    do {
+        try FileManager.default.removeItem(at: url)
+    } catch let error as NSError where error.code == NSFileNoSuchFileError {
+        // File didn't exist — expected, not an error.
+    } catch {
+        log("removeIfPresent › unexpected error removing \(url.lastPathComponent): \(error)")
     }
 }
