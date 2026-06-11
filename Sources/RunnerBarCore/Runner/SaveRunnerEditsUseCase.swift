@@ -9,18 +9,21 @@ import Foundation
 ///
 /// Executes the three-step commit transaction:
 /// 1. **Labels** (GitHub API) — aborts the entire commit on API failure.
-///    If `agentId` or `gitHubUrl` are unavailable, appends an error and
-///    continues to local writes.
+///    If `agentId` or `gitHubUrl` are unavailable, the labels step cannot
+///    run; an error is appended and execution **continues** to local writes
+///    (steps 2 and 3). This is intentional: missing metadata is not the user's
+///    fault and local config writes are still meaningful.
 /// 2. **Runner JSON** — writes `workFolder` + `disableUpdate` via `configStore`.
 /// 3. **Proxy files** — writes `.proxy` + `.proxycredentials` via `proxyStore`.
 ///
 /// **Error semantics:**
-/// - Labels failure → immediate abort (steps 2 and 3 are skipped entirely).
-/// - JSON and proxy errors → accumulated; both steps always run when applicable.
+/// - Labels API returns `nil` → immediate abort (steps 2 and 3 are skipped).
+/// - Missing `agentId`/`gitHubUrl` → error appended, execution continues.
+/// - JSON and proxy errors → accumulated independently; both steps always run
+///   when applicable.
 /// - `installPath == nil` while a JSON *or* proxy change is pending → immediate
-///   abort with the accumulated errors so far. This is intentional: without a
-///   known install path there is no safe target for any further writes, so
-///   continuing would be a no-op anyway. The `missingInstallPathForJSON` and
+///   abort with the accumulated errors so far. Without a known install path there
+///   is no safe target for further writes. The `missingInstallPathForJSON` and
 ///   `missingInstallPathForProxy` tests document this behaviour explicitly.
 ///
 /// All dependencies are injected — no singletons are accessed inside `execute(...)`.
