@@ -264,7 +264,8 @@ struct AddScopeSheet: View {
         let scope = effectiveScope
         guard !scope.isEmpty else { return }
         ScopeStore.shared.add(scope)
-        onRestartPolling()
+        // onRestartPolling() omitted: ScopeStore mutation is observed by RunnerStore's
+        // withObservationTracking loop, which triggers restart automatically.
         log("AddScopeSheet \u{203a} added scope: \(scope)")
         isPresented = false
     }
