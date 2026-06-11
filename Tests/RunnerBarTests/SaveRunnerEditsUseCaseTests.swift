@@ -228,4 +228,26 @@ struct SaveRunnerEditsUseCaseTests {
         }
         #expect(msgs.contains(where: { $0.contains("Install path") }))
     }
+
+    @Test("returns failure when installPath is nil and proxy changes pending")
+    func missingInstallPathForProxy() async {
+        // Runner has no installPath; only a proxy field is changed so Step 2
+        // (JSON) is skipped and we land directly on the Step 3 guard.
+        let runner   = makeRunner(installPath: nil)
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        draft.proxyUrl = "http://proxy.example.com"
+
+        let proxy   = SpyProxyStore()
+        let useCase = makeUseCase(proxy: proxy)
+
+        let result = await useCase.execute(runner: runner, draft: draft, original: original)
+
+        guard case .failure(let msgs) = result else {
+            Issue.record("expected .failure, got .success")
+            return
+        }
+        #expect(msgs.contains(where: { $0.contains("Install path") }))
+        #expect(await !proxy.saveCalled)
+    }
 }
