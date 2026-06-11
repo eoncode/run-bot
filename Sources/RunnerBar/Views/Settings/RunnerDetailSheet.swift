@@ -335,13 +335,13 @@ struct RunnerDetailSheet: View {
         guard let installPath = runner.installPath else { return }
 
         var updatedDraft = draft
-        await updatedDraft.load(installPath: installPath)
+        // `load(installPath:)` returns the decoded RunnerConfig — reuse it here
+        // so we avoid a second RunnerConfigStore.shared.load(at:) disk read.
+        let config = await updatedDraft.load(installPath: installPath)
         draft = updatedDraft
         originalDraft = draft
 
-        guard let config = try? await RunnerConfigStore.shared.load(at: installPath) else {
-            return
-        }
+        guard let config else { return }
 
         if displayOsArch.isEmpty {
             let combined = [config.platform, config.platformArchitecture]

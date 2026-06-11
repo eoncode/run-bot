@@ -56,10 +56,16 @@ struct RunnerEditDraft: Equatable, Sendable {
     /// Reads `.runner` JSON, `.proxy`, and `.proxycredentials` at `installPath`
     /// and overwrites the corresponding draft fields.
     ///
+    /// Returns the decoded `RunnerConfig` so callers can use its display-only
+    /// fields (e.g. `platform`, `platformArchitecture`, `agentVersion`) without
+    /// issuing a second disk read.
+    ///
     /// Designed to be called once from `onAppear` in the popover view.
-    mutating func load(installPath: String) async {
-        await loadRunnerConfig(installPath: installPath)
+    @discardableResult
+    mutating func load(installPath: String) async -> RunnerConfig? {
+        let config = await loadRunnerConfig(installPath: installPath)
         loadProxy(installPath: installPath)
+        return config
     }
 
     // MARK: - Parsed helpers
@@ -81,15 +87,20 @@ struct RunnerEditDraft: Equatable, Sendable {
     // MARK: - Private disk helpers
 
     /// Loads the `.runner` file via `RunnerConfigStore` and applies its values to the draft.
-    private mutating func loadRunnerConfig(installPath: String) async {
+    /// Returns the decoded `RunnerConfig` so callers can consume display-only fields
+    /// (e.g. `platform`, `platformArchitecture`, `agentVersion`) without a second disk read.
+    @discardableResult
+    private mutating func loadRunnerConfig(installPath: String) async -> RunnerConfig? {
         do {
             let config = try await RunnerConfigStore.shared.load(at: installPath)
             autoUpdate = !config.disableUpdate
             if !config.workFolder.isEmpty {
                 workFolder = config.workFolder
             }
+            return config
         } catch {
             log("RunnerEditDraft › loadRunnerConfig failed at \(installPath): \(error)")
+            return nil
         }
     }
 
