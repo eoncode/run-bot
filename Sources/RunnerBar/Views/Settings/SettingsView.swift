@@ -36,10 +36,11 @@ struct SettingsView: View {
     /// The shared runner view-model; observed for remote runner list updates.
     var store: RunnerViewModel
     /// Called when a scope change requires the poll loop to restart.
-    /// Forwarded to `ScopesView` and `AddScopeSheet` so neither view references `RunnerStore`.
+    /// Retained on SettingsView for API compatibility; ScopesView no longer needs it
+    /// because RunnerStore's withObservationTracking loop restarts automatically.
     var onRestartPolling: () -> Void = {}
     /// The local runner actor forwarded into `LocalRunnersView`.
-    /// Defaults to `LocalRunnerStore.shared` so call sites that don’t own the actor still compile.
+    /// Defaults to `LocalRunnerStore.shared` so call sites that don't own the actor still compile.
     var localRunnerStore: LocalRunnerStore = .shared
 
     // MARK: - Observed stores
@@ -105,7 +106,7 @@ struct SettingsView: View {
                     localRunnerStore: localRunnerStore
                 )
             } else if showScopes {
-                ScopesView(onBack: { showScopes = false }, onRestartPolling: onRestartPolling)
+                ScopesView(onBack: { showScopes = false })
             } else {
                 settingsBody
             }
