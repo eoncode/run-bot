@@ -3,9 +3,29 @@
 import Foundation
 import RunnerBarCore
 
+// MARK: - Protocols
+
+/// Protocol that abstracts the polling-interval preference, allowing test doubles
+/// to be injected into `RunnerStore` without going through the live singleton.
+@MainActor
+protocol AppPreferencesStoreProtocol: AnyObject {
+    var pollingInterval: Int { get }
+}
+
+extension AppPreferencesStore: AppPreferencesStoreProtocol {}
+
+/// Protocol that abstracts the active-scopes store, allowing test doubles
+/// to be injected into `RunnerStore` without going through the live singleton.
+@MainActor
+protocol ScopeStoreProtocol: AnyObject {
+    var activeScopes: [String] { get }
+}
+
+extension ScopeStore: ScopeStoreProtocol {}
+
 // MARK: - Observation helpers
 
-/// Drives a recursive `withObservationTracking` loop for `AppPreferencesStore.pollingInterval`
+/// Drives a recursive `withObservationTracking` loop for a `AppPreferencesStoreProtocol.pollingInterval`
 /// entirely on the `@MainActor`. Because every method is `@MainActor`-isolated, the local
 /// `func observe()` inside `start()` is implicitly `@MainActor` — no `@Sendable` annotation
 /// is required and no value crosses an isolation boundary.
@@ -13,21 +33,24 @@ import RunnerBarCore
 private final class PreferencesObserver {
     /// The continuation used to push new `pollingInterval` values into the `AsyncStream`.
     private let continuation: AsyncStream<Int>.Continuation
+    /// The injected preferences store — avoids singleton access inside the observer.
+    private let store: any AppPreferencesStoreProtocol
 
     /// Creates a new observer that writes changes into `continuation`.
-    init(continuation: AsyncStream<Int>.Continuation) {
+    init(continuation: AsyncStream<Int>.Continuation, store: any AppPreferencesStoreProtocol) {
         self.continuation = continuation
+        self.store = store
     }
 
     /// Registers a single `withObservationTracking` pass and re-registers itself on change.
     func start() {
         func observe() {
             withObservationTracking {
-                _ = AppPreferencesStore.shared.pollingInterval
+                _ = store.pollingInterval
             } onChange: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    self.continuation.yield(AppPreferencesStore.shared.pollingInterval)
+                    self.continuation.yield(self.store.pollingInterval)
                     self.start()
                 }
             }
@@ -36,27 +59,30 @@ private final class PreferencesObserver {
     }
 }
 
-/// Drives a recursive `withObservationTracking` loop for `ScopeStore.activeScopes`
+/// Drives a recursive `withObservationTracking` loop for a `ScopeStoreProtocol.activeScopes`
 /// entirely on the `@MainActor`. Same isolation rationale as `PreferencesObserver`.
 @MainActor
 private final class ScopesObserver {
     /// The continuation used to push new `activeScopes` values into the `AsyncStream`.
     private let continuation: AsyncStream<[String]>.Continuation
+    /// The injected scope store — avoids singleton access inside the observer.
+    private let store: any ScopeStoreProtocol
 
     /// Creates a new observer that writes changes into `continuation`.
-    init(continuation: AsyncStream<[String]>.Continuation) {
+    init(continuation: AsyncStream<[String]>.Continuation, store: any ScopeStoreProtocol) {
         self.continuation = continuation
+        self.store = store
     }
 
     /// Registers a single `withObservationTracking` pass and re-registers itself on change.
     func start() {
         func observe() {
             withObservationTracking {
-                _ = ScopeStore.shared.activeScopes
+                _ = store.activeScopes
             } onChange: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    self.continuation.yield(ScopeStore.shared.activeScopes)
+                    self.continuation.yield(self.store.activeScopes)
                     self.start()
                 }
             }
@@ -71,8 +97,8 @@ private final class ScopesObserver {
 ///
 /// **Concurrency model**
 /// - The actor runs on its own executor (background thread).
-/// - `AppPreferencesStore` and `ScopeStore` are `@MainActor`; any read of their
-///   properties must happen inside `await MainActor.run { }` or a `Task { @MainActor in }`.
+/// - `preferencesStore` and `scopeStore` are `@MainActor`-isolated protocol values;
+///   any read of their properties must happen inside `await MainActor.run { }`.
 /// - After every fetch cycle, results are pushed to the injected `RunnerViewModel` on the
 ///   main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
 ///   picks up the mutation automatically — no Combine `PassthroughSubject` needed.
@@ -126,6 +152,12 @@ actor RunnerStore {
     /// Injected reference to the local runner store — avoids singleton cross-references
     /// inside the actor body (Swift 6 / PR #1303 requirement).
     private let localRunnerStore: LocalRunnerStore
+    /// Injected preferences store. Provides `pollingInterval`. Defaults to
+    /// `AppPreferencesStore.shared` at the production call site.
+    private let preferencesStore: any AppPreferencesStoreProtocol
+    /// Injected scope store. Provides `activeScopes`. Defaults to
+    /// `ScopeStore.shared` at the production call site.
+    private let scopeStore: any ScopeStoreProtocol
     /// Called on the main actor at the end of every fetch cycle to refresh the status-bar
     /// icon. Injected at init to avoid accessing `NSApp.delegate` from inside the actor
     /// body (PR Principle #4: no singleton access inside actor bodies).
@@ -145,6 +177,10 @@ actor RunnerStore {
     /// - Parameters:
     ///   - viewModel: The view model this store pushes UI state into.
     ///   - localRunnerStore: The local runner store used for metrics write-back.
+    ///   - preferencesStore: Provides `pollingInterval`. Pass `AppPreferencesStore.shared`
+    ///     in production; inject a test double in unit tests.
+    ///   - scopeStore: Provides `activeScopes`. Pass `ScopeStore.shared` in production;
+    ///     inject a test double in unit tests.
     ///   - onStatusUpdate: Closure called on the main actor after every fetch cycle
     ///     to update the status-bar icon. Typically `{ AppDelegate.shared.updateStatusIcon() }`
     ///     or equivalent — injected here so the actor body never touches `NSApp.delegate`.
@@ -158,10 +194,14 @@ actor RunnerStore {
     init(
         viewModel: RunnerViewModel,
         localRunnerStore: LocalRunnerStore,
+        preferencesStore: any AppPreferencesStoreProtocol = AppPreferencesStore.shared,
+        scopeStore: any ScopeStoreProtocol = ScopeStore.shared,
         onStatusUpdate: @escaping @MainActor @Sendable () -> Void
     ) {
         self.viewModel = viewModel
         self.localRunnerStore = localRunnerStore
+        self.preferencesStore = preferencesStore
+        self.scopeStore = scopeStore
         self.onStatusUpdate = onStatusUpdate
         Task { await self._startObservingPreferences() }
         Task { await self._startObservingScopes() }
@@ -187,11 +227,12 @@ actor RunnerStore {
     /// this, `[weak self]` in `onChange` would find `self == nil` on the first change
     /// and silently stop all future polling-interval updates.
     private func _startObservingPreferences() {
+        let injectedStore = preferencesStore
         intervalObservationTask?.cancel()
         intervalObservationTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<Int>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
-                let o = PreferencesObserver(continuation: continuation)
+                let o = PreferencesObserver(continuation: continuation, store: injectedStore)
                 o.start()
                 return o
             }
@@ -210,11 +251,12 @@ actor RunnerStore {
     /// doc-comment for the full rationale, including why the observer must be
     /// retained in the Task's async scope beyond the `MainActor.run` closure.
     private func _startObservingScopes() {
+        let injectedStore = scopeStore
         scopeObservationTask?.cancel()
         scopeObservationTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<[String]>.makeStream()
             let observer: ScopesObserver = await MainActor.run {
-                let o = ScopesObserver(continuation: continuation)
+                let o = ScopesObserver(continuation: continuation, store: injectedStore)
                 o.start()
                 return o
             }
@@ -235,7 +277,7 @@ actor RunnerStore {
     /// `async` because it reads `@MainActor`-isolated properties via `await MainActor.run { }`.
     /// All callers already wrap this in `Task { await ... }` or `await self?.start()`.
     func start() async {
-        let scopes = await MainActor.run { ScopeStore.shared.activeScopes }
+        let scopes = await MainActor.run { scopeStore.activeScopes }
         log("RunnerStore › start — activeScopes=\(scopes)")
         if scopes.isEmpty {
             log("RunnerStore › ⚠️ start called but activeScopes is EMPTY — actions will not load")
@@ -276,7 +318,7 @@ actor RunnerStore {
     /// otherwise the user's configured idle interval (clamped to ≥ 10 s). Also widened
     /// to the idle interval while rate-limited.
     ///
-    /// `async` because it reads `AppPreferencesStore.pollingInterval` which is
+    /// `async` because it reads `preferencesStore.pollingInterval` which is
     /// `@MainActor`-isolated; uses `await MainActor.run { }` consistently with `fetch()`.
     private func nextPollInterval() async -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
@@ -284,7 +326,7 @@ actor RunnerStore {
             $0.groupStatus == .inProgress || $0.groupStatus == .queued
         }
         let hasActive = hasActiveJobs || hasActiveActions
-        let baseIdle = max(10, await MainActor.run { AppPreferencesStore.shared.pollingInterval })
+        let baseIdle = max(10, await MainActor.run { preferencesStore.pollingInterval })
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
         log("RunnerStore › nextPollInterval — \(Int(interval))s hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle)")
         return interval
@@ -298,7 +340,7 @@ actor RunnerStore {
     func fetch() async {
         await clearGhRateLimit()
 
-        let scopesSnapshot = await MainActor.run { ScopeStore.shared.activeScopes }
+        let scopesSnapshot = await MainActor.run { scopeStore.activeScopes }
         log("RunnerStore › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
         if scopesSnapshot.isEmpty {
             log("RunnerStore › ⚠️ fetch — activeScopes snapshot is EMPTY")
@@ -463,8 +505,6 @@ actor RunnerStore {
             }
         }
 
-        // Write metrics back to LocalRunnerStore for the runner row badge.
-        // Only busy runners with a resolved installPath to avoid spurious warnings.
         let metricsUpdates = indexed.filter {
             $0.runner.busy
             && (installPathMap.byApiId[$0.runner.id] != nil
