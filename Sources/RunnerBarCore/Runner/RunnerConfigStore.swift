@@ -57,6 +57,12 @@ public actor RunnerConfigStore {
     /// Loads the typed runner config from `installPath/.runner`.
     ///
     /// Handles the UTF-8 BOM prefix emitted by the GitHub runner agent.
+    ///
+    /// - Note: `Data(contentsOf:)` is synchronous and blocks the actor's thread
+    ///   for the duration of the disk read. `.runner` files are small (< 1 KB) so
+    ///   this is acceptable in practice. Phase 4/5 should migrate to
+    ///   `FileHandle`+`AsyncBytes` or a `CheckedContinuation`+`DispatchQueue.global`
+    ///   wrapper once `RunnerProxyStore` is introduced — tracked in #1316.
     public func load(at installPath: String) async throws -> RunnerConfig {
         let url = runnerConfigURL(for: installPath)
         var data = try Data(contentsOf: url)
@@ -75,6 +81,8 @@ public actor RunnerConfigStore {
     ///
     /// Performs a read-modify-write merge so unknown agent-managed keys already
     /// present in `.runner` are preserved instead of being dropped on save.
+    ///
+    /// - Note: Both `Data(contentsOf:)` reads here are synchronous (see `load(at:)` note).
     public func save(_ config: RunnerConfig, at installPath: String) async throws {
         let url = runnerConfigURL(for: installPath)
 
