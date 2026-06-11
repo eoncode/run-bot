@@ -58,7 +58,16 @@ actor LocalRunnerStore {
     static func configure(viewModel: RunnerViewModel) {
         // Shut down the previous instance before replacing it so its in-flight
         // Tasks are cancelled and cannot deliver stale snapshots into the new viewModel.
-        _shared?.shutdown()
+        //
+        // `shutdown()` is isolated to the LocalRunnerStore actor (a different actor from
+        // @MainActor), so it cannot be called synchronously here in Swift 6. A detached
+        // Task is safe: shutdown() only cancels refreshTask, which is fire-and-forget by
+        // design. The new _shared assignment below happens on the main actor immediately,
+        // so any snapshot the old actor pushes after this point targets the old viewModel
+        // reference it already holds — it cannot corrupt the new instance.
+        if let previous = _shared {
+            Task { await previous.shutdown() }
+        }
         _shared = LocalRunnerStore(viewModel: viewModel)
         log("LocalRunnerStore › configure — shared instance created, wired to viewModel=\(ObjectIdentifier(viewModel))")
     }
