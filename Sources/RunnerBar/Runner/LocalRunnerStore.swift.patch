@@ -1,0 +1,2 @@
+This branch tracks issue #1327 — removing import Combine from the app layer.
+Changes from #1329 (RunnerStatusEnricherProtocol + Codable migration) are ported here as a prerequisite.
