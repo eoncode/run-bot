@@ -62,7 +62,7 @@ public actor RunnerConfigStore {
     ///   for the duration of the disk read. `.runner` files are small (< 1 KB) so
     ///   this is acceptable in practice. Phase 4/5 should migrate to
     ///   `FileHandle`+`AsyncBytes` or a `CheckedContinuation`+`DispatchQueue.global`
-    ///   wrapper once `RunnerProxyStore` is introduced — tracked in #1316.
+    ///   wrapper once `RunnerProxyStore` is introduced — tracked in #1341.
     public func load(at installPath: String) async throws -> RunnerConfig {
         let url = runnerConfigURL(for: installPath)
         var data = try Data(contentsOf: url)
@@ -106,7 +106,16 @@ public actor RunnerConfigStore {
             if let object = try? JSONSerialization.jsonObject(with: data),
                let dict = object as? [String: Any] {
                 raw = dict
+            } else {
+                // JSONSerialization failed — existing file is malformed. Proceeding
+                // from an empty dict will drop unknown agent-managed keys on this save.
+                log("RunnerConfigStore › save: existing .runner at \(url.path) could not be parsed; unknown keys will not be preserved")
             }
+        } else {
+            // File is missing or temporarily unreadable. Writing from scratch.
+            // If the file exists but was unreadable, unknown agent-managed keys (e.g.
+            // jitConfig, gitHubUrl) will be dropped — tracked in #1341.
+            log("RunnerConfigStore › save: could not read existing .runner at \(url.path); writing from scratch")
         }
 
         raw[RunnerConfig.CodingKeys.workFolder.rawValue] = config.workFolder
