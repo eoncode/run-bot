@@ -139,6 +139,10 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
 
     // MARK: - Private helpers
 
+    /// Parses the raw credential file content into `user` and `password` components.
+    ///
+    /// Expects the first line to be the username and the second line (if present)
+    /// to be the password. Missing lines yield empty strings.
     private static func parseCredentialLines(_ content: String) -> (user: String, password: String) {
         let lines      = content.components(separatedBy: "\n")
         let user       = lines.first.map { $0.trimmingCharacters(in: .newlines) } ?? ""
@@ -146,6 +150,7 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
         return (user, credential)
     }
 
+    /// Writes the proxy URL to `destination`, or removes the file if `url` is empty.
     private static func writeProxyURL(_ url: String, to destination: URL) throws {
         if url.isEmpty {
             try removeIfPresent(at: destination)
@@ -154,6 +159,8 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
         }
     }
 
+    /// Writes the proxy credentials (user + password) to `destination`,
+    /// or removes the file if both values are empty.
     private static func writeProxyCredentials(user: String, secret: String, to destination: URL) throws {
         if user.isEmpty && secret.isEmpty {
             try removeIfPresent(at: destination)
@@ -162,6 +169,7 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
         }
     }
 
+    /// Removes the file at `url` if it exists; silently ignores "file not found" errors.
     private static func removeIfPresent(at url: URL) throws {
         do {
             try FileManager.default.removeItem(at: url)
