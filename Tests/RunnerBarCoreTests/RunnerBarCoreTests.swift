@@ -651,27 +651,32 @@ struct PollResultBuilderGroupStateTests {
         jobStatus: JobStatus? = nil,
         isDimmed: Bool = false
     ) -> WorkflowActionGroup {
-        let runStatus: String
-        switch groupStatus {
-        case .inProgress: runStatus = "in_progress"
-        case .queued:     runStatus = "queued"
-        case .completed:  runStatus = "completed"
-        }
-        let resolvedJobStatus: JobStatus = jobStatus ?? JobStatus(rawString: runStatus)
-        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed ? JobConclusion(rawString: conclusion) : nil
+        let resolvedJobStatus: JobStatus = jobStatus ?? {
+            switch groupStatus {
+            case .inProgress: return .inProgress
+            case .queued:     return .queued
+            case .completed:  return .completed
+            }
+        }()
+        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed
+            ? JobConclusion(rawString: conclusion)
+            : nil
         let job = ActiveJob(
             id: runID * 10,
             name: "job",
             status: resolvedJobStatus,
             conclusion: jobConclusion
         )
+        let runConclusion: JobConclusion? = resolvedJobStatus == .completed
+            ? JobConclusion(rawString: conclusion)
+            : nil
         return WorkflowActionGroup(
             headSha: sha,
             label: String(sha.prefix(7)),
             title: "commit message",
             headBranch: "main",
             repo: "owner/repo",
-            runs: [WorkflowRunRef(id: runID, name: "CI", status: runStatus, conclusion: resolvedJobStatus == .completed ? conclusion : nil, htmlUrl: nil)],
+            runs: [WorkflowRunRef(id: runID, name: "CI", status: resolvedJobStatus, conclusion: runConclusion, htmlUrl: nil)],
             jobs: [job],
             firstJobStartedAt: Date(timeIntervalSinceReferenceDate: 0),
             lastJobCompletedAt: resolvedJobStatus == .completed ? Date(timeIntervalSinceReferenceDate: 60) : nil,
@@ -799,8 +804,8 @@ struct PollResultBuilderGroupStateTests {
             headBranch: "main",
             repo: "owner/repo",
             runs: [
-                WorkflowRunRef(id: 902, name: "Lint",   status: "in_progress", conclusion: nil,       htmlUrl: nil),
-                WorkflowRunRef(id: 903, name: "Deploy", status: "completed",   conclusion: "success", htmlUrl: nil),
+                WorkflowRunRef(id: 902, name: "Lint",   status: JobStatus.inProgress, conclusion: nil,                   htmlUrl: nil),
+                WorkflowRunRef(id: 903, name: "Deploy", status: JobStatus.completed,  conclusion: JobConclusion.success, htmlUrl: nil),
             ],
             jobs: [
                 ActiveJob(id: 9020, name: "lint-job",   status: JobStatus.inProgress),
