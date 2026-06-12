@@ -263,12 +263,6 @@ func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> Bool {
     return success
 }
 
-/// Encodable body for the GitHub runner labels PUT endpoint.
-private struct LabelsBody: Encodable {
-    /// The label names to set on the runner.
-    let labels: [String] // periphery:ignore
-}
-
 /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
 /// - Returns: The updated label names on success, `nil` on any failure.
 @discardableResult
@@ -279,7 +273,7 @@ func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String
     }
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(runnerID)/labels"
     log("patchRunnerLabels › PUT \(endpoint) labels=\(labels)")
-    guard let bodyData = try? sharedEncoder.encode(LabelsBody(labels: labels)) else {
+    guard let bodyData = try? sharedEncoder.encode(["labels": labels]) else {
         log("patchRunnerLabels › failed to serialise request body")
         return nil
     }
