@@ -15,6 +15,22 @@ public enum GroupStatus {
     case completed
 }
 
+// MARK: - GroupStatus + display helpers
+
+/// Display and sorting helpers for `GroupStatus`.
+extension GroupStatus {
+    /// Sort priority for display ordering.
+    ///
+    /// Lower value = higher display priority (in-progress before queued before completed).
+    public var sortPriority: Int {
+        switch self {
+        case .inProgress: return 0
+        case .queued:     return 1
+        case .completed:  return 2
+        }
+    }
+}
+
 // MARK: - WorkflowRunRef
 
 /// Lightweight reference to a single workflow run inside a `WorkflowActionGroup`.
@@ -26,10 +42,10 @@ public struct WorkflowRunRef: Identifiable, Sendable {
     public let id: Int
     /// Workflow file name, e.g. `"SonarQube"`, `"vitest"`.
     public let name: String
-    /// Current run status string as returned by the API (e.g. `"in_progress"`, `"completed"`).
-    public let status: String
-    /// Run conclusion once completed (e.g. `"success"`, `"failure"`), or `nil` while running.
-    public let conclusion: String?
+    /// Current run status as a typed `JobStatus` value.
+    public let status: JobStatus
+    /// Run conclusion once completed, or `nil` while running.
+    public let conclusion: JobConclusion?
     /// URL to the run detail page on github.com.
     public let htmlUrl: String?
 
@@ -37,10 +53,10 @@ public struct WorkflowRunRef: Identifiable, Sendable {
     /// - Parameters:
     ///   - id: The unique GitHub run ID.
     ///   - name: Workflow file name.
-    ///   - status: Current run status string.
-    ///   - conclusion: Run conclusion string, or `nil` while running.
+    ///   - status: Current run status.
+    ///   - conclusion: Run conclusion, or `nil` while running.
     ///   - htmlUrl: URL to the run detail page.
-    public init(id: Int, name: String, status: String, conclusion: String?, htmlUrl: String?) {
+    public init(id: Int, name: String, status: JobStatus, conclusion: JobConclusion?, htmlUrl: String?) {
         self.id = id
         self.name = name
         self.status = status
@@ -52,7 +68,7 @@ public struct WorkflowRunRef: Identifiable, Sendable {
 // MARK: - WorkflowActionGroup
 
 /// Represents one **commit / PR trigger**: all GitHub Actions workflow runs
-/// that share the same `head_sha`. Mirrors ci-dash.py’s “Group” concept from
+/// that share the same `head_sha`. Mirrors ci-dash.py's “Group” concept from
 /// `group_runs()` + `enrich_group()`.
 ///
 /// Hierarchy: `WorkflowActionGroup` → jobs (flat across all sibling runs) → `JobStep` → log.
@@ -84,11 +100,11 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     public var jobs: [ActiveJob]
 
     /// UTC time of the earliest job `startedAt` across all runs.
-    /// Mirrors ci-dash.py’s `first_job_started_at`.
+    /// Mirrors ci-dash.py's `first_job_started_at`.
     public var firstJobStartedAt: Date?
 
     /// UTC time of the latest job `completedAt` across all runs.
-    /// Mirrors ci-dash.py’s `last_job_completed_at`.
+    /// Mirrors ci-dash.py's `last_job_completed_at`.
     public var lastJobCompletedAt: Date?
 
     /// Fallback creation time from the representative run.
@@ -173,14 +189,14 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     ///
     /// - Returns `.completed` when all jobs have a conclusion (even if the run-level
     ///   API status lags behind — mirrors ci-dash.py override).
-    /// - Returns `.inProgress` when any run is `"in_progress"`.
-    /// - Returns `.queued` when any run is `"queued"` but none is in progress.
+    /// - Returns `.inProgress` when any run is `.inProgress`.
+    /// - Returns `.queued` when any run is `.queued` but none is in progress.
     public var groupStatus: GroupStatus {
         if jobsTotal > 0, jobs.filter({ $0.conclusion != nil }).count == jobsTotal {
             return .completed
         }
-        if runs.contains(where: { $0.status == "in_progress" }) { return .inProgress }
-        if runs.contains(where: { $0.status == "queued" }) { return .queued }
+        if runs.contains(where: { $0.status == .inProgress }) { return .inProgress }
+        if runs.contains(where: { $0.status == .queued }) { return .queued }
         return .completed
     }
 
@@ -189,7 +205,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// ⚠️ WHY WE USE JOBS, NOT RUNS:
     /// The GitHub API can report a run-level conclusion of `"failure"` even when every
     /// individual job succeeded. This happens when a job was retried: the first
-    /// attempt creates a run whose conclusion is `"failure"`, but the retry run’s jobs
+    /// attempt creates a run whose conclusion is `"failure"`, but the retry run's jobs
     /// all show `"success"`. Since we flatten all jobs from all sibling runs, using
     /// job-level conclusions is authoritative.
     ///
@@ -197,15 +213,31 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     ///
     /// Returns `nil` while jobs are still loading (`jobs.isEmpty`) or while any job
     /// has not yet concluded, to prevent a premature FAILED badge.
+    ///
+    /// ⚠️ NORMALISATION NOTE — run-based fallback:
+    /// The run-based fallback (reached only while `jobs.isEmpty`) returns the string
+    /// `"failure"` for **all** `isFailure` conclusions, including `.actionRequired`
+    /// (raw value `"action_required"`), `.timedOut`, and `.startupFailure`. This is
+    /// intentional: the run-based path is a **loading-state placeholder** only. Once
+    /// jobs populate, the job-based path above takes over with the same `"failure"`
+    /// string. No downstream consumer should specialise on `"action_required"` vs
+    /// `"failure"` during this window — if that need arises, promote the return type
+    /// to `JobConclusion?` and let callers switch on the enum directly.
     public var conclusion: String? {
         // Job-based conclusion (preferred) — use when data is fully loaded.
         if !jobs.isEmpty {
             // Only conclude when every single job has a conclusion.
             guard jobs.allSatisfy({ $0.conclusion != nil }) else { return nil }
             // ⚠️ Do NOT change this to read from runs[].conclusion — run-level API
-            // conclusions are stale and can report “failure” even when all jobs pass
+            // conclusions are stale and can report "failure" even when all jobs pass
             // (e.g. after a retry). This caused the spurious FAILED badge (issue #294).
-            if jobs.contains(where: { $0.conclusion == .failure }) { return "failure" }
+            // Use the canonical `JobConclusion.isFailure` check so this branch stays
+            // aligned with the run-based fallback below (and PollResultBuilder /
+            // FailureHookRunner). Previously this matched only `.failure`, so a
+            // `.timedOut` / `.startupFailure` / `.actionRequired` group reported
+            // "failure" while jobs were loading, then incorrectly flipped to
+            // "success" once jobs populated.
+            if jobs.contains(where: { $0.conclusion?.isFailure == true }) { return "failure" }
             if jobs.contains(where: { $0.conclusion == .cancelled }) { return "cancelled" }
             let hasSuccess = jobs.contains(where: { $0.conclusion == .success })
             let allSkippedOrCancelled = jobs.allSatisfy {
@@ -214,13 +246,15 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             if !hasSuccess && allSkippedOrCancelled { return "skipped" }
             return "success"
         }
-        // Run-based conclusion (fallback when jobs haven’t loaded yet).
+        // Run-based conclusion (fallback when jobs haven't loaded yet).
         // ⚠️ This path is only reached when jobs is empty (loading state).
         // Once jobs are populated the block above takes over.
+        // All isFailure conclusions (.actionRequired, .timedOut, .startupFailure, .failure)
+        // normalise to "failure" here — see NORMALISATION NOTE in the doc comment above.
         guard runs.allSatisfy({ $0.conclusion != nil }) else { return nil }
-        if runs.contains(where: { $0.conclusion == "failure" }) { return "failure" }
-        if runs.contains(where: { $0.conclusion == "cancelled" }) { return "cancelled" }
-        if runs.contains(where: { $0.conclusion == "skipped" }) { return "skipped" }
+        if runs.contains(where: { $0.conclusion?.isFailure == true }) { return "failure" }
+        if runs.contains(where: { $0.conclusion == .cancelled }) { return "cancelled" }
+        if runs.contains(where: { $0.conclusion == .skipped }) { return "skipped" }
         return "success"
     }
 
@@ -243,14 +277,11 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// Human-readable elapsed duration derived from `firstJobStartedAt` → `lastJobCompletedAt`.
     /// Falls back to `createdAt` when no job timing is available.
     public var elapsed: String {
-        if let start = firstJobStartedAt {
-            let end = lastJobCompletedAt ?? Date()
-            let seconds = max(0, Int(end.timeIntervalSince(start)))
-            return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-        }
-        guard let start = createdAt else { return "00:00" }
-        let seconds = max(0, Int(Date().timeIntervalSince(start)))
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+        formatElapsed(
+            start: firstJobStartedAt ?? createdAt,
+            end: lastJobCompletedAt,
+            isCompleted: groupStatus == .completed
+        )
     }
 
     // MARK: - Runner type

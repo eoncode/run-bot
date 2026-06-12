@@ -636,6 +636,101 @@ struct JobConclusionIsFailureTests {
     }
 }
 
+// MARK: - JobConclusion.isHookConclusion
+
+@Suite("JobConclusion.isHookConclusion")
+struct JobConclusionIsHookConclusionTests {
+
+    /// All isFailure conclusions are also isHookConclusion.
+    @Test func allFailureConclusionsAreHookConclusions() {
+        #expect(JobConclusion.failure.isHookConclusion)
+        #expect(JobConclusion.timedOut.isHookConclusion)
+        #expect(JobConclusion.startupFailure.isHookConclusion)
+        #expect(JobConclusion.actionRequired.isHookConclusion)
+    }
+
+    /// cancelled is a hook conclusion even though it is not isFailure.
+    /// A cancellation often signals a problem the user wants to be notified about.
+    @Test func cancelledIsHookConclusionButNotFailure() {
+        #expect(JobConclusion.cancelled.isHookConclusion)
+        #expect(!JobConclusion.cancelled.isFailure)
+    }
+
+    /// success must not trigger the hook.
+    @Test func successIsNotHookConclusion() {
+        #expect(!JobConclusion.success.isHookConclusion)
+    }
+
+    /// skipped must not trigger the hook.
+    @Test func skippedIsNotHookConclusion() {
+        #expect(!JobConclusion.skipped.isHookConclusion)
+    }
+
+    /// neutral must not trigger the hook.
+    @Test func neutralIsNotHookConclusion() {
+        #expect(!JobConclusion.neutral.isHookConclusion)
+    }
+
+    /// stale must not trigger the hook.
+    @Test func staleIsNotHookConclusion() {
+        #expect(!JobConclusion.stale.isHookConclusion)
+    }
+
+    /// An unknown conclusion must not trigger the hook (conservative default).
+    @Test func unknownIsNotHookConclusion() {
+        #expect(!JobConclusion.unknown("some_future_value").isHookConclusion)
+    }
+}
+
+// MARK: - formatElapsed
+
+@Suite("formatElapsed")
+struct FormatElapsedTests {
+
+    /// nil start + isCompleted=false returns "00:00" (not yet started).
+    @Test func nilStartNotCompletedReturnsZero() {
+        #expect(formatElapsed(start: nil, end: nil, isCompleted: false) == "00:00")
+    }
+
+    /// nil start + isCompleted=true returns "--:--" (completed but timing data unavailable).
+    @Test func nilStartCompletedReturnsDashes() {
+        #expect(formatElapsed(start: nil, end: nil, isCompleted: true) == "--:--")
+    }
+
+    /// Valid start + nil end measures elapsed time up to now (still running).
+    /// Asserts a window rather than an exact value to tolerate scheduling jitter.
+    @Test func validStartNilEndMeasuresToNow() {
+        let start = Date(timeIntervalSinceNow: -65)
+        let result = formatElapsed(start: start, end: nil, isCompleted: false)
+        let mins = Int(result.prefix(2))!
+        let secs = Int(result.suffix(2))!
+        let total = mins * 60 + secs
+        #expect(total >= 64)
+        #expect(total <= 70)
+    }
+
+    /// Valid start + valid end returns exact "MM:SS" for the given interval.
+    @Test func validStartAndEndReturnsExactFormat() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end   = Date(timeIntervalSinceReferenceDate: 167) // 2m 47s
+        #expect(formatElapsed(start: start, end: end, isCompleted: true) == "02:47")
+    }
+
+    /// A sub-second interval rounds down to "00:00".
+    @Test func subSecondIntervalReturnsZero() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end   = Date(timeIntervalSinceReferenceDate: 0.9)
+        #expect(formatElapsed(start: start, end: end, isCompleted: true) == "00:00")
+    }
+
+    /// end before start clamps to "00:00" rather than producing a negative string.
+    @Test func endBeforeStartClampsToZero() {
+        let start = Date(timeIntervalSinceReferenceDate: 100)
+        let end   = Date(timeIntervalSinceReferenceDate: 50)
+        #expect(formatElapsed(start: start, end: end, isCompleted: true) == "00:00")
+    }
+}
+
 // MARK: - PollResultBuilder.buildGroupState (fix #1041)
 
 @Suite("PollResultBuilder.buildGroupState")
@@ -651,27 +746,32 @@ struct PollResultBuilderGroupStateTests {
         jobStatus: JobStatus? = nil,
         isDimmed: Bool = false
     ) -> WorkflowActionGroup {
-        let runStatus: String
-        switch groupStatus {
-        case .inProgress: runStatus = "in_progress"
-        case .queued:     runStatus = "queued"
-        case .completed:  runStatus = "completed"
-        }
-        let resolvedJobStatus: JobStatus = jobStatus ?? JobStatus(rawString: runStatus)
-        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed ? JobConclusion(rawString: conclusion) : nil
+        let resolvedJobStatus: JobStatus = jobStatus ?? {
+            switch groupStatus {
+            case .inProgress: return .inProgress
+            case .queued:     return .queued
+            case .completed:  return .completed
+            }
+        }()
+        let jobConclusion: JobConclusion? = resolvedJobStatus == .completed
+            ? JobConclusion(rawString: conclusion)
+            : nil
         let job = ActiveJob(
             id: runID * 10,
             name: "job",
             status: resolvedJobStatus,
             conclusion: jobConclusion
         )
+        let runConclusion: JobConclusion? = resolvedJobStatus == .completed
+            ? JobConclusion(rawString: conclusion)
+            : nil
         return WorkflowActionGroup(
             headSha: sha,
             label: String(sha.prefix(7)),
             title: "commit message",
             headBranch: "main",
             repo: "owner/repo",
-            runs: [WorkflowRunRef(id: runID, name: "CI", status: runStatus, conclusion: resolvedJobStatus == .completed ? conclusion : nil, htmlUrl: nil)],
+            runs: [WorkflowRunRef(id: runID, name: "CI", status: resolvedJobStatus, conclusion: runConclusion, htmlUrl: nil)],
             jobs: [job],
             firstJobStartedAt: Date(timeIntervalSinceReferenceDate: 0),
             lastJobCompletedAt: resolvedJobStatus == .completed ? Date(timeIntervalSinceReferenceDate: 60) : nil,
@@ -750,6 +850,60 @@ struct PollResultBuilderGroupStateTests {
         #expect(await counter.value == 0)
     }
 
+    /// fireFailureHook fires for a cancelled group — cancellation is a hook-triggering conclusion.
+    @Test func fireFailureHookFiredForCancelledGroup() async {
+        let cancelledGroup = makeGroup(id: 760, sha: "aabbee", groupStatus: .completed, conclusion: "cancelled")
+        let counter = HookCounter()
+
+        _ = await PollResultBuilder.buildGroupState(
+            snapPrevGroups: [:],
+            snapGroupCache: [:],
+            snapSeenGroupIDs: [],
+            fetchGroups: { _ in [cancelledGroup] },
+            scopeFromGroup: { $0.repo },
+            fireFailureHook: { _, _ in await counter.increment() },
+            enrichJobs: { $0 }
+        )
+
+        #expect(await counter.value == 1, "fireFailureHook must fire for a cancelled group")
+    }
+
+    /// fireFailureHook fires for a startup_failure group.
+    @Test func fireFailureHookFiredForStartupFailureGroup() async {
+        let group = makeGroup(id: 770, sha: "aaccff", groupStatus: .completed, conclusion: "startup_failure")
+        let counter = HookCounter()
+
+        _ = await PollResultBuilder.buildGroupState(
+            snapPrevGroups: [:],
+            snapGroupCache: [:],
+            snapSeenGroupIDs: [],
+            fetchGroups: { _ in [group] },
+            scopeFromGroup: { $0.repo },
+            fireFailureHook: { _, _ in await counter.increment() },
+            enrichJobs: { $0 }
+        )
+
+        #expect(await counter.value == 1, "fireFailureHook must fire for startup_failure")
+    }
+
+    /// fireFailureHook fires for an action_required group.
+    @Test func fireFailureHookFiredForActionRequiredGroup() async {
+        let group = makeGroup(id: 780, sha: "bbccdd", groupStatus: .completed, conclusion: "action_required")
+        let counter = HookCounter()
+
+        _ = await PollResultBuilder.buildGroupState(
+            snapPrevGroups: [:],
+            snapGroupCache: [:],
+            snapSeenGroupIDs: [],
+            fetchGroups: { _ in [group] },
+            scopeFromGroup: { $0.repo },
+            fireFailureHook: { _, _ in await counter.increment() },
+            enrichJobs: { $0 }
+        )
+
+        #expect(await counter.value == 1, "fireFailureHook must fire for action_required")
+    }
+
     /// fireFailureHook must NOT re-fire when the group ID is already in snapSeenGroupIDs,
     /// even if it has been evicted from snapGroupCache by trimGroupCache.
     @Test func fireFailureHookNotCalledWhenGroupAlreadySeenEvenIfEvictedFromCache() async {
@@ -799,8 +953,8 @@ struct PollResultBuilderGroupStateTests {
             headBranch: "main",
             repo: "owner/repo",
             runs: [
-                WorkflowRunRef(id: 902, name: "Lint",   status: "in_progress", conclusion: nil,       htmlUrl: nil),
-                WorkflowRunRef(id: 903, name: "Deploy", status: "completed",   conclusion: "success", htmlUrl: nil),
+                WorkflowRunRef(id: 902, name: "Lint",   status: JobStatus.inProgress, conclusion: nil,                   htmlUrl: nil),
+                WorkflowRunRef(id: 903, name: "Deploy", status: JobStatus.completed,  conclusion: JobConclusion.success, htmlUrl: nil),
             ],
             jobs: [
                 ActiveJob(id: 9020, name: "lint-job",   status: JobStatus.inProgress),

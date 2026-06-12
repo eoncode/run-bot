@@ -56,13 +56,20 @@ extension WorkflowActionGroup {
     ///
     /// Returns an empty string when no job has started yet.
     /// Use `RelativeTimeFormatter.string(from: firstJobStartedAt)` for the time-ago display.
+    ///
+    /// - Note: `isCompleted` only affects `formatElapsed`'s nil-`start` sentinel path
+    ///   (choosing `"--:--"` vs `"00:00"`). Since `start` is already unwrapped by the
+    ///   guard above, the argument has no runtime effect here. It is passed anyway so
+    ///   that the call site stays consistent with `WorkflowActionGroup.elapsed` in
+    ///   `WorkflowActionGroup.swift`, and would behave correctly if the guard were
+    ///   ever removed in favour of a nil-delegating path.
     var elapsed: String {
         guard let start = firstJobStartedAt else { return "" }
-        let end = lastJobCompletedAt ?? Date()
-        let sec = max(0, Int(end.timeIntervalSince(start)))
-        let mins = sec / 60
-        let secs = sec % 60
-        return String(format: "%02d:%02d", mins, secs)
+        return formatElapsed(
+            start: start,
+            end: lastJobCompletedAt,
+            isCompleted: groupStatus == .completed
+        )
     }
 
     /// The start date of the earliest job in the group, or `nil` if none has started.
@@ -97,8 +104,8 @@ extension ActiveJob {
     /// Radial fill fraction (0.0–1.0). Returns `nil` while queued or when no steps are available.
     var progressFraction: Double? {
         switch status {
-        case "queued": return nil
-        case "completed": return 1.0
+        case .queued: return nil
+        case .completed: return 1.0
         default:
             guard !steps.isEmpty else { return nil }
             let done = steps.filter { $0.conclusion != nil }.count
