@@ -38,15 +38,19 @@ private struct ActionRunsResponse: Codable {
 }
 
 /// Minimal workflow run payload used for group construction.
+///
+/// `status` and `conclusion` are decoded directly as typed `JobStatus`/`JobConclusion`
+/// values via their `Codable` conformances. Unknown raw strings fall through to
+/// `.unknown(String)` rather than failing the decode.
 private struct RunPayload: Codable {
     /// The unique run identifier.
     let id: Int
     /// The workflow name.
     let name: String
-    /// The current run status (e.g. `"in_progress"`, `"queued"`, `"completed"`).
-    let status: String
-    /// The run conclusion, if completed (e.g. `"success"`, `"failure"`).
-    let conclusion: String?
+    /// The current run status.
+    let status: JobStatus
+    /// The run conclusion, if completed.
+    let conclusion: JobConclusion?
     /// The branch name the run is targeting.
     let headBranch: String?
     /// The full SHA of the head commit.
@@ -126,7 +130,7 @@ private func prLabel(from run: RunPayload) -> String {
 /// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
 public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
     guard scope.contains("/") else {
-        log("fetchActionGroups › skipping org scope \(scope)")
+        log("fetchActionGroups -- skipping org scope \(scope)")
         return []
     }
 
@@ -178,8 +182,8 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
                     WorkflowRunRef(
                         id: $0.id,
                         name: $0.name,
-                        status: JobStatus(rawString: $0.status),
-                        conclusion: $0.conclusion.map { JobConclusion(rawString: $0) },
+                        status: $0.status,
+                        conclusion: $0.conclusion,
                         htmlUrl: $0.htmlUrl
                     )
                 }
@@ -217,7 +221,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
         }
         return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
     }
-    log("fetchActionGroups › \(result.count) group(s) for \(scope)")
+    log("fetchActionGroups -- \(result.count) group(s) for \(scope)")
     return result
 }
 
