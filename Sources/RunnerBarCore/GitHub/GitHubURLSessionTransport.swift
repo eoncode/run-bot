@@ -88,9 +88,9 @@ private func urlSessionExecute(
 
 /// Fetches a single GitHub API page using `URLSession.data(for:)` async/await.
 ///
-/// Intentionally internal: this is a stable call site consumed by `RunnerStore` and other
-/// module-level consumers across files. The underlying `urlSessionExecute` remains private
-/// to this file.
+/// Intentionally internal to the module: this is a stable call site consumed by `RunnerStore`
+/// and other module-level consumers across files. The underlying `urlSessionExecute` remains
+/// private to this file.
 public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
     guard case .success(let data, _) = await urlSessionExecute(
         endpoint, timeout: timeout, logTag: "urlSessionAPIAsync"
@@ -181,7 +181,7 @@ public func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async 
 
 /// Sends a POST to the given GitHub API endpoint.
 ///
-/// Intentionally internal: backs `ghPost` and the runner mutation helpers below,
+/// Intentionally internal to the module: backs `ghPost` and the runner mutation helpers below,
 /// all of which are called from outside this file.
 /// - Returns: Response body on 2xx (`Data()` for 204 No Content), `nil` on failure.
 @discardableResult
