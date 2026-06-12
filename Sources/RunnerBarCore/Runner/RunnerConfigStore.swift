@@ -2,52 +2,6 @@
 // RunnerBarCore
 import Foundation
 
-// MARK: - AnyJSON
-
-/// A type-erased `Codable` value used for the read-modify-write merge in `RunnerConfigStore`.
-///
-/// Allows the store to round-trip the full `.runner` JSON object — including agent-managed keys
-/// not modelled by `RunnerConfig` — without `JSONSerialization` or `[String: Any]`.
-private enum AnyJSON: Codable {
-    /// A JSON object (`{ ... }`).
-    case object([String: AnyJSON])
-    /// A JSON array (`[ ... ]`).
-    case array([AnyJSON])
-    /// A JSON string value.
-    case string(String)
-    /// A JSON number value.
-    case number(Double)
-    /// A JSON boolean value.
-    case bool(Bool)
-    /// A JSON null value.
-    case null
-
-    /// Decodes a single JSON value into the appropriate `AnyJSON` case.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.singleValueContainer()
-        if let v = try? c.decode([String: AnyJSON].self) { self = .object(v); return }
-        if let v = try? c.decode([AnyJSON].self)          { self = .array(v);  return }
-        if let v = try? c.decode(String.self)             { self = .string(v); return }
-        if let v = try? c.decode(Bool.self)               { self = .bool(v);   return }
-        if let v = try? c.decode(Double.self)             { self = .number(v); return }
-        if c.decodeNil()                                  { self = .null;      return }
-        throw DecodingError.dataCorruptedError(in: c, debugDescription: "AnyJSON: unrecognised value")
-    }
-
-    /// Encodes this `AnyJSON` value into the given encoder.
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.singleValueContainer()
-        switch self {
-        case .object(let v): try c.encode(v)
-        case .array(let v):  try c.encode(v)
-        case .string(let v): try c.encode(v)
-        case .number(let v): try c.encode(v)
-        case .bool(let v):   try c.encode(v)
-        case .null:          try c.encodeNil()
-        }
-    }
-}
-
 // MARK: - RunnerConfigStoreError
 
 /// Errors thrown while reading or writing the runner `.runner` configuration file.
@@ -195,7 +149,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                 if let v = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = .string(v) }
                 if let v = config.agentVersion         { raw[RunnerConfig.CodingKeys.agentVersion.rawValue]         = .string(v) }
                 if let v = config.ephemeral            { raw[RunnerConfig.CodingKeys.ephemeral.rawValue]            = .bool(v)   }
-                if let v = config.agentId             { raw[RunnerConfig.CodingKeys.agentId.rawValue]              = .number(Double(v)) }
+                if let v = config.agentId             { raw[RunnerConfig.CodingKeys.agentId.rawValue]              = .int(v) }
 
                 do {
                     let data = try self.encoder.encode(raw)

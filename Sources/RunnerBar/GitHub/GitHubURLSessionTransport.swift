@@ -3,56 +3,6 @@
 
 import Foundation
 
-// MARK: - AnyJSON
-
-/// A type-erased `Codable` value that round-trips arbitrary JSON without `JSONSerialization`.
-///
-/// Used internally by `urlSessionAPIPaginated` to accumulate pages from GitHub's paginated
-/// endpoints. Each page is decoded as `[AnyJSON]`; all pages are concatenated and re-encoded
-/// as a single JSON array returned to callers as `Data`.
-///
-/// Only the six JSON value kinds that GitHub pagination actually produces are needed:
-/// object, array, string, number, bool, and null.
-private enum AnyJSON: Codable {
-    /// A JSON object (`{ ... }`).
-    case object([String: AnyJSON])
-    /// A JSON array (`[ ... ]`).
-    case array([AnyJSON])
-    /// A JSON string value.
-    case string(String)
-    /// A JSON number value.
-    case number(Double)
-    /// A JSON boolean value.
-    case bool(Bool)
-    /// A JSON null value.
-    case null
-
-    /// Decodes a single JSON value into the appropriate `AnyJSON` case.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.singleValueContainer()
-        if let v = try? c.decode([String: AnyJSON].self) { self = .object(v); return }
-        if let v = try? c.decode([AnyJSON].self)          { self = .array(v);  return }
-        if let v = try? c.decode(String.self)             { self = .string(v); return }
-        if let v = try? c.decode(Bool.self)               { self = .bool(v);   return }
-        if let v = try? c.decode(Double.self)             { self = .number(v); return }
-        if c.decodeNil()                                  { self = .null;      return }
-        throw DecodingError.dataCorruptedError(in: c, debugDescription: "AnyJSON: unrecognised value")
-    }
-
-    /// Encodes this `AnyJSON` value into the given encoder.
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.singleValueContainer()
-        switch self {
-        case .object(let v): try c.encode(v)
-        case .array(let v):  try c.encode(v)
-        case .string(let v): try c.encode(v)
-        case .number(let v): try c.encode(v)
-        case .bool(let v):   try c.encode(v)
-        case .null:          try c.encodeNil()
-        }
-    }
-}
-
 // MARK: - Shared execution core
 
 /// The result of a single URLSession round-trip through `urlSessionExecute`.
