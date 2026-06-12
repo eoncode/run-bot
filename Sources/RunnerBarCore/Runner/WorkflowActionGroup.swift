@@ -15,8 +15,9 @@ public enum GroupStatus {
     case completed
 }
 
-// MARK: - GroupStatus extension
+// MARK: - GroupStatus + display helpers
 
+/// Display and sorting helpers for `GroupStatus`.
 extension GroupStatus {
     /// Sort priority for display ordering.
     ///
