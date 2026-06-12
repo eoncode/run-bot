@@ -56,6 +56,13 @@ extension WorkflowActionGroup {
     ///
     /// Returns an empty string when no job has started yet.
     /// Use `RelativeTimeFormatter.string(from: firstJobStartedAt)` for the time-ago display.
+    ///
+    /// - Note: `isCompleted` only affects `formatElapsed`'s nil-`start` sentinel path
+    ///   (choosing `"--:--"` vs `"00:00"`). Since `start` is already unwrapped by the
+    ///   guard above, the argument has no runtime effect here. It is passed anyway so
+    ///   that the call site stays consistent with `WorkflowActionGroup.elapsed` in
+    ///   `WorkflowActionGroup.swift`, and would behave correctly if the guard were
+    ///   ever removed in favour of a nil-delegating path.
     var elapsed: String {
         guard let start = firstJobStartedAt else { return "" }
         return formatElapsed(
