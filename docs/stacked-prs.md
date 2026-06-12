@@ -157,3 +157,19 @@ For complex conflicts mid-stack, it can help to rebase one branch at a time and 
 | Bottom PR merges | Retarget next PR to `main`, rebase locally, push |
 | Conflict during rebase | Fix file, `git add`, `git rebase --continue` |
 | Force push | Always `--force-with-lease`, never `--force` |
+
+---
+
+## Current Stack: `refactor-tweak-branch`
+
+The active stack for Codable + concurrency tweaks follows this plan:
+
+```
+main
+ └── refactor-tweak-branch              ← umbrella PR (targets main)
+       └── tweak/oauth-codable          ← #1335: Codable in OAuthService
+             └── tweak/transport-codable  ← #1334: Codable in transport layer
+                   └── tweak/dispatchqueue  ← DispatchQueue → async/await cleanup
+```
+
+Branches are cut **incrementally** — each child is only created once its parent is stable. No pre-created empty branches.
