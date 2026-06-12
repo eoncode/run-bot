@@ -323,4 +323,3 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
     }
     return result
 }
-
