@@ -1,5 +1,6 @@
 // GitHubScope.swift
 // RunnerBarCore
+
 import Foundation
 
 // MARK: - Scope
