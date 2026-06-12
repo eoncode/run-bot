@@ -45,6 +45,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     // MARK: Private properties
 
     /// Decoder used for reading `.runner` JSON.
+    // thread-safe: JSONDecoder has no mutable state after init
     private let decoder = JSONDecoder()
 
     // MARK: Init
@@ -58,7 +59,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     ///
     /// The GitHub runner agent emits a UTF-8 BOM at the start of `.runner` files on some
     /// platforms. `JSONDecoder` rejects the BOM, so it must be removed before decoding.
-    private nonisolated func stripBOM(from data: Data) -> Data {
+    private static func stripBOM(from data: Data) -> Data {
         data.prefix(3).elementsEqual([0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
     }
 
@@ -144,7 +145,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                 if let v = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = .string(v) }
                 if let v = config.agentVersion         { raw[RunnerConfig.CodingKeys.agentVersion.rawValue]         = .string(v) }
                 if let v = config.ephemeral            { raw[RunnerConfig.CodingKeys.ephemeral.rawValue]            = .bool(v)   }
-                if let v = config.agentId             { raw[RunnerConfig.CodingKeys.agentId.rawValue]              = .int(v) }
+                if let v = config.agentId              { raw[RunnerConfig.CodingKeys.agentId.rawValue]              = .int(v)    }
 
                 do {
                     let encoder = JSONEncoder()
