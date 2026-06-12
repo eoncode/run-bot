@@ -39,6 +39,7 @@ public enum AnyJSON: Codable {
     /// - `object` and `array` are tried first because a `singleValueContainer` for a plain
     ///   string or number will simply fail to decode as `[String: AnyJSON]` or `[AnyJSON]`,
     ///   keeping the fast-path correct; placing them first makes the intent explicit.
+    ///   This relies on `JSONDecoder`'s current behaviour and the `try?` fallthrough below.
     /// - `Bool` is tried before `Int`, `Double`, and `String` — on Apple platforms
     ///   `JSONDecoder` decodes `true`/`false` as `Bool`, but trying numeric or string types
     ///   first could silently succeed on some JSON tokens and misclassify booleans.

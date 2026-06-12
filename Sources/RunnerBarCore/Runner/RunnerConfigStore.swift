@@ -45,7 +45,10 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     // MARK: Private properties
 
     /// Decoder used for reading `.runner` JSON. Thread-safe: `JSONDecoder` has no mutable state after init.
-    private let decoder = JSONDecoder()
+    /// `nonisolated` so the DispatchQueue.global closure in `save(_:at:)` can capture
+    /// it without crossing the actor's isolation boundary. Safe because `JSONDecoder`
+    /// is immutable after initialisation and has no mutable state.
+    nonisolated private let decoder = JSONDecoder()
 
     // MARK: Init
 
