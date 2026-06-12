@@ -389,7 +389,7 @@ struct PollResultBuilderTests {
         ]
         PollResultBuilder.trimJobCache(&cache, limit: 3)
         #expect(cache.count == 3)
-        #expect(cache[1] == nil)
+        #expect(cache[1] == nil, "Oldest entry should be evicted")
     }
 
     /// trimJobCache does nothing when the cache is already under the limit.
@@ -429,7 +429,7 @@ struct PollResultBuilderTests {
             ActiveJob(id: $0, name: "Job \($0)", status: "in_progress")
         }
         let display = PollResultBuilder.buildJobDisplay(live: live, cache: [:])
-        #expect(display.count == 5)
+        #expect(display.count == 5, "jobCacheLimit must not truncate live jobs")
     }
 
     /// The total display list is capped at jobDisplayLimit (8).
@@ -477,7 +477,7 @@ struct PollResultBuilderTests {
             now: Date(),
             into: &cache
         )
-        #expect(cache[55]?.conclusion == "failure")
+        #expect(cache[55]?.conclusion == "failure", "Existing cache entry must not be overwritten")
     }
 
     /// Jobs still present in the live list are NOT moved to the cache.
@@ -557,6 +557,8 @@ struct PollResultBuilderTests {
     }
 
     /// One entry over the limit must leave exactly `limit` entries, not `limit/2`.
+    /// Guards against the off-by-half bug where trimming would remove half the set
+    /// instead of only the single excess entry.
     @Test func trimSeenGroupIDsTrimsToLimitNotHalf() {
         let limit = 10
         var ids: Set<String> = Set((1...(limit + 1)).map { "group-\($0)" })
@@ -826,7 +828,8 @@ struct PollResultBuilderGroupStateTests {
 
     /// An ID evicted from seenGroupIDs by trimSeenGroupIDs will re-trigger the failure
     /// hook when it resurfaces in the feed on the next poll.
-    /// This is a known limitation of the in-memory approximate eviction strategy.
+    /// Known limitation: seenGroupIDs is an in-memory approximate set; eviction is
+    /// intentional to bound memory, and the occasional re-fire is an accepted trade-off.
     @Test func evictedGroupIDRefiresHookOnNextPoll() async {
         let failedGroup = makeGroup(id: 1001, sha: "dead01", groupStatus: .completed, conclusion: "failure")
         let counter = HookCounter()
@@ -846,6 +849,8 @@ struct PollResultBuilderGroupStateTests {
 
     /// A group present in both the fetched completed list (doneGroups) and snapPrevGroups
     /// (was live last poll) must fire the failure hook exactly once.
+    /// The ordering invariant — doneGroups are processed before freezeVanishedGroups —
+    /// ensures the group is marked seen before the vanish path can re-fire the hook.
     @Test func doneGroupsSeenBeforeFreezeVanishedGroupsPreventsDoubleFire() async {
         let sha = "ff0011"
         let liveVersion      = makeGroup(id: 1002, sha: sha, groupStatus: .inProgress, jobStatus: .inProgress)
@@ -872,6 +877,8 @@ struct PollResultBuilderGroupStateTests {
 struct ProcessRunnerRunAsyncStdinTests {
 
     /// runAsync correctly pipes stdin through to the child process for a small payload.
+    /// Note: Swift Testing .timeLimit only accepts .minutes; .seconds is not available.
+    /// 1 minute is the minimum granularity and is intentionally loose vs the original 5 s XCTest limit.
     @Test(.timeLimit(.minutes(1)))
     func runAsyncStdinSmallPayloadRoundtrip() async {
         let input = "hello stdin"
@@ -887,6 +894,8 @@ struct ProcessRunnerRunAsyncStdinTests {
 
     /// runAsync does NOT deadlock with a large stdin payload (1 MB — above the ~64 KB kernel pipe buffer).
     /// Regression test for the pre-launch synchronous write bug in #1228.
+    /// Note: Swift Testing .timeLimit only accepts .minutes; .seconds is not available.
+    /// 1 minute is the minimum granularity and is intentionally loose vs the original 10 s XCTest limit.
     @Test(.timeLimit(.minutes(1)))
     func runAsyncStdinLargePayloadRoundtrip() async {
         let input = String(repeating: "x", count: 1_024 * 1_024) // 1 MB

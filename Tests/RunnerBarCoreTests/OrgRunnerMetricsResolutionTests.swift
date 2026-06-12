@@ -83,8 +83,9 @@ struct OrgRunnerMetricsResolutionTests {
 
     // MARK: - ID mismatch scenario (org runner)
 
-    /// Simulates the org-runner mismatch: agentId (from .runner JSON) differs from
-    /// apiId (from GitHub REST API). The model must hold both simultaneously.
+    /// Simulates the org-runner mismatch: agentId (from .runner JSON, e.g. 100) differs from
+    /// apiId (from GitHub REST API, e.g. 5001). The model must hold both simultaneously so the
+    /// caller can build both a `byId` (keyed by agentId) and a `byApiId` (keyed by apiId) lookup map.
     @Test func agentIdAndApiIdCanDifferForOrgRunners() {
         let runner = makeOrgRunner(agentId: 100, apiId: 5001)
         #expect(runner.agentId != runner.apiId)
@@ -92,6 +93,7 @@ struct OrgRunnerMetricsResolutionTests {
 
     /// A runner whose `apiId` matches the GitHub API runner id (5001) must be
     /// identifiable by that id even when `agentId` (100) does not match.
+    /// This is the `byApiId` lookup path used when metrics arrive keyed by GitHub's runner id.
     @Test func apiIdMatchesGitHubApiRunnerIdForLookup() {
         let runner = makeOrgRunner(agentId: 100, apiId: 5001)
         let byApiId: [Int: String] = runner.apiId.map { [$0: runner.installPath!] } ?? [:]
