@@ -1,8 +1,7 @@
 // GitHubURLSessionTransport.swift
-// RunnerBar
+// RunnerBarCore
 
 import Foundation
-import RunnerBarCore
 
 /// Shared decoder hoisted to avoid re-instantiation on every call.
 /// Thread-safe: `JSONDecoder` has no mutable state after initialisation.
@@ -49,7 +48,7 @@ private func urlSessionExecute(
     useRawAccept: Bool = false,
     configure: (URLRequest) -> URLRequest = { $0 }
 ) async -> ExecuteResult {
-    guard let token = githubToken() else {
+    guard let token = githubTokenCore() else {
         log("\(logTag) › no token available")
         return .networkError(URLError(.userAuthenticationRequired))
     }
@@ -110,7 +109,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
     let encoder = sharedEncoder
 
     while let urlString = nextURL {
-        guard let token = githubToken() else {
+        guard let token = githubTokenCore() else {
             log("urlSessionAPIPaginated › no token available, stopping pagination")
             didFailAuthentication = true
             break
@@ -167,7 +166,7 @@ func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) asyn
 /// Fetches raw bytes from a GitHub API endpoint that 302-redirects to S3.
 ///
 /// - Note: This function uses `makeRawRequest` which sets `Accept: application/vnd.github.v3.raw`.
-///   Apple’s URLSession strips the `Authorization` header before following cross-origin
+///   Apple's URLSession strips the `Authorization` header before following cross-origin
 ///   redirects (RFC 7235), so the Bearer token is never forwarded to S3.
 ///   See `makeRawRequest` in `GitHubRequestBuilder.swift` for full details.
 func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
