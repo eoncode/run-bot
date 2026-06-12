@@ -24,8 +24,12 @@ public final class LocalRunnerIndex {
 
     // MARK: - Init
 
+    /// The `UserDefaults` store used for persistence. Defaults to `.standard`; injectable for tests.
+    private let defaults: UserDefaults
+
     /// Initialises the index and loads the persisted entries from `UserDefaults`.
-    public init() {
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         loadIndex()
     }
 
@@ -49,14 +53,14 @@ public final class LocalRunnerIndex {
 
     /// Hydrates `runnerIndex` from `UserDefaults` at init time.
     private func loadIndex() {
-        runnerIndex = UserDefaults.standard
+        runnerIndex = defaults
             .dictionary(forKey: Self.indexKey) as? [String: String] ?? [:]
         log("LocalRunnerIndex › loadIndex — \(runnerIndex.count) entry(ies): \(runnerIndex.keys.sorted())")
     }
 
     /// Writes the current `runnerIndex` to `UserDefaults`.
     private func persistIndex() {
-        UserDefaults.standard.set(runnerIndex, forKey: Self.indexKey)
+        defaults.set(runnerIndex, forKey: Self.indexKey)
         log("LocalRunnerIndex › persistIndex — \(runnerIndex.count) entry(ies) written")
     }
 }
