@@ -36,7 +36,7 @@ final class OAuthService {
     private init() {}
 
     /// The OAuth redirect URI. Must match the value registered in the GitHub OAuth app settings.
-    /// Sourced from `GitHubConstants.oauthRedirectURI` — do not duplicate this string inline.
+    /// Sourced from `GitHubConstants.oauthRedirectURI` — do not duplicate this string instead.
     private let redirectURI = GitHubConstants.oauthRedirectURI
     /// OAuth scopes requested during sign-in.
     ///
@@ -90,110 +90,99 @@ final class OAuthService {
     /// Returns a new `AsyncStream<Void>` that fires once per `signOut()` call.
     /// Each call site must request its own stream; the streams are multicasted.
     /// The continuation is removed from the registry when the consumer's Task
-    /// is cancelled or the stream is otherwise terminated.
-    /// Observe via:
-    /// ```swift
-    /// Task { for await _ in OAuthService.shared.makeSignOutStream() { … } }
-    /// ```
+    /// is cancelled or the stream is finished.
     func makeSignOutStream() -> AsyncStream<Void> {
         let id = UUID()
-        let (stream, cont) = AsyncStream<Void>.makeStream()
-        signOutContinuations[id] = cont
-        cont.onTermination = { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.signOutContinuations.removeValue(forKey: id)
+        return AsyncStream { continuation in
+            signOutContinuations[id] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.signOutContinuations.removeValue(forKey: id)
+                }
             }
         }
-        return stream
     }
 
-    // MARK: Sign In
+    // MARK: - Public API
 
-    /// Opens the GitHub OAuth authorization page in the default browser to begin sign-in.
+    /// `true` when a GitHub token is stored in Keychain.
+    var isSignedIn: Bool { Keychain.token != nil }
+
+    /// Generates a random state nonce, persists it, then opens the GitHub
+    /// authorisation URL in the default browser to start the OAuth flow.
     func signIn() {
-        log("OAuthService › signIn — initiating OAuth flow")
         let state = UUID().uuidString
         pendingState = state
-        guard var comps = URLComponents(string: authorizeURL) else {
-            log("OAuthService › signIn: malformed authorizeURL — aborting")
-            pendingState = nil
-            onCompletion?(false)
-            return
-        }
+        var comps = URLComponents(string: authorizeURL)!
         comps.queryItems = [
-            URLQueryItem(name: "client_id", value: OAuthSecrets.clientID),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "scope", value: scopes),
-            URLQueryItem(name: "state", value: state)
+            .init(name: "client_id",    value: OAuthSecrets.clientID),
+            .init(name: "redirect_uri", value: redirectURI),
+            .init(name: "scope",        value: scopes),
+            .init(name: "state",        value: state)
         ]
-        guard let url = comps.url else {
-            log("OAuthService › signIn: failed to build authorization URL — aborting")
-            pendingState = nil
-            onCompletion?(false)
-            return
-        }
-        // NOTE: pendingState is left set if the browser open fails silently.
-        // handleCallback will CSRF-reject any eventual redirect with a mismatched
-        // or absent state, so a stuck pendingState is safe — it will be cleared
-        // on the next signIn(), signOut(), or a rejected handleCallback().
-        log("OAuthService › signIn — opening browser for OAuth")
+        guard let url = comps.url else { return }
         NSWorkspace.shared.open(url)
     }
 
-    // MARK: Sign Out
-
-    /// Clears the stored token and emits `didSignOut` — but only when the token
-    /// was actually removed from Keychain.
-    ///
-    /// Gating `didSignOut` on `deleted == true` prevents a "ghost sign-in" state
-    /// where the UI shows signed-out while the old token remains in Keychain and
-    /// subsequent API calls succeed as if the user were still authenticated.
-    /// Mirrors the same pattern used in `exchangeCode()` where `onCompletion` is
-    /// gated on the actual Keychain save result.
+    /// Clears the stored token and notifies all sign-out consumers.
     func signOut() {
-        log("OAuthService › signOut — called, pendingState=\(pendingState != nil ? "set" : "nil")")
-        pendingState = nil
-        let deleted = Keychain.delete()
-        log("OAuthService › signOut — Keychain.delete result=\(deleted)")
-        if deleted {
-            log("OAuthService › signOut — emitting didSignOut to \(signOutContinuations.count) consumer(s)")
-            signOutContinuations.values.forEach { $0.yield(()) }
-        } else {
-            log("OAuthService › signOut: Keychain.delete failed — sign-out suppressed to prevent ghost sign-in")
+        Keychain.delete()
+        for continuation in signOutContinuations.values {
+            continuation.yield()
         }
     }
 
-    // MARK: Callback Handler
+    // MARK: - Callback Handling
 
-    /// Handles the OAuth redirect URL from AppDelegate, verifying state and exchanging the code.
+    /// Validates the OAuth callback URL and kicks off the token exchange.
+    ///
+    /// Called by `AppDelegate.application(_:open:)` when the OS delivers the
+    /// `runnerbar://oauth/callback` deep-link after GitHub redirects back.
+    ///
+    /// - Parameter url: The full callback URL including `code` and `state` query params.
     func handleCallback(_ url: URL) {
-        log("OAuthService › handleCallback — url=\(url.absoluteString)")
-        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
+        log("OAuthService › handleCallback: url=\(url)")
+        guard let comps  = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let code   = comps.queryItems?.first(where: { $0.name == "code"  })?.value,
+              let state  = comps.queryItems?.first(where: { $0.name == "state" })?.value,
+              state == pendingState
         else {
-            log("OAuthService › handleCallback — missing code param, calling onCompletion(false)")
-            onCompletion?(false)
+            log("OAuthService › handleCallback: missing/mismatched code or state — ignoring")
             return
         }
-        // CSRF guard: verify the state param matches what we sent in signIn().
-        guard let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value else {
-            log("OAuthService › handleCallback: no state param in redirect URL")
-            pendingState = nil
-            onCompletion?(false)
-            return
-        }
-        guard returnedState == pendingState else {
-            log("OAuthService › handleCallback: state mismatch — possible CSRF attempt, rejecting")
-            pendingState = nil
-            onCompletion?(false)
-            return
-        }
-        log("OAuthService › handleCallback — state OK, exchanging code")
         pendingState = nil
+        log("OAuthService › handleCallback: state OK, code=\(code.prefix(6))… — launching exchangeCode")
         Task { await exchangeCode(code) }
     }
 
+    // MARK: - Sign-out Task
+
+    /// Long-lived Task that listens on the sign-out stream and drives sign-out side-effects.
+    ///
+    /// Mirrors the same pattern used in `exchangeCode()` where `onCompletion` is
+    /// called on the main actor. The Task is stored so callers can cancel it
+    /// (e.g. during testing or if AppDelegate needs to tear down the service).
+    ///
+    /// Retained so the caller can cancel it when the observing scope goes away.
+    /// Assign from the site that sets up the sign-out listener (e.g. AppDelegate).
+    var signOutTask: Task<Void, Never>?
+
     // MARK: Token Exchange
+
+    /// Request body for the GitHub OAuth token exchange.
+    private struct OAuthTokenRequest: Encodable {
+        let client_id: String
+        let client_secret: String
+        let code: String
+    }
+
+    /// Response body from the GitHub OAuth token exchange.
+    /// GitHub returns HTTP 200 even on failure, so both `access_token` and `error` are optional.
+    private struct OAuthTokenResponse: Decodable {
+        let access_token: String?
+        let error: String?
+        let error_description: String?
+    }
 
     /// POSTs the authorization code to GitHub and saves the returned access token to Keychain.
     private func exchangeCode(_ code: String) async {
@@ -203,27 +192,29 @@ final class OAuthService {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "client_id": OAuthSecrets.clientID,
-            "client_secret": OAuthSecrets.clientSecret,
-            "code": code
-        ])
+        req.httpBody = try? JSONEncoder().encode(
+            OAuthTokenRequest(
+                client_id: OAuthSecrets.clientID,
+                client_secret: OAuthSecrets.clientSecret,
+                code: code
+            )
+        )
         guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+              let response = try? JSONDecoder().decode(OAuthTokenResponse.self, from: data)
         else {
             log("OAuthService › exchangeCode — network/parse failure, calling onCompletion(false)")
             onCompletion?(false)
             return
         }
         // GitHub returns 200 even on failure; check for an error field before access_token.
-        if let errorCode = json["error"] as? String {
-            let desc = json["error_description"] as? String ?? ""
+        if let errorCode = response.error {
+            let desc = response.error_description ?? ""
             log("OAuthService › exchangeCode: GitHub error=\(errorCode) \(desc)")
             onCompletion?(false)
             return
         }
-        guard let token = json["access_token"] as? String, !token.isEmpty else {
-            log("OAuthService › exchangeCode: no access_token in response — keys=\(json.keys.sorted())")
+        guard let token = response.access_token, !token.isEmpty else {
+            log("OAuthService › exchangeCode: no access_token in response")
             onCompletion?(false)
             return
         }
