@@ -14,13 +14,20 @@ import Foundation
 /// Only the six JSON value kinds that GitHub pagination actually produces are needed:
 /// object, array, string, number, bool, and null.
 private enum AnyJSON: Codable {
+    /// A JSON object (`{ ... }`).
     case object([String: AnyJSON])
+    /// A JSON array (`[ ... ]`).
     case array([AnyJSON])
+    /// A JSON string value.
     case string(String)
+    /// A JSON number value.
     case number(Double)
+    /// A JSON boolean value.
     case bool(Bool)
+    /// A JSON null value.
     case null
 
+    /// Decodes a single JSON value into the appropriate `AnyJSON` case.
     init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
         if let v = try? c.decode([String: AnyJSON].self) { self = .object(v); return }
@@ -32,6 +39,7 @@ private enum AnyJSON: Codable {
         throw DecodingError.dataCorruptedError(in: c, debugDescription: "AnyJSON: unrecognised value")
     }
 
+    /// Encodes this `AnyJSON` value into the given encoder.
     func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
