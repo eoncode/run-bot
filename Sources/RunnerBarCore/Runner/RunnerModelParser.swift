@@ -1,5 +1,6 @@
 // RunnerModelParser.swift
 // RunnerBarCore
+
 import Foundation
 
 // MARK: - .runner JSON parser
