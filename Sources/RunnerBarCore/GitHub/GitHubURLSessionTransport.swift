@@ -16,10 +16,13 @@ private let sharedEncoder = JSONEncoder()
 private enum ExecuteResult {
     /// 2xx response with optional body data (empty `Data()` for 204 No Content).
     case success(Data, statusCode: Int)
-    /// Non-2xx response that is not a rate-limit; the request failed.
+    /// Non-2xx response that is not a rate-limit or permission error; the request failed.
     case httpError(Int)
-    /// 403 or 429 that triggered the rate-limit actor.
+    /// 403 or 429 that triggered the rate-limit actor (genuine rate limit).
     case rateLimited
+    /// 403 that did NOT trigger the rate-limit actor — token scope, revoked PAT, or
+    /// repo access denial. The actor is not armed; the token needs attention.
+    case permissionDenied
     /// Network-level error (timeout, no connectivity, etc.).
     case networkError(Error)
 }
@@ -67,10 +70,22 @@ private func urlSessionExecute(
             return .networkError(URLError(.badServerResponse))
         }
         if http.statusCode == 403 || http.statusCode == 429 {
+            let wasRateLimited = await rateLimitActor.isLimited
             await handleRateLimitResponse(
                 statusCode: http.statusCode, data, response: http, endpoint: urlString
             )
-            return .rateLimited
+            let isNowRateLimited = await rateLimitActor.isLimited
+            // If the actor was armed by this call it's a genuine rate limit.
+            // If it wasn't armed (permission-denied 403), return .permissionDenied
+            // so callers can distinguish token-scope problems from rate limits.
+            if isNowRateLimited && !wasRateLimited {
+                return .rateLimited
+            } else if isNowRateLimited {
+                // Actor was already armed before this request (ongoing rate limit).
+                return .rateLimited
+            } else {
+                return .permissionDenied
+            }
         }
         guard (200..<300).contains(http.statusCode) else {
             logErrorBody(data, endpoint: urlString, status: http.statusCode)
@@ -100,11 +115,14 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 
 /// Fetches and concatenates all pages for a GitHub paginated endpoint.
 /// Follows `Link: <url>; rel="next"` until all pages are consumed or an error stops pagination.
-/// Returns `nil` on auth failure; returns partial results if pagination is stopped by a rate limit.
+///
+/// - Returns `nil` on auth failure (401, permission-denied 403, or no token).
+/// - Returns partial results if pagination is stopped by a genuine rate limit.
 public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [AnyJSON] = []
     var didFailAuthentication = false
+    var didFailPermission = false
     let decoder = sharedDecoder
     let encoder = sharedEncoder
 
@@ -126,7 +144,16 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 break
             }
             if http.statusCode == 403 || http.statusCode == 429 {
+                let wasRateLimited = await rateLimitActor.isLimited
                 await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
+                let isNowRateLimited = await rateLimitActor.isLimited
+                if !isNowRateLimited && !wasRateLimited {
+                    // handleRateLimitResponse did not arm the actor — this is a
+                    // permission-denied 403 (wrong scope, revoked PAT, repo access denial).
+                    // Treat identically to 401: discard partial results and return nil.
+                    log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
+                    didFailPermission = true
+                }
                 break
             }
             guard (200..<300).contains(http.statusCode) else {
@@ -147,9 +174,9 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
         }
     }
 
-    if didFailAuthentication {
+    if didFailAuthentication || didFailPermission {
         if !allItems.isEmpty {
-            log("urlSessionAPIPaginated › authentication failed mid-pagination — discarding \(allItems.count) partial items")
+            log("urlSessionAPIPaginated › auth/permission failure mid-pagination — discarding \(allItems.count) partial items")
         }
         return nil
     }
@@ -373,10 +400,20 @@ public func ghPost(_ endpoint: String) async -> Bool {
 }
 
 /// Cancels a workflow run via the GitHub Actions API.
+/// Only valid for repo-scoped scopes; org-scoped strings are rejected with a diagnostic log.
 /// - Returns: `true` if the cancellation request succeeded.
 @discardableResult
-public func cancelRun(runID: Int, scope: String) async -> Bool {
-    let result = await ghPost("repos/\(scope)/actions/runs/\(runID)/cancel")
-    log("cancelRun › run=\(runID) scope=\(scope) success=\(result)")
+public func cancelRun(runID: Int, scope scopeString: String) async -> Bool {
+    guard let scope = Scope.parse(scopeString) else {
+        log("cancelRun › invalid scope: \(scopeString)")
+        return false
+    }
+    guard case .repo = scope else {
+        log("cancelRun › scope must be a repo (owner/name), got: \(scopeString)")
+        return false
+    }
+    let endpoint = "\(scope.apiPrefix)/actions/runs/\(runID)/cancel"
+    let result = await ghPost(endpoint)
+    log("cancelRun › run=\(runID) scope=\(scopeString) success=\(result)")
     return result
 }
