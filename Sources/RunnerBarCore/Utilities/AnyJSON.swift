@@ -39,19 +39,21 @@ public enum AnyJSON: Codable {
     /// - `object` and `array` are tried first because a `singleValueContainer` for a plain
     ///   string or number will simply fail to decode as `[String: AnyJSON]` or `[AnyJSON]`,
     ///   keeping the fast-path correct; placing them first makes the intent explicit.
-    /// - `Bool` is tried before `Double` because on Apple platforms `JSONDecoder` decodes
-    ///   `true`/`false` as `Bool` — but if `Double` were tried first it would succeed for
-    ///   any valid number, causing booleans to be misidentified as `.number(1.0)` / `.number(0.0)`.
+    /// - `Bool` is tried before `Int`, `Double`, and `String` — on Apple platforms
+    ///   `JSONDecoder` decodes `true`/`false` as `Bool`, but trying numeric or string types
+    ///   first could silently succeed on some JSON tokens and misclassify booleans.
+    ///   This matches the ordering used by every canonical `AnyCodable` implementation.
     /// - `Int` is tried before `Double` so that integer-valued fields (e.g. `agentId`) are
     ///   stored losslessly as `.int` rather than being coerced to a `Double` mantissa.
+    /// - `String` is tried last among scalar types so it cannot shadow earlier cases.
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
         if let v = try? c.decode([String: AnyJSON].self) { self = .object(v); return }
         if let v = try? c.decode([AnyJSON].self)          { self = .array(v);  return }
-        if let v = try? c.decode(String.self)             { self = .string(v); return }
         if let v = try? c.decode(Bool.self)               { self = .bool(v);   return }
         if let v = try? c.decode(Int.self)                { self = .int(v);    return }
         if let v = try? c.decode(Double.self)             { self = .number(v); return }
+        if let v = try? c.decode(String.self)             { self = .string(v); return }
         if c.decodeNil()                                  { self = .null;      return }
         throw DecodingError.dataCorruptedError(in: c, debugDescription: "AnyJSON: unrecognised value")
     }
