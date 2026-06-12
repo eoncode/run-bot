@@ -39,6 +39,7 @@ public actor RateLimitActor {
     /// cannot clear state that belongs to a newer rate-limit window.
     private var generation = 0
 
+    /// Creates a new `RateLimitActor` instance.
     public init() {}
 
     /// Arms the rate-limit flag and schedules an automatic reset.
