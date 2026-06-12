@@ -129,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var savedNavState: NavState?
     /// Sheet state that must survive transient popover hides.
     let panelSheetState = PanelSheetState()
+    // periphery:ignore - write-only by design; assignment keeps the Task alive
     /// Retained handle for the sign-out observation task started in
     /// `setupSignOutSubscription()` (AppDelegate+Polling.swift).
     /// Keeping a strong reference ensures the task is never silently abandoned.

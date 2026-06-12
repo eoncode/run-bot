@@ -24,11 +24,6 @@ let package = Package(
             name: "RunnerBarCoreTests",
             dependencies: ["RunnerBarCore"],
             path: "Tests/RunnerBarCoreTests"
-        ),
-        .testTarget(
-            name: "RunnerBarTests",
-            dependencies: ["RunnerBarCore"],
-            path: "Tests/RunnerBarTests"
         )
     ]
 )
