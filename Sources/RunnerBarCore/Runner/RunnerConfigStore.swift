@@ -44,8 +44,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 
     // MARK: Private properties
 
-    /// Decoder used for reading `.runner` JSON.
-    // thread-safe: JSONDecoder has no mutable state after init
+    /// Decoder used for reading `.runner` JSON. Thread-safe: `JSONDecoder` has no mutable state after init.
     private let decoder = JSONDecoder()
 
     // MARK: Init

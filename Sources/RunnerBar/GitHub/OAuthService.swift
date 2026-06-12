@@ -230,6 +230,15 @@ final class OAuthService {
             case errorDescription = "error_description"
         }
         // swiftlint:enable missing_docs
+
+        /// Returns the names of modelled fields that are non-nil, for safe diagnostic logging.
+        var debugKeys: [String] {
+            var keys: [String] = []
+            if accessToken != nil { keys.append("access_token") }
+            if error != nil { keys.append("error") }
+            if errorDescription != nil { keys.append("error_description") }
+            return keys
+        }
     }
 
     /// POSTs the authorization code to GitHub and saves the returned access token to Keychain.
@@ -262,8 +271,7 @@ final class OAuthService {
             return
         }
         guard let token = response.accessToken, !token.isEmpty else {
-            let raw = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
-            log("OAuthService › exchangeCode: no access_token in response — raw=\(raw)")
+            log("OAuthService › exchangeCode: no access_token in response — keys=\(response.debugKeys)")
             onCompletion?(false)
             return
         }
