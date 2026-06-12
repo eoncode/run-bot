@@ -262,7 +262,7 @@ final class OAuthService {
             return
         }
         guard let token = response.accessToken, !token.isEmpty else {
-            log("OAuthService › exchangeCode: no access_token in response (error=\(response.error ?? "nil"), errorDescription=\(response.errorDescription ?? "nil"))")
+            log("OAuthService › exchangeCode: no access_token in response (errorDescription=\(response.errorDescription ?? "nil"))")
             onCompletion?(false)
             return
         }
