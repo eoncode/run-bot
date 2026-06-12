@@ -2,6 +2,44 @@
 // RunnerBarCore
 import Foundation
 
+// MARK: - AnyJSON
+
+/// A type-erased `Codable` value used for the read-modify-write merge in `RunnerConfigStore`.
+///
+/// Allows the store to round-trip the full `.runner` JSON object — including agent-managed keys
+/// not modelled by `RunnerConfig` — without `JSONSerialization` or `[String: Any]`.
+private enum AnyJSON: Codable {
+    case object([String: AnyJSON])
+    case array([AnyJSON])
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let v = try? c.decode([String: AnyJSON].self) { self = .object(v); return }
+        if let v = try? c.decode([AnyJSON].self)          { self = .array(v);  return }
+        if let v = try? c.decode(String.self)             { self = .string(v); return }
+        if let v = try? c.decode(Bool.self)               { self = .bool(v);   return }
+        if let v = try? c.decode(Double.self)             { self = .number(v); return }
+        if c.decodeNil()                                  { self = .null;      return }
+        throw DecodingError.dataCorruptedError(in: c, debugDescription: "AnyJSON: unrecognised value")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .object(let v): try c.encode(v)
+        case .array(let v):  try c.encode(v)
+        case .string(let v): try c.encode(v)
+        case .number(let v): try c.encode(v)
+        case .bool(let v):   try c.encode(v)
+        case .null:          try c.encodeNil()
+        }
+    }
+}
+
 // MARK: - RunnerConfigStoreError
 
 /// Errors thrown while reading or writing the runner `.runner` configuration file.
@@ -27,9 +65,9 @@ public enum RunnerConfigStoreError: LocalizedError {
 /// Actor that owns all disk read/write for runner `.runner` configuration files.
 ///
 /// The store performs a typed decode via `RunnerConfig` for reads. For writes it uses
-/// a read-modify-write merge with `JSONSerialization` to preserve agent-managed keys
-/// not modelled by `RunnerConfig`. All caller-facing APIs are strongly typed and
-/// `async`, which keeps runner config I/O out of view code and commit helpers.
+/// a read-modify-write merge via `AnyJSON` to preserve agent-managed keys not modelled
+/// by `RunnerConfig`. All caller-facing APIs are strongly typed and `async`, which keeps
+/// runner config I/O out of view code and commit helpers.
 ///
 /// All disk operations are dispatched to `DispatchQueue.global(qos: .utility)` via
 /// `withCheckedContinuation` / `withCheckedThrowingContinuation` so the actor's
@@ -46,6 +84,13 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 
     /// Decoder used for reading `.runner` JSON.
     private let decoder = JSONDecoder()
+
+    /// Encoder used for writing the merged `.runner` JSON.
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return e
+    }()
 
     // MARK: Init
 
@@ -85,16 +130,13 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     /// Saves the typed runner config to `installPath/.runner`.
     ///
     /// Uses a **read-modify-write merge** strategy:
-    /// 1. The existing `.runner` file is read as a raw `[String: Any]` dictionary.
+    /// 1. The existing `.runner` file is decoded into a `[String: AnyJSON]` dictionary.
     /// 2. Only the fields covered by `RunnerConfig` are overwritten in that dictionary.
-    /// 3. The merged dictionary is written back atomically.
+    /// 3. The merged dictionary is encoded and written back atomically.
     ///
-    /// This intentionally retains `JSONSerialization` and `[String: Any]` *inside* this
-    /// method so that agent-managed keys not modelled by `RunnerConfig` (e.g. `jitConfig`,
-    /// `gitHubUrl`) are never silently dropped when the user saves editable fields.
-    /// The `[String: Any]` dict is fully contained within this actor and never exposed to
-    /// callers — which satisfies the Phase 3 acceptance criterion in #1298 ("no
-    /// `[String: Any]` in caller paths") while preserving round-trip fidelity.
+    /// Agent-managed keys not modelled by `RunnerConfig` (e.g. `jitConfig`, `gitHubUrl`)
+    /// are preserved via the private `AnyJSON` type — no `[String: Any]` or
+    /// `JSONSerialization` is used anywhere in the merge path.
     ///
     /// Disk I/O is dispatched to `DispatchQueue.global(qos: .utility)` so the actor's
     /// cooperative thread is never blocked.
@@ -104,7 +146,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .utility).async {
                 // Read-modify-write: load existing keys so agent-managed keys are preserved.
-                var raw: [String: Any] = [:]
+                var raw: [String: AnyJSON] = [:]
                 if let existingData = try? Data(contentsOf: url) {
                     let data: Data
                     if existingData.prefix(3).elementsEqual([0xEF, 0xBB, 0xBF]) {
@@ -112,11 +154,10 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                     } else {
                         data = existingData
                     }
-                    if let object = try? JSONSerialization.jsonObject(with: data),
-                       let dict = object as? [String: Any] {
+                    if let dict = try? self.decoder.decode([String: AnyJSON].self, from: data) {
                         raw = dict
                     } else {
-                        // JSONSerialization failed — existing file is malformed. Proceeding
+                        // Decode failed — existing file is malformed. Proceeding
                         // from an empty dict will drop unknown agent-managed keys on this save.
                         log("RunnerConfigStore › save: existing .runner at \(url.path) could not be parsed; unknown keys will not be preserved")
                     }
@@ -132,24 +173,24 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                 // to the value the agent writes on a fresh registration — so a load-failure
                 // zero value and an intentional clear are both safe to round-trip.
                 let workFolderValue = config.workFolder.isEmpty ? "_work" : config.workFolder
-                raw[RunnerConfig.CodingKeys.workFolder.rawValue] = workFolderValue
+                raw[RunnerConfig.CodingKeys.workFolder.rawValue] = .string(workFolderValue)
                 // Only write disableUpdate when it is explicitly set; omit the key when nil
                 // to match the agent's own convention (key absent == false).
                 if let disableUpdate = config.disableUpdate {
-                    raw[RunnerConfig.CodingKeys.disableUpdate.rawValue] = disableUpdate
+                    raw[RunnerConfig.CodingKeys.disableUpdate.rawValue] = .bool(disableUpdate)
                 } else {
                     raw.removeValue(forKey: RunnerConfig.CodingKeys.disableUpdate.rawValue)
                 }
                 // Write optional fields only when non-nil to avoid injecting "key": null
-                // into the agent-managed file (JSONSerialization encodes Swift nil as NSNull).
-                if let v = config.platform             { raw[RunnerConfig.CodingKeys.platform.rawValue] = v }
-                if let v = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = v }
-                if let v = config.agentVersion         { raw[RunnerConfig.CodingKeys.agentVersion.rawValue] = v }
-                if let v = config.ephemeral            { raw[RunnerConfig.CodingKeys.ephemeral.rawValue] = v }
-                if let v = config.agentId             { raw[RunnerConfig.CodingKeys.agentId.rawValue] = v }
+                // into the agent-managed file.
+                if let v = config.platform             { raw[RunnerConfig.CodingKeys.platform.rawValue]             = .string(v) }
+                if let v = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = .string(v) }
+                if let v = config.agentVersion         { raw[RunnerConfig.CodingKeys.agentVersion.rawValue]         = .string(v) }
+                if let v = config.ephemeral            { raw[RunnerConfig.CodingKeys.ephemeral.rawValue]            = .bool(v)   }
+                if let v = config.agentId             { raw[RunnerConfig.CodingKeys.agentId.rawValue]              = .number(Double(v)) }
 
                 do {
-                    let data = try JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys])
+                    let data = try self.encoder.encode(raw)
                     try data.write(to: url, options: .atomic)
                     log("RunnerConfigStore › saved config to \(url.path)")
                     continuation.resume()
