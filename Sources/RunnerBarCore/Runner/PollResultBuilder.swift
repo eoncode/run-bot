@@ -138,14 +138,14 @@ public struct PollResultBuilder {
             // re-notification when a group is evicted from snapGroupCache by trimGroupCache
             // (capped at groupCacheLimit = 30) but is still present in GitHub's feed.
             let isNew = !newSeenGroupIDs.contains(group.id)
-            let runSummary = group.runs.map { "\($0.id):\($0.conclusion ?? "nil")" }.joined(separator: ", ")
+            let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(separator: ", ")
             log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]")
             if isNew {
                 let scope = scopeFromGroup(group)
                 log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → scope=\(scope)")
                 // Only fire the failure hook when the group actually failed.
                 // Success/cancelled/skipped completions must not trigger an alert.
-                let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
+                let isFailure = group.runs.contains { $0.conclusion?.isFailure == true }
                 if isFailure {
                     await fireFailureHook(group, scope)
                 }
@@ -311,7 +311,7 @@ public struct PollResultBuilder {
                 let scope = scopeFromGroup(group)
                 // Only alert on genuine failures — do not fire for successful or
                 // cancelled groups that vanished from the live feed normally.
-                let isFailure = group.runs.contains { $0.conclusion == "failure" || $0.conclusion == "timed_out" }
+                let isFailure = group.runs.contains { $0.conclusion?.isFailure == true }
                 if isFailure {
                     log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+failure → fireFailureHook scope=\(scope)")
                     await fireFailureHook(group, scope)

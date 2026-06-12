@@ -13,6 +13,13 @@ private let prNumberPattern = #"/(\d+)/"# // NOSONAR — fixed regex pattern
 /// many steps still in-progress simultaneously (e.g. a large matrix job).
 private let maxRefreshConcurrency = 3
 
+/// Shared JSON decoder reused across all API response decoding in this file.
+///
+/// Hoisted to a file-scoped constant to avoid allocating a new instance on every
+/// API call in the hot polling path. Centralises future decoder configuration
+/// (e.g. key decoding strategy, date decoding strategy) in one place.
+private let decoder = JSONDecoder()
+
 // MARK: - Codable helpers (private to this file)
 
 /// Response envelope for the workflow runs list API endpoint.
@@ -129,7 +136,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
     var seenIDs = Set<Int>()
 
     for data in [ipData, qData].compactMap({ $0 }) {
-        if let resp = try? JSONDecoder().decode(ActionRunsResponse.self, from: data) {
+        if let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
             for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
                 runPayloads.append(run)
             }
@@ -145,7 +152,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
     // De-duplication of old completed groups re-triggering the failure hook is
     // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
     if let data = cData,
-       let resp = try? JSONDecoder().decode(ActionRunsResponse.self, from: data) {
+       let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
         for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
             bySha[run.headSha, default: []].append(run)
         }
@@ -167,8 +174,8 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
                     WorkflowRunRef(
                         id: $0.id,
                         name: $0.name,
-                        status: $0.status,
-                        conclusion: $0.conclusion,
+                        status: JobStatus(rawString: $0.status),
+                        conclusion: $0.conclusion.map { JobConclusion(rawString: $0) },
                         htmlUrl: $0.htmlUrl
                     )
                 }
@@ -201,9 +208,9 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
 
     var result = groups.compactMap { $0 }
     result.sort { lhs, rhs in
-        let lhsPriority = statusPriority(lhs.groupStatus)
-        let rhsPriority = statusPriority(rhs.groupStatus)
-        if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
+        if lhs.groupStatus.sortPriority != rhs.groupStatus.sortPriority {
+            return lhs.groupStatus.sortPriority < rhs.groupStatus.sortPriority
+        }
         return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
     }
     log("fetchActionGroups › \(result.count) group(s) for \(scope)")
@@ -264,7 +271,7 @@ private func fetchJobsForGroup(
 /// All date parsing goes through `ISO8601DateParser.shared`.
 private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
     guard let data = await ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=100"),
-          let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
+          let resp = try? decoder.decode(JobsResponse.self, from: data)
     else { return [] }
 
     let initial = await withTaskGroup(of: ActiveJob.self) { group in
@@ -287,7 +294,7 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
         for (idx, job) in needsRefresh {
             group.addTask {
                 guard let freshData = await ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
-                      let fresh = try? JSONDecoder().decode(JobPayload.self, from: freshData)
+                      let fresh = try? decoder.decode(JobPayload.self, from: freshData)
                 else { return (idx, nil) }
                 let freshJob = await ISO8601DateParser.shared.makeJob(from: fresh)
                 if fresh.conclusion != nil { return (idx, freshJob) }
@@ -317,15 +324,3 @@ private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
     return result
 }
 
-/// Returns the sort priority for a `GroupStatus`.
-///
-/// Lower value = higher display priority (in-progress before queued before completed).
-/// - Parameter status: The `GroupStatus` to evaluate.
-/// - Returns: An integer priority where `0` = in-progress, `1` = queued, `2` = completed.
-private func statusPriority(_ status: GroupStatus) -> Int {
-    switch status {
-    case .inProgress: return 0
-    case .queued:     return 1
-    case .completed:  return 2
-    }
-}

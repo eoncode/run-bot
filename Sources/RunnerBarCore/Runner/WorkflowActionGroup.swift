@@ -15,6 +15,21 @@ public enum GroupStatus {
     case completed
 }
 
+// MARK: - GroupStatus extension
+
+extension GroupStatus {
+    /// Sort priority for display ordering.
+    ///
+    /// Lower value = higher display priority (in-progress before queued before completed).
+    var sortPriority: Int {
+        switch self {
+        case .inProgress: return 0
+        case .queued:     return 1
+        case .completed:  return 2
+        }
+    }
+}
+
 // MARK: - WorkflowRunRef
 
 /// Lightweight reference to a single workflow run inside a `WorkflowActionGroup`.
@@ -26,10 +41,10 @@ public struct WorkflowRunRef: Identifiable, Sendable {
     public let id: Int
     /// Workflow file name, e.g. `"SonarQube"`, `"vitest"`.
     public let name: String
-    /// Current run status string as returned by the API (e.g. `"in_progress"`, `"completed"`).
-    public let status: String
-    /// Run conclusion once completed (e.g. `"success"`, `"failure"`), or `nil` while running.
-    public let conclusion: String?
+    /// Current run status as a typed `JobStatus` value.
+    public let status: JobStatus
+    /// Run conclusion once completed, or `nil` while running.
+    public let conclusion: JobConclusion?
     /// URL to the run detail page on github.com.
     public let htmlUrl: String?
 
@@ -37,10 +52,10 @@ public struct WorkflowRunRef: Identifiable, Sendable {
     /// - Parameters:
     ///   - id: The unique GitHub run ID.
     ///   - name: Workflow file name.
-    ///   - status: Current run status string.
-    ///   - conclusion: Run conclusion string, or `nil` while running.
+    ///   - status: Current run status.
+    ///   - conclusion: Run conclusion, or `nil` while running.
     ///   - htmlUrl: URL to the run detail page.
-    public init(id: Int, name: String, status: String, conclusion: String?, htmlUrl: String?) {
+    public init(id: Int, name: String, status: JobStatus, conclusion: JobConclusion?, htmlUrl: String?) {
         self.id = id
         self.name = name
         self.status = status
@@ -218,9 +233,9 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         // ⚠️ This path is only reached when jobs is empty (loading state).
         // Once jobs are populated the block above takes over.
         guard runs.allSatisfy({ $0.conclusion != nil }) else { return nil }
-        if runs.contains(where: { $0.conclusion == "failure" }) { return "failure" }
-        if runs.contains(where: { $0.conclusion == "cancelled" }) { return "cancelled" }
-        if runs.contains(where: { $0.conclusion == "skipped" }) { return "skipped" }
+        if runs.contains(where: { $0.conclusion?.isFailure == true }) { return "failure" }
+        if runs.contains(where: { $0.conclusion == .cancelled }) { return "cancelled" }
+        if runs.contains(where: { $0.conclusion == .skipped }) { return "skipped" }
         return "success"
     }
 
