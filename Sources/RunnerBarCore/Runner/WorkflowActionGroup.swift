@@ -67,7 +67,7 @@ public struct WorkflowRunRef: Identifiable, Sendable {
 // MARK: - WorkflowActionGroup
 
 /// Represents one **commit / PR trigger**: all GitHub Actions workflow runs
-/// that share the same `head_sha`. Mirrors ci-dash.py’s “Group” concept from
+/// that share the same `head_sha`. Mirrors ci-dash.py's “Group” concept from
 /// `group_runs()` + `enrich_group()`.
 ///
 /// Hierarchy: `WorkflowActionGroup` → jobs (flat across all sibling runs) → `JobStep` → log.
@@ -99,11 +99,11 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     public var jobs: [ActiveJob]
 
     /// UTC time of the earliest job `startedAt` across all runs.
-    /// Mirrors ci-dash.py’s `first_job_started_at`.
+    /// Mirrors ci-dash.py's `first_job_started_at`.
     public var firstJobStartedAt: Date?
 
     /// UTC time of the latest job `completedAt` across all runs.
-    /// Mirrors ci-dash.py’s `last_job_completed_at`.
+    /// Mirrors ci-dash.py's `last_job_completed_at`.
     public var lastJobCompletedAt: Date?
 
     /// Fallback creation time from the representative run.
@@ -188,14 +188,14 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     ///
     /// - Returns `.completed` when all jobs have a conclusion (even if the run-level
     ///   API status lags behind — mirrors ci-dash.py override).
-    /// - Returns `.inProgress` when any run is `"in_progress"`.
-    /// - Returns `.queued` when any run is `"queued"` but none is in progress.
+    /// - Returns `.inProgress` when any run is `.inProgress`.
+    /// - Returns `.queued` when any run is `.queued` but none is in progress.
     public var groupStatus: GroupStatus {
         if jobsTotal > 0, jobs.filter({ $0.conclusion != nil }).count == jobsTotal {
             return .completed
         }
-        if runs.contains(where: { $0.status == "in_progress" }) { return .inProgress }
-        if runs.contains(where: { $0.status == "queued" }) { return .queued }
+        if runs.contains(where: { $0.status == .inProgress }) { return .inProgress }
+        if runs.contains(where: { $0.status == .queued }) { return .queued }
         return .completed
     }
 
@@ -204,7 +204,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// ⚠️ WHY WE USE JOBS, NOT RUNS:
     /// The GitHub API can report a run-level conclusion of `"failure"` even when every
     /// individual job succeeded. This happens when a job was retried: the first
-    /// attempt creates a run whose conclusion is `"failure"`, but the retry run’s jobs
+    /// attempt creates a run whose conclusion is `"failure"`, but the retry run's jobs
     /// all show `"success"`. Since we flatten all jobs from all sibling runs, using
     /// job-level conclusions is authoritative.
     ///
@@ -229,7 +229,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             if !hasSuccess && allSkippedOrCancelled { return "skipped" }
             return "success"
         }
-        // Run-based conclusion (fallback when jobs haven’t loaded yet).
+        // Run-based conclusion (fallback when jobs haven't loaded yet).
         // ⚠️ This path is only reached when jobs is empty (loading state).
         // Once jobs are populated the block above takes over.
         guard runs.allSatisfy({ $0.conclusion != nil }) else { return nil }
@@ -258,14 +258,11 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// Human-readable elapsed duration derived from `firstJobStartedAt` → `lastJobCompletedAt`.
     /// Falls back to `createdAt` when no job timing is available.
     public var elapsed: String {
-        if let start = firstJobStartedAt {
-            let end = lastJobCompletedAt ?? Date()
-            let seconds = max(0, Int(end.timeIntervalSince(start)))
-            return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-        }
-        guard let start = createdAt else { return "00:00" }
-        let seconds = max(0, Int(Date().timeIntervalSince(start)))
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+        formatElapsed(
+            start: firstJobStartedAt ?? createdAt,
+            end: lastJobCompletedAt,
+            isCompleted: groupStatus == .completed
+        )
     }
 
     // MARK: - Runner type
