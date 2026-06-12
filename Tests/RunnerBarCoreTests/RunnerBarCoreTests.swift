@@ -460,7 +460,7 @@ struct PollResultBuilderTests {
             into: &cache
         )
         #expect(cache[55] != nil)
-        #expect(cache[55]?.status == "completed")
+        #expect(cache[55]?.status == "completed", "Missing conclusion defaults to cancelled")
         #expect(cache[55]?.isDimmed == true)
         #expect(cache[55]?.conclusion == "cancelled")
     }
@@ -694,7 +694,7 @@ struct PollResultBuilderGroupStateTests {
             enrichJobs: { $0 }
         )
 
-        #expect(result.display.filter { !$0.isDimmed }.isEmpty)
+        #expect(result.display.filter { !$0.isDimmed }.isEmpty, "Completed group must not appear as a live (non-dimmed) row")
         #expect(!result.newGroupCache.isEmpty)
     }
 
