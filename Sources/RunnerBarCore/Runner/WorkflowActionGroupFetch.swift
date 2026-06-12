@@ -18,6 +18,12 @@ private let maxRefreshConcurrency = 3
 /// Hoisted to a file-scoped constant to avoid allocating a new instance on every
 /// API call in the hot polling path. Centralises future decoder configuration
 /// (e.g. key decoding strategy, date decoding strategy) in one place.
+///
+/// - Warning: Do not mutate after init. This instance is read concurrently from
+///   `withTaskGroup` blocks; `JSONDecoder` is a reference type and is only safe
+///   for concurrent use while its configuration is never written. Any future
+///   `keyDecodingStrategy`/`dateDecodingStrategy` change must be applied here at
+///   declaration — never reassigned later.
 private let decoder = JSONDecoder()
 
 // MARK: - Codable helpers (private to this file)
