@@ -21,7 +21,7 @@ func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
 /// See https://docs.github.com/en/rest/overview/rate-limits-for-the-rest-api#secondary-rate-limits
 func handleRateLimitResponse(
     statusCode: Int,
-    _ data: Data?,
+    _ _data: Data?,
     response: HTTPURLResponse,
     endpoint: String
 ) async {
