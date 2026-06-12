@@ -21,6 +21,12 @@ This document captures the engineering and design principles that govern the Run
 13. [Multi-Target Swift Package with Testable Core](#13-multi-target-swift-package-with-testable-core)
 14. [XcodeGen for Reproducible Xcode Projects](#14-xcodegen-for-reproducible-xcode-projects)
 15. [Static Code Quality Pipeline](#15-static-code-quality-pipeline)
+16. [Actor-Per-Concern Isolation](#16-actor-per-concern-isolation)
+17. [nonisolated for Safe Cross-Boundary Capture](#17-nonisolated-for-safe-cross-boundary-capture)
+18. [withCheckedContinuation for Blocking I/O](#18-withcheckedcontinuation-for-blocking-io)
+19. [AnyJSON Type-Erased Codec](#19-anyjson-type-erased-codec)
+20. [Typed Error Discrimination with ExecuteResult](#20-typed-error-discrimination-with-executeresult)
+21. [Human-Readable Config Writes](#21-human-readable-config-writes)
 
 ---
 
@@ -117,3 +123,39 @@ Dead-code elimination, style enforcement, and continuous quality analysis are al
 - **SonarCloud** (`sonar-project.properties`) — provides continuous quality gates, duplication analysis, and security scanning across every pull request.
 
 All three run in CI, not just locally, so the quality bar is enforced unconditionally on every contribution.
+
+---
+
+## 16. Actor-Per-Concern Isolation
+
+The concurrency model goes beyond a single background actor. Each mutable domain owns its own dedicated actor: `RateLimitActor` serialises all rate-limit state, and `RunnerConfigStore` is itself an actor that serialises all disk I/O for runner configuration files. The principle is one actor per mutable concern, zero shared mutable state anywhere — not one global "background actor" that everything piles into. This keeps actor contention minimal and makes ownership of each piece of state unambiguous.
+
+---
+
+## 17. nonisolated for Safe Cross-Boundary Capture
+
+`JSONDecoder` instances are marked `nonisolated` on actors where they need to be captured inside closures that cross isolation boundaries. This is a deliberate, compiler-enforced acknowledgment that `JSONDecoder` has no mutable state after initialisation and is therefore safe to use across actor boundaries without synchronisation. It is not a workaround — it is a precise application of `nonisolated` to express an immutability guarantee that the compiler can then verify.
+
+---
+
+## 18. withCheckedContinuation for Blocking I/O
+
+All synchronous disk I/O is bridged into the async world using `withCheckedContinuation` / `withCheckedThrowingContinuation`, dispatching the actual blocking work to `DispatchQueue.global(qos: .utility)`. This ensures the actor's cooperative thread is never blocked by a disk operation — a key Swift 6 correctness requirement for not starving the concurrency runtime. The pattern is: async surface, synchronous implementation, bridged explicitly at the boundary.
+
+---
+
+## 19. AnyJSON Type-Erased Codec
+
+A custom `AnyJSON` enum in `Utilities/AnyJSON.swift` is used for read-modify-write operations on agent-managed config files (e.g. `.runner` JSON files that contain keys like `jitConfig` whose shape is controlled by GitHub, not by RunnerBar). `AnyJSON` allows the app to decode, mutate specific known keys, and re-encode the full file without losing unknown fields — and without resorting to `[String: Any]` or `JSONSerialization`. Everything remains `Codable` and type-safe end-to-end; unknown keys are preserved faithfully across round-trips.
+
+---
+
+## 20. Typed Error Discrimination with ExecuteResult
+
+Mutation and fetch functions avoid throwing in favour of a private `ExecuteResult` enum that explicitly discriminates between `.success`, `.rateLimited`, `.permissionDenied`, `.httpError(Int)`, and `.networkError(Error)`. This keeps all response-handling logic in one exhaustive `switch` at the transport layer rather than scattered across call sites as nil-checks or catch blocks. Functions that return results callers may legitimately ignore are marked `@discardableResult`, making the intentional discard visible and compiler-validated rather than silent.
+
+---
+
+## 21. Human-Readable Config Writes
+
+When writing `.runner` config files back to disk, `JSONEncoder` is configured with `.prettyPrinted` and `.sortedKeys`. This ensures that agent-managed configuration files remain human-readable and produce stable, minimal diffs in git — a key property when the files are shared between RunnerBar and the GitHub Actions runner agent. A config change that touches one field produces a one-line diff, not a reformatted blob.
