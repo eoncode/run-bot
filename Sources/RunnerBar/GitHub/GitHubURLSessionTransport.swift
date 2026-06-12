@@ -4,9 +4,11 @@
 import Foundation
 import RunnerBarCore
 
-// Hoisted to avoid re-instantiation on every call. Both types are thread-safe:
-// JSONDecoder/JSONEncoder have no mutable state after initialisation.
+/// Shared decoder hoisted to avoid re-instantiation on every call.
+/// Thread-safe: `JSONDecoder` has no mutable state after initialisation.
 private let sharedDecoder = JSONDecoder()
+/// Shared encoder hoisted to avoid re-instantiation on every call.
+/// Thread-safe: `JSONEncoder` has no mutable state after initialisation.
 private let sharedEncoder = JSONEncoder()
 
 // MARK: - Shared execution core
@@ -262,7 +264,10 @@ func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> Bool {
 }
 
 /// Encodable body for the GitHub runner labels PUT endpoint.
-private struct LabelsBody: Encodable { let labels: [String] } // periphery:ignore
+private struct LabelsBody: Encodable {
+    /// The label names to set on the runner.
+    let labels: [String] // periphery:ignore
+}
 
 /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
 /// - Returns: The updated label names on success, `nil` on any failure.
