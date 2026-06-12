@@ -8,25 +8,37 @@ import Testing
 
 /// Tests for `LocalRunnerIndex` — the `UserDefaults`-backed name → install-path persistence layer.
 ///
-/// Every test clears `UserDefaults.standard` key `"localRunnerIndex"` via `defer` so
-/// tests are fully isolated from each other and from the host app’s real defaults.
+/// Each test creates a UUID-namespaced `UserDefaults` suite via `makeIndex()` and tears it
+/// down with `removePersistentDomain` in a `defer` block, ensuring full isolation even
+/// under Swift Testing’s parallel runner.
 @Suite("LocalRunnerIndex")
 struct LocalRunnerIndexTests {
+
+    // MARK: - Helpers
+
+    /// Creates a fresh isolated `LocalRunnerIndex` backed by a UUID-namespaced `UserDefaults` suite.
+    /// The caller is responsible for calling `defaults.removePersistentDomain(forName: suiteName)`
+    /// when the test completes.
+    private func makeIndex() -> (index: LocalRunnerIndex, defaults: UserDefaults, suiteName: String) {
+        let suiteName = "com.runnerbar.tests.LocalRunnerIndex.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        return (LocalRunnerIndex(defaults: defaults), defaults, suiteName)
+    }
 
     // MARK: - register
 
     /// `register` stores the install path and makes it immediately readable.
     @Test func registerStoresPath() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let index = LocalRunnerIndex()
+        let (index, defaults, suiteName) = makeIndex()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         index.register(name: "my-runner", installPath: "/opt/runners/my-runner")
         #expect(index.runnerIndex["my-runner"] == "/opt/runners/my-runner")
     }
 
     /// `register` called twice with the same name updates the path.
     @Test func registerOverwritesExistingEntry() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let index = LocalRunnerIndex()
+        let (index, defaults, suiteName) = makeIndex()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         index.register(name: "runner-a", installPath: "/old/path")
         index.register(name: "runner-a", installPath: "/new/path")
         #expect(index.runnerIndex["runner-a"] == "/new/path")
@@ -34,8 +46,8 @@ struct LocalRunnerIndexTests {
 
     /// Multiple runners can be registered independently.
     @Test func registerMultipleRunners() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let index = LocalRunnerIndex()
+        let (index, defaults, suiteName) = makeIndex()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         index.register(name: "alpha", installPath: "/runners/alpha")
         index.register(name: "beta", installPath: "/runners/beta")
         #expect(index.runnerIndex.count == 2)
@@ -47,8 +59,8 @@ struct LocalRunnerIndexTests {
 
     /// `unregister` removes a previously registered runner.
     @Test func unregisterRemovesEntry() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let index = LocalRunnerIndex()
+        let (index, defaults, suiteName) = makeIndex()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         index.register(name: "to-remove", installPath: "/path")
         index.unregister(name: "to-remove")
         #expect(index.runnerIndex["to-remove"] == nil)
@@ -56,16 +68,16 @@ struct LocalRunnerIndexTests {
 
     /// `unregister` on an unknown name is a no-op (does not crash).
     @Test func unregisterUnknownNameIsNoop() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let index = LocalRunnerIndex()
+        let (index, defaults, suiteName) = makeIndex()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         index.unregister(name: "does-not-exist")
         #expect(index.runnerIndex.isEmpty)
     }
 
     /// `unregister` only removes the targeted runner, leaving others intact.
     @Test func unregisterLeavesOthersIntact() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let index = LocalRunnerIndex()
+        let (index, defaults, suiteName) = makeIndex()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
         index.register(name: "keep", installPath: "/keep")
         index.register(name: "remove", installPath: "/remove")
         index.unregister(name: "remove")
@@ -75,12 +87,15 @@ struct LocalRunnerIndexTests {
 
     // MARK: - Persistence (UserDefaults round-trip)
 
-    /// A new `LocalRunnerIndex` instance reads back entries written by a previous instance.
+    /// A new `LocalRunnerIndex` instance backed by the same suite reads back entries
+    /// written by a previous instance — verifying UserDefaults persistence.
     @Test func persistenceRoundTrip() {
-        defer { UserDefaults.standard.removeObject(forKey: "localRunnerIndex") }
-        let writer = LocalRunnerIndex()
+        let suiteName = "com.runnerbar.tests.LocalRunnerIndex.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let writer = LocalRunnerIndex(defaults: defaults)
         writer.register(name: "persistent-runner", installPath: "/persistent/path")
-        let reader = LocalRunnerIndex()
+        let reader = LocalRunnerIndex(defaults: defaults)
         #expect(reader.runnerIndex["persistent-runner"] == "/persistent/path")
     }
 }
