@@ -213,13 +213,23 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     ///
     /// Returns `nil` while jobs are still loading (`jobs.isEmpty`) or while any job
     /// has not yet concluded, to prevent a premature FAILED badge.
+    ///
+    /// ⚠️ NORMALISATION NOTE — run-based fallback:
+    /// The run-based fallback (reached only while `jobs.isEmpty`) returns the string
+    /// `"failure"` for **all** `isFailure` conclusions, including `.actionRequired`
+    /// (raw value `"action_required"`), `.timedOut`, and `.startupFailure`. This is
+    /// intentional: the run-based path is a **loading-state placeholder** only. Once
+    /// jobs populate, the job-based path above takes over with the same `"failure"`
+    /// string. No downstream consumer should specialise on `"action_required"` vs
+    /// `"failure"` during this window — if that need arises, promote the return type
+    /// to `JobConclusion?` and let callers switch on the enum directly.
     public var conclusion: String? {
         // Job-based conclusion (preferred) — use when data is fully loaded.
         if !jobs.isEmpty {
             // Only conclude when every single job has a conclusion.
             guard jobs.allSatisfy({ $0.conclusion != nil }) else { return nil }
             // ⚠️ Do NOT change this to read from runs[].conclusion — run-level API
-            // conclusions are stale and can report “failure” even when all jobs pass
+            // conclusions are stale and can report "failure" even when all jobs pass
             // (e.g. after a retry). This caused the spurious FAILED badge (issue #294).
             // Use the canonical `JobConclusion.isFailure` check so this branch stays
             // aligned with the run-based fallback below (and PollResultBuilder /
@@ -239,6 +249,8 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         // Run-based conclusion (fallback when jobs haven't loaded yet).
         // ⚠️ This path is only reached when jobs is empty (loading state).
         // Once jobs are populated the block above takes over.
+        // All isFailure conclusions (.actionRequired, .timedOut, .startupFailure, .failure)
+        // normalise to "failure" here — see NORMALISATION NOTE in the doc comment above.
         guard runs.allSatisfy({ $0.conclusion != nil }) else { return nil }
         if runs.contains(where: { $0.conclusion?.isFailure == true }) { return "failure" }
         if runs.contains(where: { $0.conclusion == .cancelled }) { return "cancelled" }
