@@ -195,8 +195,6 @@ final class OAuthService {
 
     // MARK: Token Exchange
 
-
-
     /// Response body from the GitHub OAuth token exchange.
     /// GitHub returns HTTP 200 even on failure, so both `accessToken` and `error` are optional.
     private struct OAuthTokenResponse: Decodable {
