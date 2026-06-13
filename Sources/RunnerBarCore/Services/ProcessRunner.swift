@@ -314,6 +314,7 @@ public enum ProcessRunner {
                 task.terminationHandler = { t in
                     let exitCode = t.terminationStatus
                     // Cancel the timeout guard immediately — process has already exited.
+                    // Read under lock, cancel outside — avoids holding the unfair lock during Task.cancel().
                     timeoutTaskBox.withLock { $0 }?.cancel()
                     // Join the drain queue: blocks until readDataToEndOfFile() finishes.
                     // This is the happens-before guarantee that makes outputBox safe
