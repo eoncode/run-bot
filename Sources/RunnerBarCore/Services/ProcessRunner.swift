@@ -315,7 +315,8 @@ public enum ProcessRunner {
                     let exitCode = t.terminationStatus
                     // Cancel the timeout guard immediately — process has already exited.
                     // Read under lock, cancel outside — avoids holding the unfair lock during Task.cancel().
-                    timeoutTaskBox.withLock { $0 }?.cancel()
+                    let timeoutTask = timeoutTaskBox.withLock { $0 }
+                    timeoutTask?.cancel()
                     // Join the drain queue: blocks until readDataToEndOfFile() finishes.
                     // This is the happens-before guarantee that makes outputBox safe
                     // to read immediately after. The drainQueue.sync call is cheap here
@@ -380,10 +381,12 @@ public enum ProcessRunner {
                 }
 
                 // Create the Task *before* acquiring the lock so it is already
-                // scheduled by the time timeoutTaskBox is written. terminationHandler
-                // reads timeoutTaskBox only after the process exits, which is always
-                // after this write completes — the serialised continuation path
-                // provides the happens-before edge (#1152).
+                // scheduled by the time timeoutTaskBox is written.
+                // Note: a very fast-exiting process can trigger terminationHandler
+                // before this write, causing it to see nil and skip .cancel().
+                // That is safe: guard task.isRunning inside the timeout task
+                // ensures it exits without terminating the (already-gone) process.
+                // This race existed in the pre-refactor Box<T> code as well (#1152).
                 let timeoutTask = Task.detached {
                     do {
                         try await Task.sleep(for: .seconds(timeout))
