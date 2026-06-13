@@ -23,7 +23,8 @@ public protocol ScopePreferencesStoreProtocol: Sendable {
 /// tested without spawning an actual Terminal.app window.
 ///
 /// `open(command:)` is `@MainActor` — `NSAppleScript` must run on the main thread.
-/// The protocol itself is nonisolated so conforming types can be constructed freely.
+/// The protocol has no actor-isolation requirement at the type level; only
+/// `open(command:)` requires `@MainActor`.
 public protocol TerminalLauncherProtocol: Sendable {
     /// Opens a Terminal.app window and runs `command`. Must be called on `@MainActor`.
     @MainActor func open(command: String)

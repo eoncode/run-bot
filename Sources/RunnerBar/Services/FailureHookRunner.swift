@@ -13,6 +13,9 @@ import RunnerBarCore
 /// `FailureHookRunnerUseCase`; this type exists only to maintain the
 /// existing call-site API (`FailureHookRunner.fireIfNeeded(group:scope:callsite:)`).
 ///
+/// - Note: The full token resolution table, shell-quoting contract, and
+///   thread-safety notes are documented in `FailureHookRunnerUseCase`.
+///
 /// Refactored from a static enum as part of #1363 (P7/P8 audit).
 enum FailureHookRunner {
 

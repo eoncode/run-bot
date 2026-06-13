@@ -115,17 +115,14 @@ public struct FailureHookRunnerUseCase: Sendable {
 
     /// Returns `true` when a `JobConclusion` warrants firing the failure hook.
     ///
-    /// Superset of `JobConclusion.isFailure`: additionally includes `.cancelled`
-    /// because a cancelled run often signals a problem (e.g. a runner disconnect
-    /// or manual intervention) that the user wants to be notified about.
+    /// Delegates to `JobConclusion.isHookConclusion` — single source of truth.
     internal static func isHookConclusion(_ conclusion: JobConclusion) -> Bool {
-        conclusion.isFailure || conclusion == .cancelled
+        conclusion.isHookConclusion
     }
 
     /// Returns `true` when `conclusion` is non-nil and hook-triggering.
     internal static func isHookConclusion(_ conclusion: JobConclusion?) -> Bool {
-        guard let conclusion else { return false }
-        return isHookConclusion(conclusion)
+        conclusion?.isHookConclusion ?? false
     }
 
     /// Resolves all `$TOKEN` placeholders in `command` using data from `group`, `scope`, and `jobs`.
