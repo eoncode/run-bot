@@ -283,7 +283,7 @@ struct LocalRunnersView: View {
         // the removal is always visible before the lifecycle call starts. A separate
         // fire-and-forget Task risks the rollback path (optimisticallyRestore) running
         // before optimisticallyRemove, leaving the row permanently deleted on failure.
-                Task {
+        Task {
             await localRunnerStore.optimisticallyRemove(runner.runnerName)
             let ok = await RunnerLifecycleService.shared.remove(runner: runner)
             if !ok {
