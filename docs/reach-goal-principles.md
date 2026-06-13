@@ -16,6 +16,11 @@ This document captures aspirational engineering principles for RunnerBar — mod
 8. [@concurrent for Explicit Background Offloading](#8-concurrent-for-explicit-background-offloading)
 9. [Opt-In Strict Memory Safety Mode](#9-opt-in-strict-memory-safety-mode)
 10. [Ownership Annotations (borrowing / consuming)](#10-ownership-annotations-borrowing--consuming)
+11. [Typed Throws for Domain Error Contracts](#11-typed-throws-for-domain-error-contracts)
+12. [nonisolated(nonsending) for Caller-Context Async Functions](#12-nonisolatednonsending-for-caller-context-async-functions)
+13. [Mutex for Synchronous Low-Contention Shared State](#13-mutex-for-synchronous-low-contention-shared-state)
+14. [sending Parameters for Non-Sendable Cross-Isolation Transfer](#14-sending-parameters-for-non-sendable-cross-isolation-transfer)
+15. [consuming / borrowing on Value-Type Pipelines](#15-consuming--borrowing-on-value-type-pipelines)
 
 ---
 
@@ -96,6 +101,46 @@ Swift 6.2 adds a `-strict-memory-safety` compiler flag that audits every use of 
 The `borrowing` and `consuming` parameter modifiers express ownership intent on value-type parameters, allowing the compiler to eliminate ARC overhead and unnecessary copies. For immutable `RunnerModel` structs passed across actor boundaries, annotating pure read functions with `borrowing` and irreversible transformation functions with `consuming` turns copy-elimination from an optimiser guess into a compiler-verified contract. This is a direct extension of the Strict Value Semantics principle already in place.
 
 **Principle:** Hot-path functions that receive large value types and do not mutate them are annotated `borrowing`. Functions that definitively end the lifetime of a value are annotated `consuming`. These annotations are treated as part of the function's documented contract, not as internal implementation hints.
+
+---
+
+## 11. Typed Throws for Domain Error Contracts
+
+The codebase already defines well-scoped error enums (`RunnerConfigStoreError`, `RunnerProxyStoreError`) and uses `ExecuteResult` for network-layer errors, but no principle codifies typed throws at the function signature level. Swift 6.2's `throws(MyError)` gives the compiler a static guarantee that a function can only throw the declared type — no type erasure, no `catch { }` escape hatch for `any Error`. For a codebase with bounded, stable error enums this is a natural fit: `func save() async throws(RunnerConfigStoreError)` is more precise than `func save() async throws`, and call sites get exhaustive `switch` coverage enforced at compile time.
+
+**Principle:** Typed throws are used on all non-network domain boundaries where the error set is closed and owned by the module. Untyped `throws` is reserved for call sites that must forward an arbitrary `Error` across module or abstraction boundaries. The choice between the two is explicit and documented per function.
+
+---
+
+## 12. nonisolated(nonsending) for Caller-Context Async Functions
+
+Swift 6.2 introduces `nonisolated(nonsending)` (SE-0461), where a `nonisolated` async function runs on the *caller's* executor rather than hopping to the global cooperative pool. The codebase uses `nonisolated` on `JSONDecoder` properties (P17) but has no principle governing the executor behaviour of `nonisolated` async functions. Without the `NonIsolatedNonSendingByDefault` feature flag or explicit annotations, `nonisolated` async helpers may silently hop off `@MainActor` when called from it — exactly the kind of invisible context switch that causes subtle timing bugs.
+
+**Principle:** All `nonisolated` async functions are explicitly annotated as either `nonisolated(nonsending)` (to inherit the caller's isolation context) or `@concurrent` (to explicitly run on the global cooperative pool). Implicit executor behaviour for `nonisolated` async functions is never relied upon. The `NonIsolatedNonSendingByDefault` feature flag is enabled at the package level once the codebase is fully annotated.
+
+---
+
+## 13. Mutex for Synchronous Low-Contention Shared State
+
+P16 mandates actors for mutable domains, which is correct for async-heavy types. `Synchronization.Mutex` (available since Swift 6.0, production-stable in 6.2) is the right tool when the guarded operation is synchronous and fast (e.g. a token cache read or a counter increment), making the entire call site `async` just to use an actor is disproportionate overhead, and the type needs to be `Sendable` without actor isolation. A `Mutex<CachedToken?>` for an in-memory Keychain token cache is cleaner and faster than a dedicated actor — the lock is taken, the value is read or written, and the lock is released, all without suspending or allocating a continuation.
+
+**Principle:** `Synchronization.Mutex` is preferred over actors for synchronous, fast-path, low-contention shared state where the protected operation completes without `await`. Actors are preferred when the protected operations are async, involve I/O, or require structured concurrency lifecycle management.
+
+---
+
+## 14. sending Parameters for Non-Sendable Cross-Isolation Transfer
+
+Swift 6's `sending` keyword (SE-0430) allows a non-`Sendable` value to cross an isolation boundary when the compiler can prove the caller's region no longer holds a reference after the call. Currently, anything crossing actor boundaries must be `Sendable` — which can force either `@unchecked Sendable` on types that are not fully safe, or unnecessary wrapping of values. The `sending` keyword is a precision tool: `func process(_ draft: sending RunnerEditDraft)` tells the compiler that ownership transfers at this call site, and the caller cannot access the value afterwards — no `Sendable` conformance required.
+
+**Principle:** `sending` is used on function parameters where a non-`Sendable` value is intentionally transferred across an isolation boundary and the caller genuinely relinquishes access. This is preferred over adding `@unchecked Sendable` to a type solely to enable the transfer. The use of `sending` is treated as an ownership contract, not a compiler workaround.
+
+---
+
+## 15. consuming / borrowing on Value-Type Pipelines
+
+The domain types (`RunnerModel`, `RunnerConfig`, `RunnerProxyConfig`) are already immutable `let`-only structs per P6. The next step is ownership annotations at their call sites. `borrowing` on a parameter expresses "I am reading this value; no copy, no retain". `consuming` on a method expresses "this instance is done after this call". For a `RunnerEditDraft` that is built up and then committed exactly once via `SaveRunnerEditsUseCase`, the entry point can be `consuming func commit()` — making it a compile error to reuse a draft after committing. For high-frequency read paths (e.g. processing arrays of `WorkflowActionGroup`), `borrowing` parameters eliminate hidden ARC copies that accumulate under load.
+
+**Principle:** `consuming` is applied to single-use finaliser methods on value types where reuse after the call is a logic error. `borrowing` is applied to read-only parameters on hot-path functions where ARC copy elimination is measurable or architecturally important. Both annotations are treated as part of the function's public contract, not as internal optimisation hints.
 
 ---
 
