@@ -57,6 +57,9 @@ enum Keychain {
     // MARK: - Public API
 
     /// The stored OAuth token, or nil if none is present.
+    ///
+    /// - Note: `nonisolated` — `SecItem*` calls are OS-serialised by the Security
+    ///   framework. No actor or lock is required. See file-level P16 rationale.
     static var token: String? {
         var query = baseQuery()
         query[kSecReturnData as String] = true
@@ -72,6 +75,10 @@ enum Keychain {
 
     /// Saves (or overwrites) the token and invalidates the in-memory token cache.
     /// Returns true if the token was successfully persisted.
+    ///
+    /// - Note: `nonisolated` — `SecItemUpdate`/`SecItemAdd` are OS-serialised.
+    ///   Concurrent writers are handled by the upsert retry guard below.
+    ///   See file-level P16 rationale.
     @discardableResult
     static func save(_ token: String) -> Bool {
         guard let data = token.data(using: .utf8) else { return false }
@@ -128,6 +135,9 @@ enum Keychain {
     /// Deletes the stored token.
     /// Invalidates the in-memory token cache only when deletion actually succeeds
     /// (or the item was already absent). Returns true on success.
+    ///
+    /// - Note: `nonisolated` — `SecItemDelete` is OS-serialised.
+    ///   See file-level P16 rationale.
     @discardableResult
     static func delete() -> Bool {
         let status = SecItemDelete(baseQuery() as CFDictionary)

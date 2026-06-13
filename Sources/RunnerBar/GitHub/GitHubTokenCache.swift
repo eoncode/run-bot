@@ -25,6 +25,14 @@ private let tokenCacheLock = OSAllocatedUnfairLock(initialState: Optional<String
 
 /// Clears the in-memory token cache. Call after saving a new token to Keychain
 /// or after signing out so the next githubToken() call re-resolves from source.
+///
+/// ### Namespacing rationale
+/// `invalidateTokenCache()` and `githubToken()` are intentionally free functions
+/// rather than members of a namespace type. They are called as unqualified
+/// symbols from `Keychain.swift`, `OAuthService`, and SwiftUI views. Moving them
+/// into a `KeychainTokenCache` enum would require updating ~6 call-sites across
+/// 4 files for no correctness benefit. The module boundary (`RunnerBar` target)
+/// already provides the necessary scoping.
 func invalidateTokenCache() {
     tokenCacheLock.withLock { $0 = nil }
     log("GitHubTokenCache › invalidateTokenCache — cache cleared")
@@ -52,9 +60,12 @@ func githubToken() -> String? {
         #if DEBUG
         log("GitHubTokenCache › githubToken — resolved from Keychain (len=\(token.count)), populating cache")
         #endif
-        // Compare-before-write: a concurrent caller may have already populated
-        // the cache between our read above and this write. Only write if still nil
-        // to avoid a redundant store on cold-start stampede.
+        // Thundering-herd on cold-start: two concurrent callers can both miss the
+        // cache check above and both reach here. This is intentional — both reads
+        // are idempotent Keychain reads returning the same value. The
+        // compare-before-write below eliminates the redundant second store, and
+        // the window only exists on first resolution (after that every caller
+        // hits the cache at the top of this function).
         tokenCacheLock.withLock { if $0 == nil { $0 = token } }
         return token
     }
