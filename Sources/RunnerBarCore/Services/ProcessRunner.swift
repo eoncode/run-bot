@@ -27,10 +27,11 @@ import os
 // `Task.detached` uses `Task.sleep(for:)` to enforce the timeout without
 // GCD-managed timer state.
 //
-// Migration (#1365/#1366): the legacy synchronous `run()` path was removed, and
-// `OSAllocatedUnfairLock`. The lock is a `let` constant captured by `@Sendable`
-// closures; `withLock` provides compiler-verified `Sendable` conformance with
-// the same queue-serialised happens-before semantics.
+// Migration (#1365/#1366): the legacy synchronous `run()` path was removed.
+// `OSAllocatedUnfairLock` replaces `Box<T>: @unchecked Sendable` throughout;
+// the lock is a `let` constant captured by `@Sendable` closures — `withLock`
+// provides compiler-verified `Sendable` conformance with the same
+// queue-serialised happens-before semantics.
 
 /// Shared primitive for launching subprocesses. See file-level doc comment above for full details.
 public enum ProcessRunner {
