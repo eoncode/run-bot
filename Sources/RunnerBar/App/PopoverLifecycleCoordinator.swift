@@ -17,6 +17,9 @@
 import AppKit
 
 @MainActor
+/// Owns the four popover lifecycle concerns extracted from `AppDelegate`:
+/// panel-open flag, preserved-sheet-window flag, outside-click monitor, and
+/// workspace app-switch observer. All methods must be called on the main actor.
 final class PopoverLifecycleCoordinator {
 
     // MARK: - State
@@ -42,10 +45,13 @@ final class PopoverLifecycleCoordinator {
 
     // MARK: - Mutators
 
+    /// Updates `panelIsOpen`. Call this whenever the popover is shown or hidden.
     func setPanelIsOpen(_ value: Bool) {
         panelIsOpen = value
     }
 
+    /// Updates `preservedSheetWindowHide`. Set to `true` when the popover window
+    /// is hidden without closing so the sheet `NSWindow` survives the transition.
     func setPreservedSheetWindowHide(_ value: Bool) {
         preservedSheetWindowHide = value
     }
