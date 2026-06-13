@@ -73,11 +73,16 @@ final class PopoverLifecycleCoordinator {
         popoverWindow: @escaping @MainActor () -> NSWindow?,
         onHide: @escaping @MainActor () -> Void
     ) {
-        // Guard against double-installation: tear down any previously installed
+        // Guard against double-installation: remove any previously installed
         // monitors before installing new ones so nothing leaks on re-entrant calls.
+        // ⚠️ Must NOT call tearDown() here — tearDown() also resets panelIsOpen,
+        // but openPanel() has already called setPanelIsOpen(true) before reaching
+        // this point. Calling tearDown() would clear the flag, causing both the
+        // outside-click and workspace monitors to immediately fail their
+        // `guard self.panelIsOpen` check and never dismiss the popover.
         if outsideClickMonitor != nil || workspaceObserver != nil {
-            log("PopoverLifecycleCoordinator › installMonitors — WARNING: called with active monitors, tearing down first")
-            tearDown()
+            log("PopoverLifecycleCoordinator › installMonitors — WARNING: called with active monitors, removing stale monitors first")
+            removeMonitors()
         }
 
         // Outside-click monitor.
@@ -187,19 +192,26 @@ final class PopoverLifecycleCoordinator {
     /// Must be called on every close path (explicit close, outside-click, app-switch).
     func tearDown() {
         panelIsOpen = false
+        removeMonitors()
+    }
+
+    /// Removes the outside-click monitor and workspace observer without touching
+    /// any state flags. Used by the double-install guard in `installMonitors()`
+    /// so that stale monitors are cleaned up without clobbering `panelIsOpen`.
+    private func removeMonitors() {
         if let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
-            log("PopoverLifecycleCoordinator › tearDown — outsideClickMonitor removed")
+            log("PopoverLifecycleCoordinator › removeMonitors — outsideClickMonitor removed")
         } else {
-            log("PopoverLifecycleCoordinator › tearDown — outsideClickMonitor was already nil")
+            log("PopoverLifecycleCoordinator › removeMonitors — outsideClickMonitor was already nil")
         }
         if let observer = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             workspaceObserver = nil
-            log("PopoverLifecycleCoordinator › tearDown — workspaceObserver removed")
+            log("PopoverLifecycleCoordinator › removeMonitors — workspaceObserver removed")
         } else {
-            log("PopoverLifecycleCoordinator › tearDown — workspaceObserver was already nil")
+            log("PopoverLifecycleCoordinator › removeMonitors — workspaceObserver was already nil")
         }
     }
 }
