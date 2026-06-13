@@ -27,12 +27,12 @@ import RunnerBarCore
 /// `FailureHookRunnerUseCase` is `Sendable`. `fireIfNeeded` is nonisolated and
 /// spawns a `Task.detached` for network work, then hops to `@MainActor` for
 /// `TerminalLauncherProtocol.open(command:)` — matching the pre-refactor behaviour.
-public struct FailureHookRunnerUseCase: Sendable {
+struct FailureHookRunnerUseCase: Sendable {
 
     /// Default failure-hook command used when the user has not configured a
     /// custom command for the scope. `FailureHookRunner.defaultCommand` forwards
     /// to this constant — it is the canonical definition.
-    public static let defaultCommand = "cd '$LOCAL_PATH' && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
+    static let defaultCommand = "cd '$LOCAL_PATH' && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
 
     // MARK: Dependencies
 
@@ -47,7 +47,7 @@ public struct FailureHookRunnerUseCase: Sendable {
     /// - Parameters:
     ///   - preferencesStore: Reads per-scope failure-hook preferences.
     ///   - terminalLauncher: Opens Terminal.app with the resolved command.
-    public init(
+    init(
         preferencesStore: any ScopePreferencesStoreProtocol,
         terminalLauncher: any TerminalLauncherProtocol
     ) {
@@ -59,7 +59,7 @@ public struct FailureHookRunnerUseCase: Sendable {
 
     /// Call this whenever a group transitions to done with a failure conclusion.
     /// Spawns a detached background Task, fetches failed job/step details, then fires.
-    public func fireIfNeeded(
+    func fireIfNeeded(
         group: WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
