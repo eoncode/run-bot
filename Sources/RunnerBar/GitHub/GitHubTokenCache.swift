@@ -1,8 +1,8 @@
 // GitHubTokenCache.swift
 // RunnerBar
 import Foundation
-import RunnerBarCore
 import os
+import RunnerBarCore
 
 // MARK: - Token cache
 //
