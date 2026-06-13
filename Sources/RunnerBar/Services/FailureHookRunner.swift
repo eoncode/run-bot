@@ -16,7 +16,8 @@ import RunnerBarCore
 /// - Note: The full token resolution table, shell-quoting contract, and
 ///   thread-safety notes are documented in `FailureHookRunnerUseCase`.
 ///
-/// Refactored from a static enum as part of #1363 (P7/P8 audit).
+/// Thinned to a production shim as part of #1363 (P7/P8 audit); all business logic
+/// now lives in `FailureHookRunnerUseCase`.
 enum FailureHookRunner {
 
     /// Default command used when no command has been explicitly saved for the scope.
