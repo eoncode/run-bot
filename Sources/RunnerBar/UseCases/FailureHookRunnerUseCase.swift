@@ -37,9 +37,9 @@ public struct FailureHookRunnerUseCase: Sendable {
     // MARK: Dependencies
 
     /// Reads per-scope failure-hook preferences from storage.
-    public let preferencesStore: any ScopePreferencesStoreProtocol
+    let preferencesStore: any ScopePreferencesStoreProtocol
     /// Opens Terminal.app with the resolved command. Must run on `@MainActor`.
-    public let terminalLauncher: any TerminalLauncherProtocol
+    let terminalLauncher: any TerminalLauncherProtocol
 
     // MARK: - Init
 
@@ -118,18 +118,6 @@ public struct FailureHookRunnerUseCase: Sendable {
 
     // MARK: - Internal (testable)
 
-    /// Returns `true` when a `JobConclusion` warrants firing the failure hook.
-    ///
-    /// Delegates to `JobConclusion.isHookConclusion` — single source of truth.
-    internal static func isHookConclusion(_ conclusion: JobConclusion) -> Bool {
-        conclusion.isHookConclusion
-    }
-
-    /// Returns `true` when `conclusion` is non-nil and hook-triggering.
-    internal static func isHookConclusion(_ conclusion: JobConclusion?) -> Bool {
-        conclusion?.isHookConclusion ?? false
-    }
-
     /// Resolves all `$TOKEN` placeholders in `command` using data from `group`, `scope`, and `jobs`.
     ///
     /// Token map:
@@ -157,7 +145,7 @@ public struct FailureHookRunnerUseCase: Sendable {
         let branch = group.headBranch ?? ""
         let sha = group.headSha
         let baseURL = "https://github.com/\(scope)"
-        let failedRun = group.runs.first(where: { isHookConclusion($0.conclusion) })
+        let failedRun = group.runs.first(where: { $0.conclusion?.isHookConclusion == true })
         let failedRunID = failedRun.map { String($0.id) } ?? group.id
         let runLink = failedRun?.htmlUrl ?? "\(baseURL)/actions/runs/\(failedRunID)"
         let workflowName = failedRun?.name ?? group.runs.first?.name ?? ""
@@ -195,7 +183,7 @@ public struct FailureHookRunnerUseCase: Sendable {
         guard !jobs.isEmpty else {
             log("FailureHookRunnerUseCase buildLogContent -- no jobs, falling back to run-level summary")
             let lines: [String] = group.runs.compactMap { run in
-                guard let c = run.conclusion, isHookConclusion(c) else { return nil }
+                guard let c = run.conclusion, c.isHookConclusion else { return nil }
                 return "FAILED run \(run.id): conclusion=\(c.rawValue) workflow=\(run.name)"
             }
             return lines.joined(separator: "\n")
@@ -208,7 +196,7 @@ public struct FailureHookRunnerUseCase: Sendable {
             } else {
                 let failedSteps = job.steps.filter {
                     guard let c = $0.conclusion else { return false }
-                    return isHookConclusion(c)
+                    return c.isHookConclusion
                 }
                 var lines: [String] = ["Job: \(job.name) [failed]"]
                 if failedSteps.isEmpty {
@@ -239,7 +227,7 @@ public struct FailureHookRunnerUseCase: Sendable {
 
     /// Returns `true` if any run in `group` has a hook-triggering failure conclusion.
     private static func isFailure(group: WorkflowActionGroup) -> Bool {
-        group.runs.contains { isHookConclusion($0.conclusion) }
+        group.runs.contains { $0.conclusion?.isHookConclusion == true }
     }
 
     /// Fetches the failed jobs (and their log tails) for every failure-triggering run in `group`.
@@ -251,7 +239,7 @@ public struct FailureHookRunnerUseCase: Sendable {
         var result: [FailedJobResult] = []
         var seenIDs = Set<Int>()
         for run in group.runs {
-            guard isHookConclusion(run.conclusion) else {
+            guard run.conclusion?.isHookConclusion == true else {
                 log("FailureHookRunnerUseCase fetchFailedJobs -- run \(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
                 continue
             }
@@ -267,7 +255,7 @@ public struct FailureHookRunnerUseCase: Sendable {
             log("FailureHookRunnerUseCase fetchFailedJobs -- run=\(run.id) decoded \(resp.jobs.count) jobs")
             for job in resp.jobs where seenIDs.insert(job.id).inserted {
                 let tail: String?
-                if let jobConclusion = job.conclusion, isHookConclusion(jobConclusion) {
+                if let jobConclusion = job.conclusion, jobConclusion.isHookConclusion {
                     log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)")
                     if let fullLog = await fetchJobLog(jobID: job.id, scope: scope) {
                         let lines = fullLog.components(separatedBy: "\n")
