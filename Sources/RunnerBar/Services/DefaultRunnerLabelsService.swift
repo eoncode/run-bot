@@ -1,7 +1,5 @@
-// SaveRunnerEditsUseCase.swift
+// DefaultRunnerLabelsService.swift
 // RunnerBar
-// SaveRunnerEditsUseCase has moved to RunnerBarCore/Runner/SaveRunnerEditsUseCase.swift.
-// This file is intentionally empty — kept so git history shows the migration path.
 import RunnerBarCore
 
 // MARK: - DefaultRunnerLabelsService
