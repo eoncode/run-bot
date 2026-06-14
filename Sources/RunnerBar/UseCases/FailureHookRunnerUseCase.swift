@@ -27,12 +27,12 @@ import RunnerBarCore
 /// `FailureHookRunnerUseCase` is `Sendable`. `fireIfNeeded` is nonisolated and
 /// spawns a `Task.detached` for network work, then hops to `@MainActor` for
 /// `TerminalLauncherProtocol.open(command:)` — matching the pre-refactor behaviour.
-public struct FailureHookRunnerUseCase: Sendable {
+struct FailureHookRunnerUseCase: Sendable {
 
     /// Default failure-hook command used when the user has not configured a
     /// custom command for the scope. `FailureHookRunner.defaultCommand` forwards
     /// to this constant — it is the canonical definition.
-    public static let defaultCommand = "cd '$LOCAL_PATH' && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
+    static let defaultCommand = "cd '$LOCAL_PATH' && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
 
     // MARK: Dependencies
 
@@ -45,7 +45,7 @@ public struct FailureHookRunnerUseCase: Sendable {
 
     /// Call this whenever a group transitions to done with a failure conclusion.
     /// Spawns a detached background Task, fetches failed job/step details, then fires.
-    public func fireIfNeeded(
+    func fireIfNeeded(
         group: WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
@@ -142,13 +142,21 @@ public struct FailureHookRunnerUseCase: Sendable {
         let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
         let escapedLog = singleQuoteEscape(logContent)
         log("FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)")
+        // All string tokens are resolved in Swift before the command is passed to
+        // /bin/zsh -c, so every substituted value must be safe to embed in shell.
+        // singleQuoteEscape() escapes any embedded single quote as '\'' so the value
+        // is safe to place between single quotes in the command template. The surrounding
+        // single quotes must be present in the template (e.g. '$BRANCH') — without them,
+        // values containing spaces or other shell-special characters are still unsafe.
+        // URL tokens ($*_LINK) are percent-encoded and contain no shell-special characters,
+        // so they are substituted verbatim.
         return command
             .replacingOccurrences(of: "$LOCAL_PATH", with: singleQuoteEscape(localRepoPath))
-            .replacingOccurrences(of: "$SCOPE", with: scope)
-            .replacingOccurrences(of: "$BRANCH", with: branch)
-            .replacingOccurrences(of: "$COMMIT_SHA", with: sha)
-            .replacingOccurrences(of: "$RUN_ID", with: failedRunID)
-            .replacingOccurrences(of: "$WORKFLOW_NAME", with: workflowName)
+            .replacingOccurrences(of: "$SCOPE", with: singleQuoteEscape(scope))
+            .replacingOccurrences(of: "$BRANCH", with: singleQuoteEscape(branch))
+            .replacingOccurrences(of: "$COMMIT_SHA", with: singleQuoteEscape(sha))
+            .replacingOccurrences(of: "$RUN_ID", with: singleQuoteEscape(failedRunID))
+            .replacingOccurrences(of: "$WORKFLOW_NAME", with: singleQuoteEscape(workflowName))
             .replacingOccurrences(of: "$RUN_LINK", with: runLink)
             .replacingOccurrences(of: "$COMMIT_LINK", with: commitLink)
             .replacingOccurrences(of: "$BRANCH_LINK", with: branchLink)
