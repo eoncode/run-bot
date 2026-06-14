@@ -12,6 +12,8 @@
 > 8. If a rebase gets stuck, run `git rebase --abort` and report back — do not force a resolution.
 
 
-DO NOT DELTE BRANCHES!!!!!!
+- DO NOT DELTE BRANCHES!!!!!!
+-  figure out a merge strategy that doesnt send us into merge conflict hell.
+- i want all commits to land on main. no squashing. all ors are proved
 ```
 
