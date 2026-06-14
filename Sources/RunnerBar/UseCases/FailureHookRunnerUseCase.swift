@@ -32,7 +32,7 @@ public struct FailureHookRunnerUseCase: Sendable {
     /// Default failure-hook command used when the user has not configured a
     /// custom command for the scope. `FailureHookRunner.defaultCommand` forwards
     /// to this constant — it is the canonical definition.
-    public static let defaultCommand = "cd $LOCAL_PATH && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
+    public static let defaultCommand = "cd '$LOCAL_PATH' && gemini -p '$FAILURE_LOG' --model=gemini-2.5-flash --approval-mode=yolo"
 
     // MARK: Dependencies
 
@@ -40,20 +40,6 @@ public struct FailureHookRunnerUseCase: Sendable {
     let preferencesStore: any ScopePreferencesStoreProtocol
     /// Opens Terminal.app with the resolved command. Must run on `@MainActor`.
     let terminalLauncher: any TerminalLauncherProtocol
-
-    // MARK: - Init
-
-    /// Creates a use-case with the given dependency implementations.
-    /// - Parameters:
-    ///   - preferencesStore: Reads per-scope failure-hook preferences.
-    ///   - terminalLauncher: Opens Terminal.app with the resolved command.
-    public init(
-        preferencesStore: any ScopePreferencesStoreProtocol,
-        terminalLauncher: any TerminalLauncherProtocol
-    ) {
-        self.preferencesStore = preferencesStore
-        self.terminalLauncher = terminalLauncher
-    }
 
     // MARK: - Public API
 
@@ -157,7 +143,7 @@ public struct FailureHookRunnerUseCase: Sendable {
         let escapedLog = singleQuoteEscape(logContent)
         log("FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)")
         return command
-            .replacingOccurrences(of: "$LOCAL_PATH", with: localRepoPath)
+            .replacingOccurrences(of: "$LOCAL_PATH", with: singleQuoteEscape(localRepoPath))
             .replacingOccurrences(of: "$SCOPE", with: scope)
             .replacingOccurrences(of: "$BRANCH", with: branch)
             .replacingOccurrences(of: "$COMMIT_SHA", with: sha)

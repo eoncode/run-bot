@@ -12,9 +12,6 @@ import RunnerBarCore
 /// Forwards all calls to the static `ScopePreferencesStore` methods.
 /// Used as the production dependency for `FailureHookRunnerUseCase`.
 struct DefaultScopePreferencesStore: ScopePreferencesStoreProtocol {
-    /// Creates a store backed by the static `ScopePreferencesStore` singleton.
-    init() {}
-
     /// Forwards to `ScopePreferencesStore.failureHookEnabled(for:)`.
     func failureHookEnabled(for scope: String) -> Bool {
         ScopePreferencesStore.failureHookEnabled(for: scope)
@@ -38,9 +35,6 @@ struct DefaultScopePreferencesStore: ScopePreferencesStoreProtocol {
 /// Forwards `open(command:)` to `TerminalLauncher.open(command:)`.
 /// Used as the production dependency for `FailureHookRunnerUseCase`.
 struct DefaultTerminalLauncher: TerminalLauncherProtocol {
-    /// Creates a launcher backed by `TerminalLauncher.open(command:)`.
-    init() {}
-
     /// Forwards to `TerminalLauncher.open(command:)`. Must be called on `@MainActor`.
     @MainActor
     func open(command: String) {
