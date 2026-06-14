@@ -6,7 +6,7 @@ import os
 // MARK: - ProcessRunner
 
 // Shared primitive for launching subprocesses with streaming output,
-// optional stdin, optional working directory, and a DispatchWorkItem timeout.
+// optional stdin, optional working directory, and structured-concurrency timeout handling.
 //
 // Both `runRegistrationCommand` and `runScriptWithOutput`
 // (RunnerLifecycleService) are thin wrappers around this type.
@@ -19,38 +19,19 @@ import os
 // `Process`, bypassing the shell entirely. Never reintroduce a string-based
 // shell invocation here.
 //
-// ## ⚠️ Timeout implementation — do NOT simplify
-// The timeout is implemented as a `DispatchWorkItem` + `DispatchQueue.asyncAfter`
-// rather than a bare `process.waitUntilExit()` with no deadline.
-// Reason: `waitUntilExit()` with no timeout can hang indefinitely if a child
-// process ignores SIGTERM or holds an open pipe. This pattern was the root
-// cause of the main-thread hang tracked in bug #477. The `DispatchWorkItem`
-// approach guarantees termination within `timeout` seconds even in that case.
-// Do NOT remove the timeout guard.
-//
-// ## ⚠️ Pipe-drain concurrency — do NOT move readDataToEndOfFile after waitUntilExit
-// The stdout pipe must be drained on a background thread *while*
-// `waitUntilExit()` blocks. Deferring the drain until after exit lets the
-// kernel pipe buffer (~64 KB on macOS) fill up, causing the child process to
-// block on a write and `waitUntilExit()` to spin forever (Apple QA1858).
-// `launchctl list` on a loaded Mac easily exceeds 64 KB.
-//
-// `run` drains stdout into an `OSAllocatedUnfairLock<Data>` via a
-// `DispatchQueue.async` block and reads it back after `drainQueue.sync {}`.
-// The queue provides the happens-before guarantee; the lock provides
-// compiler-verified `Sendable` conformance with zero unsafe annotations.
-//
 // ## Async variant (`runAsync`)
 // `runAsync` owns its own `Process` instance and bridges completion via
 // `terminationHandler` + `withCheckedContinuation` — no thread is held while
 // the subprocess runs. `withTaskCancellationHandler` wires `task.terminate()`
-// directly to Swift structured concurrency cancellation. A sibling
-// `Task.detached` replaces the `DispatchWorkItem` timeout from `run(_:)`.
+// directly to Swift structured concurrency cancellation, and a sibling
+// `Task.detached` uses `Task.sleep(for:)` to enforce the timeout without
+// GCD-managed timer state.
 //
-// Migration (#1365): `Box<T>: @unchecked Sendable` replaced throughout with
-// `OSAllocatedUnfairLock`. The lock is a `let` constant captured by `@Sendable`
-// closures; `withLock` provides compiler-verified `Sendable` conformance with
-// the same queue-serialised happens-before semantics.
+// Migration (#1365/#1366): the legacy synchronous `run()` path was removed.
+// `OSAllocatedUnfairLock` replaces `Box<T>: @unchecked Sendable` throughout;
+// the lock is a `let` constant captured by `@Sendable` closures — `withLock`
+// provides compiler-verified `Sendable` conformance with the same
+// queue-serialised happens-before semantics.
 
 /// Shared primitive for launching subprocesses. See file-level doc comment above for full details.
 public enum ProcessRunner {
@@ -67,117 +48,12 @@ public enum ProcessRunner {
         public var output: String { data.flatMap { String(data: $0, encoding: .utf8) } ?? "" }
     }
 
-    // MARK: - Synchronous
-
-    /// Launches an executable synchronously.
-    /// ⚠️ Must be called from a background thread — blocks until exit or timeout.
-    ///
-    /// - Parameters:
-    ///   - executableURL: Full path to the executable.
-    ///   - arguments: Command-line arguments.
-    ///   - stdin: Optional data written to the process's standard input.
-    ///   - workingDirectory: Optional working directory for the process.
-    ///   - mergeStderr: When `true`, stderr is merged into stdout.
-    ///     When `false` (default), stderr is discarded — it is not captured or returned.
-    ///   - timeout: Seconds before the process is force-terminated.
-    /// - Returns: A `Result` with the collected stdout data and exit code.
-    ///   `exitCode` is `Int32.max` on process-launch failure.
-    public static func run(
-        executableURL: URL,
-        arguments: [String],
-        stdin: Data? = nil,
-        workingDirectory: URL? = nil,
-        mergeStderr: Bool = false,
-        timeout: TimeInterval = 20
-    ) -> Result {
-        let task = Process()
-        task.executableURL = executableURL
-        task.arguments = arguments
-        if let workingDirectory { task.currentDirectoryURL = workingDirectory }
-
-        let outPipe = Pipe()
-        task.standardOutput = outPipe
-        // When mergeStderr is false, use nullDevice so stderr is cleanly discarded.
-        // A throwaway Pipe() would fill its buffer on verbose stderr output and
-        // block the child process indefinitely.
-        task.standardError = mergeStderr ? outPipe : FileHandle.nullDevice
-
-        // Wire stdin pipe when body data is provided.
-        let inputPipe: Pipe?
-        if stdin != nil {
-            let p = Pipe()
-            task.standardInput = p
-            inputPipe = p
-        } else {
-            inputPipe = nil
-        }
-
-        do {
-            try task.run()
-        } catch {
-            log("ProcessRunner › launch error: \(error) — \(executableURL.lastPathComponent) \(arguments.joined(separator: " "))")
-            return Result(data: nil, exitCode: Int32.max)
-        }
-
-        // Write stdin after launch so the process is already running and consuming
-        // bytes from the read end. This prevents deadlock when stdinData exceeds
-        // the kernel pipe buffer (~64 KB): the child drains concurrently as we write.
-        if let inputPipe, let stdinData = stdin {
-            inputPipe.fileHandleForWriting.write(stdinData)
-            inputPipe.fileHandleForWriting.closeFile()
-        }
-
-        // Drain stdout on a dedicated queue concurrently with waitUntilExit().
-        // See class-level doc: draining must overlap with waitUntilExit() to
-        // prevent the kernel pipe buffer (~64 KB) from filling and deadlocking.
-        //
-        // OSAllocatedUnfairLock is the Swift 6.2-blessed mutable handoff cell:
-        // it is Sendable, requires no @unchecked annotation, and the lock is
-        // held only for the brief assignment/read — never across a suspension.
-        // `drainQueue.sync {}` after `waitUntilExit()` provides the happens-before
-        // guarantee: the write inside withLock is always complete before we read it.
-        let outputBox = OSAllocatedUnfairLock(initialState: Data())
-        let drainQueue = DispatchQueue(label: "ProcessRunner.drain")
-        drainQueue.async {
-            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            outputBox.withLock { $0 = data }
-        }
-
-        // ⚠️ DO NOT remove this DispatchWorkItem timeout.
-        // See class-level doc comment and bug #477 for full context.
-        let timeoutItem = DispatchWorkItem {
-            // Guard against the race where the process exits just before the
-            // timeout fires — only terminate if the process is still running.
-            guard task.isRunning else {
-                log("ProcessRunner › timeout fired but process already exited — \(executableURL.lastPathComponent)")
-                return
-            }
-            log("ProcessRunner › timeout (\(timeout)s) — terminating \(executableURL.lastPathComponent)")
-            task.terminate()
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-
-        // Join the drain queue — blocks until readDataToEndOfFile() has finished
-        // writing into outputBox. After this sync barrier the stored Data is safe to
-        // read on the calling thread; queue serialisation is the happens-before edge.
-        // (The OSAllocatedUnfairLock on outputBox satisfies Sendable — the actual
-        // mutual-exclusion guarantee here comes from drainQueue.sync, not the lock.)
-        drainQueue.sync {}
-
-        let exitCode = task.terminationStatus
-        let outputData = outputBox.withLock { $0 }
-        log("ProcessRunner › exit=\(exitCode) bytes=\(outputData.count) — \(executableURL.lastPathComponent)")
-        return Result(data: outputData.isEmpty ? nil : outputData, exitCode: exitCode)
-    }
-
     // MARK: - Async
 
     /// Launches an executable asynchronously without blocking the cooperative thread pool.
     ///
-    /// Unlike `run(_:)`, this method owns its `Process` instance directly so that
-    /// Swift structured concurrency can interact with it properly:
+    /// This method owns its `Process` instance directly so that Swift structured
+    /// concurrency can interact with it properly:
     ///
     /// - **Suspension:** the caller suspends at the `await` and is resumed by
     ///   `terminationHandler` when the process exits — no thread is held.
@@ -187,11 +63,15 @@ public enum ProcessRunner {
     ///   full `timeout`.
     /// - **Timeout:** a sibling `Task.detached` sleeps for `timeout` seconds and
     ///   then calls `task.terminate()` if the process is still running, preserving
-    ///   the hang-safety guarantee of `run(_:)` without a `DispatchWorkItem`.
+    ///   hang-safety without a `DispatchWorkItem`. The timeout task is intentionally
+    ///   `Task.detached` — it must outlive the `withCheckedContinuation` scope and
+    ///   run regardless of the parent task's cancellation state. Its lifetime is
+    ///   bounded by the earlier of: (a) `terminationHandler` cancelling it after
+    ///   process exit, or (b) the `timeout` interval elapsing.
     ///
-    /// ## ⚠️ Pipe-drain concurrency — same invariant as `run(_:)`
+    /// ## ⚠️ Pipe-drain concurrency
     /// stdout is drained via a dedicated serial `DispatchQueue` *concurrently* with
-    /// process execution, mirroring the `Box + drainQueue.sync` pattern in `run(_:)`
+    /// process execution (concurrent drain + `terminationHandler` join pattern).
     /// `readDataToEndOfFile()` blocks until the pipe's write end closes (i.e. the
     /// process exits), so all bytes are captured in a single call with one clear
     /// happens-before edge. `terminationHandler` joins the drain queue with
@@ -246,7 +126,7 @@ public enum ProcessRunner {
     ///    the continuation is that stdout is fully captured — which `drainQueue.sync {}`
     ///    already guarantees.
     ///
-    /// All parameters mirror `run(_:)`; defaults are identical.
+    /// All parameters and defaults are identical to the removed synchronous `run()` method.
     public static func runAsync(
         executableURL: URL,
         arguments: [String],
@@ -274,14 +154,16 @@ public enum ProcessRunner {
         }
 
         // Drain stdout on a dedicated serial queue concurrently with process execution,
-        // mirroring the run() synchronous pattern. readDataToEndOfFile() blocks until
+        // (concurrent drain + terminationHandler join pattern). readDataToEndOfFile() blocks until
         // the write end of the pipe is closed (i.e. the process exits), so it captures
         // all output in one call with a single clear happens-before edge.
         //
         // Using a DispatchQueue here (not a Task) keeps the drain off the cooperative
         // thread pool, avoids the fire-and-forget Task.detached-per-chunk pattern, and
         // ensures drainQueue.sync {} in terminationHandler is the sole synchronisation
-        // point — no actor, no lock, no untracked tasks required.
+        // point. `outputBox` is an `OSAllocatedUnfairLock` for Swift 6 `Sendable`
+        // compliance — the lock is held only for the brief Data assignment/read;
+        // the queue's `sync {}` barrier, not the lock, is the happens-before edge.
         let outputBox = OSAllocatedUnfairLock(initialState: Data())
         let drainQueue = DispatchQueue(label: "ProcessRunner.drain.async")
 
@@ -382,11 +264,23 @@ public enum ProcessRunner {
 
                 // Create the Task *before* acquiring the lock so it is already
                 // scheduled by the time timeoutTaskBox is written.
-                // Note: a very fast-exiting process can trigger terminationHandler
-                // before this write, causing it to see nil and skip .cancel().
-                // That is safe: guard task.isRunning inside the timeout task
-                // ensures it exits without terminating the (already-gone) process.
-                // This race existed in the pre-refactor Box<T> code as well (#1152).
+                //
+                // Two benign races exist here:
+                //
+                // 1. Fast-exit: terminationHandler fires before timeoutTaskBox is
+                //    written — it reads nil and skips .cancel(). The timeout task
+                //    then fires later but finds task.isRunning == false and exits
+                //    without calling terminate(). Safe.
+                //
+                // 2. Slow-exit: the process outlives the timeout, terminate() is
+                //    called by the timeout task, then terminationHandler fires and
+                //    reads timeoutTaskBox — but by then the timeout task has already
+                //    finished (it returned after terminate()), so .cancel() is a
+                //    benign no-op on a completed Task. Safe.
+                //
+                // In both cases guard task.isRunning is the invariant that prevents
+                // a double-terminate. This race existed in the pre-refactor Box<T>
+                // code as well (#1152).
                 let timeoutTask = Task.detached {
                     do {
                         try await Task.sleep(for: .seconds(timeout))
