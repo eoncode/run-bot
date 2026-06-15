@@ -174,7 +174,7 @@ struct PanelMainView: View {
     /// Rate-limit warning banner showing a countdown to API reset.
     /// Reads `displayTick` as a dependency so the label refreshes every second.
     private var rateLimitBanner: some View {
-        _ = displayTick // swiftlint:disable:this redundant_discardable_let
+        withExtendedLifetime(displayTick) {}
         let countdownLabel: String
         if let resetDate = store.rateLimitResetDate {
             let remaining = max(0, resetDate.timeIntervalSinceNow)
