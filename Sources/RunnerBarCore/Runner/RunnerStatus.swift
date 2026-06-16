@@ -45,7 +45,7 @@ public enum RunnerStatus: Hashable, Sendable {
         case .online:         return "online"
         case .busy:           return "busy"
         case .offline:        return "offline"
-        case .unknown(let s): return s
+        case .unknown(let raw): return raw
         }
     }
 }

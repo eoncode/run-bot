@@ -315,15 +315,15 @@ public func makeActiveJob(
     iso: ISO8601DateFormatter,
     isDimmed: Bool = false
 ) -> ActiveJob {
-    let steps: [JobStep] = payload.steps.map { s in
+    let steps: [JobStep] = payload.steps.map { step in
         JobStep(
-            id: s.number,
-            name: s.name,
-            status: s.status,
-            conclusion: s.conclusion,
-            startedAt: s.startedAt.flatMap { iso.date(from: $0) },
-            completedAt: s.completedAt.flatMap { iso.date(from: $0) },
-            number: s.number
+            id: step.number,
+            name: step.name,
+            status: step.status,
+            conclusion: step.conclusion,
+            startedAt: step.startedAt.flatMap { iso.date(from: $0) },
+            completedAt: step.completedAt.flatMap { iso.date(from: $0) },
+            number: step.number
         )
     }
     return ActiveJob(

@@ -37,7 +37,7 @@ public enum JobStatus: Hashable, Sendable {
         case .waiting:        return "waiting"
         case .requested:      return "requested"
         case .pending:        return "pending"
-        case .unknown(let s): return s
+        case .unknown(let raw): return raw
         }
     }
 
@@ -141,7 +141,7 @@ public enum JobConclusion: Hashable, Sendable {
         case .neutral:            return "neutral"
         case .stale:              return "stale"
         case .startupFailure:     return "startup_failure"
-        case .unknown(let s):     return s
+        case .unknown(let raw):   return raw
         }
     }
 

@@ -41,8 +41,8 @@ final class SystemStatsViewModel {
     deinit {
         // Timer.invalidate() must be called on the thread that installed the timer (main run loop).
         // deinit is nonisolated in Swift 6 and may run off-main, so we dispatch explicitly.
-        let t = timer
-        DispatchQueue.main.async { t?.invalidate() }
+        let capturedTimer = timer
+        DispatchQueue.main.async { capturedTimer?.invalidate() }
         deallocPrevCPUInfo()
     }
 

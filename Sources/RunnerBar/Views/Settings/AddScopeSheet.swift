@@ -105,8 +105,8 @@ struct AddScopeSheet: View {
 
                 // ── Type toggle ──────────────────────────────────────────
                 Picker("", selection: $scopeType) {
-                    ForEach(ScopeType.allCases) { t in
-                        Text(t.rawValue).tag(t)
+                    ForEach(ScopeType.allCases) { scopeType in
+                        Text(scopeType.rawValue).tag(scopeType)
                     }
                 }
                 .pickerStyle(.segmented)
