@@ -50,12 +50,12 @@ public enum AnyJSON: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let val = try? container.decode([String: AnyJSON].self) { self = .object(val); return }
-        if let val = try? container.decode([AnyJSON].self) { self = .array(val);  return }
-        if let val = try? container.decode(Bool.self) { self = .bool(val);   return }
-        if let val = try? container.decode(Int.self) { self = .int(val);    return }
+        if let val = try? container.decode([AnyJSON].self) { self = .array(val); return }
+        if let val = try? container.decode(Bool.self) { self = .bool(val); return }
+        if let val = try? container.decode(Int.self) { self = .int(val); return }
         if let val = try? container.decode(Double.self) { self = .number(val); return }
         if let val = try? container.decode(String.self) { self = .string(val); return }
-        if container.decodeNil() { self = .null;      return }
+        if container.decodeNil() { self = .null; return }
         throw DecodingError.dataCorruptedError(in: container, debugDescription: "AnyJSON: unrecognised value")
     }
 
