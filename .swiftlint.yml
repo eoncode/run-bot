@@ -86,6 +86,7 @@ function_body_length:
 
 type_body_length:
   warning: 400
+  error: 600    # explicit ceiling; tighten toward 400 in phase 3 — tracked in #1406
 
 function_parameter_count:
   warning: 6
