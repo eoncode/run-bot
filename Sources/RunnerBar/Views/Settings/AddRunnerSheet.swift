@@ -207,7 +207,7 @@ struct AddRunnerSheet: View {
         errorMessage = nil
         scopeType = .repo
         selectedRepo = repos.first ?? ""
-        selectedOrg = orgs.first  ?? ""
+        selectedOrg = orgs.first ?? ""
         if addMode == .addNew && repos.isEmpty && orgs.isEmpty {
             loadScopes()
         }

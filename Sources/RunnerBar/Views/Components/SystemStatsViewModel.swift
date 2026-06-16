@@ -111,13 +111,13 @@ final class SystemStatsViewModel {
         let numCPUs = Int(numCPUsU)
         for i in 0 ..< numCPUs {
             let base = Int(CPU_STATE_MAX) * i
-            let userDelta = Double(cpuInfo[base + Int(CPU_STATE_USER)]   - prevInfo[base + Int(CPU_STATE_USER)])
+            let userDelta = Double(cpuInfo[base + Int(CPU_STATE_USER)] - prevInfo[base + Int(CPU_STATE_USER)])
             let sysDelta = Double(cpuInfo[base + Int(CPU_STATE_SYSTEM)] - prevInfo[base + Int(CPU_STATE_SYSTEM)])
-            let idleDelta = Double(cpuInfo[base + Int(CPU_STATE_IDLE)]   - prevInfo[base + Int(CPU_STATE_IDLE)])
-            let niceDelta = Double(cpuInfo[base + Int(CPU_STATE_NICE)]   - prevInfo[base + Int(CPU_STATE_NICE)])
+            let idleDelta = Double(cpuInfo[base + Int(CPU_STATE_IDLE)] - prevInfo[base + Int(CPU_STATE_IDLE)])
+            let niceDelta = Double(cpuInfo[base + Int(CPU_STATE_NICE)] - prevInfo[base + Int(CPU_STATE_NICE)])
             let used = userDelta + sysDelta + niceDelta
             totalUsed += used
-            totalAll  += used + idleDelta
+            totalAll += used + idleDelta
         }
         guard totalAll > 0 else { return 0 }
         return totalUsed / totalAll * 100
