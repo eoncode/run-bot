@@ -320,10 +320,10 @@ actor LocalRunnerStore {
         var metricsByAgentId: [Int: RunnerMetrics] = [:]
         var metricsByName: [String: RunnerMetrics] = [:]
         for runner in runners {
-            guard runner.isBusy, let metrics = runner.metrics else { continue }
-            if let id = runner.apiId { metricsByApiId[id] = metrics }  // Priority 1: GitHub REST API id
-            if let id = runner.agentId { metricsByAgentId[id] = metrics }  // Priority 2: local AgentId
-            metricsByName[runner.runnerName] = metrics  // Priority 3: name (last resort)
+            guard runner.isBusy, let preservedMetrics = runner.metrics else { continue }
+            if let id = runner.apiId { metricsByApiId[id] = preservedMetrics }  // Priority 1: GitHub REST API id
+            if let id = runner.agentId { metricsByAgentId[id] = preservedMetrics }  // Priority 2: local AgentId
+            metricsByName[runner.runnerName] = preservedMetrics  // Priority 3: name (last resort)
         }
         #if DEBUG
         log("LocalRunnerStore › applyRefreshResults — preserved metrics: byApiId=\(metricsByApiId.keys.sorted()) byAgentId=\(metricsByAgentId.keys.sorted()) byName=\(metricsByName.keys.sorted())")
