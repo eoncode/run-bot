@@ -14,7 +14,7 @@ extension AddRunnerSheet {
     @ViewBuilder
     var addNewFormBody: some View {
         Picker("Scope", selection: $scopeType) {
-            ForEach(ScopeType.allCases) { scopeType in Text(scopeType.rawValue).tag(scopeType) }
+            ForEach(ScopeType.allCases) { scopeOption in Text(scopeOption.rawValue).tag(scopeOption) }
         }
         .pickerStyle(.segmented)
 
