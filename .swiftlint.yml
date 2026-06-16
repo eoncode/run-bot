@@ -34,19 +34,15 @@ nesting:
 identifier_name:
   min_length: 2
   excluded:
-    - id
-    - x
-    - y
-    - i
-    - j
-    - k
-    - n
-    - s
-    - t
-    - r
-    - q
-    - w
-    - h
+    - id  # ubiquitous Swift/SwiftUI identifier
+    - x   # geometric coordinate
+    - y   # geometric coordinate
+    - w   # geometric width
+    - h   # geometric height
+    - i   # loop index (conventional)
+    - j   # loop index (conventional)
+    - k   # loop index (conventional)
+    - n   # count/size (conventional in algorithms)
 
 missing_docs:
   warning: [open, public, internal, private, fileprivate]
@@ -72,4 +68,4 @@ disabled_rules:
   - vertical_whitespace_opening_braces      # conflicts with SwiftUI DSL patterns
   - multiple_closures_with_trailing_closure # SwiftUI DSL routinely uses multiple trailing closures
   - function_parameter_count                # large model inits are acceptable in this codebase
-  - type_body_length                        # large types are acceptable in this codebase
+  - type_body_length                        # large types are acceptable; tracked for Phase 3 re-enable in #1406
