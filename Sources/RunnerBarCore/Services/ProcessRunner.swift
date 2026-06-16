@@ -146,9 +146,9 @@ public enum ProcessRunner {
 
         let inputPipe: Pipe?
         if stdin != nil {
-            let p = Pipe()
-            task.standardInput = p
-            inputPipe = p
+            let stdinPipe = Pipe()
+            task.standardInput = stdinPipe
+            inputPipe = stdinPipe
         } else {
             inputPipe = nil
         }

@@ -181,8 +181,8 @@ public struct PollResultBuilder {
         let enriched: [WorkflowActionGroup] = await withTaskGroup(
             of: (Int, WorkflowActionGroup).self
         ) { group in
-            for (idx, g) in display.enumerated() {
-                group.addTask { (idx, g.withJobs(await enrichJobs(g.jobs))) }
+            for (idx, actionGroup) in display.enumerated() {
+                group.addTask { (idx, actionGroup.withJobs(await enrichJobs(actionGroup.jobs))) }
             }
             var out: [(Int, WorkflowActionGroup)] = []
             for await pair in group { out.append(pair) }
@@ -191,9 +191,9 @@ public struct PollResultBuilder {
         let enrichedCache: [String: WorkflowActionGroup] = await withTaskGroup(
             of: (String, WorkflowActionGroup).self
         ) { group in
-            for (key, g) in newCache { group.addTask { (key, g.withJobs(await enrichJobs(g.jobs))) } }
+            for (key, actionGroup) in newCache { group.addTask { (key, actionGroup.withJobs(await enrichJobs(actionGroup.jobs))) } }
             var out: [String: WorkflowActionGroup] = [:]
-            for await (key, g) in group { out[key] = g }
+            for await (key, actionGroup) in group { out[key] = actionGroup }
             return out
         }
         return GroupPollResult(

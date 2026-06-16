@@ -211,7 +211,7 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
                 ))
             }
         }
-        for await (i, g) in group { groups[i] = g }
+        for await (i, actionGroup) in group { groups[i] = actionGroup }
     }
 
     var result = groups.compactMap { $0 }

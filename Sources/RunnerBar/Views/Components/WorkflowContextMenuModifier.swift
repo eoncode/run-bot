@@ -67,9 +67,9 @@ private struct WorkflowContextMenuModifier: ViewModifier {
         .disabled(!isLive)
         Divider()
         Button {
-            let g = group
+            let capturedGroup = group
             Task.detached(priority: .userInitiated) {
-                guard let text = await fetchActionLogs(group: g), !text.isEmpty else { return }
+                guard let text = await fetchActionLogs(group: capturedGroup), !text.isEmpty else { return }
                 await copyToPasteboard(text)
             }
         } label: { Label("Copy Log", systemImage: "doc.on.doc") }

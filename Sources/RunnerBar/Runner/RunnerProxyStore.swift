@@ -129,17 +129,17 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
                 do {
                     try Self.writeProxyURL(url, to: proxyURL)
                 } catch {
-                    let m = ".proxy write error: \(error)"
-                    log("RunnerProxyStore › \(m)")
-                    messages.append(m)
+                    let msg = ".proxy write error: \(error)"
+                    log("RunnerProxyStore › \(msg)")
+                    messages.append(msg)
                 }
 
                 do {
                     try Self.writeProxyCredentials(user: user, secret: proxySecretVal, to: credURL)
                 } catch {
-                    let m = ".proxycredentials write error: \(error)"
-                    log("RunnerProxyStore › \(m)")
-                    messages.append(m)
+                    let msg = ".proxycredentials write error: \(error)"
+                    log("RunnerProxyStore › \(msg)")
+                    messages.append(msg)
                 }
 
                 if messages.isEmpty {

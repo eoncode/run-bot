@@ -294,9 +294,9 @@ actor RunnerStore {
         intervalObservationTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<Int>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
-                let o = PreferencesObserver(continuation: continuation, store: injectedStore)
-                o.start()
-                return o
+                let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
+                preferencesObserver.start()
+                return preferencesObserver
             }
             for await newInterval in stream {
                 guard !Task.isCancelled else { break }
@@ -326,9 +326,9 @@ actor RunnerStore {
         scopeObservationTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<[String]>.makeStream()
             let observer: ScopesObserver = await MainActor.run {
-                let o = ScopesObserver(continuation: continuation, store: injectedStore)
-                o.start()
-                return o
+                let scopesObserver = ScopesObserver(continuation: continuation, store: injectedStore)
+                scopesObserver.start()
+                return scopesObserver
             }
             for await _ in stream {
                 guard !Task.isCancelled else { break }

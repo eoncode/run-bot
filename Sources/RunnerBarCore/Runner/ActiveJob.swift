@@ -248,17 +248,17 @@ public struct JobPayload: Decodable, Sendable {
     /// Decodes a `JobPayload` from a JSON container.
     /// Falls back to an empty `steps` array when the key is absent (queued jobs).
     public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id          = try c.decode(Int.self, forKey: .id)
-        name        = try c.decode(String.self, forKey: .name)
-        status      = try c.decode(JobStatus.self, forKey: .status)
-        conclusion  = try c.decodeIfPresent(JobConclusion.self, forKey: .conclusion)
-        startedAt   = try c.decodeIfPresent(String.self, forKey: .startedAt)
-        completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
-        createdAt   = try c.decodeIfPresent(String.self, forKey: .createdAt)
-        htmlUrl     = try c.decodeIfPresent(String.self, forKey: .htmlUrl)
-        runnerName  = try c.decodeIfPresent(String.self, forKey: .runnerName)
-        steps       = try c.decodeIfPresent([StepPayload].self, forKey: .steps) ?? []
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id          = try container.decode(Int.self, forKey: .id)
+        name        = try container.decode(String.self, forKey: .name)
+        status      = try container.decode(JobStatus.self, forKey: .status)
+        conclusion  = try container.decodeIfPresent(JobConclusion.self, forKey: .conclusion)
+        startedAt   = try container.decodeIfPresent(String.self, forKey: .startedAt)
+        completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
+        createdAt   = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        htmlUrl     = try container.decodeIfPresent(String.self, forKey: .htmlUrl)
+        runnerName  = try container.decodeIfPresent(String.self, forKey: .runnerName)
+        steps       = try container.decodeIfPresent([StepPayload].self, forKey: .steps) ?? []
     }
 }
 

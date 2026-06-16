@@ -31,6 +31,23 @@ nesting:
   function_level:
     warning: 3
 
+identifier_name:
+  min_length: 2
+  excluded:
+    - id
+    - x
+    - y
+    - i
+    - j
+    - k
+    - n
+    - s
+    - t
+    - r
+    - q
+    - w
+    - h
+
 missing_docs:
   warning: [open, public, internal, private, fileprivate]
   excludes_extensions: false
@@ -43,7 +60,7 @@ file_header:
 disabled_rules:
   - todo                                    # TODOs are acceptable during active development
   - trailing_comma                          # SwiftPM/Xcode auto-formatter conflicts with this
-  - identifier_name                         # short names (s, x, i) are fine in this codebase
+  # identifier_name re-enabled with min_length: 2 — see config block below
   # opening_brace re-enabled — PR #205 fixed these
   # colon re-enabled — PR #205 did a full sweep
   - cyclomatic_complexity                   # complex dispatch/switch functions are acceptable
