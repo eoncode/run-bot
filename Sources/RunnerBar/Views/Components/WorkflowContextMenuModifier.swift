@@ -35,8 +35,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { tg in
-                    for id in runIDs { tg.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun-failed-jobs") } }
+                await withTaskGroup(of: Void.self) { taskGroup in
+                    for id in runIDs { taskGroup.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun-failed-jobs") } }
                 }
             }
         } label: { Label("Re-run Failed Jobs", systemImage: "arrow.counterclockwise") }
@@ -47,8 +47,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { tg in
-                    for id in runIDs { tg.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun") } }
+                await withTaskGroup(of: Void.self) { taskGroup in
+                    for id in runIDs { taskGroup.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun") } }
                 }
             }
         } label: { Label("Re-run All Jobs", systemImage: "arrow.clockwise") }
@@ -59,8 +59,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { tg in
-                    for id in runIDs { tg.addTask { await cancelRun(runID: id, scope: scope) } }
+                await withTaskGroup(of: Void.self) { taskGroup in
+                    for id in runIDs { taskGroup.addTask { await cancelRun(runID: id, scope: scope) } }
                 }
             }
         } label: { Label("Cancel", systemImage: "xmark.circle") }
@@ -123,8 +123,8 @@ private struct JobContextMenuModifier: ViewModifier {
             let scope = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { tg in
-                    for id in runIDs { tg.addTask { await cancelRun(runID: id, scope: scope) } }
+                await withTaskGroup(of: Void.self) { taskGroup in
+                    for id in runIDs { taskGroup.addTask { await cancelRun(runID: id, scope: scope) } }
                 }
             }
         } label: { Label("Cancel", systemImage: "xmark.circle") }
