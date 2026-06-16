@@ -35,8 +35,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { group in
-                    for id in runIDs { group.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun-failed-jobs") } }
+                await withTaskGroup(of: Void.self) { tg in
+                    for id in runIDs { tg.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun-failed-jobs") } }
                 }
             }
         } label: { Label("Re-run Failed Jobs", systemImage: "arrow.counterclockwise") }
@@ -47,8 +47,8 @@ private struct WorkflowContextMenuModifier: ViewModifier {
             let scope = group.repo
             let runIDs = group.runs.map { $0.id }
             Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { group in
-                    for id in runIDs { group.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun") } }
+                await withTaskGroup(of: Void.self) { tg in
+                    for id in runIDs { tg.addTask { await ghPost("repos/\(scope)/actions/runs/\(id)/rerun") } }
                 }
             }
         } label: { Label("Re-run All Jobs", systemImage: "arrow.clockwise") }
