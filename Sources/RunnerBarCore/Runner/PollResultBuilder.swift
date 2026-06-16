@@ -377,9 +377,9 @@ public struct PollResultBuilder {
                 > ($1.lastJobCompletedAt ?? $1.createdAt ?? .distantPast)
         }
         var display: [WorkflowActionGroup] = []
-        for grp in inProgress where display.count < groupDisplayLimit { display.append(grp) }
-        for grp in queued where display.count < groupDisplayLimit { display.append(grp) }
-        for grp in cached where display.count < groupDisplayLimit && !liveIDs.contains(grp.id) { display.append(grp) }
+        for actionGroup in inProgress where display.count < groupDisplayLimit { display.append(actionGroup) }
+        for actionGroup in queued where display.count < groupDisplayLimit { display.append(actionGroup) }
+        for actionGroup in cached where display.count < groupDisplayLimit && !liveIDs.contains(actionGroup.id) { display.append(actionGroup) }
         return display
     }
 }
