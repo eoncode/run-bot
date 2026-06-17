@@ -108,9 +108,11 @@ final class PanelVisibilityState {
     var onHeightReady: ((CGFloat) -> Void)?
 
     /// Creates a new `PanelVisibilityState` with all flags in their initial off state.
-    // No initialisation logic needed — all stored properties have inline defaults.
-    // The empty body is intentional: `init()` is required to make the initialiser
-    // part of the public API surface rather than relying on the compiler-synthesised
-    // memberwise init, which would expose internal property ordering.
+    ///
+    /// The body is intentionally empty — all stored properties carry inline defaults.
+    /// The explicit `init()` is declared rather than relying on the compiler-synthesised
+    /// default initialiser so that: (a) DocC surfaces it as part of the public API, and
+    /// (b) adding a future stored property without a default will produce a compile error
+    /// at the call site rather than silently changing the initialiser's signature.
     init() {}
 }
