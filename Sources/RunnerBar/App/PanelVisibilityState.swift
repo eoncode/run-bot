@@ -108,5 +108,9 @@ final class PanelVisibilityState {
     var onHeightReady: ((CGFloat) -> Void)?
 
     /// Creates a new `PanelVisibilityState` with all flags in their initial off state.
+    // No initialisation logic needed — all stored properties have inline defaults.
+    // The empty body is intentional: `init()` is required to make the initialiser
+    // part of the public API surface rather than relying on the compiler-synthesised
+    // memberwise init, which would expose internal property ordering.
     init() {}
 }
