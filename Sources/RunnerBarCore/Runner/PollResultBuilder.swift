@@ -256,9 +256,9 @@ public struct PollResultBuilder {
             ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast)
         }
         var display: [ActiveJob] = []
-        for job in inProgress where display.count < jobDisplayLimit { display.append(job) }
-        for job in queued     where display.count < jobDisplayLimit { display.append(job) }
-        for job in cached     where display.count < jobDisplayLimit { display.append(job) }
+        display.appendUpTo(jobDisplayLimit, from: inProgress)
+        display.appendUpTo(jobDisplayLimit, from: queued)
+        display.appendUpTo(jobDisplayLimit, from: cached)
         return display
     }
 
@@ -377,9 +377,29 @@ public struct PollResultBuilder {
                 > ($1.lastJobCompletedAt ?? $1.createdAt ?? .distantPast)
         }
         var display: [WorkflowActionGroup] = []
-        for actionGroup in inProgress where display.count < groupDisplayLimit { display.append(actionGroup) }
-        for actionGroup in queued where display.count < groupDisplayLimit { display.append(actionGroup) }
-        for actionGroup in cached where display.count < groupDisplayLimit && !liveIDs.contains(actionGroup.id) { display.append(actionGroup) }
+        display.appendUpTo(groupDisplayLimit, from: inProgress)
+        display.appendUpTo(groupDisplayLimit, from: queued)
+        display.appendUpTo(groupDisplayLimit, from: cached) { !liveIDs.contains($0.id) }
         return display
+    }
+}
+
+// MARK: - Array fill helper
+
+private extension Array {
+    /// Appends elements from `source` until `self.count` reaches `limit`.
+    ///
+    /// Elements are appended in source order. An optional predicate can skip
+    /// individual elements (e.g. cached groups that are already live) without
+    /// breaking the "fill until full" semantics.
+    mutating func appendUpTo<S>(
+        _ limit: Int,
+        from source: S,
+        where shouldAppend: (S.Element) -> Bool = { _ in true }
+    ) where S: Sequence, S.Element == Element {
+        guard count < limit else { return }
+        for element in source where count < limit && shouldAppend(element) {
+            append(element)
+        }
     }
 }
