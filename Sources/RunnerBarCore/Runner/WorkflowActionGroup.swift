@@ -87,7 +87,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     public let repo: String
 
     /// All sibling workflow runs sharing this `head_sha`.
-    public var runs: [WorkflowRunRef]
+    public let runs: [WorkflowRunRef]
 
     /// Stable unique key: highest run ID in this group.
     ///
@@ -97,21 +97,21 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
 
     /// All jobs across every run in this group, fetched and flattened.
     /// This is what `ActionDetailView` renders.
-    public var jobs: [ActiveJob]
+    public let jobs: [ActiveJob]
 
     /// UTC time of the earliest job `startedAt` across all runs.
     /// Mirrors ci-dash.py's `first_job_started_at`.
-    public var firstJobStartedAt: Date?
+    public let firstJobStartedAt: Date?
 
     /// UTC time of the latest job `completedAt` across all runs.
     /// Mirrors ci-dash.py's `last_job_completed_at`.
-    public var lastJobCompletedAt: Date?
+    public let lastJobCompletedAt: Date?
 
     /// Fallback creation time from the representative run.
-    public var createdAt: Date?
+    public let createdAt: Date?
 
     /// Set to `true` when frozen into `actionGroupCache` after completion.
-    public var isDimmed: Bool
+    public let isDimmed: Bool
 
     // MARK: Equatable
 
@@ -138,6 +138,33 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             jobs: newJobs,
             firstJobStartedAt: firstJobStartedAt,
             lastJobCompletedAt: lastJobCompletedAt,
+            createdAt: createdAt,
+            isDimmed: isDimmed
+        )
+    }
+
+    /// Returns a copy of this group with specific mutable fields overridden.
+    ///
+    /// Replaces direct mutation (`var`) at call sites in `PollResultBuilder`
+    /// and `freezeVanishedGroups`. Only the two fields that vary at freeze-time
+    /// are exposed; all identity fields are preserved verbatim.
+    /// - Parameters:
+    ///   - isDimmed: Whether the group is frozen into the completed cache.
+    ///   - lastJobCompletedAt: Override for the latest job completion time. Pass `nil` to keep the existing value.
+    public func copying(
+        isDimmed: Bool,
+        lastJobCompletedAt: Date? = nil
+    ) -> WorkflowActionGroup {
+        WorkflowActionGroup(
+            headSha: headSha,
+            label: label,
+            title: title,
+            headBranch: headBranch,
+            repo: repo,
+            runs: runs,
+            jobs: jobs,
+            firstJobStartedAt: firstJobStartedAt,
+            lastJobCompletedAt: lastJobCompletedAt ?? self.lastJobCompletedAt,
             createdAt: createdAt,
             isDimmed: isDimmed
         )
@@ -266,6 +293,15 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
 
     /// Human-readable job progress fraction, e.g. `"3/5"`. Returns `"—"` while jobs load.
     public var jobProgress: String { jobs.isEmpty ? "—" : "\(jobsDone)/\(jobsTotal)" }
+
+    /// `true` when at least one job in this group has a failure-class conclusion.
+    ///
+    /// Uses the typed `JobConclusion.isFailure` check (covers `.failure`, `.timedOut`,
+    /// `.startupFailure`, `.actionRequired`) rather than raw-string comparison.
+    /// Intended for display-layer badge colouring and hook-triggering logic.
+    public var hasFailedRun: Bool {
+        jobs.contains { $0.conclusion?.isFailure == true }
+    }
 
     /// Name of the first in-progress job, or first queued job, or `"—"`.
     public var currentJobName: String {
