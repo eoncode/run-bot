@@ -144,14 +144,7 @@ public enum ProcessRunner {
         task.standardOutput = outPipe
         task.standardError = mergeStderr ? outPipe : FileHandle.nullDevice
 
-        let inputPipe: Pipe?
-        if stdin != nil {
-            let stdinPipe = Pipe()
-            task.standardInput = stdinPipe
-            inputPipe = stdinPipe
-        } else {
-            inputPipe = nil
-        }
+        let inputPipe = wireStdin(stdin, to: task)
 
         // Drain stdout on a dedicated serial queue concurrently with process execution,
         // (concurrent drain + terminationHandler join pattern). readDataToEndOfFile() blocks until
@@ -297,6 +290,20 @@ public enum ProcessRunner {
     }
 
     // MARK: - Private helpers
+
+    /// Attaches a stdin pipe to `task` when `stdin` data is present.
+    ///
+    /// Returns the `Pipe` whose write end the caller must feed data to (and then
+    /// close) after `task.run()`, or `nil` when no stdin is needed.
+    /// Extracted from `runAsync` so any future `Process`-launching method can
+    /// reuse the same setup without copy-pasting the three-line wiring block.
+    @discardableResult
+    private static func wireStdin(_ stdin: Data?, to task: Process) -> Pipe? {
+        guard stdin != nil else { return nil }
+        let pipe = Pipe()
+        task.standardInput = pipe
+        return pipe
+    }
 
     /// Handles `Process.terminationHandler` for `runAsync`.
     ///
