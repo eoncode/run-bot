@@ -246,7 +246,7 @@ extension BranchSelectorSheet {
         var allNames: [String] = []
         var page = 1
         while true {
-            guard let data = await ghAPI("repos/\(scope)/branches?per_page=100&page=\(page)") else {
+            guard let data = await ghAPI("repos/\(scope)/branches?per_page=\(GitHubConstants.maxPageSize)&page=\(page)") else {
                 log("BranchSelectorSheet › fetchBranchNames — ghAPI returned nil scope='\(scope)' page=\(page)")
                 return allNames.isEmpty ? nil : allNames.sorted()
             }
@@ -256,7 +256,7 @@ extension BranchSelectorSheet {
             }
             allNames.append(contentsOf: items.map(\.name))
             log("BranchSelectorSheet › fetchBranchNames — page=\(page) fetched=\(items.count) total=\(allNames.count)")
-            if items.count < 100 { break }
+            if items.count < GitHubConstants.maxPageSize { break }
             page += 1
         }
         return allNames.isEmpty ? nil : allNames.sorted()

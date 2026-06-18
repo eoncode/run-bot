@@ -135,9 +135,9 @@ public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionG
     }
 
     // Fetch in_progress, queued, and completed runs concurrently.
-    async let inProgressData = ghAPI("repos/\(scope)/actions/runs?status=in_progress&per_page=50")
-    async let queuedData = ghAPI("repos/\(scope)/actions/runs?status=queued&per_page=50")
-    async let completedData = ghAPI("repos/\(scope)/actions/runs?status=completed&per_page=100")
+    async let inProgressData = ghAPI("repos/\(scope)/actions/runs?status=in_progress&per_page=\(GitHubConstants.activeRunsPageSize)")
+    async let queuedData = ghAPI("repos/\(scope)/actions/runs?status=queued&per_page=\(GitHubConstants.activeRunsPageSize)")
+    async let completedData = ghAPI("repos/\(scope)/actions/runs?status=completed&per_page=\(GitHubConstants.maxPageSize)")
     let (ipData, qData, cData) = await (inProgressData, queuedData, completedData)
 
     var runPayloads: [RunPayload] = []
@@ -295,7 +295,7 @@ private func fetchJobsForGroup(
 /// API calls on runs with many simultaneously in-progress steps.
 /// All date parsing goes through `ISO8601DateParser.shared`.
 private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
-    guard let data = await ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=100"),
+    guard let data = await ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
           let resp = try? decoder.decode(JobsResponse.self, from: data)
     else { return [] }
 
