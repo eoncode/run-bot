@@ -729,6 +729,17 @@ struct FormatElapsedTests {
         let end   = Date(timeIntervalSinceReferenceDate: 50)
         #expect(formatElapsed(start: start, end: end, isCompleted: true) == "00:00")
     }
+
+    /// 4000 seconds = 66 minutes 40 seconds.
+    /// Verifies that MM:SS format does not roll over to HH:MM:SS for durations ≥ 60 min.
+    /// Design decision: formatElapsed intentionally uses plain `secs / 60` for minutes,
+    /// so values beyond 59:59 continue counting up (e.g. "66:40") rather than switching
+    /// to an hours display. This keeps the UI consistent for the typical runner job duration.
+    @Test func largeIntervalFormatsAsMmSs() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end   = Date(timeIntervalSinceReferenceDate: 4000)
+        #expect(formatElapsed(start: start, end: end, isCompleted: true) == "66:40")
+    }
 }
 
 // MARK: - PollResultBuilder.buildGroupState (fix #1041)
@@ -1061,6 +1072,20 @@ struct ProcessRunnerRunAsyncStdinTests {
         )
         #expect(result.exitCode == 0)
         #expect(result.output.count == input.count)
+    }
+
+    /// A command that exits with a non-zero status must report that exit code.
+    /// Regression guard: a bug that always reports exitCode == 0 would silently pass
+    /// the stdin round-trip tests above while breaking callers that rely on exit codes.
+    /// `/usr/bin/false` is a POSIX-standard tool available on macOS and Linux CI runners.
+    @Test(.timeLimit(.minutes(1)))
+    func runAsyncNonZeroExitCode() async {
+        let result = await ProcessRunner.runAsync(
+            executableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            arguments: [],
+            stdin: nil
+        )
+        #expect(result.exitCode != 0)
     }
 }
 
