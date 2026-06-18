@@ -80,6 +80,7 @@ extension RunnerStore {
     /// and `ScopeStore`. This removes the latent data race that would arise from a
     /// file-scope reference type being accessed across `await` suspension points.
     private var decoder: JSONDecoder { RunnerStore._decoder }
+    /// Backing storage for the shared `JSONDecoder` instance.
     private static let _decoder = JSONDecoder()
 
     /// Backfills step data into the completed-job cache.
