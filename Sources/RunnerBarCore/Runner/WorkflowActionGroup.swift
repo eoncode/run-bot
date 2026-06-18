@@ -150,11 +150,12 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// are exposed; all identity fields are preserved verbatim.
     /// - Parameters:
     ///   - isDimmed: Whether the group is frozen into the completed cache.
-    ///   - lastJobCompletedAt: Override for the latest job completion time. Pass `nil` to preserve the existing
-    ///     value unchanged. There is intentionally no way to reset this field back to `nil` via `copying`.
+    ///   - lastJobCompletedAtOverride: New value for the latest job completion time. Pass `nil` to preserve
+    ///     the existing value unchanged. There is intentionally no way to reset this field back to `nil` via
+    ///     `copying` — the parameter name signals this non-standard semantics.
     public func copying(
         isDimmed: Bool,
-        lastJobCompletedAt: Date? = nil
+        lastJobCompletedAtOverride: Date? = nil
     ) -> WorkflowActionGroup {
         WorkflowActionGroup(
             headSha: headSha,
@@ -165,7 +166,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             runs: runs,
             jobs: jobs,
             firstJobStartedAt: firstJobStartedAt,
-            lastJobCompletedAt: lastJobCompletedAt ?? self.lastJobCompletedAt,
+            lastJobCompletedAt: lastJobCompletedAtOverride ?? self.lastJobCompletedAt,
             createdAt: createdAt,
             isDimmed: isDimmed
         )
@@ -225,6 +226,8 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         }
         if runs.contains(where: { $0.status == .inProgress }) { return .inProgress }
         if runs.contains(where: { $0.status == .queued }) { return .queued }
+        // TODO: fallthrough when jobs are empty and no run is active — returns .completed
+        // prematurely during the loading window. Revisit when job-fetch latency is addressed.
         return .completed
     }
 
