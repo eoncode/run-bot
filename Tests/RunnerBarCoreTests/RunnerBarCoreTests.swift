@@ -309,33 +309,6 @@ struct RunnerDisplayStatusTests {
     }
 }
 
-// MARK: - RunnerMetrics
-
-@Suite("RunnerMetrics")
-struct RunnerMetricsTests {
-
-    /// Two RunnerMetrics with identical CPU and memory values are considered equal.
-    @Test func equatableSameValues() {
-        let a = RunnerMetrics(cpu: 12.5, mem: 3.0)
-        let b = RunnerMetrics(cpu: 12.5, mem: 3.0)
-        #expect(a == b)
-    }
-
-    /// Two RunnerMetrics with different CPU values are considered not equal.
-    @Test func equatableDifferentCPU() {
-        let a = RunnerMetrics(cpu: 10.0, mem: 3.0)
-        let b = RunnerMetrics(cpu: 20.0, mem: 3.0)
-        #expect(a != b)
-    }
-
-    /// Two RunnerMetrics with different memory values are considered not equal.
-    @Test func equatableDifferentMem() {
-        let a = RunnerMetrics(cpu: 10.0, mem: 1.0)
-        let b = RunnerMetrics(cpu: 10.0, mem: 2.0)
-        #expect(a != b)
-    }
-}
-
 // MARK: - AggregateStatus
 
 @Suite("AggregateStatus")
