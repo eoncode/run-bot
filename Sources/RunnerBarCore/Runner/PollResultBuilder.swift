@@ -265,7 +265,10 @@ public struct PollResultBuilder {
         let cached: [ActiveJob] = cache.values.sorted {
             ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast)
         }
-        let liveJobIDs = Set((inProgress + queued).map { $0.id })
+        // Use all live IDs (not just inProgress + queued) so that jobs in other
+        // non-completed statuses (.waiting, .requested, .pending) also prevent
+        // their stale dimmed cache entry from appearing in the display list.
+        let liveJobIDs = Set(live.map { $0.id })
         var display: [ActiveJob] = []
         display.appendUpTo(jobDisplayLimit, from: inProgress)
         display.appendUpTo(jobDisplayLimit, from: queued)
