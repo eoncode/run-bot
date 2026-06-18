@@ -98,6 +98,21 @@ final class ActiveJobAsCompletedTests: XCTestCase {
         XCTAssertEqual(result.conclusion, .success)
     }
 
+    // MARK: Idempotency
+
+    /// Calling asCompleted(at:) on a job that is already .completed must produce
+    /// the same result as calling it once — completedAt and conclusion are preserved,
+    /// status and isDimmed remain forced to their cache values.
+    func test_asCompleted_idempotent_alreadyCompleted() {
+        let once = makeJob(completedAt: existing, conclusion: .success)
+            .asCompleted(at: fallback)
+        let twice = once.asCompleted(at: fallback)
+        XCTAssertEqual(twice.completedAt, existing)
+        XCTAssertEqual(twice.conclusion, .success)
+        XCTAssertEqual(twice.status, .completed)
+        XCTAssertTrue(twice.isDimmed)
+    }
+
     // MARK: Round-trip / field exhaustiveness
 
     /// All fields not explicitly overridden by asCompleted(at:) must be preserved
