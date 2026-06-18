@@ -198,7 +198,7 @@ public struct PollResultBuilder {
     ///
     /// A job vanishes when it disappears from the API response without transitioning
     /// through a `completed` status — most commonly a cancellation or runner disconnect.
-    /// Falls back to `.cancelled` (not `.success`) when no conclusion is available.
+    /// Falls back to `.neutral` (not `.cancelled`) when no conclusion is available.
     public static func applyVanishedJobs(
         snapPrev: [Int: ActiveJob],
         liveIDs: Set<Int>,

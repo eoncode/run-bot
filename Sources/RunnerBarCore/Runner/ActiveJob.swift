@@ -125,6 +125,7 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
 
 // MARK: - Copy helpers
 
+/// Helpers for deriving immutable `ActiveJob` copies.
 extension ActiveJob {
     /// Returns a completed, dimmed copy of this job.
     ///
