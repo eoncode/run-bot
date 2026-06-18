@@ -111,5 +111,6 @@ func ghRaw(_ endpoint: String) async -> Data? {
 /// Reads the closure under the lock then invokes it outside —
 /// `OSAllocatedUnfairLock.withLock` cannot contain a non-trivial call.
 func githubTokenCore() -> String? {
-    tokenProviderBox.get()()
+    let provider = tokenProviderBox.get()
+    return provider()
 }
