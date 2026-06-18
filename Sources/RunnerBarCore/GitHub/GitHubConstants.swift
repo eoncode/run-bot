@@ -31,7 +31,18 @@ public enum GitHubConstants {
     // MARK: - User API path constants
 
     /// GitHub REST API path for listing organisations the authenticated user belongs to.
-    public static let userOrgsPath = "/user/orgs?per_page=100" // NOSONAR — intentional centralisation of hardcoded URI
+    /// Query parameters (e.g. `per_page`) are appended by the caller — see `GitHubConstants.maxPageSize`.
+    public static let userOrgsPath = "/user/orgs" // NOSONAR — intentional centralisation of hardcoded URI
     /// GitHub REST API path for listing repositories visible to the authenticated user.
-    public static let userReposPath = "/user/repos?per_page=100&sort=updated" // NOSONAR — intentional centralisation of hardcoded URI
+    /// Query parameters (e.g. `per_page`, `sort`) are appended by the caller.
+    public static let userReposPath = "/user/repos?sort=updated" // NOSONAR — intentional centralisation of hardcoded URI
+
+    // MARK: - Pagination constants
+
+    /// Maximum page size accepted by the GitHub REST API (`per_page` parameter).
+    /// Used for jobs, branches, orgs, and repos where all results are required.
+    public static let maxPageSize = 100
+    /// Page size used for active workflow-run queries (in_progress / queued).
+    /// Smaller than `maxPageSize` because active run counts are typically low.
+    public static let activeRunsPageSize = 50
 }

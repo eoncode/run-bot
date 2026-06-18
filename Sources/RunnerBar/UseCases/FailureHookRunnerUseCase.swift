@@ -240,7 +240,7 @@ struct FailureHookRunnerUseCase: Sendable {
                 continue
             }
             log("FailureHookRunnerUseCase fetchFailedJobs -- fetching jobs for failed run=\(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil")")
-            guard let data = await ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=100") else {
+            guard let data = await ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=\(GitHubConstants.maxPageSize)") else {
                 log("FailureHookRunnerUseCase fetchFailedJobs -- ghAPI returned nil for run=\(run.id)")
                 continue
             }

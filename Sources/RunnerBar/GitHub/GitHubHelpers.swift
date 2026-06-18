@@ -25,7 +25,7 @@ func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
     var seenRunIDs = Set<Int>()
 
     func runsEndpoint(status: String) -> String {
-        "\(scope.apiPrefix)/actions/runs?status=\(status)&per_page=50"
+        "\(scope.apiPrefix)/actions/runs?status=\(status)&per_page=\(GitHubConstants.activeRunsPageSize)"
     }
 
     for status in ["in_progress", "queued"] {
@@ -43,7 +43,7 @@ func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
     var jobs: [ActiveJob] = []
     var seenJobIDs = Set<Int>()
     for runID in runIDs {
-        guard let data = await ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=100"),
+        guard let data = await ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
               let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
         else { continue }
         for payload in resp.jobs {
@@ -106,7 +106,7 @@ private struct RunnersResponse: Codable {
 
 /// Returns the login names of all GitHub organisations the authenticated user belongs to.
 func fetchUserOrgs() async -> [String] {
-    guard let data = await ghAPIPaginated(GitHubConstants.userOrgsPath) else { return [] }
+    guard let data = await ghAPIPaginated("\(GitHubConstants.userOrgsPath)?per_page=\(GitHubConstants.maxPageSize)") else { return [] }
     /// Minimal org payload — only the login name is needed.
     struct Org: Decodable {
         /// The organisation's GitHub login name.
@@ -118,7 +118,7 @@ func fetchUserOrgs() async -> [String] {
 
 /// Returns the `owner/repo` full names of all repositories visible to the authenticated user.
 func fetchUserRepos() async -> [String] {
-    guard let data = await ghAPIPaginated(GitHubConstants.userReposPath) else { return [] }
+    guard let data = await ghAPIPaginated("\(GitHubConstants.userReposPath)&per_page=\(GitHubConstants.maxPageSize)") else { return [] }
     /// Minimal repo payload — only the full name is needed.
     struct Repo: Decodable {
         /// The repository's full name in `owner/repo` format.
