@@ -213,6 +213,12 @@ actor RunnerStore {
     /// body (PR Principle #4: no singleton access inside actor bodies).
     private let onStatusUpdate: @MainActor @Sendable () -> Void
 
+    /// Shared `JSONDecoder` — reused across all decode calls in the actor.
+    /// Declared as a stored instance property so it is serialised by the actor's own
+    /// executor; no concurrent access is possible. Used by `backfillSteps` in
+    /// `RunnerStore+PollBridge.swift`.
+    let decoder = JSONDecoder()
+
     // MARK: - Aggregate status
 
     /// The combined health status across all runners, derived from the current `runners` array.

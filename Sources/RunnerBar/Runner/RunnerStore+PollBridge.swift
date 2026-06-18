@@ -76,6 +76,8 @@ extension RunnerStore {
     ///
     /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
+    /// Uses `decoder` — a stored instance property on `RunnerStore` — which is serialised
+    /// by the actor's own executor, ensuring no concurrent access.
     func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
@@ -83,7 +85,7 @@ extension RunnerStore {
                   cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }),
                   let scope = scopeFromHtmlUrl(cached.htmlUrl),
                   let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)"),
-                  let fresh = try? JSONDecoder().decode(JobPayload.self, from: data),
+                  let fresh = try? decoder.decode(JobPayload.self, from: data),
                   !fresh.steps.isEmpty
             else { continue }
             cache[cacheID] = await ISO8601DateParser.shared.makeJob(from: fresh, isDimmed: true)
