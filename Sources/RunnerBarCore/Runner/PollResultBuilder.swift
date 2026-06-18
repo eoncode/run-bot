@@ -265,10 +265,11 @@ public struct PollResultBuilder {
         let cached: [ActiveJob] = cache.values.sorted {
             ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast)
         }
+        let liveJobIDs = Set((inProgress + queued).map { $0.id })
         var display: [ActiveJob] = []
         display.appendUpTo(jobDisplayLimit, from: inProgress)
         display.appendUpTo(jobDisplayLimit, from: queued)
-        display.appendUpTo(jobDisplayLimit, from: cached)
+        display.appendUpTo(jobDisplayLimit, from: cached) { !liveJobIDs.contains($0.id) }
         return display
     }
 
