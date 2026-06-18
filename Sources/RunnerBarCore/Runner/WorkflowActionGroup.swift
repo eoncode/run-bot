@@ -68,7 +68,7 @@ public struct WorkflowRunRef: Identifiable, Sendable {
 // MARK: - WorkflowActionGroup
 
 /// Represents one **commit / PR trigger**: all GitHub Actions workflow runs
-/// that share the same `head_sha`. Mirrors ci-dash.py's “Group” concept from
+/// that share the same `head_sha`. Mirrors ci-dash.py's "Group" concept from
 /// `group_runs()` + `enrich_group()`.
 ///
 /// Hierarchy: `WorkflowActionGroup` → jobs (flat across all sibling runs) → `JobStep` → log.
@@ -119,6 +119,12 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     ///
     /// This satisfies the `onChange(of: store.actions)` requirement in `PanelMainView`
     /// without deep-comparing mutable job arrays on every poll.
+    ///
+    /// ⚠️ `copying()` can produce structurally different instances — for example,
+    /// toggling `isDimmed` or updating `lastJobCompletedAt` — that this operator
+    /// still treats as equal because only `id` is compared. Any caller that needs
+    /// to detect snapshot-level field changes (e.g. freeze-state transitions) must
+    /// compare fields directly; `==` will not fire for those differences.
     public static func == (lhs: WorkflowActionGroup, rhs: WorkflowActionGroup) -> Bool {
         lhs.id == rhs.id
     }
@@ -143,20 +149,8 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         )
     }
 
-    /// Returns a copy of this group with specific mutable fields overridden.
-    ///
-    /// Replaces direct mutation (`var`) at call sites in `PollResultBuilder`
-    /// and `freezeVanishedGroups`. Only the two fields that vary at freeze-time
-    /// are exposed; all identity fields are preserved verbatim.
-    /// - Parameters:
-    ///   - isDimmed: Whether the group is frozen into the completed cache.
-    ///   - lastJobCompletedAtOverride: New value for the latest job completion time. Pass `nil` to preserve
-    ///     the existing value unchanged. There is intentionally no way to reset this field back to `nil` via
-    ///     `copying` — the parameter name signals this non-standard semantics.
-    public func copying(
-        isDimmed: Bool,
-        lastJobCompletedAtOverride: Date? = nil
-    ) -> WorkflowActionGroup {
+    /// Returns a copy of this group with `isDimmed` set. All other fields are preserved verbatim.
+    public func copying(isDimmed: Bool) -> WorkflowActionGroup {
         WorkflowActionGroup(
             headSha: headSha,
             label: label,
@@ -166,7 +160,28 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             runs: runs,
             jobs: jobs,
             firstJobStartedAt: firstJobStartedAt,
-            lastJobCompletedAt: lastJobCompletedAtOverride ?? self.lastJobCompletedAt,
+            lastJobCompletedAt: lastJobCompletedAt,
+            createdAt: createdAt,
+            isDimmed: isDimmed
+        )
+    }
+
+    /// Returns a copy of this group with `isDimmed` set and `lastJobCompletedAt` set to `date`.
+    ///
+    /// Use this overload when the completion timestamp is not yet recorded on the group
+    /// (i.e. the group vanished from the live feed before the API returned a final time).
+    /// All other fields are preserved verbatim.
+    public func copying(isDimmed: Bool, settingCompletedAt date: Date) -> WorkflowActionGroup {
+        WorkflowActionGroup(
+            headSha: headSha,
+            label: label,
+            title: title,
+            headBranch: headBranch,
+            repo: repo,
+            runs: runs,
+            jobs: jobs,
+            firstJobStartedAt: firstJobStartedAt,
+            lastJobCompletedAt: date,
             createdAt: createdAt,
             isDimmed: isDimmed
         )

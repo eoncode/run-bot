@@ -317,9 +317,11 @@ public struct PollResultBuilder {
                     await fireFailureHook(group, scope)
                 }
             }
-            // nil means "preserve existing" per copying(isDimmed:lastJobCompletedAtOverride:) contract.
-            let completedAt: Date? = group.lastJobCompletedAt == nil ? now : nil
-            cache[groupID] = group.copying(isDimmed: true, lastJobCompletedAtOverride: completedAt)
+            if group.lastJobCompletedAt == nil {
+                cache[groupID] = group.copying(isDimmed: true, settingCompletedAt: now)
+            } else {
+                cache[groupID] = group.copying(isDimmed: true)
+            }
         }
     }
 
