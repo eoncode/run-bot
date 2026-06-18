@@ -150,7 +150,8 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// are exposed; all identity fields are preserved verbatim.
     /// - Parameters:
     ///   - isDimmed: Whether the group is frozen into the completed cache.
-    ///   - lastJobCompletedAt: Override for the latest job completion time. Pass `nil` to keep the existing value.
+    ///   - lastJobCompletedAt: Override for the latest job completion time. Pass `nil` to preserve the existing
+    ///     value unchanged. There is intentionally no way to reset this field back to `nil` via `copying`.
     public func copying(
         isDimmed: Bool,
         lastJobCompletedAt: Date? = nil
@@ -219,7 +220,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// - Returns `.inProgress` when any run is `.inProgress`.
     /// - Returns `.queued` when any run is `.queued` but none is in progress.
     public var groupStatus: GroupStatus {
-        if jobsTotal > 0, jobs.filter({ $0.conclusion != nil }).count == jobsTotal {
+        if jobsTotal > 0, jobs.allSatisfy({ $0.conclusion != nil }) {
             return .completed
         }
         if runs.contains(where: { $0.status == .inProgress }) { return .inProgress }
@@ -299,7 +300,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     /// Uses the typed `JobConclusion.isFailure` check (covers `.failure`, `.timedOut`,
     /// `.startupFailure`, `.actionRequired`) rather than raw-string comparison.
     /// Intended for display-layer badge colouring and hook-triggering logic.
-    public var hasFailedRun: Bool {
+    public var hasFailedJob: Bool {
         jobs.contains { $0.conclusion?.isFailure == true }
     }
 
