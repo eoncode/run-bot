@@ -161,9 +161,12 @@ public struct PollResultBuilder {
             "PollResultBuilder › groups: \(inProgCount) in_progress \(queuedCount) queued"
                 + " | cache: \(newCache.count) | seenIDs: \(newSeenGroupIDs.count) | display: \(display.count)"
         )
-        // Enrich jobs concurrently while preserving the sort order produced by
-        // buildGroupDisplay. withTaskGroup yields results in completion order, so
-        // we key tasks by index and re-sort before returning.
+        // ── Sweep 1: enrich the display array ────────────────────────────────
+        // Keyed by Int (array index) so the sort order produced by buildGroupDisplay
+        // is faithfully restored after withTaskGroup yields results in completion
+        // order. Using a String group-ID key here would not be sufficient because
+        // display can contain multiple entries with the same underlying group (e.g.
+        // a live entry and a dimmed cache echo), so index is the only stable key.
         let enriched: [WorkflowActionGroup] = await withTaskGroup(
             of: (Int, WorkflowActionGroup).self
         ) { group in
@@ -174,6 +177,13 @@ public struct PollResultBuilder {
             for await pair in group { out.append(pair) }
             return out.sorted { $0.0 < $1.0 }.map { $0.1 }
         }
+        // ── Sweep 2: enrich the group cache ──────────────────────────────────
+        // Keyed by String (group ID) because newCache is a dictionary and its
+        // semantic identity IS the group ID. These two sweeps cannot be merged
+        // into one: the key types differ (Int vs String), the source collections
+        // differ (display array vs newCache dict), and P16 (Actor-Per-Concern)
+        // intentionally keeps display-enrichment and cache-enrichment separate so
+        // neither path's concurrent mutations can interfere with the other.
         let enrichedCache: [String: WorkflowActionGroup] = await withTaskGroup(
             of: (String, WorkflowActionGroup).self
         ) { group in
@@ -229,10 +239,14 @@ public struct PollResultBuilder {
         let cached: [ActiveJob] = cache.values.sorted {
             ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast)
         }
+        // Use all live IDs (not just inProgress + queued) so that jobs in other
+        // non-completed statuses (.waiting, .requested, .pending) also prevent
+        // their stale dimmed cache entry from appearing in the display list.
+        let liveJobIDs = Set(live.map { $0.id })
         var display: [ActiveJob] = []
-        for job in inProgress where display.count < jobDisplayLimit { display.append(job) }
-        for job in queued     where display.count < jobDisplayLimit { display.append(job) }
-        for job in cached     where display.count < jobDisplayLimit { display.append(job) }
+        display.appendUpTo(jobDisplayLimit, from: inProgress)
+        display.appendUpTo(jobDisplayLimit, from: queued)
+        display.appendUpTo(jobDisplayLimit, from: cached) { !liveJobIDs.contains($0.id) }
         return display
     }
 
@@ -338,9 +352,30 @@ public struct PollResultBuilder {
                 > ($1.lastJobCompletedAt ?? $1.createdAt ?? .distantPast)
         }
         var display: [WorkflowActionGroup] = []
-        for actionGroup in inProgress where display.count < groupDisplayLimit { display.append(actionGroup) }
-        for actionGroup in queued where display.count < groupDisplayLimit { display.append(actionGroup) }
-        for actionGroup in cached where display.count < groupDisplayLimit && !liveIDs.contains(actionGroup.id) { display.append(actionGroup) }
+        display.appendUpTo(groupDisplayLimit, from: inProgress)
+        display.appendUpTo(groupDisplayLimit, from: queued)
+        display.appendUpTo(groupDisplayLimit, from: cached) { !liveIDs.contains($0.id) }
         return display
+    }
+}
+
+// MARK: - Array fill helper
+
+/// Sequence-filling helpers used by `PollResultBuilder` to top up display arrays.
+private extension Array {
+    /// Appends elements from `source` until `self.count` reaches `limit`.
+    ///
+    /// Elements are appended in source order. An optional predicate can skip
+    /// individual elements (e.g. cached groups that are already live) without
+    /// breaking the "fill until full" semantics.
+    mutating func appendUpTo<S>(
+        _ limit: Int,
+        from source: S,
+        where shouldAppend: (S.Element) -> Bool = { _ in true }
+    ) where S: Sequence, S.Element == Element {
+        guard count < limit else { return }
+        for element in source where count < limit && shouldAppend(element) {
+            append(element)
+        }
     }
 }
