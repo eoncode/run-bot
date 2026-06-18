@@ -250,4 +250,48 @@ struct SaveRunnerEditsUseCaseTests {
         #expect(msgs.contains(where: { $0.contains("Install path") }))
         #expect(await !proxy.saveCalled)
     }
+
+    /// #1451 — Both JSON and proxy stores throw simultaneously.
+    /// The use case must accumulate both errors (not short-circuit after the
+    /// first failure), so the result must contain exactly two error messages.
+    @Test("accumulates both errors when JSON and proxy stores both fail")
+    func bothStoresFailAccumulatesTwoErrors() async {
+        let runner   = makeRunner()
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        draft.workFolder = "custom_work"
+        draft.proxyUrl   = "http://proxy.example.com"
+
+        let config  = SpyConfigStore()
+        await config.setUp(shouldThrowOnSave: true)
+        let proxy   = SpyProxyStore()
+        await proxy.setUp(shouldThrowOnSave: true)
+        let useCase = makeUseCase(config: config, proxy: proxy)
+
+        let result = await useCase.execute(runner: runner, draft: draft, original: original)
+
+        guard case .failure(let msgs) = result else {
+            Issue.record("expected .failure, got .success")
+            return
+        }
+        #expect(msgs.count == 2)
+    }
+
+    /// #1452 — Changing only a non-label field must not trigger the labels API.
+    /// The label guard must be narrow enough that an unrelated field change
+    /// (workFolder) does not call `labelsService.patch`.
+    @Test("non-label field change does not call labelsService")
+    func nonLabelChangeDoesNotCallLabelsService() async {
+        let runner   = makeRunner()
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        draft.workFolder = "other_work"
+
+        let labels  = SpyLabelsService()
+        let useCase = makeUseCase(labels: labels)
+
+        _ = await useCase.execute(runner: runner, draft: draft, original: original)
+
+        #expect(await labels.callCount == 0)
+    }
 }
