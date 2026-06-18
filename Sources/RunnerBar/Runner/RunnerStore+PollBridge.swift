@@ -4,11 +4,6 @@ import Foundation
 import os
 import RunnerBarCore
 
-// MARK: - Shared decoder
-
-/// Shared `JSONDecoder` — one instance for all decode calls in this file.
-private let decoder = JSONDecoder()
-
 // MARK: - RunnerStore thin wrappers
 
 // These extensions delegate to PollResultBuilder so RunnerStore.fetch() call
@@ -76,6 +71,16 @@ extension RunnerStore {
             }
         )
     }
+
+    // MARK: - Shared decoder
+
+    /// Shared `JSONDecoder` — one instance for all decode calls in this extension.
+    /// Declared as an instance property (not file-scope) so it is actor-isolated to
+    /// `@MainActor` alongside `RunnerStore`, matching the pattern used in `OAuthService`
+    /// and `ScopeStore`. This removes the latent data race that would arise from a
+    /// file-scope reference type being accessed across `await` suspension points.
+    private var decoder: JSONDecoder { RunnerStore._decoder }
+    private static let _decoder = JSONDecoder()
 
     /// Backfills step data into the completed-job cache.
     ///

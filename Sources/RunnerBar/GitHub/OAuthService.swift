@@ -37,6 +37,8 @@ final class OAuthService {
 
     /// Shared `JSONDecoder` — reused across token-exchange decode calls instead of per-call instantiation.
     private let decoder = JSONDecoder()
+    /// Shared `JSONEncoder` — reused across token-exchange encode calls instead of per-call instantiation.
+    private let encoder = JSONEncoder()
 
     /// The OAuth redirect URI. Must match the value registered in the GitHub OAuth app settings.
     /// Sourced from `GitHubConstants.oauthRedirectURI` — do not duplicate this string inline.
@@ -236,7 +238,7 @@ final class OAuthService {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONEncoder().encode([
+        req.httpBody = try? encoder.encode([
             "client_id": OAuthSecrets.clientID,
             "client_secret": OAuthSecrets.clientSecret,
             "code": code
