@@ -205,6 +205,13 @@ public struct RunnerStatusEnricher: RunnerStatusEnricherProtocol, Sendable {
     ///   - name: The runner name to look up.
     ///   - dict: The payload dictionary keyed by runner name.
     /// - Returns: The matching payload, or `nil` if none is found.
+    ///
+    /// - Note: The three stages are intentionally independent transformations.
+    ///   Stage 2 handles wrong case (both sides lowercased, whitespace untouched).
+    ///   Stage 3 handles leading/trailing whitespace (both sides trimmed, case untouched).
+    ///   A name that differs in *both* case *and* whitespace (e.g. `" MyRunner"` vs
+    ///   `"myrunner"`) will not match any stage and returns `nil`. Fix in a follow-up
+    ///   by adding a stage 4: `nameTrimmedLower` vs `key.trimmingCharacters.lowercased()`.
     private static func findPayload(name: String, in dict: [String: RunnerPayload]) -> RunnerPayload? {
         if let api = dict[name] { return api }
         let nameLower = name.lowercased()
