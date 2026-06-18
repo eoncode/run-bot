@@ -147,5 +147,7 @@ final class ActiveJobAsCompletedTests: XCTestCase {
         XCTAssertEqual(result.status, .completed)
         XCTAssertTrue(result.isDimmed)
         XCTAssertEqual(result.completedAt, fallback)
+        // conclusion is preserved verbatim when non-nil
+        XCTAssertEqual(result.conclusion, .failure)
     }
 }
