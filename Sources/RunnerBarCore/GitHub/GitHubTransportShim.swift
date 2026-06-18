@@ -40,9 +40,13 @@ public typealias GHTokenProvider = @Sendable () -> String?
 /// invoke the closure outside (important for async closures — `withLock`
 /// cannot contain an `await`).
 private struct TransportBox<T: Sendable> {
+    /// The underlying unfair lock protecting the stored value.
     private let lock: OSAllocatedUnfairLock<T>
+    /// Creates a box with the given initial value.
     init(initialState: T) { lock = .init(initialState: initialState) }
+    /// Replaces the stored value under the lock.
     func configure(_ value: T) { lock.withLock { $0 = value } }
+    /// Returns the stored value under the lock.
     func get() -> T { lock.withLock { $0 } }
 }
 
