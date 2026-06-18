@@ -107,39 +107,17 @@ struct ActiveJobIsLocalRunnerTests {
         #expect(job.isLocalRunner == nil)
     }
 
-    /// A GitHub-hosted Ubuntu runner is not considered local.
-    @Test func isLocalRunnerFalseForUbuntuHosted() {
-        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "ubuntu-latest")
-        #expect(job.isLocalRunner == false)
-    }
-
-    /// A GitHub-hosted macOS runner is not considered local.
-    @Test func isLocalRunnerFalseForMacOSHosted() {
-        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "macos-14")
-        #expect(job.isLocalRunner == false)
-    }
-
-    /// A GitHub-hosted Windows runner is not considered local.
-    @Test func isLocalRunnerFalseForWindowsHosted() {
-        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "windows-2022")
-        #expect(job.isLocalRunner == false)
-    }
-
-    /// A buildjet-hosted runner is not considered local.
-    @Test func isLocalRunnerFalseForBuildjetHosted() {
-        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "buildjet-4vcpu-ubuntu-2204")
-        #expect(job.isLocalRunner == false)
-    }
-
-    /// A depot-hosted runner is not considered local.
-    @Test func isLocalRunnerFalseForDepotHosted() {
-        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "depot-ubuntu-22.04")
-        #expect(job.isLocalRunner == false)
-    }
-
-    /// A runner named "GitHub Actions 12" (hosted by GitHub) is not considered local.
-    @Test func isLocalRunnerFalseForGitHubActionsHosted() {
-        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "GitHub Actions 12")
+    /// All known hosted-runner name patterns return false — they are not local runners.
+    @Test(arguments: [
+        "ubuntu-latest",            // GitHub-hosted Ubuntu
+        "macos-14",                 // GitHub-hosted macOS
+        "windows-2022",             // GitHub-hosted Windows
+        "buildjet-4vcpu-ubuntu-2204", // Buildjet-hosted
+        "depot-ubuntu-22.04",       // Depot-hosted
+        "GitHub Actions 12"         // GitHub Actions hosted
+    ])
+    func isLocalRunnerFalseForHostedRunners(runnerName: String) {
+        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: runnerName)
         #expect(job.isLocalRunner == false)
     }
 
@@ -605,34 +583,28 @@ struct JobStatusIsActiveTests {
 @Suite("JobConclusion.isFailure")
 struct JobConclusionIsFailureTests {
 
-    /// failure, timedOut, startupFailure, and actionRequired are failures.
-    @Test func failureConclusions() {
-        #expect(JobConclusion.failure.isFailure)
-        #expect(JobConclusion.timedOut.isFailure)
-        #expect(JobConclusion.startupFailure.isFailure)
-        #expect(JobConclusion.actionRequired.isFailure)
+    /// failure, timedOut, startupFailure, and actionRequired are all failures.
+    @Test(arguments: [
+        JobConclusion.failure,
+        .timedOut,
+        .startupFailure,
+        .actionRequired
+    ])
+    func isFailureTrue(conclusion: JobConclusion) {
+        #expect(conclusion.isFailure)
     }
 
-    /// success and neutral are not failures.
-    @Test func nonFailureConclusions() {
-        #expect(!JobConclusion.success.isFailure)
-        #expect(!JobConclusion.neutral.isFailure)
-        #expect(!JobConclusion.stale.isFailure)
-    }
-
-    /// cancelled is not a failure — it is user-initiated, not a CI error.
-    @Test func cancelledIsNotFailure() {
-        #expect(!JobConclusion.cancelled.isFailure)
-    }
-
-    /// skipped is not a failure — it is a dependency-driven outcome, not a CI error.
-    @Test func skippedIsNotFailure() {
-        #expect(!JobConclusion.skipped.isFailure)
-    }
-
-    /// An unknown conclusion is not treated as a failure.
-    @Test func unknownIsNotFailure() {
-        #expect(!JobConclusion.unknown("neutral_extended").isFailure)
+    /// success, neutral, stale, cancelled, skipped, and unknown are not failures.
+    @Test(arguments: [
+        JobConclusion.success,
+        .neutral,
+        .stale,
+        .cancelled,
+        .skipped,
+        .unknown("neutral_extended")
+    ])
+    func isFailureFalse(conclusion: JobConclusion) {
+        #expect(!conclusion.isFailure)
     }
 }
 
@@ -641,44 +613,30 @@ struct JobConclusionIsFailureTests {
 @Suite("JobConclusion.isHookConclusion")
 struct JobConclusionIsHookConclusionTests {
 
-    /// All isFailure conclusions are also isHookConclusion.
-    @Test func allFailureConclusionsAreHookConclusions() {
-        #expect(JobConclusion.failure.isHookConclusion)
-        #expect(JobConclusion.timedOut.isHookConclusion)
-        #expect(JobConclusion.startupFailure.isHookConclusion)
-        #expect(JobConclusion.actionRequired.isHookConclusion)
+    /// All failure conclusions plus cancelled trigger the hook.
+    /// cancelled is included even though it is not isFailure —
+    /// a cancellation often signals a problem the user wants to be notified about.
+    @Test(arguments: [
+        JobConclusion.failure,
+        .timedOut,
+        .startupFailure,
+        .actionRequired,
+        .cancelled
+    ])
+    func isHookConclusionTrue(conclusion: JobConclusion) {
+        #expect(conclusion.isHookConclusion)
     }
 
-    /// cancelled is a hook conclusion even though it is not isFailure.
-    /// A cancellation often signals a problem the user wants to be notified about.
-    @Test func cancelledIsHookConclusionButNotFailure() {
-        #expect(JobConclusion.cancelled.isHookConclusion)
-        #expect(!JobConclusion.cancelled.isFailure)
-    }
-
-    /// success must not trigger the hook.
-    @Test func successIsNotHookConclusion() {
-        #expect(!JobConclusion.success.isHookConclusion)
-    }
-
-    /// skipped must not trigger the hook.
-    @Test func skippedIsNotHookConclusion() {
-        #expect(!JobConclusion.skipped.isHookConclusion)
-    }
-
-    /// neutral must not trigger the hook.
-    @Test func neutralIsNotHookConclusion() {
-        #expect(!JobConclusion.neutral.isHookConclusion)
-    }
-
-    /// stale must not trigger the hook.
-    @Test func staleIsNotHookConclusion() {
-        #expect(!JobConclusion.stale.isHookConclusion)
-    }
-
-    /// An unknown conclusion must not trigger the hook (conservative default).
-    @Test func unknownIsNotHookConclusion() {
-        #expect(!JobConclusion.unknown("some_future_value").isHookConclusion)
+    /// success, skipped, neutral, stale, and unknown must not trigger the hook.
+    @Test(arguments: [
+        JobConclusion.success,
+        .skipped,
+        .neutral,
+        .stale,
+        .unknown("some_future_value")
+    ])
+    func isHookConclusionFalse(conclusion: JobConclusion) {
+        #expect(!conclusion.isHookConclusion)
     }
 }
 
