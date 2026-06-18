@@ -4,11 +4,6 @@ import Foundation
 import os
 import RunnerBarCore
 
-// MARK: - Shared decoder
-
-/// Shared `JSONDecoder` — one instance for all free-function decode calls in this file.
-private let decoder = JSONDecoder()
-
 // MARK: - URL helpers
 
 // `scopeFromHtmlUrl` is defined in RunnerBarCore/Utilities/GitHubURLHelpers.swift
@@ -35,7 +30,7 @@ func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
 
     for status in ["in_progress", "queued"] {
         guard let data = await ghAPI(runsEndpoint(status: status)),
-              let resp = try? decoder.decode(WorkflowRunsResponse.self, from: data)
+              let resp = try? JSONDecoder().decode(WorkflowRunsResponse.self, from: data)
         else { continue }
         // filter() cannot replace this loop: insert() mutates seenRunIDs as a side effect.
         // swiftlint:disable for_where
@@ -49,7 +44,7 @@ func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
     var seenJobIDs = Set<Int>()
     for runID in runIDs {
         guard let data = await ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=100"),
-              let resp = try? decoder.decode(JobsResponse.self, from: data)
+              let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
         else { continue }
         for payload in resp.jobs {
             guard seenJobIDs.insert(payload.id).inserted else { continue }
@@ -93,7 +88,7 @@ func fetchRunners(for scopeString: String) async -> [Runner] {
         log("fetchRunners › no data for scope: \(scopeString)")
         return []
     }
-    guard let response = try? decoder.decode(RunnersResponse.self, from: data) else {
+    guard let response = try? JSONDecoder().decode(RunnersResponse.self, from: data) else {
         log("fetchRunners › decode failed for scope: \(scopeString)")
         return []
     }
@@ -117,7 +112,7 @@ func fetchUserOrgs() async -> [String] {
         /// The organisation's GitHub login name.
         let login: String
     }
-    guard let orgs = try? decoder.decode([Org].self, from: data) else { return [] }
+    guard let orgs = try? JSONDecoder().decode([Org].self, from: data) else { return [] }
     return orgs.map(\.login)
 }
 
@@ -134,7 +129,7 @@ func fetchUserRepos() async -> [String] {
             case fullName = "full_name"
         }
     }
-    guard let repos = try? decoder.decode([Repo].self, from: data) else { return [] }
+    guard let repos = try? JSONDecoder().decode([Repo].self, from: data) else { return [] }
     return repos.map(\.fullName)
 }
 

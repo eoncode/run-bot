@@ -72,21 +72,12 @@ extension RunnerStore {
         )
     }
 
-    // MARK: - Shared decoder
-
-    /// Shared `JSONDecoder` — one instance for all decode calls in this extension.
-    /// Declared as an instance property (not file-scope) so it is actor-isolated to
-    /// `@MainActor` alongside `RunnerStore`, matching the pattern used in `OAuthService`
-    /// and `ScopeStore`. This removes the latent data race that would arise from a
-    /// file-scope reference type being accessed across `await` suspension points.
-    private var decoder: JSONDecoder { RunnerStore._decoder }
-    /// Backing storage for the shared `JSONDecoder` instance.
-    private static let _decoder = JSONDecoder()
-
     /// Backfills step data into the completed-job cache.
     ///
     /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
+    /// Uses `decoder` — a stored instance property on `RunnerStore` — which is serialised
+    /// by the actor's own executor, ensuring no concurrent access.
     func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
