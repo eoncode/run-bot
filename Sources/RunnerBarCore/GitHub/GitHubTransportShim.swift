@@ -36,7 +36,7 @@ public typealias GHTokenProvider = @Sendable () -> String?
 ///
 /// Collapses the repeated configure/read lock pair that each transport type
 /// previously declared independently. `configure(_:)` replaces the stored
-/// value under the lock; `get()` reads it under the lock so the caller can
+/// value under the lock; `read()` reads it under the lock so the caller can
 /// invoke the closure outside (important for async closures — `withLock`
 /// cannot contain an `await`).
 private struct TransportBox<T: Sendable> {
@@ -47,7 +47,7 @@ private struct TransportBox<T: Sendable> {
     /// Replaces the stored value under the lock.
     func configure(_ value: T) { lock.withLock { $0 = value } }
     /// Returns the stored value under the lock.
-    func get() -> T { lock.withLock { $0 } }
+    func read() -> T { lock.withLock { $0 } }
 }
 
 // MARK: - Module-level state
@@ -94,7 +94,7 @@ public func configureGHToken(_ provider: @escaping GHTokenProvider) {
 /// Reads the closure under the lock then awaits it outside —
 /// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
 func ghAPI(_ endpoint: String) async -> Data? {
-    let transport = transportBox.get()
+    let transport = transportBox.read()
     return await transport(endpoint)
 }
 
@@ -103,7 +103,7 @@ func ghAPI(_ endpoint: String) async -> Data? {
 /// Reads the closure under the lock then awaits it outside —
 /// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
 func ghRaw(_ endpoint: String) async -> Data? {
-    let transport = rawTransportBox.get()
+    let transport = rawTransportBox.read()
     return await transport(endpoint)
 }
 
@@ -111,6 +111,6 @@ func ghRaw(_ endpoint: String) async -> Data? {
 /// Reads the closure under the lock then invokes it outside —
 /// `OSAllocatedUnfairLock.withLock` cannot contain a non-trivial call.
 func githubTokenCore() -> String? {
-    let provider = tokenProviderBox.get()
+    let provider = tokenProviderBox.read()
     return provider()
 }
