@@ -87,16 +87,25 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     /// actor's cooperative thread is never blocked.
     public func load(at installPath: String) async throws(RunnerConfigStoreError) -> RunnerConfig {
         let url = runnerConfigURL(for: installPath)
-        let data: Data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, RunnerConfigStoreError>) in
-            DispatchQueue.global(qos: .utility).async {
-                do {
-                    let raw = Self.stripBOM(from: try Data(contentsOf: url))
-                    continuation.resume(returning: raw)
-                } catch {
-                    // I/O failure (file not found, permissions denied, etc.) — distinct from decode failure.
-                    continuation.resume(throwing: RunnerConfigStoreError.readFailed(installPath, error))
+        // `withCheckedThrowingContinuation` requires `E == any Error`; typed errors are
+        // not supported. We re-throw as RunnerConfigStoreError in the surrounding catch.
+        let data: Data
+        do {
+            data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, any Error>) in
+                DispatchQueue.global(qos: .utility).async {
+                    do {
+                        let raw = Self.stripBOM(from: try Data(contentsOf: url))
+                        continuation.resume(returning: raw)
+                    } catch {
+                        // I/O failure (file not found, permissions denied, etc.) — distinct from decode failure.
+                        continuation.resume(throwing: RunnerConfigStoreError.readFailed(installPath, error))
+                    }
                 }
             }
+        } catch let e as RunnerConfigStoreError {
+            throw e
+        } catch {
+            throw RunnerConfigStoreError.readFailed(installPath, error)
         }
         do {
             return try decoder.decode(RunnerConfig.self, from: data)
@@ -122,59 +131,67 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     public func save(_ config: RunnerConfig, at installPath: String) async throws(RunnerConfigStoreError) {
         let url = runnerConfigURL(for: installPath)
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, RunnerConfigStoreError>) in
-            DispatchQueue.global(qos: .utility).async {
-                // Read-modify-write: load existing keys so agent-managed keys are preserved.
-                var raw: [String: AnyJSON] = [:]
-                if let existingData = try? Data(contentsOf: url) {
-                    let data = Self.stripBOM(from: existingData)
-                    if let dict = try? self.decoder.decode([String: AnyJSON].self, from: data) {
-                        raw = dict
+        // `withCheckedThrowingContinuation` requires `E == any Error`; typed errors are
+        // not supported. We re-throw as RunnerConfigStoreError in the surrounding catch.
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                DispatchQueue.global(qos: .utility).async {
+                    // Read-modify-write: load existing keys so agent-managed keys are preserved.
+                    var raw: [String: AnyJSON] = [:]
+                    if let existingData = try? Data(contentsOf: url) {
+                        let data = Self.stripBOM(from: existingData)
+                        if let dict = try? self.decoder.decode([String: AnyJSON].self, from: data) {
+                            raw = dict
+                        } else {
+                            // Decode failed — existing file is malformed. Proceeding
+                            // from an empty dict will drop unknown agent-managed keys on this save.
+                            log("RunnerConfigStore › save: existing .runner at \(url.path) could not be parsed; unknown keys will not be preserved")
+                        }
                     } else {
-                        // Decode failed — existing file is malformed. Proceeding
-                        // from an empty dict will drop unknown agent-managed keys on this save.
-                        log("RunnerConfigStore › save: existing .runner at \(url.path) could not be parsed; unknown keys will not be preserved")
+                        // File is missing or temporarily unreadable. Writing from scratch.
+                        // If the file exists but was unreadable, unknown agent-managed keys (e.g.
+                        // jitConfig, gitHubUrl) will be dropped — tracked in a follow-up issue (TBD).
+                        log("RunnerConfigStore › save: could not read existing .runner at \(url.path); writing from scratch")
                     }
-                } else {
-                    // File is missing or temporarily unreadable. Writing from scratch.
-                    // If the file exists but was unreadable, unknown agent-managed keys (e.g.
-                    // jitConfig, gitHubUrl) will be dropped — tracked in a follow-up issue (TBD).
-                    log("RunnerConfigStore › save: could not read existing .runner at \(url.path); writing from scratch")
-                }
 
-                // Always write workFolder so the user can clear a custom path back to the
-                // agent default. An empty string is normalised to "_work" here — identical
-                // to the value the agent writes on a fresh registration — so a load-failure
-                // zero value and an intentional clear are both safe to round-trip.
-                let workFolderValue = config.workFolder.isEmpty ? "_work" : config.workFolder
-                raw[RunnerConfig.CodingKeys.workFolder.rawValue] = .string(workFolderValue)
-                // Only write disableUpdate when it is explicitly set; omit the key when nil
-                // to match the agent's own convention (key absent == false).
-                if let disableUpdate = config.disableUpdate {
-                    raw[RunnerConfig.CodingKeys.disableUpdate.rawValue] = .bool(disableUpdate)
-                } else {
-                    raw.removeValue(forKey: RunnerConfig.CodingKeys.disableUpdate.rawValue)
-                }
-                // Write optional fields only when non-nil to avoid injecting "key": null
-                // into the agent-managed file.
-                if let val = config.platform { raw[RunnerConfig.CodingKeys.platform.rawValue] = .string(val) }
-                if let val = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = .string(val) }
-                if let val = config.agentVersion { raw[RunnerConfig.CodingKeys.agentVersion.rawValue] = .string(val) }
-                if let val = config.ephemeral { raw[RunnerConfig.CodingKeys.ephemeral.rawValue] = .bool(val) }
-                if let val = config.agentId { raw[RunnerConfig.CodingKeys.agentId.rawValue] = .int(val) }
+                    // Always write workFolder so the user can clear a custom path back to the
+                    // agent default. An empty string is normalised to "_work" here — identical
+                    // to the value the agent writes on a fresh registration — so a load-failure
+                    // zero value and an intentional clear are both safe to round-trip.
+                    let workFolderValue = config.workFolder.isEmpty ? "_work" : config.workFolder
+                    raw[RunnerConfig.CodingKeys.workFolder.rawValue] = .string(workFolderValue)
+                    // Only write disableUpdate when it is explicitly set; omit the key when nil
+                    // to match the agent's own convention (key absent == false).
+                    if let disableUpdate = config.disableUpdate {
+                        raw[RunnerConfig.CodingKeys.disableUpdate.rawValue] = .bool(disableUpdate)
+                    } else {
+                        raw.removeValue(forKey: RunnerConfig.CodingKeys.disableUpdate.rawValue)
+                    }
+                    // Write optional fields only when non-nil to avoid injecting "key": null
+                    // into the agent-managed file.
+                    if let val = config.platform { raw[RunnerConfig.CodingKeys.platform.rawValue] = .string(val) }
+                    if let val = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = .string(val) }
+                    if let val = config.agentVersion { raw[RunnerConfig.CodingKeys.agentVersion.rawValue] = .string(val) }
+                    if let val = config.ephemeral { raw[RunnerConfig.CodingKeys.ephemeral.rawValue] = .bool(val) }
+                    if let val = config.agentId { raw[RunnerConfig.CodingKeys.agentId.rawValue] = .int(val) }
 
-                do {
-                    let encoder = JSONEncoder()
-                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                    let data = try encoder.encode(raw)
-                    try data.write(to: url, options: .atomic)
-                    log("RunnerConfigStore › saved config to \(url.path)")
-                    continuation.resume()
-                } catch {
-                    log("RunnerConfigStore › save failed for \(url.path): \(error)")
-                    continuation.resume(throwing: RunnerConfigStoreError.writeFailed(installPath, error))
+                    do {
+                        let encoder = JSONEncoder()
+                        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                        let data = try encoder.encode(raw)
+                        try data.write(to: url, options: .atomic)
+                        log("RunnerConfigStore › saved config to \(url.path)")
+                        continuation.resume()
+                    } catch {
+                        log("RunnerConfigStore › save failed for \(url.path): \(error)")
+                        continuation.resume(throwing: RunnerConfigStoreError.writeFailed(installPath, error))
+                    }
                 }
             }
+        } catch let e as RunnerConfigStoreError {
+            throw e
+        } catch {
+            throw RunnerConfigStoreError.writeFailed(installPath, error)
         }
     }
 
