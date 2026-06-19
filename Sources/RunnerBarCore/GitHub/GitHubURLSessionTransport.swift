@@ -197,7 +197,11 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
         }
         return nil
     }
-    if didRateLimit && !allItems.isEmpty {
+    if didRateLimit {
+        if allItems.isEmpty {
+            log("urlSessionAPIPaginated › rate limited on first page — no items collected, returning nil")
+            return nil
+        }
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
@@ -287,6 +291,10 @@ public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) asy
 /// before its first suspension and immediately delegates to the already-`@concurrent`
 /// `urlSessionAPIAsync`. Caller-context inheritance is always correct here; a
 /// cooperative-pool hop would be redundant.
+///
+/// - Note: Callers on `@MainActor` inherit that context until the first `await`, at
+///   which point execution moves to the cooperative thread pool inside `urlSessionAPIAsync`.
+///   Do not perform heavy synchronous work before this call from a `@MainActor` context.
 nonisolated(nonsending)
 public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
     await urlSessionAPIAsync(endpoint, timeout: timeout)
@@ -299,6 +307,10 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 /// before its first suspension and immediately delegates to the already-`@concurrent`
 /// `urlSessionAPIPaginated`. Caller-context inheritance is always correct here; a
 /// cooperative-pool hop would be redundant.
+///
+/// - Note: Callers on `@MainActor` inherit that context until the first `await`, at
+///   which point execution moves to the cooperative thread pool inside `urlSessionAPIPaginated`.
+///   Do not perform heavy synchronous work before this call from a `@MainActor` context.
 nonisolated(nonsending)
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     await urlSessionAPIPaginated(endpoint, timeout: timeout)
