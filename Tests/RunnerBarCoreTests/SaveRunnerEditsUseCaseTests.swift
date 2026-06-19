@@ -100,7 +100,7 @@ struct SaveRunnerEditsUseCaseTests {
             Issue.record("expected .failure, got .success")
             return
         }
-        #expect(msgs.contains(where: { $0.contains(".runner JSON") }))
+        #expect(msgs.contains(where: { $0.contains("runner configuration") }))
         #expect(await proxy.saveCalled)
     }
 
@@ -208,7 +208,7 @@ struct SaveRunnerEditsUseCaseTests {
             return
         }
         #expect(msgs.count == 2)
-        #expect(msgs.contains(where: { $0.contains(".runner JSON") }))
+        #expect(msgs.contains(where: { $0.contains("runner configuration") }))
         #expect(msgs.contains(where: { $0.contains("proxy") }))
         // proxy.saveCalled is not asserted here: the spy only sets it on success,
         // but both stores are configured to throw. The content checks above confirm
