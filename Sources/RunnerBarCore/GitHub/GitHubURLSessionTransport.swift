@@ -438,8 +438,8 @@ public func fetchRemovalToken(scope scopeString: String) async -> String? {
 /// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
 /// before its first suspension and immediately delegates to the already-`@concurrent`
 /// `urlSessionPost`. Caller-context inheritance is always correct here.
-nonisolated(nonsending)
 @discardableResult
+nonisolated(nonsending)
 public func ghPost(_ endpoint: String) async -> Bool {
     let result = await urlSessionPost(endpoint)
     let success = result != nil
