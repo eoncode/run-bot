@@ -312,10 +312,7 @@ public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async
 
 /// Directly deregisters a runner from GitHub via DELETE.
 /// - Returns: `true` on success, `false` if the scope is invalid or the request fails.
-///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
-/// suspension; delegates immediately to the already-`@concurrent` `urlSessionDelete`.
-nonisolated(nonsending)
+@concurrent
 @discardableResult
 public func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> Bool {
     guard let scope = Scope.parse(scopeString) else {
@@ -331,10 +328,7 @@ public func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> 
 
 /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
 /// - Returns: The updated label names on success, `nil` on any failure.
-///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
-/// suspension; delegates immediately to the already-`@concurrent` `urlSessionPut`.
-nonisolated(nonsending)
+@concurrent
 @discardableResult
 public func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String]) async -> [String]? {
     guard let scope = Scope.parse(scopeString) else {
@@ -406,10 +400,7 @@ private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) asy
 
 /// Fetches a short-lived runner registration token for the given scope.
 /// - Returns: The registration token string, or `nil` on failure.
-///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
-/// suspension; delegates immediately to the already-`@concurrent` `fetchRunnerToken`.
-nonisolated(nonsending)
+@concurrent
 public func fetchRegistrationToken(scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRegistrationToken › invalid scope: \(scopeString)")
@@ -424,10 +415,7 @@ public func fetchRegistrationToken(scope scopeString: String) async -> String? {
 
 /// Fetches a runner removal token for the given scope.
 /// - Returns: The removal token string, or `nil` on failure.
-///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
-/// suspension; delegates immediately to the already-`@concurrent` `fetchRunnerToken`.
-nonisolated(nonsending)
+@concurrent
 public func fetchRemovalToken(scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRemovalToken › invalid scope: \(scopeString)")
@@ -445,8 +433,9 @@ public func fetchRemovalToken(scope scopeString: String) async -> String? {
 /// Thin convenience wrapper over `urlSessionPost` for fire-and-forget mutation endpoints.
 /// - Returns: `true` if the POST returned a non-nil result (2xx), `false` otherwise.
 ///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
-/// suspension; delegates immediately to the already-`@concurrent` `urlSessionPost`.
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension and immediately delegates to the already-`@concurrent`
+/// `urlSessionPost`. Caller-context inheritance is always correct here.
 nonisolated(nonsending)
 @discardableResult
 public func ghPost(_ endpoint: String) async -> Bool {
@@ -462,10 +451,7 @@ public func ghPost(_ endpoint: String) async -> Bool {
 /// Org/enterprise-level cancel is not uniformly supported by the API.
 /// Update this guard if org-scope cancel support is added in a future GitHub API version.
 /// - Returns: `true` if the cancellation request succeeded.
-///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
-/// suspension; delegates immediately to the already-`nonisolated(nonsending)` `ghPost`.
-nonisolated(nonsending)
+@concurrent
 @discardableResult
 public func cancelRun(runID: Int, scope scopeString: String) async -> Bool {
     guard let scope = Scope.parse(scopeString) else {
