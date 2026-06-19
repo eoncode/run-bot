@@ -109,12 +109,12 @@ struct ActiveJobIsLocalRunnerTests {
 
     /// All known hosted-runner name patterns return false — they are not local runners.
     @Test(arguments: [
-        "ubuntu-latest",            // GitHub-hosted Ubuntu
-        "macos-14",                 // GitHub-hosted macOS
-        "windows-2022",             // GitHub-hosted Windows
+        "ubuntu-latest",              // GitHub-hosted Ubuntu
+        "macos-14",                   // GitHub-hosted macOS
+        "windows-2022",               // GitHub-hosted Windows
         "buildjet-4vcpu-ubuntu-2204", // Buildjet-hosted
-        "depot-ubuntu-22.04",       // Depot-hosted
-        "GitHub Actions 12"         // GitHub Actions hosted
+        "depot-ubuntu-22.04",         // Depot-hosted
+        "GitHub Actions 12"           // GitHub Actions hosted
     ])
     func isLocalRunnerFalseForHostedRunners(runnerName: String) {
         let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: runnerName)
@@ -625,6 +625,13 @@ struct JobConclusionIsHookConclusionTests {
     ])
     func isHookConclusionTrue(conclusion: JobConclusion) {
         #expect(conclusion.isHookConclusion)
+    }
+
+    /// Verifies the deliberate semantic split: cancelled triggers the hook but is not a failure.
+    /// Guards against accidentally adding .cancelled to the isFailure branch in future.
+    @Test func cancelledIsHookConclusionButNotFailure() {
+        #expect(JobConclusion.cancelled.isHookConclusion)
+        #expect(!JobConclusion.cancelled.isFailure)
     }
 
     /// success, skipped, neutral, stale, and unknown must not trigger the hook.
