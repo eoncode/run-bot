@@ -1,8 +1,8 @@
 // GitHubTokenCache.swift
 // RunnerBar
 import Foundation
-import os
 import RunnerBarCore
+import Synchronization
 
 // MARK: - Token cache
 //
@@ -14,14 +14,14 @@ import RunnerBarCore
 //   - OAuthService.signOut() via invalidateTokenCache()
 //   - Keychain.save()         via invalidateTokenCache()
 //
-// Thread-safety (P16): read/write guarded by tokenCacheLock (OSAllocatedUnfairLock).
-// An actor wrapper was considered but rejected: it would require all call-sites
-// to become async. OSAllocatedUnfairLock provides equivalent mutual exclusion
-// with synchronous semantics, which is correct here because the critical section
-// is a single pointer swap — no suspension point needed.
+// Thread-safety (P16 + Reach Goal P13): read/write guarded by tokenCache
+// (Synchronization.Mutex). An actor wrapper was considered but rejected: it
+// would require all call-sites to become async. Mutex provides native Swift 6.2
+// mutual exclusion with synchronous semantics, which is correct here because
+// the critical section is a single pointer swap — no suspension point needed.
 
-/// Lock-protected in-memory cache for the resolved GitHub token.
-private let tokenCacheLock = OSAllocatedUnfairLock(initialState: Optional<String>.none)
+/// Mutex-protected in-memory cache for the resolved GitHub token.
+private let tokenCache = Mutex<String?>(nil)
 
 /// Clears the in-memory token cache. Call after saving a new token to Keychain
 /// or after signing out so the next githubToken() call re-resolves from source.
@@ -34,7 +34,7 @@ private let tokenCacheLock = OSAllocatedUnfairLock(initialState: Optional<String
 /// 4 files for no correctness benefit. The module boundary (`RunnerBar` target)
 /// already provides the necessary scoping.
 func invalidateTokenCache() {
-    tokenCacheLock.withLock { $0 = nil }
+    tokenCache.withLock { $0 = nil }
     log("GitHubTokenCache › invalidateTokenCache — cache cleared")
 }
 
@@ -49,7 +49,7 @@ func invalidateTokenCache() {
 /// Returns `nil` if no token is available from any source.
 func githubToken() -> String? {
     // 1. In-memory cache
-    if let cached = tokenCacheLock.withLock({ $0 }) {
+    if let cached = tokenCache.withLock({ $0 }) {
         #if DEBUG
         log("GitHubTokenCache › githubToken — resolved from cache (len=\(cached.count))")
         #endif
@@ -66,7 +66,7 @@ func githubToken() -> String? {
         // compare-before-write below eliminates the redundant second store, and
         // the window only exists on first resolution (after that every caller
         // hits the cache at the top of this function).
-        tokenCacheLock.withLock { if $0 == nil { $0 = token } }
+        tokenCache.withLock { if $0 == nil { $0 = token } }
         return token
     }
     #if DEBUG
@@ -78,7 +78,7 @@ func githubToken() -> String? {
             #if DEBUG
             log("GitHubTokenCache › githubToken — resolved from env var \(key) (len=\(token.count)), populating cache")
             #endif
-            tokenCacheLock.withLock { if $0 == nil { $0 = token } }
+            tokenCache.withLock { if $0 == nil { $0 = token } }
             return token
         } else {
             #if DEBUG
