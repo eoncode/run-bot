@@ -87,9 +87,6 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     /// actor's cooperative thread is never blocked.
     public func load(at installPath: String) async throws(RunnerConfigStoreError) -> RunnerConfig {
         let url = runnerConfigURL(for: installPath)
-        // `withCheckedThrowingContinuation` requires `E == any Error`; typed errors are
-        // not supported. The continuation always resumes with RunnerConfigStoreError,
-        // so only the typed catch branch is needed — no bare fallback.
         let data: Data
         do {
             data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, any Error>) in
@@ -106,11 +103,12 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
         } catch let configError as RunnerConfigStoreError {
             throw configError
         } catch {
+            // Compiler-imposed escape hatch: `withCheckedThrowingContinuation` is
+            // statically typed as throwing `any Error`, so Swift requires this bare
+            // catch even though the continuation closure above only ever resumes with
+            // RunnerConfigStoreError at runtime. This branch is not a live code path.
             throw RunnerConfigStoreError.readFailed(installPath, error)
         }
-        // Note: a bare `catch { throw .readFailed(...) }` fallback is required because
-        // `withCheckedThrowingContinuation` is typed as throwing `any Error`, even though
-        // the continuation closure only ever produces RunnerConfigStoreError at runtime.
         do {
             return try decoder.decode(RunnerConfig.self, from: data)
         } catch {
