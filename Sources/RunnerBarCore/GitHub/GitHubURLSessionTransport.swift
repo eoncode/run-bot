@@ -162,15 +162,12 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 // - already armed → ongoing rate limit, return partial results
                 // - not armed     → permission-denied 403, discard and return nil
                 if isNowRateLimited && !wasRateLimited {
-                    // Newly armed by this response — genuine rate limit.
                     log("urlSessionAPIPaginated › rate limited — returning \(allItems.count) partial items")
                     didRateLimit = true
                 } else if isNowRateLimited {
-                    // Actor was already armed before this request — ongoing rate limit.
                     log("urlSessionAPIPaginated › ongoing rate limit — returning \(allItems.count) partial items")
                     didRateLimit = true
                 } else {
-                    // handleRateLimitResponse did not arm the actor — permission-denied 403.
                     log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
                     didFailPermission = true
                 }
@@ -285,14 +282,24 @@ public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) asy
 
 /// Calls the GitHub REST API for a single page via URLSession.
 /// Returns `nil` when no token is available or the request fails.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension and immediately delegates to the already-`@concurrent`
+/// `urlSessionAPIAsync`. Caller-context inheritance is always correct here; a
+/// cooperative-pool hop would be redundant.
+nonisolated(nonsending)
 public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
     await urlSessionAPIAsync(endpoint, timeout: timeout)
 }
 
 /// Calls the GitHub REST API for all pages via URLSession.
 /// Returns `nil` when no token is available or the request fails.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension and immediately delegates to the already-`@concurrent`
+/// `urlSessionAPIPaginated`. Caller-context inheritance is always correct here; a
+/// cooperative-pool hop would be redundant.
+nonisolated(nonsending)
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     await urlSessionAPIPaginated(endpoint, timeout: timeout)
 }
