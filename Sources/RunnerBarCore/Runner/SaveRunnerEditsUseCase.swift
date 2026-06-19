@@ -105,12 +105,7 @@ public struct SaveRunnerEditsUseCase: Sendable {
                 config.disableUpdate = draft.autoUpdate ? nil : true
                 try await configStore.save(config, at: installPath)
             } catch {
-                switch error {
-                case .decodeFailed(let path):
-                    errors.append("Failed to decode runner configuration at \(path)/.runner")
-                case .writeFailed(let path, _):
-                    errors.append("Failed to write runner configuration at \(path)/.runner")
-                }
+                errors.append(error.localizedDescription)
             }
         }
 

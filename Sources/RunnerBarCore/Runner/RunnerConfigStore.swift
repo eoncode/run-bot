@@ -6,6 +6,8 @@ import Foundation
 
 /// Errors thrown while reading or writing the runner `.runner` configuration file.
 public enum RunnerConfigStoreError: LocalizedError {
+    /// The `.runner` file could not be read from disk (missing, permissions, I/O error).
+    case readFailed(String, any Error)
     /// The `.runner` file could not be decoded into `RunnerConfig`.
     case decodeFailed(String)
     /// The updated config could not be serialised or written to disk.
@@ -14,6 +16,8 @@ public enum RunnerConfigStoreError: LocalizedError {
     /// A human-readable description of the error.
     public var errorDescription: String? {
         switch self {
+        case .readFailed(let installPath, let underlying):
+            "Failed to read runner configuration at \(installPath)/.runner: \(underlying.localizedDescription)"
         case .decodeFailed(let installPath):
             "Failed to decode runner configuration at \(installPath)/.runner"
         case .writeFailed(let installPath, let underlying):
@@ -83,20 +87,16 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     /// actor's cooperative thread is never blocked.
     public func load(at installPath: String) async throws(RunnerConfigStoreError) -> RunnerConfig {
         let url = runnerConfigURL(for: installPath)
-        let loadResult: Result<Data, RunnerConfigStoreError> = await withCheckedContinuation { (continuation: CheckedContinuation<Result<Data, RunnerConfigStoreError>, Never>) in
+        let data: Data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, RunnerConfigStoreError>) in
             DispatchQueue.global(qos: .utility).async {
                 do {
                     let raw = Self.stripBOM(from: try Data(contentsOf: url))
-                    continuation.resume(returning: .success(raw))
+                    continuation.resume(returning: raw)
                 } catch {
-                    continuation.resume(returning: .failure(RunnerConfigStoreError.decodeFailed(installPath)))
+                    // I/O failure (file not found, permissions denied, etc.) — distinct from decode failure.
+                    continuation.resume(throwing: RunnerConfigStoreError.readFailed(installPath, error))
                 }
             }
-        }
-        let  Data
-        switch loadResult {
-        case .success(let d): data = d
-        case .failure(let e): throw e
         }
         do {
             return try decoder.decode(RunnerConfig.self, from: data)
@@ -122,7 +122,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     public func save(_ config: RunnerConfig, at installPath: String) async throws(RunnerConfigStoreError) {
         let url = runnerConfigURL(for: installPath)
 
-        let result: Result<Void, RunnerConfigStoreError> = await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, RunnerConfigStoreError>, Never>) in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, RunnerConfigStoreError>) in
             DispatchQueue.global(qos: .utility).async {
                 // Read-modify-write: load existing keys so agent-managed keys are preserved.
                 var raw: [String: AnyJSON] = [:]
@@ -169,16 +169,12 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                     let data = try encoder.encode(raw)
                     try data.write(to: url, options: .atomic)
                     log("RunnerConfigStore › saved config to \(url.path)")
-                    continuation.resume(returning: .success(()))
+                    continuation.resume()
                 } catch {
                     log("RunnerConfigStore › save failed for \(url.path): \(error)")
-                    continuation.resume(returning: .failure(RunnerConfigStoreError.writeFailed(installPath, error)))
+                    continuation.resume(throwing: RunnerConfigStoreError.writeFailed(installPath, error))
                 }
             }
-        }
-        switch result {
-        case .success: break
-        case .failure(let e): throw e
         }
     }
 
