@@ -155,7 +155,7 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
             if http.statusCode == 403 || http.statusCode == 429 {
                 await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
                 if await rateLimitActor.isLimited {
-                    log("urlSessionAPIPaginated › rate limited — returning \(allItems.count) partial items")
+                    log("urlSessionAPIPaginated › rate limited — \(allItems.count) items collected so far")
                     didRateLimit = true
                 } else {
                     log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
