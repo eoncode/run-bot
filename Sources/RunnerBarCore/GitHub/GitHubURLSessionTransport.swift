@@ -427,7 +427,10 @@ public func ghPost(_ endpoint: String) async -> Bool {
 }
 
 /// Cancels a workflow run via the GitHub Actions API.
-/// Only valid for repo-scoped scopes; org-scoped strings are rejected with a diagnostic log.
+/// Intentionally repo-only: the GitHub Actions cancel endpoint
+/// (`/repos/{owner}/{repo}/actions/runs/{run_id}/cancel`) is scoped to repositories.
+/// Org/enterprise-level cancel is not uniformly supported by the API.
+/// Update this guard if org-scope cancel support is added in a future GitHub API version.
 /// - Returns: `true` if the cancellation request succeeded.
 @concurrent
 @discardableResult
@@ -436,6 +439,7 @@ public func cancelRun(runID: Int, scope scopeString: String) async -> Bool {
         log("cancelRun › invalid scope: \(scopeString)")
         return false
     }
+    // Intentionally repo-only: see function doc above.
     guard case .repo = scope else {
         log("cancelRun › scope must be a repo (owner/name), got: \(scopeString)")
         return false
