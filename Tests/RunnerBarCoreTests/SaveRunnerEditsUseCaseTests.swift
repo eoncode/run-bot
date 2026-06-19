@@ -275,6 +275,11 @@ struct SaveRunnerEditsUseCaseTests {
             return
         }
         #expect(msgs.count == 2)
+        #expect(msgs.contains(where: { $0.contains(".runner JSON") }))
+        #expect(msgs.contains(where: { $0.contains("proxy") }))
+        // proxy.saveCalled is not asserted here: the spy only sets it on success,
+        // but both stores are configured to throw. The content checks above confirm
+        // the proxy error path was reached.
     }
 
     /// #1452 — Changing only a non-label field must not trigger the labels API.
@@ -288,10 +293,13 @@ struct SaveRunnerEditsUseCaseTests {
         draft.workFolder = "other_work"
 
         let labels  = SpyLabelsService()
-        let useCase = makeUseCase(labels: labels)
+        let config  = SpyConfigStore()
+        let useCase = makeUseCase(labels: labels, config: config)
 
-        _ = await useCase.execute(runner: runner, draft: draft, original: original)
+        let result = await useCase.execute(runner: runner, draft: draft, original: original)
 
+        #expect(result == .success)
         #expect(await labels.callCount == 0)
+        #expect(await config.saveCalled)
     }
 }
