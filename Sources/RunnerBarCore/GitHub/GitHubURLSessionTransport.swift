@@ -120,14 +120,16 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 ///
 /// - Returns `nil` on auth failure (401, permission-denied 403, or no token).
 /// - Returns partial results if pagination is stopped by a genuine rate limit.
+///
+/// - Note: This function owns its own URLSession loop rather than delegating to
+///   `urlSessionExecute`. Any fix to the shared execute pipeline must be mirrored here
+///   until this is refactored. See the dual-code-path tracking issue.
 @concurrent
 public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [AnyJSON] = []
     var didFailAuthentication = false
     var didFailPermission = false
-    let decoder = sharedDecoder
-    let encoder = sharedEncoder
 
     while let urlString = nextURL {
         guard let token = githubTokenCore() else {
@@ -150,10 +152,18 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 let wasRateLimited = await rateLimitActor.isLimited
                 await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
                 let isNowRateLimited = await rateLimitActor.isLimited
-                if !isNowRateLimited && !wasRateLimited {
-                    // handleRateLimitResponse did not arm the actor — this is a
-                    // permission-denied 403 (wrong scope, revoked PAT, repo access denial).
-                    // Treat identically to 401: discard partial results and return nil.
+                // Mirror urlSessionExecute logic exactly:
+                // - newly armed  → genuine rate limit, return partial results
+                // - already armed → ongoing rate limit, return partial results
+                // - not armed     → permission-denied 403, discard and return nil
+                if isNowRateLimited && !wasRateLimited {
+                    // Newly armed by this response — genuine rate limit.
+                    log("urlSessionAPIPaginated › rate limited — returning \(allItems.count) partial items")
+                } else if isNowRateLimited {
+                    // Actor was already armed before this request — ongoing rate limit.
+                    log("urlSessionAPIPaginated › ongoing rate limit — returning \(allItems.count) partial items")
+                } else {
+                    // handleRateLimitResponse did not arm the actor — permission-denied 403.
                     log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
                     didFailPermission = true
                 }
@@ -164,7 +174,7 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 break
             }
             await rateLimitActor.clear()
-            if let page = try? decoder.decode([AnyJSON].self, from: data) {
+            if let page = try? sharedDecoder.decode([AnyJSON].self, from: data) {
                 allItems.append(contentsOf: page)
             } else {
                 log("urlSessionAPIPaginated › unexpected non-array response at \(urlString) — stopping pagination")
@@ -188,7 +198,7 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
-    return try? encoder.encode(allItems)
+    return try? sharedEncoder.encode(allItems)
 }
 
 // MARK: - Raw async (log endpoints)
