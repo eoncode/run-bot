@@ -112,18 +112,21 @@ struct LocalRunnerIndexTests {
     /// Registering with an empty string name does not crash and stores the entry as-is.
     /// Design decision: `LocalRunnerIndex` is a thin persistence layer and does not validate
     /// keys — input sanitisation is the caller's responsibility (the edit UI must reject empty names).
+    /// See `RunnerEditDraft` validation for the corresponding guard at the call site.
     @Test func registerEmptyNameIsStoredAsIs() {
         let (defaults, suite) = Self.makeSuite()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let index = LocalRunnerIndex(defaults: defaults)
-        index.register(name: "", installPath: "/tmp/runner")
+        index.register(name: "", installPath: "/path/to/runner")
         // Empty name is stored as a key — callers must prevent this via UI validation.
-        #expect(index.runnerIndex[""] == "/tmp/runner")
+        #expect(index.runnerIndex[""] == "/path/to/runner")
     }
 
     /// Name lookup is case-sensitive: "Runner-A" and "runner-a" are distinct keys.
     /// Design decision: `runnerIndex` is a plain `[String: String]` dictionary, so key
     /// comparison uses Swift's default Unicode scalar equality (case-sensitive).
+    /// This test exercises the full persist→read round-trip via `UserDefaults`, not just
+    /// in-memory dictionary semantics, to guard against case-folding during serialisation.
     @Test func nameLookupIsCaseSensitive() {
         let (defaults, suite) = Self.makeSuite()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
