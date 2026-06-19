@@ -109,14 +109,10 @@ public struct SaveRunnerEditsUseCase: Sendable {
                 // cases are handled, matching the P22 intent of Step 3.
                 // Note: .readFailed can arise here from save()'s internal
                 // read-modify-write pre-read, not from the caller's load() call.
-                switch error {
-                case .readFailed(let path, let underlying):
-                    errors.append("Cannot read config at \(path)/.runner: \(underlying.localizedDescription)")
-                case .decodeFailed(let path):
-                    errors.append("Cannot decode config at \(path)/.runner")
-                case .writeFailed(let path, let underlying):
-                    errors.append("Cannot write config at \(path)/.runner: \(underlying.localizedDescription)")
-                }
+                // Use the canonical errorDescription from RunnerConfigStoreError
+                // (which contains "runner configuration") as the single source of truth
+                // for user-facing messages rather than duplicating the wording here.
+                errors.append(error.localizedDescription)
             }
         }
 
