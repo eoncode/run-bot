@@ -40,9 +40,7 @@ public actor RateLimitActor {
     private var generation = 0
 
     /// Creates a new `RateLimitActor` instance.
-    public init() {
-        // Default initialiser — no stored properties to initialise.
-    }
+    public init() {}
 
     /// Arms the rate-limit flag and schedules an automatic reset.
     ///
@@ -67,14 +65,14 @@ public actor RateLimitActor {
         resetTask?.cancel()
         isLimited = true
         resetDate = date
-        // No [weak self] — rateLimitActor is a module-level let constant that
-        // lives for the entire process lifetime; a weak reference would always
-        // be non-nil and the guard branch would be unreachable dead code.
+        // No [weak self] — rateLimitActor is a module-level `let` constant that
+        // lives for the entire process lifetime. A weak reference would always
+        // resolve to non-nil, making the guard branch unreachable dead code.
         resetTask = Task {
             do {
                 try await Task.sleep(for: .seconds(delay))
             } catch {
-                // Cancelled — a newer set(resetAt:) has taken over.
+                // Cancelled — a newer set(resetAt:) has taken over; do nothing.
                 return
             }
             await self.didFire(generation: capturedGeneration, scheduledDelay: delay)
@@ -82,7 +80,11 @@ public actor RateLimitActor {
     }
 
     /// Clears the rate-limit flag and cancels any pending reset task.
-    /// Unconditional — resets both `isLimited` and `resetDate` to keep them consistent.
+    ///
+    /// Unconditional: both `isLimited` and `resetDate` are always reset together
+    /// to keep them consistent. Clearing only `isLimited` while leaving a stale
+    /// `resetDate` would cause the UI to show a countdown for a limit that is no
+    /// longer active.
     public func clear() {
         resetTask?.cancel()
         resetTask = nil
@@ -99,10 +101,11 @@ public actor RateLimitActor {
 
     /// Fires when the `Task.sleep` in `set(resetAt:)` completes without cancellation.
     ///
-    /// The `generation` check guards against the following race: a task that has already
-    /// exited `Task.sleep` (so cancellation no longer stops it) arrives here *after* a
-    /// newer `set(resetAt:)` has incremented `self.generation`. Without the check it
-    /// would clear `isLimited` and `resetDate` for the newer, still-active window.
+    /// The `generation` check guards against a subtle race: a reset task that has
+    /// already exited `Task.sleep` (so `Task.cancel()` can no longer stop it) may
+    /// arrive here *after* a newer `set(resetAt:)` has incremented `self.generation`.
+    /// Without the check, the stale task would clear `isLimited` and `resetDate` for
+    /// the newer, still-active rate-limit window — silently unblocking the app mid-limit.
     private func didFire(generation: Int, scheduledDelay: TimeInterval) {
         guard generation == self.generation else {
             log("RateLimitActor › stale didFire ignored (gen=\(generation) current=\(self.generation))")
@@ -116,26 +119,52 @@ public actor RateLimitActor {
 }
 
 /// The module-wide `RateLimitActor` instance shared by `GitHubResponseDecoder`
-/// and `GitHubURLSessionTransport`. Public so both files can call `set(resetAt:)`,
-/// `clear()`, and `snapshot()` without duplication.
+/// and `GitHubURLSessionTransport`.
+/// Public so both files can call `set(resetAt:)`, `clear()`, and `snapshot()`
+/// without crossing module boundaries.
 public let rateLimitActor = RateLimitActor()
 
 // MARK: - Rate-limit accessors
 
 /// Whether the GitHub API is currently rate-limiting this client.
 /// Backed by `RateLimitActor`; must be `await`-ed from async contexts.
+///
+/// This is a computed async property — SE-0461 executor annotations (`@concurrent`,
+/// `nonisolated(nonsending)`) apply to `func` declarations, not `var get async`.
+/// As a nonisolated computed async var, it inherits the caller's executor, which is
+/// equivalent to `nonisolated(nonsending)` on a func.
+///
+/// - Note: If you need both `isLimited` and `resetDate` in the same call, prefer
+///   `ghRateLimitSnapshot()` to avoid the TOCTOU window between two separate actor hops.
 public var ghIsRateLimited: Bool {
     get async { await rateLimitActor.isLimited }
 }
 
 /// Clears the rate-limit flag. Called at the start of each poll cycle in `RunnerStore.fetch()`.
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension, so caller-context inheritance is always correct.
+/// A `@concurrent` annotation would add a redundant hop to the cooperative thread pool
+/// before the function immediately suspends onto `rateLimitActor`'s executor.
+/// `@MainActor` callers release the main thread at the first `await`, so there is no
+/// risk of main-thread blocking even without a prior cooperative-pool hop.
+nonisolated(nonsending)
 public func clearGhRateLimit() async {
     await rateLimitActor.clear()
 }
 
 /// Returns `isLimited` and `resetDate` in a single actor hop.
-/// Prefer this over a separate `await ghIsRateLimited` read plus a reset-date lookup
-/// to avoid the TOCTOU window between two hops.
+///
+/// Prefer this over reading `ghIsRateLimited` and `rateLimitActor.resetDate` separately:
+/// two individual reads involve two actor hops with a TOCTOU window between them.
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension, so caller-context inheritance is always correct.
+/// A `@concurrent` annotation would add a redundant hop to the cooperative thread pool
+/// before the function immediately suspends onto `rateLimitActor`'s executor.
+/// `@MainActor` callers release the main thread at the first `await`, so there is no
+/// risk of main-thread blocking even without a prior cooperative-pool hop.
+nonisolated(nonsending)
 public func ghRateLimitSnapshot() async -> (isLimited: Bool, resetDate: Date?) {
     await rateLimitActor.snapshot()
 }

@@ -4,10 +4,14 @@
 import Foundation
 
 /// Shared decoder hoisted to avoid re-instantiation on every call.
-/// Thread-safe: `JSONDecoder` has no mutable state after initialisation.
+/// Thread-safe: `JSONDecoder` has no mutable state after initialisation and is safe
+/// for concurrent reads in practice; this is consistent with Apple's own sample code
+/// and established community practice, though not a formally documented API guarantee.
 private let sharedDecoder = JSONDecoder()
 /// Shared encoder hoisted to avoid re-instantiation on every call.
-/// Thread-safe: `JSONEncoder` has no mutable state after initialisation.
+/// Thread-safe: `JSONEncoder` has no mutable state after initialisation and is safe
+/// for concurrent reads in practice; this is consistent with Apple's own sample code
+/// and established community practice, though not a formally documented API guarantee.
 private let sharedEncoder = JSONEncoder()
 
 // MARK: - Shared execution core
@@ -19,6 +23,9 @@ private enum ExecuteResult {
     /// Non-2xx response that is not a rate-limit or permission error; the request failed.
     case httpError(Int)
     /// 403 or 429 that triggered the rate-limit actor (genuine rate limit).
+    /// Covers both the case where this request freshly armed the actor and the case
+    /// where the actor was already armed by a concurrent caller — callers treat both
+    /// identically (back off and retry).
     case rateLimited
     /// 403 that did NOT trigger the rate-limit actor — token scope, revoked PAT, or
     /// repo access denial. The actor is not armed; the token needs attention.
@@ -44,12 +51,15 @@ private enum ExecuteResult {
 ///   - configure: A closure applied to the pre-built `URLRequest` just before it is sent.
 ///     Use this to set `httpMethod`, `httpBody`, or additional headers. The closure receives
 ///     the base request and must return the mutated copy; the default is the identity closure.
+///     Must be `@Sendable`: `urlSessionExecute` is `@concurrent` and all parameters crossing
+///     into the cooperative thread pool must satisfy the `Sendable` requirement.
+@concurrent
 private func urlSessionExecute(
     _ endpoint: String,
     timeout: TimeInterval,
     logTag: String,
     useRawAccept: Bool = false,
-    configure: (URLRequest) -> URLRequest = { $0 }
+    configure: @Sendable (URLRequest) -> URLRequest = { $0 }
 ) async -> ExecuteResult {
     guard let token = githubTokenCore() else {
         log("\(logTag) › no token available")
@@ -70,18 +80,11 @@ private func urlSessionExecute(
             return .networkError(URLError(.badServerResponse))
         }
         if http.statusCode == 403 || http.statusCode == 429 {
-            let wasRateLimited = await rateLimitActor.isLimited
             await handleRateLimitResponse(
                 statusCode: http.statusCode, data, response: http, endpoint: urlString
             )
             let isNowRateLimited = await rateLimitActor.isLimited
-            // If the actor was armed by this call it's a genuine rate limit.
-            // If it wasn't armed (permission-denied 403), return .permissionDenied
-            // so callers can distinguish token-scope problems from rate limits.
-            if isNowRateLimited && !wasRateLimited {
-                return .rateLimited
-            } else if isNowRateLimited {
-                // Actor was already armed before this request (ongoing rate limit).
+            if isNowRateLimited {
                 return .rateLimited
             } else {
                 return .permissionDenied
@@ -106,6 +109,7 @@ private func urlSessionExecute(
 /// Intentionally internal to the module: this is a stable call site consumed by `RunnerStore`
 /// and other module-level consumers across files. The underlying `urlSessionExecute` remains
 /// private to this file.
+@concurrent
 public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
     guard case .success(let data, _) = await urlSessionExecute(
         endpoint, timeout: timeout, logTag: "urlSessionAPIAsync"
@@ -118,13 +122,18 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 ///
 /// - Returns `nil` on auth failure (401, permission-denied 403, or no token).
 /// - Returns partial results if pagination is stopped by a genuine rate limit.
+///
+/// - Note: This function owns its own URLSession loop rather than delegating to
+///   `urlSessionExecute`. Any fix to the shared execute pipeline must be mirrored here
+///   until this is refactored.
+/// - TODO: Refactor to delegate to `urlSessionExecute` and eliminate this dual code path.
+@concurrent
 public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [AnyJSON] = []
     var didFailAuthentication = false
     var didFailPermission = false
-    let decoder = sharedDecoder
-    let encoder = sharedEncoder
+    var didRateLimit = false
 
     while let urlString = nextURL {
         guard let token = githubTokenCore() else {
@@ -144,13 +153,11 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 break
             }
             if http.statusCode == 403 || http.statusCode == 429 {
-                let wasRateLimited = await rateLimitActor.isLimited
                 await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
-                let isNowRateLimited = await rateLimitActor.isLimited
-                if !isNowRateLimited && !wasRateLimited {
-                    // handleRateLimitResponse did not arm the actor — this is a
-                    // permission-denied 403 (wrong scope, revoked PAT, repo access denial).
-                    // Treat identically to 401: discard partial results and return nil.
+                if await rateLimitActor.isLimited {
+                    log("urlSessionAPIPaginated › rate limited — \(allItems.count) items collected so far")
+                    didRateLimit = true
+                } else {
                     log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
                     didFailPermission = true
                 }
@@ -161,7 +168,7 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 break
             }
             await rateLimitActor.clear()
-            if let page = try? decoder.decode([AnyJSON].self, from: data) {
+            if let page = try? sharedDecoder.decode([AnyJSON].self, from: data) {
                 allItems.append(contentsOf: page)
             } else {
                 log("urlSessionAPIPaginated › unexpected non-array response at \(urlString) — stopping pagination")
@@ -175,17 +182,22 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
     }
 
     if didFailAuthentication || didFailPermission {
-        if !allItems.isEmpty {
+        if allItems.isEmpty {
+            log("urlSessionAPIPaginated › auth/permission failure on first page — no items collected, returning nil")
+        } else {
             log("urlSessionAPIPaginated › auth/permission failure mid-pagination — discarding \(allItems.count) partial items")
         }
         return nil
     }
-    let isRateLimited = await ghIsRateLimited
-    if isRateLimited && !allItems.isEmpty {
+    if didRateLimit {
+        if allItems.isEmpty {
+            log("urlSessionAPIPaginated › rate limited on first page — no items collected, returning nil")
+            return nil
+        }
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
-    return try? encoder.encode(allItems)
+    return try? sharedEncoder.encode(allItems)
 }
 
 // MARK: - Raw async (log endpoints)
@@ -196,6 +208,7 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
 ///   Apple's URLSession strips the `Authorization` header before following cross-origin
 ///   redirects (RFC 7235), so the Bearer token is never forwarded to S3.
 ///   See `makeRawRequest` in `GitHubRequestBuilder.swift` for full details.
+@concurrent
 public func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     guard case .success(let data, _) = await urlSessionExecute(
         endpoint, timeout: timeout, logTag: "urlSessionRaw", useRawAccept: true
@@ -211,6 +224,7 @@ public func urlSessionRaw(_ endpoint: String, timeout: TimeInterval = 60) async 
 /// Intentionally internal to the module: backs `ghPost` and the runner mutation helpers below,
 /// all of which are called from outside this file.
 /// - Returns: Response body on 2xx (`Data()` for 204 No Content), `nil` on failure.
+@concurrent
 @discardableResult
 public func urlSessionPost(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
     let result = await urlSessionExecute(endpoint, timeout: timeout, logTag: "urlSessionPost") { req in
@@ -229,6 +243,7 @@ public func urlSessionPost(_ endpoint: String, body: Data? = nil, timeout: TimeI
 
 /// Sends a PUT to the given GitHub API endpoint with a JSON body.
 /// - Returns: Response body on 2xx, `nil` on failure.
+@concurrent
 public func urlSessionPut(_ endpoint: String, body: Data, timeout: TimeInterval = 30) async -> Data? {
     let result = await urlSessionExecute(endpoint, timeout: timeout, logTag: "urlSessionPut") { req in
         var request = req
@@ -244,6 +259,7 @@ public func urlSessionPut(_ endpoint: String, body: Data, timeout: TimeInterval 
 
 /// Sends a DELETE to the given GitHub API endpoint.
 /// - Returns: `true` on 2xx, `false` on any failure.
+@concurrent
 @discardableResult
 public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) async -> Bool {
     let result = await urlSessionExecute(endpoint, timeout: timeout, logTag: "urlSessionDelete") { req in
@@ -262,12 +278,40 @@ public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) asy
 
 /// Calls the GitHub REST API for a single page via URLSession.
 /// Returns `nil` when no token is available or the request fails.
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension and immediately delegates to the already-`@concurrent`
+/// `urlSessionAPIAsync`. Caller-context inheritance is always correct here; a
+/// cooperative-pool hop would be redundant.
+///
+/// - Note: Safe to call from `@MainActor` because `urlSessionAPIAsync` is `@concurrent`
+///   and will move execution to the cooperative thread pool at the first `await`.
+///   Do not perform heavy synchronous work before this call from a `@MainActor` context.
+///
+/// - IMPORTANT: This function must remain a pure pass-through with no synchronous work
+///   before the `await`. If any guard, log, or computation is ever added before the first
+///   suspension, this annotation must be upgraded to `@concurrent`.
+nonisolated(nonsending)
 public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
     await urlSessionAPIAsync(endpoint, timeout: timeout)
 }
 
 /// Calls the GitHub REST API for all pages via URLSession.
 /// Returns `nil` when no token is available or the request fails.
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
+/// before its first suspension and immediately delegates to the already-`@concurrent`
+/// `urlSessionAPIPaginated`. Caller-context inheritance is always correct here; a
+/// cooperative-pool hop would be redundant.
+///
+/// - Note: Safe to call from `@MainActor` because `urlSessionAPIPaginated` is `@concurrent`
+///   and will move execution to the cooperative thread pool at the first `await`.
+///   Do not perform heavy synchronous work before this call from a `@MainActor` context.
+///
+/// - IMPORTANT: This function must remain a pure pass-through with no synchronous work
+///   before the `await`. If any guard, log, or computation is ever added before the first
+///   suspension, this annotation must be upgraded to `@concurrent`.
+nonisolated(nonsending)
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     await urlSessionAPIPaginated(endpoint, timeout: timeout)
 }
@@ -276,6 +320,7 @@ public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async
 
 /// Directly deregisters a runner from GitHub via DELETE.
 /// - Returns: `true` on success, `false` if the scope is invalid or the request fails.
+@concurrent
 @discardableResult
 public func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> Bool {
     guard let scope = Scope.parse(scopeString) else {
@@ -291,6 +336,7 @@ public func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> 
 
 /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
 /// - Returns: The updated label names on success, `nil` on any failure.
+@concurrent
 @discardableResult
 public func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String]) async -> [String]? {
     guard let scope = Scope.parse(scopeString) else {
@@ -336,6 +382,7 @@ public func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: 
 /// network or auth failure upstream. An empty-body response would indicate an unexpected
 /// 204 No Content — token endpoints do not emit 204, so that branch guards against
 /// future API changes or misconfigured proxies stripping the body.
+@concurrent
 private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) async -> String? {
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(type)"
     log("\(logPrefix) › POSTing \(endpoint)")
@@ -361,6 +408,7 @@ private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) asy
 
 /// Fetches a short-lived runner registration token for the given scope.
 /// - Returns: The registration token string, or `nil` on failure.
+@concurrent
 public func fetchRegistrationToken(scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRegistrationToken › invalid scope: \(scopeString)")
@@ -375,6 +423,7 @@ public func fetchRegistrationToken(scope scopeString: String) async -> String? {
 
 /// Fetches a runner removal token for the given scope.
 /// - Returns: The removal token string, or `nil` on failure.
+@concurrent
 public func fetchRemovalToken(scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRemovalToken › invalid scope: \(scopeString)")
@@ -391,6 +440,12 @@ public func fetchRemovalToken(scope scopeString: String) async -> String? {
 
 /// Thin convenience wrapper over `urlSessionPost` for fire-and-forget mutation endpoints.
 /// - Returns: `true` if the POST returned a non-nil result (2xx), `false` otherwise.
+///
+/// Uses `@concurrent` because this function has post-suspension work (nil-check + log)
+/// that must run on the cooperative thread pool regardless of the caller's executor.
+/// Unlike the pure-delegate wrappers `ghAPI` / `ghAPIPaginated`, this function is not
+/// a straight pass-through and therefore does not qualify for `nonisolated(nonsending)`.
+@concurrent
 @discardableResult
 public func ghPost(_ endpoint: String) async -> Bool {
     let result = await urlSessionPost(endpoint)
@@ -400,14 +455,19 @@ public func ghPost(_ endpoint: String) async -> Bool {
 }
 
 /// Cancels a workflow run via the GitHub Actions API.
-/// Only valid for repo-scoped scopes; org-scoped strings are rejected with a diagnostic log.
+/// Intentionally repo-only: the GitHub Actions cancel endpoint
+/// (`/repos/{owner}/{repo}/actions/runs/{run_id}/cancel`) is scoped to repositories.
+/// Org/enterprise-level cancel is not uniformly supported by the API.
+/// Update this guard if org-scope cancel support is added in a future GitHub API version.
 /// - Returns: `true` if the cancellation request succeeded.
+@concurrent
 @discardableResult
 public func cancelRun(runID: Int, scope scopeString: String) async -> Bool {
     guard let scope = Scope.parse(scopeString) else {
         log("cancelRun › invalid scope: \(scopeString)")
         return false
     }
+    // Intentionally repo-only: see function doc above.
     guard case .repo = scope else {
         log("cancelRun › scope must be a repo (owner/name), got: \(scopeString)")
         return false
