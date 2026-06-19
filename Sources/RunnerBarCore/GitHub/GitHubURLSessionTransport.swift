@@ -80,13 +80,9 @@ private func urlSessionExecute(
                 statusCode: http.statusCode, data, response: http, endpoint: urlString
             )
             let isNowRateLimited = await rateLimitActor.isLimited
-            // If the actor was armed by this call it's a genuine rate limit.
-            // If it wasn't armed (permission-denied 403), return .permissionDenied
-            // so callers can distinguish token-scope problems from rate limits.
             if isNowRateLimited && !wasRateLimited {
                 return .rateLimited
             } else if isNowRateLimited {
-                // Actor was already armed before this request (ongoing rate limit).
                 return .rateLimited
             } else {
                 return .permissionDenied
@@ -157,10 +153,6 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
                 let wasRateLimited = await rateLimitActor.isLimited
                 await handleRateLimitResponse(statusCode: http.statusCode, data, response: http, endpoint: urlString)
                 let isNowRateLimited = await rateLimitActor.isLimited
-                // Mirror urlSessionExecute logic exactly:
-                // - newly armed  → genuine rate limit, return partial results
-                // - already armed → ongoing rate limit, return partial results
-                // - not armed     → permission-denied 403, discard and return nil
                 if isNowRateLimited && !wasRateLimited {
                     log("urlSessionAPIPaginated › rate limited — returning \(allItems.count) partial items")
                     didRateLimit = true
@@ -292,8 +284,8 @@ public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) asy
 /// `urlSessionAPIAsync`. Caller-context inheritance is always correct here; a
 /// cooperative-pool hop would be redundant.
 ///
-/// - Note: Callers on `@MainActor` inherit that context until the first `await`, at
-///   which point execution moves to the cooperative thread pool inside `urlSessionAPIAsync`.
+/// - Note: Safe to call from `@MainActor` because `urlSessionAPIAsync` is `@concurrent`
+///   and will move execution to the cooperative thread pool at the first `await`.
 ///   Do not perform heavy synchronous work before this call from a `@MainActor` context.
 nonisolated(nonsending)
 public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
@@ -308,8 +300,8 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 /// `urlSessionAPIPaginated`. Caller-context inheritance is always correct here; a
 /// cooperative-pool hop would be redundant.
 ///
-/// - Note: Callers on `@MainActor` inherit that context until the first `await`, at
-///   which point execution moves to the cooperative thread pool inside `urlSessionAPIPaginated`.
+/// - Note: Safe to call from `@MainActor` because `urlSessionAPIPaginated` is `@concurrent`
+///   and will move execution to the cooperative thread pool at the first `await`.
 ///   Do not perform heavy synchronous work before this call from a `@MainActor` context.
 nonisolated(nonsending)
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
@@ -320,7 +312,10 @@ public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async
 
 /// Directly deregisters a runner from GitHub via DELETE.
 /// - Returns: `true` on success, `false` if the scope is invalid or the request fails.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
+/// suspension; delegates immediately to the already-`@concurrent` `urlSessionDelete`.
+nonisolated(nonsending)
 @discardableResult
 public func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> Bool {
     guard let scope = Scope.parse(scopeString) else {
@@ -336,7 +331,10 @@ public func deleteRunnerByID(scope scopeString: String, runnerID: Int) async -> 
 
 /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`.
 /// - Returns: The updated label names on success, `nil` on any failure.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
+/// suspension; delegates immediately to the already-`@concurrent` `urlSessionPut`.
+nonisolated(nonsending)
 @discardableResult
 public func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String]) async -> [String]? {
     guard let scope = Scope.parse(scopeString) else {
@@ -408,7 +406,10 @@ private func fetchRunnerToken(type: String, scope: Scope, logPrefix: String) asy
 
 /// Fetches a short-lived runner registration token for the given scope.
 /// - Returns: The registration token string, or `nil` on failure.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
+/// suspension; delegates immediately to the already-`@concurrent` `fetchRunnerToken`.
+nonisolated(nonsending)
 public func fetchRegistrationToken(scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRegistrationToken › invalid scope: \(scopeString)")
@@ -423,7 +424,10 @@ public func fetchRegistrationToken(scope scopeString: String) async -> String? {
 
 /// Fetches a runner removal token for the given scope.
 /// - Returns: The removal token string, or `nil` on failure.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
+/// suspension; delegates immediately to the already-`@concurrent` `fetchRunnerToken`.
+nonisolated(nonsending)
 public func fetchRemovalToken(scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRemovalToken › invalid scope: \(scopeString)")
@@ -440,7 +444,10 @@ public func fetchRemovalToken(scope scopeString: String) async -> String? {
 
 /// Thin convenience wrapper over `urlSessionPost` for fire-and-forget mutation endpoints.
 /// - Returns: `true` if the POST returned a non-nil result (2xx), `false` otherwise.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
+/// suspension; delegates immediately to the already-`@concurrent` `urlSessionPost`.
+nonisolated(nonsending)
 @discardableResult
 public func ghPost(_ endpoint: String) async -> Bool {
     let result = await urlSessionPost(endpoint)
@@ -455,7 +462,10 @@ public func ghPost(_ endpoint: String) async -> Bool {
 /// Org/enterprise-level cancel is not uniformly supported by the API.
 /// Update this guard if org-scope cancel support is added in a future GitHub API version.
 /// - Returns: `true` if the cancellation request succeeded.
-@concurrent
+///
+/// Uses `nonisolated(nonsending)` rather than `@concurrent`: no work before first
+/// suspension; delegates immediately to the already-`nonisolated(nonsending)` `ghPost`.
+nonisolated(nonsending)
 @discardableResult
 public func cancelRun(runID: Int, scope scopeString: String) async -> Bool {
     guard let scope = Scope.parse(scopeString) else {
