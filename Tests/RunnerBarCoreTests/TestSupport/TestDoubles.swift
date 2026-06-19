@@ -40,13 +40,19 @@ actor SpyLabelsService: RunnerLabelsService {
 actor SpyConfigStore: RunnerConfigStoreProtocol {
     var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
     private var shouldThrowOnSave = false
+    private var shouldThrowOnLoad = false
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerConfig?
 
     /// Configures whether `save(...)` throws. Call from the test body before `execute`.
     func setUp(shouldThrowOnSave: Bool) { self.shouldThrowOnSave = shouldThrowOnSave }
+    /// Configures whether `load(...)` throws a `readFailed` error. Call from the test body before `execute`.
+    func setUp(shouldThrowOnLoad: Bool) { self.shouldThrowOnLoad = shouldThrowOnLoad }
 
-    func load(at _: String) async throws(RunnerConfigStoreError) -> RunnerConfig { loadResult }
+    func load(at installPath: String) async throws(RunnerConfigStoreError) -> RunnerConfig {
+        if shouldThrowOnLoad { throw RunnerConfigStoreError.readFailed(installPath, TestError.saveFailed) }
+        return loadResult
+    }
     func save(_ config: RunnerConfig, at installPath: String) async throws(RunnerConfigStoreError) {
         if shouldThrowOnSave { throw RunnerConfigStoreError.writeFailed(installPath, TestError.saveFailed) }
         saveCalled = true
