@@ -27,8 +27,10 @@ enum FailureHookRunner {
     static let defaultCommand = FailureHookRunnerUseCase.defaultCommand
 
     /// Forwards to `FailureHookRunnerUseCase` wired with production dependencies.
+    /// `group` is annotated `sending` per P25 (SE-0430) because it crosses
+    /// from the caller's isolation domain into `Task.detached` inside the use-case.
     static func fireIfNeeded(
-        group: WorkflowActionGroup,
+        group: sending WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
     ) {
