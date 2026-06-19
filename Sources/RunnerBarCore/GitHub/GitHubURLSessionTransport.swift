@@ -126,7 +126,7 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 /// - Note: This function owns its own URLSession loop rather than delegating to
 ///   `urlSessionExecute`. Any fix to the shared execute pipeline must be mirrored here
 ///   until this is refactored.
-// TODO: Refactor to delegate to urlSessionExecute and eliminate this dual code path.
+/// - TODO: Refactor to delegate to `urlSessionExecute` and eliminate this dual code path.
 @concurrent
 public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     var nextURL: String? = resolveURL(endpoint)
