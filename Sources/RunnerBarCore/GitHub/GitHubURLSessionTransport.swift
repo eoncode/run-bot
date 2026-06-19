@@ -5,9 +5,11 @@ import Foundation
 
 /// Shared decoder hoisted to avoid re-instantiation on every call.
 /// Thread-safe: `JSONDecoder` has no mutable state after initialisation.
+/// Safe for concurrent use: Foundation guarantees `JSONDecoder` is reentrant after init.
 private let sharedDecoder = JSONDecoder()
 /// Shared encoder hoisted to avoid re-instantiation on every call.
 /// Thread-safe: `JSONEncoder` has no mutable state after initialisation.
+/// Safe for concurrent use: Foundation guarantees `JSONEncoder` is reentrant after init.
 private let sharedEncoder = JSONEncoder()
 
 // MARK: - Shared execution core
