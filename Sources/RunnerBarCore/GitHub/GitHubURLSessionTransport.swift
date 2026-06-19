@@ -184,7 +184,9 @@ public func urlSessionAPIPaginated(_ endpoint: String, timeout: TimeInterval = 6
     }
 
     if didFailAuthentication || didFailPermission {
-        if !allItems.isEmpty {
+        if allItems.isEmpty {
+            log("urlSessionAPIPaginated › auth/permission failure on first page — no items collected, returning nil")
+        } else {
             log("urlSessionAPIPaginated › auth/permission failure mid-pagination — discarding \(allItems.count) partial items")
         }
         return nil
