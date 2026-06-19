@@ -102,8 +102,8 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                     }
                 }
             }
-        } catch let e as RunnerConfigStoreError {
-            throw e
+        } catch let configError as RunnerConfigStoreError {
+            throw configError
         } catch {
             throw RunnerConfigStoreError.readFailed(installPath, error)
         }
@@ -189,8 +189,8 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
                     }
                 }
             }
-        } catch let e as RunnerConfigStoreError {
-            throw e
+        } catch let configError as RunnerConfigStoreError {
+            throw configError
         } catch {
             throw RunnerConfigStoreError.writeFailed(installPath, error)
         }

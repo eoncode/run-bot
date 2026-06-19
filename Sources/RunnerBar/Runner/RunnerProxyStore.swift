@@ -137,8 +137,8 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
                     }
                 }
             }
-        } catch let e as RunnerProxyStoreError {
-            throw e
+        } catch let error as RunnerProxyStoreError {
+            throw error
         } catch {
             throw RunnerProxyStoreError.writeFailed([error.localizedDescription])
         }
