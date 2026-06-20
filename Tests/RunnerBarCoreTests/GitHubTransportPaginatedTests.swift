@@ -32,7 +32,10 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         lock.withLock { stubs = [:] }
     }
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canInit(with request: URLRequest) -> Bool {
+        let key = request.url?.absoluteString ?? ""
+        return lock.withLock { stubs[key] != nil }
+    }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
