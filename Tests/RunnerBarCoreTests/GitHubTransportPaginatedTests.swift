@@ -5,6 +5,11 @@
 // Uses URLProtocol stubbing + configureGHToken + SpyRateLimitActor to exercise
 // the real pagination loop, rate-limit partial-return, and auth-abort logic.
 //
+// @Suite(.serialized) is required: paginatedReturnsNilWhenNoToken mutates the
+// shared module-level token provider, and each test calls StubURLProtocol.reset()
+// on the shared stub registry. Swift Testing runs struct suites concurrently by
+// default; without serialization these two pieces of shared global state race.
+//
 import Foundation
 import Testing
 @testable import RunnerBarCore
@@ -83,7 +88,12 @@ private let apiBase = "https://api.github.com/"
 /// inject a real token via `configureGHToken`, and inject a `SpyRateLimitActor`
 /// to control and observe rate-limit state. Each test calls `urlSessionAPIPaginated`
 /// directly — the real pagination loop runs every time.
-@Suite("GitHubTransportPaginated")
+///
+/// `.serialized` is required because this suite mutates two pieces of shared global
+/// state: the module-level token provider (`configureGHToken`) and the
+/// `StubURLProtocol` stub registry (`reset()`). Without serialization, Swift Testing
+/// runs all tests concurrently and these mutations race.
+@Suite("GitHubTransportPaginated", .serialized)
 struct GitHubTransportPaginatedTests {
 
     init() {
@@ -270,6 +280,11 @@ struct GitHubTransportPaginatedTests {
 
     /// When no GitHub token is configured, `urlSessionAPIPaginated` returns nil
     /// without making any network request.
+    ///
+    /// - Note: This test temporarily sets the token provider to `{ nil }` on the
+    ///   shared module-level `TransportBox`. It is safe only because
+    ///   `@Suite(.serialized)` guarantees no other test in this suite runs
+    ///   concurrently. Do not remove `.serialized` from the suite declaration.
     @Test func paginatedReturnsNilWhenNoToken() async {
         StubURLProtocol.reset()
         configureGHToken { nil }
