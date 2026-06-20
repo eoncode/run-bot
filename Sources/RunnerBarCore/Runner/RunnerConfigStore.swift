@@ -136,8 +136,8 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     public func save(_ config: borrowing RunnerConfig, at installPath: String) async throws(RunnerConfigStoreError) {
         // Copy the borrowed value before entering the escaping DispatchQueue closure —
         // a `borrowing` parameter cannot be captured by an escaping closure directly.
-        // TODO: copy can be removed once DispatchQueue bridging is replaced with @concurrent.
-        //       See reach-goal-principles.md §8 (RG-8) for the migration path.
+        // TODO(reach-goal P8): copy can be removed once DispatchQueue bridging is replaced
+        //   with @concurrent. See reach-goal-principles.md §8 for the migration path.
         let config = copy config
         let url = runnerConfigURL(for: installPath)
 

@@ -42,6 +42,7 @@ actor SpyLabelsService: RunnerLabelsService {
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyConfigStore: RunnerConfigStoreProtocol {
     // MARK: Stub return values
+    /// Mutable by design — set from the test body to control what `load(at:)` returns.
     var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
 
     // MARK: Throw-control flags (configure via setUp)
