@@ -128,6 +128,10 @@ enum Keychain {
         } else if !succeeded {
             log("Keychain.save › SecItemUpdate failed: \(updateStatus)")
         }
+        // FIXME(P24): atomicity gap — SecItemUpdate/Add and invalidateTokenCache() are
+        // not atomic. A concurrent githubToken() caller between the two calls will read
+        // the stale cached value. For a menu-bar app this window is negligible, but a
+        // future improvement could wrap both in a single Mutex-guarded operation.
         if succeeded { invalidateTokenCache() }
         return succeeded
     }
