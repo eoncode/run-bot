@@ -12,9 +12,12 @@ import RunnerBarCore
 /// requiring `@unchecked Sendable`. The `result` and recorded-call properties
 /// are accessed from the test body before/after `execute(...)` — never concurrently.
 actor SpyLabelsService: RunnerLabelsService {
+    // MARK: Stub return values
     // Note: defaults to [] (empty array), not nil — tests that don't call setUp will
     // silently receive an empty label list rather than a failure. Configure via setUp(result:).
     private var result: [String]? = []
+
+    // MARK: Observation (assert on after execute)
     private(set) var callCount = 0
     private(set) var lastScope: String?
     private(set) var lastRunnerID: Int?
@@ -38,10 +41,15 @@ actor SpyLabelsService: RunnerLabelsService {
 ///
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyConfigStore: RunnerConfigStoreProtocol {
+    // MARK: Stub return values
     var loadResult: RunnerConfig = RunnerConfig(workFolder: "_work", disableUpdate: false)
+
+    // MARK: Throw-control flags (configure via setUp)
     private var shouldThrowOnSave   = false
     private var shouldThrowOnLoad   = false
     private var shouldThrowOnDecode = false
+
+    // MARK: Observation (assert on after execute)
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerConfig?
 
@@ -77,12 +85,16 @@ actor SpyConfigStore: RunnerConfigStoreProtocol {
 ///
 /// Implemented as an `actor` — see `SpyLabelsService` for rationale.
 actor SpyProxyStore: RunnerProxyStoreProtocol {
+    // MARK: Throw-control flags (configure via setUp)
     private var shouldThrowOnSave = false
+
+    // MARK: Observation (assert on after execute)
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerProxyConfig?
 
-    /// Configures whether `save(...)` throws. Call from the test body before `execute`.
-    func setUp(shouldThrowOnSave: Bool) { self.shouldThrowOnSave = shouldThrowOnSave }
+    /// Configures throw behaviour for all operations in a single call, resetting any
+    /// previously set flags. Omitted parameters default to `false` (no throw).
+    func setUp(shouldThrowOnSave: Bool = false) { self.shouldThrowOnSave = shouldThrowOnSave }
 
     func load(at _: String) async -> RunnerProxyConfig { RunnerProxyConfig() }
     func save(_ config: RunnerProxyConfig, at installPath: String) async throws(RunnerProxyStoreError) {
