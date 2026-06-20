@@ -294,10 +294,10 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             }
             if jobs.contains(where: { $0.conclusion == .cancelled }) { return .cancelled }
             let hasSuccess = jobs.contains(where: { $0.conclusion == .success })
-            let allSkippedOrCancelled = jobs.allSatisfy {
-                $0.conclusion == .skipped || $0.conclusion == .cancelled
-            }
-            if !hasSuccess && allSkippedOrCancelled { return .skipped }
+            // At this point no job has .cancelled (early-returned above), so
+            // allSkipped is semantically equivalent to the old allSkippedOrCancelled.
+            let allSkipped = jobs.allSatisfy { $0.conclusion == .skipped }
+            if !hasSuccess && allSkipped { return .skipped }
             return .success
         }
         // Run-based conclusion (fallback when jobs haven't loaded yet).
@@ -306,7 +306,7 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         // All isFailure conclusions (.actionRequired, .timedOut, .startupFailure, .failure)
         // normalise to .failure here — see NORMALISATION NOTE in the doc comment above.
         guard runs.allSatisfy({ $0.conclusion != nil }) else { return nil }
-        if runs.contains(where: { $0.conclusion?.isFailure == true }) { return .failure }
+        if runs.contains(where: { $0.conclusion?.isFailure == true }) { return .failure }  // LOADING-STATE ONLY — normalises all isFailure subtypes to .failure during fetch window
         if runs.contains(where: { $0.conclusion == .cancelled }) { return .cancelled }
         if runs.contains(where: { $0.conclusion == .skipped }) { return .skipped }
         return .success

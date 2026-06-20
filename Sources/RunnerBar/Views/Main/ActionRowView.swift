@@ -109,7 +109,7 @@ struct ActionRowView: View {
             case .success: return .success
             case .failure, .timedOut, .actionRequired, .startupFailure: return .failed
             // Accent-bar colour is undifferentiated for these — all map to the grey
-            // (.unknown) tier. Badge text distinguishes cancelled vs skipped vs done.
+            // (.unknown) tier. See statusBadge below for per-case text differentiation.
             case .cancelled, .skipped, .neutral, .stale, .unknown, nil: return .unknown
             }
         }
@@ -197,6 +197,7 @@ struct ActionRowView: View {
     }
 
     /// Badge view produced from the group's current status and conclusion.
+    /// Keep conclusion groupings in sync with `rowStatus` above.
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
         case .inProgress: StatusBadge(status: .inProgress, text: "IN PROGRESS")
