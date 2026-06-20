@@ -12,14 +12,16 @@ import Foundation
 /// until the user confirms (OK) or discards (Cancel) in `RunnerDetailPopover`.
 ///
 /// Once the user confirms, the draft is passed to `SaveRunnerEditsUseCase.execute(...)`
-/// where it crosses an actor isolation boundary. The parameter is annotated `sending`
+/// where it crosses an actor isolation boundary. The parameter is annotated `consuming`
 /// at that call site so the compiler (and future readers) understand that ownership
 /// transfers into the async function and the caller should not read the draft afterwards.
 ///
 /// No persistence writes happen inside this type.
 ///
 /// - Note: Intended for single use. Pass to `SaveRunnerEditsUseCase.execute(runner:draft:original:)`
-///   exactly once — the `consuming` annotation on that parameter enforces this at compile time.
+///   exactly once — the `consuming` annotation on that parameter makes reading the draft
+///   variable afterwards a compile-time error. If a before/after diff is needed, copy the
+///   draft before calling `execute`; inspect the copy afterwards.
 public struct RunnerEditDraft: Equatable, Sendable {
 
     // MARK: Labels
