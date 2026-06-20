@@ -17,6 +17,9 @@ import Foundation
 /// transfers into the async function and the caller should not read the draft afterwards.
 ///
 /// No persistence writes happen inside this type.
+///
+/// - Note: Intended for single use. Pass to `SaveRunnerEditsUseCase.execute(runner:draft:original:)`
+///   exactly once — the `consuming` annotation on that parameter enforces this at compile time.
 public struct RunnerEditDraft: Equatable, Sendable {
 
     // MARK: Labels
