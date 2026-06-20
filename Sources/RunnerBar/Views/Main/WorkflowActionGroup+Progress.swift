@@ -79,6 +79,10 @@ extension WorkflowActionGroup {
 
     /// `true` when the group is completed and its conclusion is neither success nor a failure-class
     /// outcome (i.e. not `.success` and `isFailure` is `false`).
+    ///
+    /// `.cancelled` and `.skipped` satisfy both conditions (not success, not isFailure) and are
+    /// **intentionally dimmed** — they represent terminal-but-neutral states that share the
+    /// grey visual tier with `.neutral`, `.stale`, `.unknown`, and `nil`.
     var isDimmed: Bool {
         guard groupStatus == .completed else { return false }
         return conclusion != .success && conclusion?.isFailure != true

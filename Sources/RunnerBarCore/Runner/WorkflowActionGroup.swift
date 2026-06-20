@@ -286,7 +286,12 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             // `.timedOut` / `.startupFailure` / `.actionRequired` group reported
             // failure while jobs were loading, then incorrectly flipped to
             // success once jobs populated.
-            if jobs.contains(where: { $0.conclusion?.isFailure == true }) { return .failure }
+            // Priority: failure-class > cancelled > skipped > success.
+            // Note: cancelled and skipped are only checked when NO isFailure job exists —
+            // the isFailure guard above is the precondition for both branches below.
+            if let failedJob = jobs.first(where: { $0.conclusion?.isFailure == true }) {
+                return failedJob.conclusion  // preserves .timedOut / .actionRequired / .startupFailure
+            }
             if jobs.contains(where: { $0.conclusion == .cancelled }) { return .cancelled }
             let hasSuccess = jobs.contains(where: { $0.conclusion == .success })
             let allSkippedOrCancelled = jobs.allSatisfy {

@@ -108,8 +108,9 @@ struct ActionRowView: View {
             switch group.conclusion {
             case .success: return .success
             case .failure, .timedOut, .actionRequired, .startupFailure: return .failed
-            case .cancelled, .skipped, .neutral, .stale, .unknown: return .unknown
-            case nil: return .unknown
+            // Accent-bar colour is undifferentiated for these — all map to the grey
+            // (.unknown) tier. Badge text distinguishes cancelled vs skipped vs done.
+            case .cancelled, .skipped, .neutral, .stale, .unknown, nil: return .unknown
             }
         }
     }
@@ -207,8 +208,7 @@ struct ActionRowView: View {
                 StatusBadge(status: .failed, text: "FAILED")
             case .cancelled: StatusBadge(status: .unknown, text: "CANCELLED")
             case .skipped: StatusBadge(status: .unknown, text: "SKIPPED")
-            case .neutral, .stale, .unknown: StatusBadge(status: .unknown, text: "DONE")
-            case nil: StatusBadge(status: .unknown, text: "DONE")
+            case .neutral, .stale, .unknown, nil: StatusBadge(status: .unknown, text: "DONE")
             }
         }
     }
