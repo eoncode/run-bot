@@ -44,6 +44,8 @@ private enum ExecuteResult {
 ///   - useRawAccept: When `true`, sets `Accept: application/vnd.github.v3.raw` instead of
 ///     the standard JSON header. Required for log endpoints that 302-redirect to raw S3
 ///     content.
+///   - rateLimiter: The rate-limit actor to read from and write to. Defaults to the
+///     module-level `rateLimitActor`; tests pass a `SpyRateLimitActor` for determinism.
 ///   - configure: A closure applied to the pre-built `URLRequest` just before it is sent.
 ///     Use this to set `httpMethod`, `httpBody`, or additional headers. The closure receives
 ///     the base request and must return the mutated copy; the default is the identity closure.
@@ -78,7 +80,8 @@ private func urlSessionExecute(
         }
         if http.statusCode == 403 || http.statusCode == 429 {
             await handleRateLimitResponse(
-                statusCode: http.statusCode, data, response: http, endpoint: urlString
+                statusCode: http.statusCode, data, response: http,
+                endpoint: urlString, rateLimiter: rateLimiter
             )
             let isNowRateLimited = await rateLimiter.isLimited
             if isNowRateLimited {

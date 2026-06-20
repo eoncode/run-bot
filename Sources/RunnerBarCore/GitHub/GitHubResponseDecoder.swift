@@ -15,7 +15,7 @@ func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
 
 // MARK: - Rate-limit response handler
 
-/// Handles a 403 or 429 rate-limit response by forwarding to `RateLimitActor`.
+/// Handles a 403 or 429 rate-limit response by forwarding to the given `RateLimitActorProtocol`.
 ///
 /// Only arms the actor when the response is a **genuine** rate-limit signal:
 /// - HTTP 429 (always a rate-limit by definition)
@@ -27,12 +27,16 @@ func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
 /// doing so would lock the app out of the API for up to 60 minutes even though
 /// no rate limit was hit.
 ///
+/// - Parameter rateLimiter: The actor to arm on a genuine rate-limit. Defaults to the
+///   module-level `rateLimitActor`; tests pass a `SpyRateLimitActor` for determinism.
+///
 /// See https://docs.github.com/en/rest/overview/rate-limits-for-the-rest-api
 func handleRateLimitResponse(
     statusCode: Int,
     _ data: Data?,
     response: HTTPURLResponse,
-    endpoint: String
+    endpoint: String,
+    rateLimiter: some RateLimitActorProtocol = rateLimitActor
 ) async {
     let retryAfter = response.value(forHTTPHeaderField: "Retry-After")
         .flatMap(Double.init)
@@ -77,7 +81,7 @@ func handleRateLimitResponse(
             + "retryAfter=\(String(describing: retryAfter)) "
             + "resetAt=\(String(describing: resetAt))"
     )
-    await rateLimitActor.set(resetAt: resetAt)
+    await rateLimiter.set(resetAt: resetAt)
 }
 
 // MARK: - Pagination
