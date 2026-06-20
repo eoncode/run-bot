@@ -21,7 +21,7 @@ import Security
 // additional actor or lock is needed around the SecItem* calls themselves.
 //
 // The one piece of mutable shared state — the in-memory token cache — lives in
-// GitHubTokenCache.swift and is already guarded by an OSAllocatedUnfairLock.
+// GitHubTokenCache.swift and is guarded by a Synchronization.Mutex (P24).
 // invalidateTokenCache() (called after every mutation here) clears that cache
 // under the lock, so there is no unprotected shared mutable state in this type.
 //
@@ -33,8 +33,8 @@ import Security
 /// ## Thread safety
 /// `SecItem*` calls are OS-serialised by the Security framework and are safe to
 /// call concurrently. The in-memory token cache is protected by
-/// `OSAllocatedUnfairLock` in `GitHubTokenCache`; `invalidateTokenCache()` is
-/// called after every mutation to keep it consistent. No actor wrapper is
+/// `Synchronization.Mutex` in `GitHubTokenCache` (P24); `invalidateTokenCache()`
+/// is called after every mutation to keep it consistent. No actor wrapper is
 /// required — see the file-level comment for the full P16 rationale.
 enum Keychain {
     /// Keychain service name used for RunnerBar credentials.
@@ -128,6 +128,10 @@ enum Keychain {
         } else if !succeeded {
             log("Keychain.save › SecItemUpdate failed: \(updateStatus)")
         }
+        // FIXME(P24): atomicity gap — SecItemUpdate/Add and invalidateTokenCache() are
+        // not atomic. A concurrent githubToken() caller between the two calls will read
+        // the stale cached value. For a menu-bar app this window is negligible, but a
+        // future improvement could wrap both in a single Mutex-guarded operation.
         if succeeded { invalidateTokenCache() }
         return succeeded
     }
