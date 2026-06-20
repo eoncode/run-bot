@@ -19,8 +19,13 @@ private let sharedEncoder = JSONEncoder()
 /// The result of a single URLSession round-trip through `urlSessionExecute`.
 private enum ExecuteResult {
     /// 2xx response with optional body data (empty `Data()` for 204 No Content).
+    ///
     /// `linkHeader` carries the raw `Link:` response header value used by paginated callers
-    /// to discover the next-page URL; `nil` for non-paginated endpoints.
+    /// to discover the next-page URL. Non-paginated callers (e.g. `urlSessionAPIAsync`,
+    /// `urlSessionPost`) always receive `nil` here and destructure with `_` — this is
+    /// intentional. A split into `success` / `successPaginated` was considered but deferred:
+    /// the single case keeps `urlSessionExecute` callers uniform and the `nil` default is
+    /// always correct for endpoints that do not emit a `Link` header.
     case success(Data, statusCode: Int, linkHeader: String?)
     /// Non-2xx response that is not a rate-limit or permission error; the request failed.
     case httpError(Int)
