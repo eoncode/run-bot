@@ -27,7 +27,17 @@ public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 /// An async paginated GitHub API fetch returning concatenated JSON array `Data`.
 /// Used for list endpoints that follow `Link: rel="next"` pagination.
 /// Returns `nil` on auth failure; may return partial results on rate-limit.
-public typealias GHAPIPaginatedTransport = @Sendable (_ endpoint: String) async -> Data?
+///
+/// - Parameters:
+///   - endpoint: Relative or absolute URL for the first page.
+///   - timeout: Per-request timeout forwarded to `URLSession`. Defaults to 60s.
+///     Pass a larger value for endpoints with many pages or slow enterprise APIs.
+///
+/// - Note: The timeout is passed per-call through the closure, not captured at
+///   configure time. The launch-site closure `{ endpoint, timeout in await
+///   urlSessionAPIPaginated(endpoint, timeout: timeout) }` forwards it correctly;
+///   a mock closure in tests receives it as a plain parameter.
+public typealias GHAPIPaginatedTransport = @Sendable (_ endpoint: String, _ timeout: TimeInterval) async -> Data?
 
 /// A sync closure that returns the active GitHub personal access token, or `nil` if
 /// no token is currently available. Used by `GitHubURLSessionTransport` inside
@@ -65,7 +75,7 @@ private let rawTransportBox = TransportBox<GHRawTransport>(initialState: { _ in 
 
 /// Serialises all reads and writes to the active paginated JSON transport closure.
 /// Defaults to `nil`-returning stub; wired to `urlSessionAPIPaginated` at app launch.
-private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _ in nil })
+private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _, _ in nil })
 
 /// Serialises all reads and writes to the active token-provider closure.
 private let tokenProviderBox = TransportBox<GHTokenProvider>(initialState: { nil })
@@ -92,8 +102,17 @@ public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
 /// Wire up the real (or mock) paginated JSON transport. Call once at launch before any
 /// paginated fetch.
 ///
-/// - Parameter transport: Async closure for paginated REST calls; returns concatenated
-///   JSON array `Data` on success, `nil` on auth failure, or partial results on rate-limit.
+/// - Parameter transport: Async closure for paginated REST calls. Receives both the
+///   endpoint string and the per-call timeout so callers can override the 60s default
+///   for slow enterprise endpoints. Returns concatenated JSON array `Data` on success,
+///   `nil` on auth failure, or partial results on rate-limit.
+///
+/// - Note: The real transport should forward `timeout` directly to `urlSessionAPIPaginated`:
+///   ```swift
+///   configureGHAPIPaginated { endpoint, timeout in
+///       await urlSessionAPIPaginated(endpoint, timeout: timeout)
+///   }
+///   ```
 public func configureGHAPIPaginated(_ transport: @escaping GHAPIPaginatedTransport) {
     paginatedTransportBox.configure(transport)
 }
@@ -126,6 +145,11 @@ func ghRaw(_ endpoint: String) async -> Data? {
 }
 
 /// Calls the configured paginated JSON transport for the given endpoint.
+///
+/// - Parameters:
+///   - endpoint: Relative or absolute URL for the first page.
+///   - timeout: Per-request timeout forwarded to the transport closure. Defaults to 60s.
+///
 /// Reads the closure under the lock then awaits it outside —
 /// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
 ///
@@ -138,9 +162,9 @@ func ghRaw(_ endpoint: String) async -> Data? {
 ///   before the `await`. If any guard, log, or computation is ever added before the first
 ///   suspension, this annotation must be upgraded to `@concurrent`.
 nonisolated(nonsending)
-public func ghAPIPaginated(_ endpoint: String) async -> Data? {
+public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     let transport = paginatedTransportBox.read()
-    return await transport(endpoint)
+    return await transport(endpoint, timeout)
 }
 
 /// Returns the active GitHub token via the configured provider.
