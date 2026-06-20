@@ -77,7 +77,8 @@ extension WorkflowActionGroup {
         jobs.compactMap { $0.startedAt }.min()
     }
 
-    /// `true` when the group is completed and its conclusion is neither success nor a failure-class outcome.
+    /// `true` when the group is completed and its conclusion is neither success nor a failure-class
+    /// outcome (i.e. not `.success` and `isFailure` is `false`).
     var isDimmed: Bool {
         guard groupStatus == .completed else { return false }
         return conclusion != .success && conclusion?.isFailure != true
