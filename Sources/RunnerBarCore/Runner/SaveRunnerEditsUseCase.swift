@@ -20,7 +20,8 @@ import Foundation
 /// - Labels API returns `nil` → immediate abort (steps 2 and 3 are skipped).
 /// - Missing `agentId`/`gitHubUrl` → error appended, execution continues.
 /// - JSON and proxy errors → accumulated independently; both steps always run
-///   when applicable.
+///   when applicable. Config write errors — including `malformedExistingFile` —
+///   are accumulated and do not abort step 3.
 /// - `installPath == nil` while a JSON *or* proxy change is pending → immediate
 ///   abort with the accumulated errors so far. Without a known install path there
 ///   is no safe target for further writes. The `missingInstallPathForJSON` and

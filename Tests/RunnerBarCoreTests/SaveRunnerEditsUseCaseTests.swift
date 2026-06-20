@@ -324,7 +324,8 @@ struct SaveRunnerEditsUseCaseTests {
             Issue.record("expected .failure, got .success")
             return
         }
-        #expect(msgs.contains(where: { $0.contains("malformed") }))
+        // Message must mention path, malformed, and agent-managed keys (same contract as the sibling test)
+        #expect(msgs.contains(where: { $0.contains("malformed") && $0.contains("/.runner") && $0.contains("agent-managed") }))
         // Proxy step must still execute despite the malformed-file config error
         #expect(await proxy.saveCalled)
     }
