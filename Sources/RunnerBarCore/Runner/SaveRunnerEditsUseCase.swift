@@ -113,9 +113,9 @@ public struct SaveRunnerEditsUseCase: Sendable {
                 try await configStore.save(config, at: installPath)
             } catch {
                 // Exhaustive switch — compiler enforces all RunnerConfigStoreError cases
-                // are handled. .readFailed arises from configStore.load(at:) above;
-                // .malformedExistingFile arises from save() when the existing .runner file
-                // is present but cannot be decoded during the read-modify-write pre-read.
+                // are handled (guaranteed by throws(RunnerConfigStoreError) on the protocol):
+                // .readFailed / .decodeFailed arise from configStore.load(at:) above;
+                // .writeFailed / .malformedExistingFile arise from configStore.save(...).
                 switch error {
                 case .readFailed(let path, let underlying):
                     errors.append("Cannot read config at \(path)/.runner: \(underlying.localizedDescription)")
