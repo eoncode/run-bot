@@ -168,8 +168,13 @@ public func urlSessionAPIPaginated(
             log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
             didFailPermission = true
             break pagination
-        case .networkError:
-            log("urlSessionAPIPaginated › network error at \(urlString) — stopping pagination")
+        case .networkError(let error):
+            if (error as? URLError)?.code == .userAuthenticationRequired {
+                log("urlSessionAPIPaginated › no token mid-pagination — discarding \(allItems.count) partial items")
+                didFailAuthentication = true
+            } else {
+                log("urlSessionAPIPaginated › network error at \(urlString) — stopping pagination")
+            }
             break pagination
         }
     }
