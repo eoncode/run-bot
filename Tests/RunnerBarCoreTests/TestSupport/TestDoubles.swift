@@ -45,11 +45,17 @@ actor SpyConfigStore: RunnerConfigStoreProtocol {
     private(set) var saveCalled = false
     private(set) var savedConfig: RunnerConfig?
 
-    /// Configures whether `save(...)` throws. Call from the test body before `execute`.
-    func setUp(shouldThrowOnSave: Bool) { self.shouldThrowOnSave = shouldThrowOnSave }
-    /// Configures whether `load(...)` throws a `readFailed` error. Call from the test body before `execute`.
-    func setUp(shouldThrowOnLoad: Bool)   { self.shouldThrowOnLoad   = shouldThrowOnLoad }
-    func setUp(shouldThrowOnDecode: Bool) { self.shouldThrowOnDecode = shouldThrowOnDecode }
+    /// Configures throw behaviour for all operations in a single call, resetting any
+    /// previously set flags. Omitted parameters default to `false` (no throw).
+    func setUp(
+        shouldThrowOnSave: Bool   = false,
+        shouldThrowOnLoad: Bool   = false,
+        shouldThrowOnDecode: Bool = false
+    ) {
+        self.shouldThrowOnSave   = shouldThrowOnSave
+        self.shouldThrowOnLoad   = shouldThrowOnLoad
+        self.shouldThrowOnDecode = shouldThrowOnDecode
+    }
 
     func load(at installPath: String) async throws(RunnerConfigStoreError) -> RunnerConfig {
         if shouldThrowOnLoad   { throw RunnerConfigStoreError.readFailed(installPath, TestError.saveFailed) }

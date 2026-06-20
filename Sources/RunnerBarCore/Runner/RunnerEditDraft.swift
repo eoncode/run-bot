@@ -20,6 +20,9 @@ import Foundation
 ///
 /// - Note: Intended for single use. Pass to `SaveRunnerEditsUseCase.execute(runner:draft:original:)`
 ///   exactly once — the `consuming` annotation on that parameter enforces this at compile time.
+/// - Note: If the caller needs to inspect the draft’s field values after the commit (e.g. to
+///   compute a before/after diff for display), copy the draft before passing it to `execute`.
+///   Reading it afterwards is a compile-time error; ownership has transferred.
 public struct RunnerEditDraft: Equatable, Sendable {
 
     // MARK: Labels
