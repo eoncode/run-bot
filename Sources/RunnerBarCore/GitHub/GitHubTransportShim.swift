@@ -1,7 +1,7 @@
 // GitHubTransportShim.swift
 // RunnerBarCore
 //
-// Provides module-level `ghAPI`, `ghRaw` symbols
+// Provides module-level `ghAPI`, `ghRaw`, `ghAPIPaginated` symbols
 // for RunnerBarCore consumers (WorkflowActionGroupFetch, RunnerStatusEnricher,
 // LogFetcher).
 //
@@ -23,6 +23,11 @@ public typealias GHAPITransport = @Sendable (_ endpoint: String) async -> Data?
 /// An async raw-bytes fetch for GitHub log endpoints.
 /// These endpoints 302-redirect to S3; the transport must follow redirects.
 public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
+
+/// An async paginated GitHub API fetch returning concatenated JSON array `Data`.
+/// Used for list endpoints that follow `Link: rel="next"` pagination.
+/// Returns `nil` on auth failure; may return partial results on rate-limit.
+public typealias GHAPIPaginatedTransport = @Sendable (_ endpoint: String) async -> Data?
 
 /// A sync closure that returns the active GitHub personal access token, or `nil` if
 /// no token is currently available. Used by `GitHubURLSessionTransport` inside
@@ -58,6 +63,10 @@ private let transportBox = TransportBox<GHAPITransport>(initialState: { _ in nil
 /// Serialises all reads and writes to the active raw-bytes transport closure.
 private let rawTransportBox = TransportBox<GHRawTransport>(initialState: { _ in nil })
 
+/// Serialises all reads and writes to the active paginated JSON transport closure.
+/// Defaults to `nil`-returning stub; wired to `urlSessionAPIPaginated` at app launch.
+private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _ in nil })
+
 /// Serialises all reads and writes to the active token-provider closure.
 private let tokenProviderBox = TransportBox<GHTokenProvider>(initialState: { nil })
 
@@ -78,6 +87,15 @@ public func configureGHAPI(
 ///   follows 302 redirects and returns `nil` on failure.
 public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
     rawTransportBox.configure(rawTransport)
+}
+
+/// Wire up the real (or mock) paginated JSON transport. Call once at launch before any
+/// paginated fetch.
+///
+/// - Parameter transport: Async closure for paginated REST calls; returns concatenated
+///   JSON array `Data` on success, `nil` on auth failure, or partial results on rate-limit.
+public func configureGHAPIPaginated(_ transport: @escaping GHAPIPaginatedTransport) {
+    paginatedTransportBox.configure(transport)
 }
 
 /// Wire up the token provider. Call once at launch before any authenticated fetch.
@@ -104,6 +122,14 @@ func ghAPI(_ endpoint: String) async -> Data? {
 /// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
 func ghRaw(_ endpoint: String) async -> Data? {
     let transport = rawTransportBox.read()
+    return await transport(endpoint)
+}
+
+/// Calls the configured paginated JSON transport for the given endpoint.
+/// Reads the closure under the lock then awaits it outside —
+/// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
+func ghAPIPaginated(_ endpoint: String) async -> Data? {
+    let transport = paginatedTransportBox.read()
     return await transport(endpoint)
 }
 
