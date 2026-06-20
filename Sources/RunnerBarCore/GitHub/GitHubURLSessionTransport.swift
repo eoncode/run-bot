@@ -8,6 +8,12 @@ import Foundation
 /// for concurrent reads in practice; this is consistent with Apple's own sample code
 /// and established community practice, though not a formally documented API guarantee.
 private let sharedDecoder = JSONDecoder()
+
+/// Shared encoder hoisted alongside `sharedDecoder` for symmetry and to avoid
+/// re-instantiation on every paginated call.
+/// Thread-safe: `JSONEncoder` has no mutable state after initialisation.
+private let sharedEncoder = JSONEncoder()
+
 // MARK: - Shared execution core
 
 /// The result of a single URLSession round-trip through `urlSessionExecute`.
@@ -125,8 +131,9 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 /// pipeline to `urlSessionExecute`, keeping only the accumulation loop and the
 /// partial-results return path here.
 ///
-/// - Returns `nil` on auth failure (401, permission-denied 403, or no token).
+/// - Returns `nil` on auth failure (401, permission-denied 403, missing/revoked token).
 /// - Returns partial results if pagination is stopped by a genuine rate limit.
+/// - Returns partial results if pagination is stopped by a transient network error.
 @concurrent
 public func urlSessionAPIPaginated(
     _ endpoint: String,
@@ -168,13 +175,15 @@ public func urlSessionAPIPaginated(
             log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
             didFailPermission = true
             break pagination
-        case .networkError(let error):
-            if (error as? URLError)?.code == .userAuthenticationRequired {
-                log("urlSessionAPIPaginated › no token mid-pagination — discarding \(allItems.count) partial items")
-                didFailAuthentication = true
-            } else {
-                log("urlSessionAPIPaginated › network error at \(urlString) — stopping pagination")
-            }
+        case .networkError(let error as URLError) where error.code == .userAuthenticationRequired:
+            // Token was nil or cleared mid-pagination — treat as auth failure so
+            // partial items are discarded and nil is returned, matching the documented
+            // "returns nil on auth failure or no token" contract.
+            log("urlSessionAPIPaginated › no token mid-pagination — discarding \(allItems.count) partial items, returning nil")
+            didFailAuthentication = true
+            break pagination
+        case .networkError:
+            log("urlSessionAPIPaginated › network error at \(urlString) — stopping pagination")
             break pagination
         }
     }
@@ -195,8 +204,7 @@ public func urlSessionAPIPaginated(
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
     guard !allItems.isEmpty else { return nil }
-    let encoder = JSONEncoder()
-    return try? encoder.encode(allItems)
+    return try? sharedEncoder.encode(allItems)
 }
 
 // MARK: - Raw async (log endpoints)
@@ -437,7 +445,7 @@ public func ghPost(_ endpoint: String) async -> Bool {
 /// Cancels a workflow run via the GitHub Actions API.
 /// Intentionally repo-only: the GitHub Actions cancel endpoint
 /// (`/repos/{owner}/{repo}/actions/runs/{run_id}/cancel`) is scoped to repositories.
-/// Org/enterprise-level cancel is not uniformly supported by the API.
+/// Org/enterprise-level cancel is not uniformly supported by by the API.
 /// Update this guard if org-scope cancel support is added in a future GitHub API version.
 /// - Returns: `true` if the cancellation request succeeded.
 @concurrent
