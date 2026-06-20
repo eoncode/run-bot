@@ -136,8 +136,8 @@ actor SpyRateLimitActor: RateLimitActorProtocol {
         resetDate = nil
     }
 
-    func snapshot() -> (isLimited: Bool, resetDate: Date?) {
-        (isLimited: isLimited, resetDate: resetDate)
+    func snapshot() -> RateLimitSnapshot {
+        RateLimitSnapshot(isLimited: isLimited, resetDate: resetDate)
     }
 }
 
