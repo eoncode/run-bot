@@ -111,6 +111,12 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
     public let createdAt: Date?
 
     /// Set to `true` when frozen into `actionGroupCache` after completion.
+    ///
+    /// - Note: `WorkflowActionGroup+Progress.swift` (RunnerBar target) declares a computed
+    ///   `var isDimmed` that derives visual-dimming from `conclusion`. The two serve different
+    ///   purposes: this stored property is the freeze-cache flag; the computed one is the
+    ///   view-layer opacity signal. They live in separate targets and do not shadow each other,
+    ///   but the shared name can mislead readers of this struct definition.
     public let isDimmed: Bool
 
     // MARK: Equatable
@@ -295,9 +301,12 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
             if jobs.contains(where: { $0.conclusion == .cancelled }) { return .cancelled }
             let hasSuccess = jobs.contains(where: { $0.conclusion == .success })
             // At this point no job has .cancelled (early-returned above), so
-            // allSkipped is semantically equivalent to the old allSkippedOrCancelled.
-            let allSkipped = jobs.allSatisfy { $0.conclusion == .skipped }
-            if !hasSuccess && allSkipped { return .skipped }
+            // allJobsSkipped checks only for .skipped — .neutral and .stale jobs are
+            // NOT included here and fall through to .success below (see run-based path
+            // comment for the equivalent loading-window gap).
+            let allJobsSkipped = jobs.allSatisfy { $0.conclusion == .skipped }
+            if !hasSuccess && allJobsSkipped { return .skipped }
+            // All jobs are .neutral, .stale, or a mix with .success — treat as success.
             return .success
         }
         // Run-based conclusion (fallback when jobs haven't loaded yet).
@@ -309,6 +318,9 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         if runs.contains(where: { $0.conclusion?.isFailure == true }) { return .failure }  // LOADING-STATE ONLY — normalises all isFailure subtypes to .failure during fetch window
         if runs.contains(where: { $0.conclusion == .cancelled }) { return .cancelled }
         if runs.contains(where: { $0.conclusion == .skipped }) { return .skipped }
+        // .neutral and .stale runs during the loading window should not flash a green
+        // SUCCESS badge. Return nil so the row stays badge-less until jobs populate.
+        if runs.allSatisfy({ $0.conclusion == .neutral || $0.conclusion == .stale || $0.conclusion == .skipped }) { return nil }
         return .success
     }
 

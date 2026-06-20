@@ -107,6 +107,9 @@ struct ActionRowView: View {
         case .completed:
             switch group.conclusion {
             case .success: return .success
+            // All failure-class subtypes map to the red (.failed) tier.
+            // timedOut / actionRequired / startupFailure are intentionally grouped here
+            // alongside .failure — statusBadge uses the same grouping.
             case .failure, .timedOut, .actionRequired, .startupFailure: return .failed
             // Accent-bar colour is undifferentiated for these — all map to the grey
             // (.unknown) tier. See statusBadge below for per-case text differentiation.
@@ -207,6 +210,7 @@ struct ActionRowView: View {
             case .success: StatusBadge(status: .success, text: "SUCCESS")
             case .failure, .timedOut, .actionRequired, .startupFailure:
                 StatusBadge(status: .failed, text: "FAILED")
+            // TODO: promote .cancelled and .skipped to dedicated RBStatus cases when available.
             case .cancelled: StatusBadge(status: .unknown, text: "CANCELLED")
             case .skipped: StatusBadge(status: .unknown, text: "SKIPPED")
             case .neutral, .stale, .unknown, nil: StatusBadge(status: .unknown, text: "DONE")
