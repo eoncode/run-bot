@@ -45,8 +45,16 @@ struct FailureHookRunnerUseCase: Sendable {
 
     /// Call this whenever a group transitions to done with a failure conclusion.
     /// Spawns a detached background Task, fetches failed job/step details, then fires.
+    ///
+    /// `group` is annotated `sending` because it crosses from the caller's isolation
+    /// domain into the `Task.detached` closure (the closure captures `group` and
+    /// uses it across the actor boundary). The caller should not read `group` after
+    /// the call — consistent with SE-0430 ownership-transfer intent. Because
+    /// `WorkflowActionGroup` is currently `Sendable`, the compiler does not enforce
+    /// this restriction today; it becomes load-bearing if the type drops `Sendable`
+    /// conformance.
     func fireIfNeeded(
-        group: WorkflowActionGroup,
+        group: sending WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
     ) {
