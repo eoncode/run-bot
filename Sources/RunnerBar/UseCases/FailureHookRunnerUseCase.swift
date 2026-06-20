@@ -48,8 +48,11 @@ struct FailureHookRunnerUseCase: Sendable {
     ///
     /// `group` is annotated `sending` because it crosses from the caller's isolation
     /// domain into the `Task.detached` closure (the closure captures `group` and
-    /// uses it across the actor boundary). The caller relinquishes access after
-    /// the call — consistent with SE-0430 ownership-transfer semantics.
+    /// uses it across the actor boundary). The caller should not read `group` after
+    /// the call — consistent with SE-0430 ownership-transfer intent. Because
+    /// `WorkflowActionGroup` is currently `Sendable`, the compiler does not enforce
+    /// this restriction today; it becomes load-bearing if the type drops `Sendable`
+    /// conformance.
     func fireIfNeeded(
         group: sending WorkflowActionGroup,
         scope: String,
