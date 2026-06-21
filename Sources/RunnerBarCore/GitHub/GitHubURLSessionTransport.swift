@@ -184,6 +184,10 @@ public func urlSessionAPIPaginated(
     // retain the distinction so operators can tell them apart.
     var didFailAuth = false
     var didRateLimit = false
+    // Tracks whether at least one page decoded successfully. Used in the post-loop
+    // guard to distinguish a legitimate empty-array response (200 []) — which should
+    // return empty Data, not nil — from a loop that never got a successful page at all.
+    var hadAtLeastOnePage = false
 
     pagination: while let urlString = nextURL {
         let result = await urlSessionExecute(
