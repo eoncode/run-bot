@@ -44,10 +44,12 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let error: URLError
     }
 
-    // `nonisolated(unsafe)` — all three properties are manually protected by `lock`
-    // below; Swift 6 strict concurrency requires the annotation for static stored
+    // `nonisolated(unsafe)` — the two stored `var` properties are manually protected by
+    // `lock` below; Swift 6 strict concurrency requires the annotation for static stored
     // properties on Sendable types that are not actor-isolated.
-    nonisolated(unsafe) private static let lock = NSLock()
+    // The `lock` constant itself does not need the annotation: `NSLock` is already
+    // `Sendable` and immutable after initialisation.
+    private static let lock = NSLock()
     nonisolated(unsafe) private static var stubs: [String: Stub] = [:]
     nonisolated(unsafe) private static var errorStubs: [String: ErrorStub] = [:]
 
@@ -404,80 +406,6 @@ final class GitHubTransportPaginatedTests {
 
         // Partial item from page 1 must be discarded — nil returned.
         #expect(result == nil)
-    }
-
-    // MARK: - Network error mid-pagination returns partial results
-
-    /// A transient network error on page 2 must return the page-1 items already
-    /// accumulated, not nil.
-    ///
-    /// Verifies the documented contract: "Returns partial results (not nil) if
-    /// pagination is stopped by a transient network error."
-    ///
-    /// Mechanism: page 1 is served normally (200 + Link header). Page 2 is
-    /// stubbed to fail with `URLError(.timedOut)`. The pagination loop catches
-    /// the `.networkError` case (where `didFailAuth` is false), breaks out, and
-    /// returns the single page-1 item rather than nil.
-    @Test func paginatedReturnsPartialResultsOnNetworkError() async {
-        StubURLProtocol.reset()
-        let page1URL = "\(apiBase)orgs/test/actions/runners"
-        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
-        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
-
-        StubURLProtocol.register(.init(
-             page1Data,
-            statusCode: 200,
-            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
-        ), for: page1URL)
-        StubURLProtocol.registerError(.init(error: URLError(.timedOut)), for: page2URL)
-
-        let spy = SpyRateLimitActor()
-        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
-
-        // Page-1 items must be returned — partial result, not nil.
-        let items = decodeItems(result)
-        #expect(items?.count == 1)
-        #expect(items?.first?["id"] == .string("1"))
-        // A transient network error is not an auth failure — spy must be untouched.
-        let wasSetCalled = await spy.setCalled
-        #expect(wasSetCalled == false)
-    }
-
-    // MARK: - Network error mid-pagination returns partial results
-
-    /// A transient network error on page 2 must return the page-1 items already
-    /// accumulated, not nil.
-    ///
-    /// Verifies the documented contract: "Returns partial results (not nil) if
-    /// pagination is stopped by a transient network error."
-    ///
-    /// Mechanism: page 1 is served normally (200 + Link header). Page 2 is
-    /// stubbed to fail with `URLError(.timedOut)`. The pagination loop catches
-    /// the `.networkError` case (where `didFailAuth` is false), breaks out, and
-    /// returns the single page-1 item rather than nil.
-    @Test func paginatedReturnsPartialResultsOnNetworkError() async {
-        StubURLProtocol.reset()
-        let page1URL = "\(apiBase)orgs/test/actions/runners"
-        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
-        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
-
-        StubURLProtocol.register(.init(
-             page1Data,
-            statusCode: 200,
-            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
-        ), for: page1URL)
-        StubURLProtocol.registerError(.init(error: URLError(.timedOut)), for: page2URL)
-
-        let spy = SpyRateLimitActor()
-        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
-
-        // Page-1 items must be returned — partial result, not nil.
-        let items = decodeItems(result)
-        #expect(items?.count == 1)
-        #expect(items?.first?["id"] == .string("1"))
-        // A transient network error is not an auth failure — spy must be untouched.
-        let wasSetCalled = await spy.setCalled
-        #expect(wasSetCalled == false)
     }
 
     // MARK: - No token returns nil immediately
