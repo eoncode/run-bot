@@ -11,7 +11,7 @@ import Foundation
 /// accidentally dropping named labels (which Swift permits silently for tuples),
 /// and keeps the return type extensible (e.g. `Equatable`, `Codable`) without
 /// an API break.
-public struct RateLimitSnapshot: Sendable {
+public struct RateLimitSnapshot: Sendable, Equatable {
     /// Whether the GitHub API is currently rate-limiting this client.
     public let isLimited: Bool
     /// The moment at which the rate-limit window expires, or `nil` if unknown.

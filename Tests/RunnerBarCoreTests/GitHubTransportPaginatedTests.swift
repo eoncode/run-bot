@@ -410,6 +410,43 @@ final class GitHubTransportPaginatedTests {
         #expect(wasSetCalled == false)
     }
 
+    // MARK: - Network error mid-pagination returns partial results
+
+    /// A transient network error on page 2 must return the page-1 items already
+    /// accumulated, not nil.
+    ///
+    /// Verifies the documented contract: "Returns partial results (not nil) if
+    /// pagination is stopped by a transient network error."
+    ///
+    /// Mechanism: page 1 is served normally (200 + Link header). Page 2 is
+    /// stubbed to fail with `URLError(.timedOut)`. The pagination loop catches
+    /// the `.networkError` case (where `didFailAuth` is false), breaks out, and
+    /// returns the single page-1 item rather than nil.
+    @Test func paginatedReturnsPartialResultsOnNetworkError() async {
+        StubURLProtocol.reset()
+        let page1URL = "\(apiBase)orgs/test/actions/runners"
+        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
+        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
+
+        StubURLProtocol.register(.init(
+             page1Data,
+            statusCode: 200,
+            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
+        ), for: page1URL)
+        StubURLProtocol.registerError(.init(error: URLError(.timedOut)), for: page2URL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // Page-1 items must be returned — partial result, not nil.
+        let items = decodeItems(result)
+        #expect(items?.count == 1)
+        #expect(items?.first?["id"] == .string("1"))
+        // A transient network error is not an auth failure — spy must be untouched.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+    }
+
     // MARK: - No token returns nil immediately
 
     /// When no GitHub token is configured, `urlSessionAPIPaginated` returns nil
@@ -434,15 +471,19 @@ final class GitHubTransportPaginatedTests {
     /// A token that is valid for page 1 but revoked before page 2 is requested
     /// must cause all partial items to be discarded and nil to be returned.
     ///
-    /// Verifies: the `.networkError(URLError(.userAuthenticationRequired))` arm in
-    /// the pagination loop is reachable and correctly sets `didFailAuth = true`.
+    /// Verifies: the `.noToken` arm in the pagination loop is reachable and
+    /// correctly sets `didFailAuth = true`.
     ///
     /// Mechanism: page 1 is served normally (200 + Link header). Before page 2
     /// can be fetched, the token provider is swapped to `{ nil }`. On the page-2
-    /// request, `urlSessionExecute` hits `guard let token = githubTokenCore()` and
-    /// returns `.networkError(URLError(.userAuthenticationRequired))` — no network
-    /// call is made. The pagination loop catches this, sets `didFailAuth`, breaks,
-    /// and returns nil.
+    /// request, `urlSessionExecute` fails the `guard let token = githubTokenCore()`
+    /// guard and returns `.noToken` — no network call is made. The pagination loop
+    /// catches `.noToken`, sets `didFailAuth`, breaks, and returns nil.
+    ///
+    /// - Note: The old code path returned `.networkError(URLError(.userAuthenticationRequired))`
+    ///   for this scenario. The `.noToken` case was added in the #1476 refactor to make
+    ///   the discrimination explicit. The `.userAuthenticationRequired` arm was removed;
+    ///   do not search for it — it no longer exists.
     ///
     /// The page-2 URL is intentionally NOT registered in `StubURLProtocol`: if the
     /// token guard is ever accidentally removed, the stub miss produces a

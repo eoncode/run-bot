@@ -30,8 +30,10 @@ public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 ///
 /// - Parameters:
 ///   - endpoint: Relative or absolute URL for the first page.
-///   - timeout: Per-request timeout forwarded to `URLSession`. Defaults to 60s.
-///     Pass a larger value for endpoints with many pages or slow enterprise APIs.
+///   - timeout: Per-request timeout forwarded to `URLSession`. Pass `60` to match
+///     the production default; pass a larger value for endpoints with many pages
+///     or slow enterprise APIs. Implementations that ignore this parameter
+///     silently override the caller's intent — always forward it.
 ///
 /// - Note: The timeout is passed per-call through the closure, not captured at
 ///   configure time. The launch-site closure must forward both parameters:
