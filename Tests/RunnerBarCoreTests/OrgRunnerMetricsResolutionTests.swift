@@ -3,6 +3,7 @@
 //
 // Regression tests for #1209 / #1192: org-scoped runners must receive CPU/MEM
 // metrics even when the local .runner JSON AgentId differs from the GitHub API id.
+import Foundation
 import Testing
 import RunnerBarCore
 
