@@ -173,6 +173,11 @@ func ghRaw(_ endpoint: String) async -> Data? {
 /// `@concurrent`. Do not downgrade to `nonisolated(nonsending)`: that annotation is
 /// only valid for pure pass-throughs with no pre-suspension work, and calling
 /// `paginatedTransportBox.read()` under a lock disqualifies this function.
+///
+/// - Note: This replaces the `nonisolated(nonsending)` pass-through that was
+///   previously defined in `GitHubURLSessionTransport.swift`. The old location
+///   was deleted as part of the #1476 refactor; this shim is the single source
+///   of truth for all ghAPIPaginated callers.
 @concurrent
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     let transport = paginatedTransportBox.read()

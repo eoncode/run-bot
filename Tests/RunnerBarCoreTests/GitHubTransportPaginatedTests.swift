@@ -227,29 +227,29 @@ final class GitHubTransportPaginatedTests {
 
 // MARK: - Single-page (no Link header) happy path
 
-    /// A single page with no `Link: rel=\"next\"` header returns just that page's items.
+    /// A single page with no `Link: rel="next"` header returns just that page's items.
     ///
     /// Verifies: `extractNextURL(from: nil)` returns `nil`, terminating the pagination
     /// loop after the first page. This is the common case for endpoints that return
     /// all results in one response.
     @Test func paginatedSinglePageReturnsItems() async {
         StubURLProtocol.reset()
-        let pageURL = "\\(apiBase)orgs/test/actions/runners"
+        let pageURL = "\(apiBase)orgs/test/actions/runners"
 
         // No Link header — just a single page.
         StubURLProtocol.register(.init(
-            data: jsonPage([[\"id\": \"1\", \"name\": \"runner-a\"], [\"id\": \"2\", \"name\": \"runner-b\"]]),
+            data: jsonPage([["id": "1", "name": "runner-a"], ["id": "2", "name": "runner-b"]]),
             statusCode: 200,
             headers: [:]
         ), for: pageURL)
 
         let spy = SpyRateLimitActor()
-        let result = await urlSessionAPIPaginated(\"/orgs/test/actions/runners\", rateLimiter: spy)
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
 
         let items = decodeItems(result)
         #expect(items?.count == 2)
-        #expect(items?[0][\"id\"] == .string(\"1\"))
-        #expect(items?[1][\"id\"] == .string(\"2\"))
+        #expect(items?[0]["id"] == .string("1"))
+        #expect(items?[1]["id"] == .string("2"))
     }
     // MARK: - Rate-limit partial return
 

@@ -9,8 +9,12 @@ import Foundation
 /// and established community practice, though not a formally documented API guarantee.
 private let sharedDecoder = JSONDecoder()
 
-/// Shared encoder hoisted to avoid re-instantiation on every call.
-/// Thread-safe: `JSONEncoder` has no mutable state after initialisation.
+/// Shared encoder — intentionally kept as a module-level singleton rather than
+/// replaced with per-call-site `let encoder = JSONEncoder()`. The encoder is
+/// stateless after initialisation and safe for concurrent reads (no mutable
+/// stored properties that interact with `encode`). Keeping it shared avoids
+/// one allocation per call while being functionally identical to a local
+/// instance in every call site.
 /// Used by `urlSessionAPIPaginated` (page accumulation) and `patchRunnerLabels` (label body).
 private let sharedEncoder = JSONEncoder()
 
