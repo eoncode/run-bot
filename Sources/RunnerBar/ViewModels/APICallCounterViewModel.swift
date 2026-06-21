@@ -18,8 +18,8 @@ import SwiftUI
 /// class under Swift 6 strict concurrency — the macro-expanded
 /// `_$observationRegistrar` access conflicts.
 /// Wrapping the task in a `final class` makes it opaque to the macro,
-/// and marking the stored property `nonisolated(unsafe)` lets `deinit`
-/// call `cancel()` without a main-actor hop.
+/// and `deinit` can call `cancel()` without a main-actor hop because
+/// `Task` is `Sendable` and `cancel()` is concurrency-safe.
 ///
 /// **Invariant:** `task` must only ever be *written* from `@MainActor`
 /// context. `deinit` only *reads* it to call `cancel()`, which is safe
@@ -59,7 +59,8 @@ public final class APICallCounterViewModel {
     private let counter: any APICallCounterProtocol
 
     /// Box holding the structured polling task so `deinit` can cancel it.
-    nonisolated(unsafe) private let taskBox = TaskBox()
+    /// `TaskBox` is `Sendable`; `nonisolated(unsafe)` is not needed.
+    private let taskBox = TaskBox()
 
     /// Creates the view-model.
     /// - Parameter counter: Counter to poll. Defaults to `apiCallCounter`.
