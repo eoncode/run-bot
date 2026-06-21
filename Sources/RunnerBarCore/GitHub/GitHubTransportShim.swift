@@ -77,6 +77,9 @@ private struct TransportBox<T: Sendable> {
         lock.withLock { state in
             if state.isConfigured {
                 log("Warning: TransportBox reconfigured — replacing existing value.")
+                #if DEBUG
+                assertionFailure("TransportBox reconfigured — this is likely a test setup error or accidental double-configure in app init.")
+                #endif
             }
             state = (value, true)
         }
