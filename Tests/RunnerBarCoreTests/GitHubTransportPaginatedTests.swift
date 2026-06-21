@@ -277,7 +277,8 @@ final class GitHubTransportPaginatedTests {
     /// Verifies:
     /// - `result == nil` — no successful page was ever decoded
     /// - `setCalled == false` — a 200 non-array is not a rate-limit event
-    /// - `clearCalled == false` — no 2xx success reached the clearIfNotLimited() branch
+    /// - `clearCalled == true` — `urlSessionExecute` calls `clearIfNotLimited()` on
+    ///   any 2xx response before the pagination loop attempts decode
     @Test func paginatedNonArrayFirstPageDoesNotArmRateLimiter() async {
         StubURLProtocol.reset()
         let pageURL = "\(apiBase)orgs/test/actions/runners"
@@ -299,9 +300,9 @@ final class GitHubTransportPaginatedTests {
         // A 200 with a non-array body is not a rate-limit event — set() must not fire.
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
-        // No 2xx page decoded successfully — clearIfNotLimited() must not have been called.
+        // clear() IS called — urlSessionExecute calls clearIfNotLimited() on every 2xx.
         let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled == false)
+        #expect(wasClearCalled == true)
     }
 
     // MARK: - Single-page (no Link header) happy path
