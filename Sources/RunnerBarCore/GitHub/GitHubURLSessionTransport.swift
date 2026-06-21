@@ -160,14 +160,21 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 /// partial-results return path here.
 ///
 /// - Returns `nil` on auth failure (401, permission-denied 403, missing/revoked token).
-/// - Returns partial results (not nil) if pagination is stopped by a genuine rate limit.
-/// - Returns partial results (not nil) if pagination is stopped by a transient network error
-///   (e.g. timeout, no connectivity). This distinguishes recoverable mid-pagination
-///   interruptions from auth failures, which always discard all collected items.
-/// - Returns partial results (not nil) if pagination is stopped by a non-auth HTTP error
-///   (e.g. 404, 410, 503). Only auth failures discard all collected items; non-auth errors
-///   are treated as recoverable mid-pagination interruptions. Callers that need to distinguish
-///   total failure from partial success should check the result length.
+/// - Returns `nil` when the endpoint returns a valid empty-array response (`[]`) or when
+///   a stopping condition occurs before any items are accumulated (e.g. rate-limited or
+///   network error on the very first page). Callers cannot distinguish these two nil cases;
+///   see `guard !allItems.isEmpty` below.
+/// - Returns partial results (not nil) if at least one page was accumulated before
+///   pagination was stopped by a genuine rate limit.
+/// - Returns partial results (not nil) if at least one page was accumulated before
+///   pagination was stopped by a transient network error (e.g. timeout, no connectivity).
+///   This distinguishes recoverable mid-pagination interruptions from auth failures,
+///   which always discard all collected items.
+/// - Returns partial results (not nil) if at least one page was accumulated before
+///   pagination was stopped by a non-auth HTTP error (e.g. 404, 410, 503). Only auth
+///   failures discard all collected items; non-auth errors are treated as recoverable
+///   mid-pagination interruptions. Callers that need to distinguish total failure from
+///   partial success should check the result length.
 /// - Note: `extractNextURL(from: nil)` returns `nil`, so passing a non-paginated endpoint
 ///   (which returns no `Link` header) terminates the loop naturally after the first page.
 @concurrent
