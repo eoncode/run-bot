@@ -13,6 +13,11 @@ import SwiftUI
 /// ```swift
 /// APICallCounterRow()
 /// ```
+///
+/// - Note: Each appearance of this view creates its own `APICallCounterViewModel`
+///   and polling task via `@State`. This is correct for a single Settings row.
+///   Do **not** embed this view in a `List` or `ForEach` — each cell would
+///   spawn an independent 5-second polling loop.
 struct APICallCounterRow: View {
     /// View-model powering this row. A new instance is created per row appearance.
     @State private var vm = APICallCounterViewModel()
@@ -34,7 +39,10 @@ struct APICallCounterRow: View {
         .padding(.vertical, 2)
         .help(
             "GitHub allows 5,000 authenticated REST calls per rolling hour. " +
-            "Current usage: \(Int(vm.snap.fraction * 100))%"
+            "Current usage: \(Int(vm.snap.fraction * 100))%. " +
+            "Only successful calls are counted. " +
+            "Paginated fetches count as 1 call regardless of page count — " +
+            "real quota usage may be higher for list endpoints."
         )
     }
 }

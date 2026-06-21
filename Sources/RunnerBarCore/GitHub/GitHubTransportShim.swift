@@ -36,6 +36,10 @@ public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 ///   Callers must account for the fact that a paginated fetch may issue many
 ///   sequential requests; total wall-clock time can therefore exceed `timeout`
 ///   by a factor of the page count.
+///
+/// - Note: `apiCallCounter` counts one call per `ghAPIPaginated()` invocation,
+///   not one per page fetched. Real quota consumption for a 40-page list fetch
+///   is 40 calls; the counter will record 1. See `APICallCounterRow` tooltip.
 public typealias GHAPIPaginatedTransport = @Sendable (_ endpoint: String, _ timeout: TimeInterval) async -> Data?
 
 /// A sync closure that returns the active GitHub personal access token, or `nil`.
@@ -117,15 +121,15 @@ public func configureGHToken(_ provider: @escaping GHTokenProvider) {
 
 /// Calls the configured GitHub API transport for the given endpoint.
 ///
-/// The call counter is incremented via a fire-and-forget `Task` **before**
-/// the transport closure is read. This is intentional: the counter tracks
-/// dispatched call intent (i.e. every genuine REST call site), not confirmed
-/// network I/O. Stub/unconfigured transports (returning `nil`) are therefore
-/// also counted — callers should only wire `ghAPI` after auth is confirmed.
+/// `apiCallCounter` is incremented via a fire-and-forget `Task` **only when
+/// the transport returns non-nil data** — i.e. on a successful dispatch.
+/// Stub/unconfigured transports (returning `nil`) and auth failures are
+/// therefore not counted, keeping the counter accurate to actual REST calls.
 func ghAPI(_ endpoint: String) async -> Data? {
-    _ = Task { await apiCallCounter.record() }
     let transport = transportBox.read()
-    return await transport(endpoint)
+    let result = await transport(endpoint)
+    if result != nil { _ = Task { await apiCallCounter.record() } }
+    return result
 }
 
 /// Calls the configured raw-bytes transport for the given endpoint.
@@ -139,23 +143,19 @@ func ghRaw(_ endpoint: String) async -> Data? {
 
 /// Calls the configured paginated JSON transport for the given endpoint.
 ///
-/// Increments `apiCallCounter` once per invocation via a fire-and-forget `Task`.
-/// See `ghAPI` for the rationale on counting before transport dispatch.
-///
-/// - Note: This **undercounts** actual GitHub REST quota usage for paginated
-///   endpoints. The paginated transport internally fires one HTTP GET per page,
-///   and each page counts as one call against the 5,000/hour rate limit.
-///   The API-call counter widget is therefore an approximation for paginated
-///   workflows — actual consumption may be significantly higher.
+/// `apiCallCounter` is incremented once per invocation (not per page) via a
+/// fire-and-forget `Task` when the transport returns non-nil data.
+/// See `GHAPIPaginatedTransport` and `APICallCounterRow` for the undercount caveat.
 ///
 /// - Parameters:
 ///   - endpoint: Relative or absolute URL for the first page.
 ///   - timeout: Per-request timeout forwarded to the transport. Defaults to 60s.
 @concurrent
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
-    _ = Task { await apiCallCounter.record() }
     let transport = paginatedTransportBox.read()
-    return await transport(endpoint, timeout)
+    let result = await transport(endpoint, timeout)
+    if result != nil { _ = Task { await apiCallCounter.record() } }
+    return result
 }
 
 /// Returns the active GitHub token via the configured provider.
