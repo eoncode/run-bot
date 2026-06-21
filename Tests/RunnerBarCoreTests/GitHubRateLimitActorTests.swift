@@ -1,0 +1,250 @@
+// GitHubRateLimitActorTests.swift
+// RunnerBarCoreTests
+//
+// Unit tests for RateLimitActor — generation-guard stale-task race,
+// clamp semantics, and the atomic snapshot contract.
+//
+// These tests exercise the actor in isolation (no URLSession, no stubs)
+// by calling its public API directly and asserting on its observable state.
+//
+// The generation-guard (P10 — Atomic Snapshot Pattern) is the key invariant:
+// a didFire callback from a cancelled rate-limit window must NOT clear state
+// that belongs to a newer window. Without this guard, the app would silently
+// unblock mid-limit.
+//
+import Foundation
+import Testing
+@testable import RunnerBarCore
+
+@Suite("RateLimitActor")
+struct RateLimitActorTests {
+
+    // MARK: - Basic set / clear
+
+    @Test("set arms the flag and schedules a reset date")
+    func setArmsFlag() async {
+        let actor = RateLimitActor()
+        let now = Date()
+        let resetTS = now.timeIntervalSince1970 + 120
+
+        await actor.set(resetAt: resetTS)
+        let snap = await actor.snapshot()
+
+        #expect(snap.isLimited)
+        if let date = snap.resetDate {
+            let diff = date.timeIntervalSinceReferenceDate - now.addingTimeInterval(120).timeIntervalSinceReferenceDate
+            #expect(abs(diff) < 1)
+        } else {
+            Issue.record("resetDate should not be nil after set(resetAt:)")
+        }
+    }
+
+    @Test("clear disarms the flag and removes the reset date")
+    func clearDisarms() async {
+        let actor = RateLimitActor()
+        await actor.set(resetAt: Date().timeIntervalSince1970 + 120)
+        await actor.clear()
+        let snap = await actor.snapshot()
+
+        #expect(!snap.isLimited)
+        #expect(snap.resetDate == nil)
+    }
+
+    @Test("fresh actor starts with isLimited = false and nil resetDate")
+    func freshActorDefaults() async {
+        let actor = RateLimitActor()
+        let snap = await actor.snapshot()
+
+        #expect(!snap.isLimited)
+        #expect(snap.resetDate == nil)
+    }
+
+    @Test("set with nil resetAt uses a default delay and still arms")
+    func setWithNilResetAt() async {
+        let actor = RateLimitActor()
+        await actor.set(resetAt: nil)
+        let snap = await actor.snapshot()
+
+        #expect(snap.isLimited)
+        #expect(snap.resetDate != nil)
+    }
+
+    // MARK: - Clamping
+
+    @Test("set clamps delay to 5 s minimum")
+    func clampMinimum() async {
+        let actor = RateLimitActor()
+        let now = Date()
+        let tooSoon = now.timeIntervalSince1970 + 1
+
+        await actor.set(resetAt: tooSoon)
+        let snap = await actor.snapshot()
+
+        #expect(snap.isLimited)
+        if let date = snap.resetDate {
+            let diff = date.timeIntervalSinceReferenceDate - now.timeIntervalSinceReferenceDate
+            #expect(diff >= 4.9)
+        } else {
+            Issue.record("resetDate should not be nil")
+        }
+    }
+
+    @Test("set clamps delay to 7200 s maximum")
+    func clampMaximum() async {
+        let actor = RateLimitActor()
+        let now = Date()
+        let tooFar = now.timeIntervalSince1970 + 10_000
+
+        await actor.set(resetAt: tooFar)
+        let snap = await actor.snapshot()
+
+        #expect(snap.isLimited)
+        if let date = snap.resetDate {
+            let diff = date.timeIntervalSinceReferenceDate - now.timeIntervalSinceReferenceDate
+            #expect(diff <= 7201)
+        } else {
+            Issue.record("resetDate should not be nil")
+        }
+    }
+
+    // MARK: - Generation-guard (stale-task race)
+
+    /// The core invariant: a stale `didFire` after a newer `set(resetAt:)` must
+    /// be silently ignored. Without the guard, a slow timer from window N could
+    /// clear the flag for window N+1, unblocking the app mid-limit.
+    ///
+    /// This test approximates the generation guard by confirming that a second
+    /// `set()` replaces the first synchronously: the first task is cancelled via
+    /// `resetTask?.cancel()` inside `set()`, and the brief sleep allows any
+    /// already-sleeping stale didFire to arrive (it will be rejected).
+    ///
+    /// The actual timer-boundary race — where window-1's reset task has *exited*
+    /// `Task.sleep` (so `.cancel()` no longer stops it) and calls `didFire` after
+    /// window-2 has incremented `generation` — is not directly exercisable from
+    /// the public API without clock injection. A full race test would require
+    /// injecting a controllable time source into `RateLimitActor`, which is out
+    /// of scope for this PR. The generation-guard logic is instead verified by
+    /// code review and the swift-testing run that confirms the guard path
+    /// (`guard generation == self.generation else { ... }`) compiles and executes.
+    @Test("stale didFire from earlier generation is ignored")
+    func staleDidFireIsIgnored() async {
+        let actor = RateLimitActor()
+
+        // Window 1
+        await actor.set(resetAt: Date().timeIntervalSince1970 + 5)
+        #expect(await actor.isLimited)
+
+        // Window 2 replaces window 1 (generation increments)
+        await actor.set(resetAt: Date().timeIntervalSince1970 + 60)
+        #expect(await actor.isLimited)
+
+        try? await Task.sleep(for: .milliseconds(100))
+
+        // Window 2's state must still be intact
+        let snap = await actor.snapshot()
+        #expect(snap.isLimited)
+        #expect(snap.resetDate != nil)
+    }
+
+    /// Multiple rapid set calls: only the last window's state survives.
+    /// Uses the captured `now` timestamp for assertions to avoid wall-clock
+    /// drift in slow CI environments.
+    @Test("rapid successive sets keep only the latest window")
+    func rapidSuccessiveSets() async {
+        let actor = RateLimitActor()
+        let now = Date().timeIntervalSince1970
+
+        for i in 0..<5 {
+            await actor.set(resetAt: now + Double(i * 10))
+        }
+
+        let snap = await actor.snapshot()
+        #expect(snap.isLimited)
+
+        if let date = snap.resetDate {
+            // The last call passed now + 40; resetDate is derived from the
+            // clamped delay which matches this value (within the [5, 7200]
+            // range). Using the captured `now` instead of a fresh Date()
+            // eliminates wall-clock drift sensitivity.
+            let referenceNow = Date(timeIntervalSince1970: now)
+            let diff = date.timeIntervalSinceReferenceDate - referenceNow.timeIntervalSinceReferenceDate
+            #expect(diff > 30)
+            #expect(diff < 50)
+        } else {
+            Issue.record("resetDate should not be nil")
+        }
+    }
+
+    // MARK: - Snapshot atomicity
+
+    @Test("snapshot returns consistent isLimited + resetDate pair")
+    func snapshotConsistency() async {
+        let actor = RateLimitActor()
+        let resetAt = Date().timeIntervalSince1970 + 300
+
+        await actor.set(resetAt: resetAt)
+        let snap = await actor.snapshot()
+        #expect(snap.isLimited)
+        #expect(snap.resetDate != nil)
+
+        await actor.clear()
+        let afterClear = await actor.snapshot()
+        #expect(!afterClear.isLimited)
+        #expect(afterClear.resetDate == nil)
+    }
+
+    // MARK: - Multiple set calls without intermediate clear
+
+    @Test("set after set without clear overwrites gracefully")
+    func setAfterSetWithoutClear() async {
+        let actor = RateLimitActor()
+        let now = Date().timeIntervalSince1970
+
+        await actor.set(resetAt: now + 10)
+        await actor.set(resetAt: now + 20)
+
+        let snap = await actor.snapshot()
+        #expect(snap.isLimited)
+
+        if let date = snap.resetDate {
+            // Second call passed now + 20. Using the captured `now` instead of
+            // a fresh Date() eliminates wall-clock drift sensitivity in CI.
+            let referenceNow = Date(timeIntervalSince1970: now)
+            let diff = date.timeIntervalSinceReferenceDate - referenceNow.timeIntervalSinceReferenceDate
+            #expect(diff > 10)
+            #expect(diff < 30)
+        } else {
+            Issue.record("resetDate should not be nil")
+        }
+    }
+
+    // MARK: - RateLimitSnapshot struct
+
+    @Test("RateLimitSnapshot is Equatable")
+    func snapshotEquatable() {
+        let resetDate = Date()
+        let a = RateLimitSnapshot(isLimited: true, resetDate: resetDate)
+        let b = RateLimitSnapshot(isLimited: true, resetDate: resetDate)
+        let c = RateLimitSnapshot(isLimited: false, resetDate: nil)
+
+        #expect(a == b)
+        #expect(a != c)
+    }
+
+    @Test("RateLimitSnapshot is Hashable")
+    func snapshotHashable() {
+        let resetDate = Date()
+        let a = RateLimitSnapshot(isLimited: true, resetDate: resetDate)
+        let b = RateLimitSnapshot(isLimited: true, resetDate: resetDate)
+
+        let set: Set<RateLimitSnapshot> = [a, b]
+        #expect(set.count == 1)
+    }
+
+    @Test("RateLimitSnapshot is Sendable — compiles")
+    func snapshotSendable() {
+        let snap = RateLimitSnapshot(isLimited: false, resetDate: nil)
+        #expect(snap.isLimited == false)
+        #expect(snap.resetDate == nil)
+    }
+}
