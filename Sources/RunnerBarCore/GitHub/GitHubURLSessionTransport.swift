@@ -27,6 +27,10 @@ private enum ExecuteResult {
     /// the single case keeps `urlSessionExecute` callers uniform and the `nil` default is
     /// always correct for endpoints that do not emit a `Link` header.
     case success(Data, statusCode: Int, linkHeader: String?)
+    /// No GitHub token is currently available — the token provider returned `nil`.
+    /// Distinct from `.networkError` and `.httpError(401)` so callers can treat
+    /// "never had a token" separately from "token was valid but rejected by GitHub".
+    case noToken
     /// Non-2xx response that is not a rate-limit or permission error; the request failed.
     case httpError(Int)
     /// 403 or 429 that triggered the rate-limit actor (genuine rate limit).
@@ -73,7 +77,7 @@ private func urlSessionExecute(
 ) async -> ExecuteResult {
     guard let token = githubTokenCore() else {
         log("\(logTag) › no token available")
-        return .networkError(URLError(.userAuthenticationRequired))
+        return .noToken
     }
     let urlString = resolveURL(endpoint)
     guard let url = URL(string: urlString) else {
@@ -172,6 +176,12 @@ public func urlSessionAPIPaginated(
                 log("urlSessionAPIPaginated › unexpected non-array response at \(urlString) — stopping pagination")
                 break pagination
             }
+        case .noToken:
+            // Token was nil when urlSessionExecute ran the guard — treat as auth failure:
+            // discard partial results and return nil, matching the documented contract.
+            log("urlSessionAPIPaginated › no token — discarding \(allItems.count) partial items, returning nil")
+            didFailAuth = true
+            break pagination
         case .httpError(401):
             log("urlSessionAPIPaginated › 401 Unauthorized — token may have been revoked, stopping pagination")
             didFailAuth = true
@@ -190,13 +200,6 @@ public func urlSessionAPIPaginated(
             // because the post-loop behaviour is the same; the log line preserves the
             // distinction for operators.
             log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
-            didFailAuth = true
-            break pagination
-        case .networkError(let error as URLError) where error.code == .userAuthenticationRequired:
-            // Token was nil or cleared mid-pagination — treat as auth failure so
-            // partial items are discarded and nil is returned, matching the documented
-            // "returns nil on auth failure or no token" contract.
-            log("urlSessionAPIPaginated › no token mid-pagination — discarding \(allItems.count) partial items, returning nil")
             didFailAuth = true
             break pagination
         case .networkError:
