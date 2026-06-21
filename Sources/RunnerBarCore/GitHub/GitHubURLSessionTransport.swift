@@ -194,6 +194,12 @@ public func urlSessionAPIPaginated(
     await urlSessionAPIPaginated(endpoint, timeout: timeout, rateLimiter: rateLimitActor)
 }
 
+/// Internal implementation of ``urlSessionAPIPaginated(_:timeout:)`` that accepts an
+/// explicit `rateLimiter` dependency, enabling injection during unit tests without
+/// exposing the parameter on the public API.
+///
+/// All semantics (partial results, auth-failure nil, etc.) are identical to the
+/// public overload — see its documentation for full details.
 @concurrent
 func urlSessionAPIPaginated(
     _ endpoint: String,
