@@ -2,8 +2,8 @@
 // RunnerBar
 //
 // SwiftUI Settings row displaying the live GitHub REST API call counter.
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
 
 // MARK: - CounterPollingModifier
 
@@ -11,7 +11,9 @@ import RunnerBarCore
 /// stops it when the view disappears, so the background Task only runs
 /// while the Settings panel is on screen.
 private struct CounterPollingModifier: ViewModifier {
+    /// The view-model whose polling lifecycle is managed by this modifier.
     let vm: APICallCounterViewModel
+    /// Wraps `content` with `onAppear`/`onDisappear` hooks that start and stop polling.
     func body(content: Content) -> some View {
         content
             .onAppear { vm.startPolling() }
@@ -42,10 +44,13 @@ extension View {
 /// APICallCounterRow()
 /// ```
 public struct APICallCounterRow: View {
+    /// The view-model driving the counter display and polling lifecycle.
     @State private var vm = APICallCounterViewModel()
 
+    /// Creates a new `APICallCounterRow` backed by the shared `apiCallCounter`.
     public init() {}
 
+    /// The row's body: label, formatted count, and a tinted progress bar.
     public var body: some View {
         HStack {
             Text("API Calls (last hour)")

@@ -5,6 +5,7 @@
 // without real time travel. Compiled only in DEBUG / test targets.
 #if DEBUG
 import Foundation
+@testable import RunnerBarCore
 
 extension APICallCounter {
     /// Seeds the rolling buffer with pre-built `ContinuousClock.Instant` values.
