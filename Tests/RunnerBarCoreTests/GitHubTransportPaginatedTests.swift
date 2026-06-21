@@ -379,7 +379,7 @@ final class GitHubTransportPaginatedTests {
         #expect(result != nil)
         let items = decodeItems(result)
         #expect(items?.count == 1)
-// clear() must NOT be called — transient network error is not a success.
+// clear() IS called after page 1 success (2xx response clears the limiter).
         let wasClearCalled = await spy.clearCalled
         #expect(wasClearCalled)
         // A transient network error must never arm the rate-limit actor.
@@ -418,7 +418,7 @@ final class GitHubTransportPaginatedTests {
         #expect(result == nil)
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
-        // clear() must NOT be called — permission denial is not a success.
+        // clear() IS called after page 1 success (2xx response clears the limiter).
         let wasClearCalled = await spy.clearCalled
         #expect(wasClearCalled)
     }

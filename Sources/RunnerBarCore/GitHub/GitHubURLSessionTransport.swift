@@ -287,7 +287,7 @@ public func urlSessionAPIPaginated(
         log("urlSessionAPIPaginated › returning \\(allItems.count) items (\\(encoded.count)b)")
         return encoded
     } catch {
-        log("urlSessionAPIPaginated › encode failed: \\(error) — returning nil")
+        log("urlSessionAPIPaginated › encode failed: \(error) — returning nil")
         return nil
     }
 }
