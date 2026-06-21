@@ -63,12 +63,9 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 
     // MARK: Private properties
 
-    /// Decoder used for reading `.runner` JSON in `load(at:)`.
-    /// Actor isolation serialises all access to this property; two concurrent `load()`
-    /// calls on the same actor are not possible. `nonisolated` is required so
-    /// `loadRunnerData(@concurrent)` can be called without crossing the actor boundary,
-    /// but the decoder instance itself is never shared across concurrent callers.
-    nonisolated private let decoder = JSONDecoder()
+    /// Decoder used for reading `.runner` JSON inside the actor-isolated `load(at:)` body.
+    /// Access is serialised by actor isolation — no `nonisolated` needed.
+    private let decoder = JSONDecoder()
 
     // MARK: Init
 
@@ -180,37 +177,20 @@ private func saveRunnerConfig(
         if let dict = try? decoder.decode([String: AnyJSON].self, from: data) {
             raw = dict
         } else {
-            // Decode failed — the file is present but malformed. Proceeding
-            // from an empty dict would silently drop agent-managed keys (e.g.
-            // jitConfig), de-registering ephemeral JIT runners. Throw so the
-            // caller can surface the error instead of silently corrupting state.
             log("RunnerConfigStore › save: existing .runner at \(url.path) is malformed; aborting save to protect agent-managed keys")
             throw RunnerConfigStoreError.malformedExistingFile(installPath)
         }
     } else {
-        // File is missing (first registration) or temporarily unreadable (I/O error).
-        // Writing from scratch is correct for a missing file. For a transiently
-        // unreadable file, unknown agent-managed keys (e.g. jitConfig, gitHubUrl)
-        // will be dropped — the malformed-content path above is now protected;
-        // the I/O-failure path is tracked in #1499.
         log("RunnerConfigStore › save: could not read existing .runner at \(url.path); writing from scratch")
     }
 
-    // Always write workFolder so the user can clear a custom path back to the
-    // agent default. An empty string is normalised to "_work" here — identical
-    // to the value the agent writes on a fresh registration — so a load-failure
-    // zero value and an intentional clear are both safe to round-trip.
     let workFolderValue = config.workFolder.isEmpty ? "_work" : config.workFolder
     raw[RunnerConfig.CodingKeys.workFolder.rawValue] = .string(workFolderValue)
-    // Only write disableUpdate when it is explicitly set; omit the key when nil
-    // to match the agent's own convention (key absent == false).
     if let disableUpdate = config.disableUpdate {
         raw[RunnerConfig.CodingKeys.disableUpdate.rawValue] = .bool(disableUpdate)
     } else {
         raw.removeValue(forKey: RunnerConfig.CodingKeys.disableUpdate.rawValue)
     }
-    // Write optional fields only when non-nil to avoid injecting "key": null
-    // into the agent-managed file.
     if let val = config.platform { raw[RunnerConfig.CodingKeys.platform.rawValue] = .string(val) }
     if let val = config.platformArchitecture { raw[RunnerConfig.CodingKeys.platformArchitecture.rawValue] = .string(val) }
     if let val = config.agentVersion { raw[RunnerConfig.CodingKeys.agentVersion.rawValue] = .string(val) }
