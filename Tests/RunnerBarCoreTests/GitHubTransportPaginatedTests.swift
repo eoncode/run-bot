@@ -413,14 +413,14 @@ final class GitHubTransportPaginatedTests {
         ), for: page2URL)
 
         let spy = SpyRateLimitActor()
-// clear() must NOT be called — permission denial is not a success.
-        let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled == false)
         let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
 
         #expect(result == nil)
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
+        // clear() must NOT be called — permission denial is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
     }
 
     // MARK: - 401 auth failure discards all items
@@ -443,9 +443,6 @@ final class GitHubTransportPaginatedTests {
         StubURLProtocol.register(.init(
             data: "{\"message\":\"Bad credentials\"}".data(using: .utf8)!,
             statusCode: 401,
-// clear() must NOT be called — auth failure is not a success.
-        let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled == false)
             headers: [:]
         ), for: page2URL)
 
@@ -454,6 +451,9 @@ final class GitHubTransportPaginatedTests {
 
         // Partial item from page 1 must be discarded — nil returned.
         #expect(result == nil)
+        // clear() must NOT be called — auth failure is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
     }
 
     // MARK: - No token returns nil immediately
@@ -462,9 +462,6 @@ final class GitHubTransportPaginatedTests {
     /// without making any network request.
     ///
     /// - Note: This test temporarily sets the token provider to `{ nil }` on the
-// clear() must NOT be called — no-token is not a success.
-        let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled == false)
     ///   shared module-level `TransportBox`. It is safe only because
     ///   `@Suite(.serialized)` guarantees no other test in this suite runs
     ///   concurrently. Do not remove `.serialized` from the suite declaration.
@@ -476,6 +473,9 @@ final class GitHubTransportPaginatedTests {
         let spy = SpyRateLimitActor()
         let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
         #expect(result == nil)
+        // clear() must NOT be called — no-token is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
     }
 
     // MARK: - Token revoked mid-pagination discards all items
@@ -536,9 +536,6 @@ final class GitHubTransportPaginatedTests {
         var tokenCallCount = 0
         configureGHToken {
             callCountLock.withLock {
-// clear() must NOT be called — mid-pagination token revocation is not a success.
-        let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled == false)
                 defer { tokenCallCount += 1 }
                 return tokenCallCount == 0 ? "test-token" : nil
             }
@@ -554,5 +551,86 @@ final class GitHubTransportPaginatedTests {
         // not a rate-limit event.
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
+        // clear() must NOT be called — mid-pagination token revocation is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
     }
+// MARK: - Pre-armed rate limit does not block first request
+
+    /// A pre-armed rate-limit state (`spy.isLimited = true` before the call) does
+    /// NOT block the initial request — the rate-limit check only fires inside
+    /// `urlSessionExecute` after receiving a 403/429 response. Since page 1
+    /// returns 200, the pre-armed state is irrelevant and should remain true.
+    ///
+    /// Verifies: the pre-armed state is not checked at call-entry, so page-1 items
+    /// are returned and `spy.setCalled` remains false (no rate-limit response was
+    /// received to trigger `handleRateLimitResponse`).
+    @Test func paginatedReturnsItemsWhenPreArmedRateLimit() async {
+        StubURLProtocol.reset()
+        let pageURL = "\\(apiBase)orgs/test/actions/runners"
+
+        StubURLProtocol.register(.init(
+            data: jsonPage([["id": "1", "name": "runner-a"]]),
+            statusCode: 200,
+            headers: [:]
+        ), for: pageURL)
+
+        let spy = SpyRateLimitActor()
+        spy.isLimited = true  // Pre-arm before the call.
+
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // Page 1 must still be fetched — pre-armed state does not block the request.
+        let items = decodeItems(result)
+        #expect(items?.count == 1)
+        #expect(items?[0]["id"] == .string("1"))
+        // set() must NOT have been called — no rate-limit response was received.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+        // clear() must NOT have been called — the pre-armed state was not cleared.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
+        // isLimited must still be true — the pre-armed state is untouched.
+        #expect(spy.isLimited == true)
+    }
+
+    // MARK: - Non-auth HTTP error (404) returns partial results
+
+    /// A 404 mid-pagination must stop pagination and return items collected from
+    /// earlier pages — not nil. This verifies the `case .httpError: break pagination`
+    /// path does NOT set `didFailAuth`, preserving partial results.
+    @Test func paginatedReturnsPartialResultsOnHttpError404() async {
+        StubURLProtocol.reset()
+        let page1URL = "\\(apiBase)orgs/test/actions/runners"
+        let page2URL = "\\(apiBase)orgs/test/actions/runners?page=2"
+        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
+
+        StubURLProtocol.register(.init(
+            data: page1Data,
+            statusCode: 200,
+            headers: ["Link": "<\\(page2URL)>; rel=\"next\""]
+        ), for: page1URL)
+        // 404 on page 2 — non-auth HTTP error.
+        StubURLProtocol.register(.init(
+            data: "{\"message\":\"Not found\"}".data(using: .utf8)!,
+            statusCode: 404,
+            headers: [:]
+        ), for: page2URL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // Partial results from page 1 must be returned — not nil.
+        #expect(result != nil)
+        let items = decodeItems(result)
+        #expect(items?.count == 1)
+        #expect(items?[0]["id"] == .string("1"))
+        // clear() must NOT be called — 404 is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
+        // set() must NOT be called — 404 is not a rate-limit event.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+    }
+}
 }
