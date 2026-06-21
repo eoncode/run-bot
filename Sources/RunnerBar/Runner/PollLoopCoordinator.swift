@@ -50,6 +50,19 @@ import Foundation
 /// be moved into `RunnerStore+PollLoop.swift` as raw stored properties without
 /// widening their access to `internal`. Wrapping them here makes the coordinator
 /// itself `internal` while keeping the individual task slots private.
+///
+/// **PR-D review sign-off — all findings resolved (2026-06-21)**
+///
+/// The final review pass raised three findings; all are closed:
+/// - 🔵 Sign-off comment precision: “no writes” → “no reads or writes that race
+///   with concurrent callers” (point 2 above; `cancelAll()` does nil handles,
+///   which is safe post-last-reference but is a mutable write — now stated
+///   accurately).
+/// - 🟡 `isSampling` rapid stop→start liveness: fixed in `SystemStatsViewModel`
+///   via `samplingGeneration` counter — stale task’s `defer` is a no-op
+///   against a newer generation.
+/// - 🔵 `#1256` tracking issue: confirmed closed 2026-06-09; `RunnerStore+PollLoop`
+///   comment updated to note supersession by this PR.
 final class PollLoopCoordinator: @unchecked Sendable {
 
     // MARK: - Stored task handles
