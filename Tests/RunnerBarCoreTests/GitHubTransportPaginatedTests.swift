@@ -137,11 +137,8 @@ private let apiBase = GitHubConstants.apiBase + "/"
 /// The suite is a `final class` so that `deinit` is available to call
 /// `URLProtocol.unregisterClass`. Swift Testing supports class-based suites;
 /// `@Suite` and `@Test` behave identically to the struct form.
-@Suite("GitHubTransportTests", .serialized)
-struct GitHubTransportTests {
-
-    @Suite("GitHubTransportPaginated")
-    final class GitHubTransportPaginatedTests {
+@Suite("GitHubTransportPaginated", .serialized)
+final class GitHubTransportPaginatedTests {
 
     init() {
         // Register stub protocol and a valid token before every test.
@@ -292,6 +289,34 @@ struct GitHubTransportTests {
         #expect(items?[1]["id"] == .string("2"))
     }
 
+    // MARK: - Rate-limit on first page returns nil
+
+    /// A 429 on the very first page with zero items accumulated must return nil.
+    ///
+    /// Verifies the documented contract:
+    /// "Returns nil when a stopping condition occurs before any items are accumulated
+    /// (e.g. rate-limited or network error on the very first page)."
+    @Test func paginatedReturnsNilOnRateLimitFirstPage() async {
+        StubURLProtocol.reset()
+        let pageURL = "\(apiBase)orgs/test/actions/runners"
+
+        StubURLProtocol.register(.init(
+            data: Data(),
+            statusCode: 429,
+            headers: ["Retry-After": "60", "X-RateLimit-Remaining": "0"]
+        ), for: pageURL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        #expect(result == nil)
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled)
+        // clear() must NOT be called — no 2xx page succeeded before the 429.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
+    }
+
     // MARK: - Rate-limit partial return
 
     /// A genuine 429 rate-limit mid-pagination arms the spy and returns partial items.
@@ -382,7 +407,7 @@ struct GitHubTransportTests {
         #expect(result != nil)
         let items = decodeItems(result)
         #expect(items?.count == 1)
-// clear() IS called after page 1 success (2xx response clears the limiter).
+        // clear() IS called after page 1 success (2xx response clears the limiter).
         let wasClearCalled = await spy.clearCalled
         #expect(wasClearCalled)
         // A transient network error must never arm the rate-limit actor.

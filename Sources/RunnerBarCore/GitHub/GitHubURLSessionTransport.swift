@@ -100,7 +100,7 @@ private func urlSessionExecute(
     rateLimiter: some RateLimitActorProtocol = rateLimitActor,
     configure: @Sendable (URLRequest) -> URLRequest = { $0 }
 ) async -> ExecuteResult {
-// Called exactly once per call; paginated tests rely on this call-count.
+    // Called exactly once per call; paginated tests rely on this call-count.
     guard let token = githubTokenCore() else {
         log("\(logTag) › no token available")
         return .noToken
@@ -231,7 +231,7 @@ func urlSessionAPIPaginated(
         case .noToken:
             // Token was nil when urlSessionExecute ran the guard — treat as auth failure:
             // discard partial results and return nil, matching the documented contract.
-            log("urlSessionAPIPaginated › no token — discarding \(allItems.count) partial items, returning nil")
+            // Post-loop logging distinguishes first-page vs mid-pagination.
             didFailAuth = true
             break pagination
         case .httpError(401):
@@ -255,9 +255,7 @@ func urlSessionAPIPaginated(
             // 403 that did not arm the rate-limit actor — token scope, revoked PAT, or
             // repo access denial. Treated identically to an auth failure: discard all
             // collected items and return nil. Folded into didFailAuth (not a separate flag)
-            // because the post-loop behaviour is the same; the log line preserves the
-            // distinction for operators.
-            log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
+            // because the post-loop behaviour is the same; post-loop logging covers it.
             didFailAuth = true
             break pagination
         case .networkError:

@@ -9,9 +9,8 @@ import Testing
 /// Tests for the module-level configure/read transport shim functions in
 /// `GitHubTransportShim.swift`, exercising the `TransportBox`-backed behaviour
 /// via the public `configure*` and internal `gh*` entry points.
-extension GitHubTransportPaginatedTests {
-    @Suite("GitHubTransportShim")
-    struct GitHubTransportShimTests {
+@Suite("GitHubTransportShim")
+struct GitHubTransportShimTests {
 
     // MARK: - configureGHAPI / ghAPI
 
@@ -73,5 +72,4 @@ extension GitHubTransportPaginatedTests {
         configureGHToken { nil }
         #expect(githubTokenCore() == nil)
     }
-}
 }
