@@ -120,6 +120,11 @@ actor HookCounter {
 actor SpyRateLimitActor: RateLimitActorProtocol {
     /// Seed this to simulate a pre-armed rate-limit state.
     var isLimited = false
+    /// The reset date set by the most recent `set(resetAt:)` call, or `nil` if never set.
+    ///
+    /// - Note: `resetDate` is not part of `RateLimitActorProtocol` by design — the
+    ///   protocol exposes reset-time only through `snapshot()`. Read this via
+    ///   `await spy.snapshot().resetDate` in tests that need to assert on the value.
     private(set) var resetDate: Date?
     /// Whether `set(resetAt:)` was ever called on this instance.
     ///

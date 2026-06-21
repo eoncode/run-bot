@@ -5,10 +5,16 @@
 // Uses URLProtocol stubbing + configureGHToken + SpyRateLimitActor to exercise
 // the real pagination loop, rate-limit partial-return, and auth-abort logic.
 //
-// @Suite(.serialized) is required: paginatedReturnsNilWhenNoToken mutates the
-// shared module-level token provider, and each test calls StubURLProtocol.reset()
-// on the shared stub registry. Swift Testing runs struct suites concurrently by
-// default; without serialization these two pieces of shared global state race.
+// @Suite(.serialized) is required: paginatedReturnsNilWhenNoToken and
+// paginatedReturnsNilWhenTokenRevokedMidPagination mutate the shared module-level
+// token provider, and each test calls StubURLProtocol.reset() on the shared stub
+// registry. Swift Testing runs struct suites concurrently by default; without
+// serialization these two pieces of shared global state race.
+//
+// The suite is a `final class` (not a struct) so that `deinit` is available to
+// call URLProtocol.unregisterClass. Without unregistration, StubURLProtocol
+// remains registered on URLSession.shared after the suite completes and can
+// intercept requests in unrelated test files that run in the same process.
 //
 import Foundation
 import Testing
@@ -17,7 +23,14 @@ import Testing
 // MARK: - StubURLProtocol
 
 /// A URLProtocol subclass that serves pre-registered per-URL responses.
-/// Register stubs before each test; the registry is cleared in teardown.
+/// Register stubs before each test; the registry is cleared at the top of each test.
+///
+/// - Note: `@unchecked Sendable` is intentional. The `stubs` dictionary is
+///   guarded by `NSLock` on every read and write, making concurrent access
+///   safe. `@unchecked` is required because `URLProtocol` predates Swift
+///   concurrency and does not conform to `Sendable` itself. This type is
+///   test-support only — P4's "no @unchecked Sendable in production types"
+///   does not apply here.
 final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     /// A single canned response for one URL.
     struct Stub {
@@ -26,28 +39,45 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let headers: [String: String]
     }
 
-    // `nonisolated(unsafe)` — both properties are manually protected by `lock`
-    // below; Swift 6 strict concurrency requires the annotation for static stored
-    // properties on Sendable types that are not actor-isolated.
-    nonisolated(unsafe) private static let lock = NSLock()
-    nonisolated(unsafe) private static var stubs: [String: Stub] = [:]
+    /// A stub that produces a URLError instead of an HTTP response.
+    struct ErrorStub {
+        let error: URLError
+    }
+
+    private static let lock = NSLock()
+    private static var stubs: [String: Stub] = [:]
+    private static var errorStubs: [String: ErrorStub] = [:]
 
     static func register(_ stub: Stub, for url: String) {
         lock.withLock { stubs[url] = stub }
     }
 
+    static func registerError(_ stub: ErrorStub, for url: String) {
+        lock.withLock { errorStubs[url] = stub }
+    }
+
     static func reset() {
-        lock.withLock { stubs = [:] }
+        lock.withLock {
+            stubs = [:]
+            errorStubs = [:]
+        }
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
         let key = request.url?.absoluteString ?? ""
-        return lock.withLock { stubs[key] != nil }
+        return lock.withLock { stubs[key] != nil || errorStubs[key] != nil }
     }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         let key = request.url?.absoluteString ?? ""
+
+        // Error stub takes priority.
+        if let errorStub = StubURLProtocol.lock.withLock({ StubURLProtocol.errorStubs[key] }) {
+            client?.urlProtocol(self, didFailWithError: errorStub.error)
+            return
+        }
+
         let stub = StubURLProtocol.lock.withLock { StubURLProtocol.stubs[key] }
         guard let stub else {
             client?.urlProtocol(self, didFailWithError: URLError(.fileDoesNotExist))
@@ -80,8 +110,10 @@ private func decodeItems(_ data: Data?) -> [[String: AnyJSON]]? {
     return try? JSONDecoder().decode([[String: AnyJSON]].self, from: data)
 }
 
-/// Base URL used by all stubs (must match GitHubConstants.apiBase resolution).
-private let apiBase = "https://api.github.com/"
+/// Trailing-slash base URL derived from `GitHubConstants.apiBase`.
+/// All stub URL construction uses this so that if apiBase ever changes
+/// (e.g. GHE support), test URLs stay in sync automatically.
+private let apiBase = GitHubConstants.apiBase + "/"
 
 // MARK: - GitHubTransportPaginatedTests
 
@@ -96,8 +128,12 @@ private let apiBase = "https://api.github.com/"
 /// state: the module-level token provider (`configureGHToken`) and the
 /// `StubURLProtocol` stub registry (`reset()`). Without serialization, Swift Testing
 /// runs all tests concurrently and these mutations race.
+///
+/// The suite is a `final class` so that `deinit` is available to call
+/// `URLProtocol.unregisterClass`. Swift Testing supports class-based suites;
+/// `@Suite` and `@Test` behave identically to the struct form.
 @Suite("GitHubTransportPaginated", .serialized)
-struct GitHubTransportPaginatedTests {
+final class GitHubTransportPaginatedTests {
 
     init() {
         // Register stub protocol and a valid token before every test.
@@ -105,8 +141,11 @@ struct GitHubTransportPaginatedTests {
         configureGHToken { "test-token" }
     }
 
-    // Teardown via deinit is not available on structs; stubs are reset at the
-    // top of each test to keep tests independent.
+    deinit {
+        // Unregister so StubURLProtocol does not intercept requests in other
+        // test suites that run in the same process after this suite completes.
+        URLProtocol.unregisterClass(StubURLProtocol.self)
+    }
 
     // MARK: - Happy path: two-page accumulation
 
@@ -216,6 +255,54 @@ struct GitHubTransportPaginatedTests {
         #expect(wasSetCalled)
     }
 
+    // MARK: - Transient network error returns partial results
+
+    /// A transient network error (e.g. timeout) mid-pagination must return the
+    /// items collected so far — not nil.
+    ///
+    /// Verifies the documented contract:
+    /// "Returns partial results (not nil) if pagination is stopped by a transient
+    /// network error."
+    ///
+    /// Mechanism: page 1 succeeds (200 + Link header). Page 2 throws
+    /// `URLError(.timedOut)` via `StubURLProtocol.registerError`. The pagination
+    /// loop matches `.networkError` (not a `.userAuthenticationRequired` code),
+    /// exits the loop, and returns `allItems` — which contains the one item from
+    /// page 1.
+    ///
+    /// Three assertions:
+    /// - `result != nil` — partial items are returned, not discarded
+    /// - `items.count == 1` — only the page-1 item is present
+    /// - `spy.setCalled == false` — a network error must never arm the rate limiter
+    @Test func paginatedReturnsPartialResultsOnTransientNetworkError() async {
+        StubURLProtocol.reset()
+        let page1URL = "\(apiBase)orgs/test/actions/runners"
+        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
+        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
+
+        StubURLProtocol.register(.init(
+            data: page1Data,
+            statusCode: 200,
+            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
+        ), for: page1URL)
+        // Page 2 throws a transient network error — simulates a timeout mid-pagination.
+        StubURLProtocol.registerError(
+            .init(error: URLError(.timedOut)),
+            for: page2URL
+        )
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // Partial item from page 1 must be returned — not nil.
+        #expect(result != nil)
+        let items = decodeItems(result)
+        #expect(items?.count == 1)
+        // A transient network error must never arm the rate-limit actor.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+    }
+
     // MARK: - Permission-denied discards all items
 
     /// A plain 403 with no rate-limit headers is permission-denied: partial items
@@ -253,8 +340,8 @@ struct GitHubTransportPaginatedTests {
 
     /// A 401 mid-pagination must discard all partially collected items and return nil.
     ///
-    /// Verifies: `.httpError(401)` triggers `didFailAuthentication`, and the
-    /// auth-abort semantics introduced in the #1476 refactor are preserved.
+    /// Verifies: `.httpError(401)` triggers `didFailAuth`, and the auth-abort
+    /// semantics introduced in the #1476 refactor are preserved.
     @Test func paginatedReturnsNilOnAuthFailure401() async {
         StubURLProtocol.reset()
         let page1URL = "\(apiBase)orgs/test/actions/runners"
@@ -296,5 +383,57 @@ struct GitHubTransportPaginatedTests {
         let spy = SpyRateLimitActor()
         let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
         #expect(result == nil)
+    }
+
+    // MARK: - Token revoked mid-pagination discards all items
+
+    /// A token that is valid for page 1 but revoked before page 2 is requested
+    /// must cause all partial items to be discarded and nil to be returned.
+    ///
+    /// Verifies: the `.networkError(URLError(.userAuthenticationRequired))` arm in
+    /// the pagination loop is reachable and correctly sets `didFailAuth = true`.
+    ///
+    /// Mechanism: page 1 is served normally (200 + Link header). Before page 2
+    /// can be fetched, the token provider is swapped to `{ nil }`. On the page-2
+    /// request, `urlSessionExecute` hits `guard let token = githubTokenCore()` and
+    /// returns `.networkError(URLError(.userAuthenticationRequired))` — no network
+    /// call is made. The pagination loop catches this, sets `didFailAuth`, breaks,
+    /// and returns nil.
+    ///
+    /// The page-2 URL is intentionally NOT registered in `StubURLProtocol`: if the
+    /// token guard is ever accidentally removed, the stub miss produces a
+    /// `fileDoesNotExist` URLError rather than silently serving data, making the
+    /// regression immediately visible.
+    ///
+    /// - Note: Safe under `@Suite(.serialized)` — the token mutation is sequenced
+    ///   away from all other tests in this suite.
+    @Test func paginatedReturnsNilWhenTokenRevokedMidPagination() async {
+        StubURLProtocol.reset()
+        let page1URL = "\(apiBase)orgs/test/actions/runners"
+        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
+        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
+
+        // Page 1 succeeds and advertises a next page.
+        StubURLProtocol.register(.init(
+            data: page1Data,
+            statusCode: 200,
+            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
+        ), for: page1URL)
+        // Page 2 is deliberately NOT registered — see method doc above.
+
+        // Swap to nil token after page 1 is registered so page 2's urlSessionExecute
+        // hits the guard-let-token early return.
+        configureGHToken { nil }
+        defer { configureGHToken { "test-token" } }
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // Partial item from page 1 must be discarded — nil returned.
+        #expect(result == nil)
+        // The rate-limit actor must NOT have been armed — this is an auth failure,
+        // not a rate-limit event.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
     }
 }
