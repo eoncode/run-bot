@@ -263,11 +263,10 @@ final class GitHubTransportPaginatedTests {
     /// (not the global) was armed.
     ///
     /// - Note: 429 is chosen over 403 because the GitHub API uses 429 exclusively
-    ///   for genuine rate limits (Retry-After is always present on GitHub 429s, which
-    ///   triggers the `rateLimiter.set` call). A 403 with `X-RateLimit-Remaining: 0`
-    ///   would also work, but 429 avoids any ambiguity about whether the rate-limit
-    ///   actor is being armed vs. permission-denied logic. Do not swap this to a 403
-    ///   without also verifying the spy's `set(resetAt:)` is still called.
+    ///   for genuine rate limits. The stub includes a `Retry-After: 60` header so
+    ///   `handleRateLimitResponse` arms the actor via the `Retry-After` path (the
+    ///   primary path), not the `X-RateLimit-Reset` fallback. Do not swap this to a
+    ///   403 without also verifying the spy's `set(resetAt:)` is still called.
     @Test func paginatedReturnsPartialResultsOnRateLimit() async {
         StubURLProtocol.reset()
         let page1URL = "\(apiBase)orgs/test/actions/runners"
@@ -279,11 +278,12 @@ final class GitHubTransportPaginatedTests {
             statusCode: 200,
             headers: ["Link": "<\(page2URL)>; rel=\"next\""]
         ), for: page1URL)
-        // 429 on page 2 — genuine rate limit (always a rate limit by definition).
+        // 429 on page 2 — genuine rate limit. Retry-After: 60 arms the actor via
+        // the primary header path (not the X-RateLimit-Reset fallback).
         StubURLProtocol.register(.init(
             data: Data(),
             statusCode: 429,
-            headers: ["X-RateLimit-Remaining": "0"]
+            headers: ["Retry-After": "60", "X-RateLimit-Remaining": "0"]
         ), for: page2URL)
 
         let spy = SpyRateLimitActor()
