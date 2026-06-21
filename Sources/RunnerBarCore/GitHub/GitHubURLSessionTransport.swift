@@ -3,10 +3,17 @@
 
 import Foundation
 
-/// Shared decoder hoisted to avoid re-instantiation on every call.
-/// Thread-safe: `JSONDecoder` has no mutable state after initialisation and is safe
-/// for concurrent reads in practice; this is consistent with Apple's own sample code
-/// and established community practice, though not a formally documented API guarantee.
+/// Shared decoder — intentionally kept as a module-level singleton rather than
+/// replaced with per-call-site `let decoder = JSONDecoder()`. The decoder is
+/// stateless after initialisation and safe for concurrent reads (no mutable
+/// stored properties that interact with `decode`). Keeping it shared avoids
+/// one allocation per call while being functionally identical to a local
+/// instance in every call site.
+///
+/// - Note: Issue #1477 was originally scoped to replace the encoder with per-call-site
+///   local instances. After review, both the encoder and decoder are deliberately
+///   retained as shared: both are stateless after initialisation so the allocation
+///   savings outweigh the cosmetic benefit of locality.
 private let sharedDecoder = JSONDecoder()
 
 /// Shared encoder — intentionally kept as a module-level singleton rather than
@@ -93,6 +100,11 @@ private func urlSessionExecute(
     rateLimiter: some RateLimitActorProtocol = rateLimitActor,
     configure: @Sendable (URLRequest) -> URLRequest = { $0 }
 ) async -> ExecuteResult {
+// Called exactly once per call; paginated tests rely on this call-count.
+    guard let token = githubTokenCore() else {
+        log("\\(logTag) › no token available")
+        return .noToken
+    }
     guard let token = githubTokenCore() else {
         log("\(logTag) › no token available")
         return .noToken

@@ -331,6 +331,9 @@ final class GitHubTransportPaginatedTests {
         // The injected spy — not the global — must have been armed.
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled)
+// clear() must NOT be called — rate-limit stops pagination before success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
     }
 
     // MARK: - Transient network error returns partial results
@@ -376,6 +379,9 @@ final class GitHubTransportPaginatedTests {
         #expect(result != nil)
         let items = decodeItems(result)
         #expect(items?.count == 1)
+// clear() must NOT be called — transient network error is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
         // A transient network error must never arm the rate-limit actor.
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
@@ -407,6 +413,9 @@ final class GitHubTransportPaginatedTests {
         ), for: page2URL)
 
         let spy = SpyRateLimitActor()
+// clear() must NOT be called — permission denial is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
         let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
 
         #expect(result == nil)
@@ -434,6 +443,9 @@ final class GitHubTransportPaginatedTests {
         StubURLProtocol.register(.init(
             data: "{\"message\":\"Bad credentials\"}".data(using: .utf8)!,
             statusCode: 401,
+// clear() must NOT be called — auth failure is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
             headers: [:]
         ), for: page2URL)
 
@@ -450,6 +462,9 @@ final class GitHubTransportPaginatedTests {
     /// without making any network request.
     ///
     /// - Note: This test temporarily sets the token provider to `{ nil }` on the
+// clear() must NOT be called — no-token is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
     ///   shared module-level `TransportBox`. It is safe only because
     ///   `@Suite(.serialized)` guarantees no other test in this suite runs
     ///   concurrently. Do not remove `.serialized` from the suite declaration.
@@ -521,6 +536,9 @@ final class GitHubTransportPaginatedTests {
         var tokenCallCount = 0
         configureGHToken {
             callCountLock.withLock {
+// clear() must NOT be called — mid-pagination token revocation is not a success.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == false)
                 defer { tokenCallCount += 1 }
                 return tokenCallCount == 0 ? "test-token" : nil
             }

@@ -11,7 +11,7 @@ import Foundation
 /// accidentally dropping named labels (which Swift permits silently for tuples),
 /// and keeps the return type extensible (e.g. `Equatable`, `Codable`) without
 /// an API break.
-public struct RateLimitSnapshot: Sendable, Equatable {
+public struct RateLimitSnapshot: Sendable, Equatable, Hashable {
     /// Whether the GitHub API is currently rate-limiting this client.
     public let isLimited: Bool
     /// The moment at which the rate-limit window expires, or `nil` if unknown.
@@ -58,6 +58,11 @@ public protocol RateLimitActorProtocol: Actor {
     /// Whether the GitHub API is currently rate-limiting this client.
     var isLimited: Bool { get }
     /// Arms the rate-limit flag and schedules an automatic reset.
+    ///
+    /// - Parameter resetAt: Absolute seconds since epoch (Unix timestamp),
+    ///   matching the `X-RateLimit-Reset` header semantics. A `nil` value means
+    ///   the reset time is not known; the conformer should still arm the flag
+    ///   and use a reasonable default delay.
     func set(resetAt: TimeInterval?)
     /// Clears the rate-limit flag and cancels any pending reset task.
     func clear()
@@ -69,6 +74,13 @@ public protocol RateLimitActorProtocol: Actor {
     /// - Note: Although declared non-async, callers outside this actor's context must
     ///   still `await` this function; the compiler enforces this. See the protocol-level
     ///   `### snapshot() and async semantics` note above for the full explanation.
+    ///
+    /// - Important: Conformers **must not** reach for `nonisolated(unsafe)` to work
+    ///   around the non-async declaration. If a conformer needs async work inside
+    ///   `snapshot()`, it should use a lock or actor-safe mechanism instead. All
+    ///   current conformers (`RateLimitActor`, `SpyRateLimitActor`) read actor-isolated
+    ///   state and have no such need; this constraint preempts a future contributor
+    ///   who might wrap an async operation here.
     func snapshot() -> RateLimitSnapshot
 }
 
