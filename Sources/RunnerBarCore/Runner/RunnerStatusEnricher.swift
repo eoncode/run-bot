@@ -133,7 +133,7 @@ public struct RunnerStatusEnricher: RunnerStatusEnricherProtocol, Sendable {
                 log("[Enricher] SKIP '\(runner.runnerName)' — gitHubUrl is nil")
                 continue
             }
-            scopeToRunnerIndices[url, default: []].append(idx)
+            scopeToRunnerIndices[url.absoluteString, default: []].append(idx)
         }
 
         // Step 2: fetch all scopes concurrently.
