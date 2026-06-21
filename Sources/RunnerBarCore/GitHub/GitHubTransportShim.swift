@@ -34,9 +34,20 @@ public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 ///     Pass a larger value for endpoints with many pages or slow enterprise APIs.
 ///
 /// - Note: The timeout is passed per-call through the closure, not captured at
-///   configure time. The launch-site closure `{ endpoint, timeout in await
-///   urlSessionAPIPaginated(endpoint, timeout: timeout) }` forwards it correctly;
-///   a mock closure in tests receives it as a plain parameter.
+///   configure time. The launch-site closure must forward both parameters:
+///   ```swift
+///   configureGHAPIPaginated { endpoint, timeout in
+///       await urlSessionAPIPaginated(endpoint, timeout: timeout)
+///   }
+///   ```
+///   A closure that captures only `endpoint` will silently use the 60s default
+///   regardless of what the caller passes.
+///
+/// - Note: `GHAPITransport` and `GHRawTransport` do not carry a `timeout`
+///   parameter — single-page GETs and raw log fetches use fixed timeouts
+///   appropriate to their operation. The paginated transport is the only one
+///   that genuinely benefits from a caller-overridable timeout because
+///   large orgs can take minutes to traverse all pages.
 public typealias GHAPIPaginatedTransport = @Sendable (_ endpoint: String, _ timeout: TimeInterval) async -> Data?
 
 /// A sync closure that returns the active GitHub personal access token, or `nil` if
@@ -107,11 +118,16 @@ public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
 ///   for slow enterprise endpoints. Returns concatenated JSON array `Data` on success,
 ///   `nil` on auth failure, or partial results on rate-limit.
 ///
-/// - Note: The real transport should forward `timeout` directly to `urlSessionAPIPaginated`:
+/// - Important: The closure **must** forward `timeout` to `urlSessionAPIPaginated`.
+///   A single-argument closure that ignores `timeout` silently overrides any
+///   caller-specified value with the 60s default:
 ///   ```swift
+///   // Correct — both parameters forwarded:
 ///   configureGHAPIPaginated { endpoint, timeout in
 ///       await urlSessionAPIPaginated(endpoint, timeout: timeout)
 ///   }
+///   // Wrong — timeout silently dropped:
+///   // configureGHAPIPaginated { endpoint in await urlSessionAPIPaginated(endpoint) }
 ///   ```
 public func configureGHAPIPaginated(_ transport: @escaping GHAPIPaginatedTransport) {
     paginatedTransportBox.configure(transport)
