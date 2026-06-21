@@ -31,13 +31,17 @@ public final class APICallCounterViewModel {
 
     /// Structured polling task. Cancelled in `deinit`.
     ///
-    /// Marked `nonisolated` so that the nonisolated `deinit` can call
-    /// `pollTask?.cancel()` without a concurrency violation.
-    /// `Task<Void, Never>` is already `Sendable`, so `nonisolated(unsafe)`
-    /// is unnecessary — plain `nonisolated` is sufficient and warning-free.
-    /// This property is only ever written from `@MainActor` context
-    /// (`init` → `startPolling()`), so the annotation is correct.
-    nonisolated private var pollTask: Task<Void, Never>?
+    /// Must be `nonisolated(unsafe)` because:
+    /// 1. `deinit` is nonisolated in Swift 6 and cannot touch a
+    ///    `@MainActor`-isolated stored property.
+    /// 2. The `@Observable` macro expands stored properties via
+    ///    `@ObservationTracked`, and the compiler forbids plain
+    ///    `nonisolated` on *mutable* stored properties entirely.
+    ///    Its own fixit reads: "consider declaring it
+    ///    'nonisolated(unsafe)' if manually managing concurrency safety".
+    /// Safety: this property is only ever written from `@MainActor`
+    /// context (`init` → `startPolling()`), so the unsafety is bounded.
+    nonisolated(unsafe) private var pollTask: Task<Void, Never>?
 
     /// Creates the view-model.
     ///
