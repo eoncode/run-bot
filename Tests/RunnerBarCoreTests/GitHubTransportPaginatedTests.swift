@@ -375,9 +375,8 @@ final class GitHubTransportPaginatedTests {
     ///
     /// Mechanism: page 1 succeeds (200 + Link header). Page 2 throws
     /// `URLError(.timedOut)` via `StubURLProtocol.registerError`. The pagination
-    /// loop matches `.networkError` (not a `.userAuthenticationRequired` code),
-    /// exits the loop, and returns `allItems` — which contains the one item from
-    /// page 1.
+    /// loop matches `.networkError`, exits via `break pagination`, and returns
+    /// `allItems` — which contains the one item from page 1.
     ///
     /// Three assertions:
     /// - `result != nil` — partial items are returned, not discarded
@@ -517,10 +516,10 @@ final class GitHubTransportPaginatedTests {
     /// Mechanism: a lock-protected call counter is installed as the token provider.
     /// The first call to `githubTokenCore()` (page-1 iteration) returns "test-token";
     /// every subsequent call returns nil. Page 1 therefore succeeds and its item is
-    /// accumulated. On the page-2 iteration, `urlSessionExecute` reads the counter,
-    /// gets nil, and returns `.noToken` without making a network request. The pagination
-    /// loop catches `.noToken`, sets `didFailAuth`, breaks, and returns nil — discarding
-    /// the page-1 item.
+    /// accumulated. On the page-2 iteration, `urlSessionExecute` hits
+    /// `guard let token = githubTokenCore()`, gets nil, and returns `.noToken`
+    /// without making a network request. The pagination loop catches `.noToken`,
+    /// sets `didFailAuth`, breaks, and returns nil — discarding the page-1 item.
     ///
     /// The page-2 URL is intentionally NOT registered in `StubURLProtocol`: if the
     /// token guard is ever accidentally removed, the stub miss produces a
