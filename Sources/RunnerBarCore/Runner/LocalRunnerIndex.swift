@@ -33,11 +33,11 @@ public final class LocalRunnerIndex {
     private let defaults: UserDefaults
 
     /// Initialises the index and loads the persisted entries from `UserDefaults`.
-    /// Throws if stored data exists but cannot be decoded (surfaces malformed data
-    /// instead of silently returning an empty index).
-    public init(defaults: UserDefaults = .standard) throws {
+    /// If stored `Data` exists but cannot be decoded, the error is logged and the
+    /// index starts empty — preserving the invariant that `init` never throws.
+    public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        try loadIndex()
+        loadIndex()
     }
 
     // MARK: - Mutations
@@ -62,16 +62,20 @@ public final class LocalRunnerIndex {
     ///
     /// Decode order:
     /// 1. If the key holds `Data`, decode as JSON `[String: String]`.
+    ///    On `DecodingError`, logs and falls through to empty — surfaces malformed data
+    ///    in the log without crashing or silently discarding entries.
     /// 2. If the key holds a legacy `NSDictionary` (pre-Codable plist format),
     ///    cast it and immediately re-persist as JSON (one-time migration).
     /// 3. If the key is absent, start with an empty index.
-    ///
-    /// Throws `DecodingError` when stored `Data` exists but is malformed.
-    private func loadIndex() throws {
+    private func loadIndex() {
         if let data = defaults.data(forKey: Self.indexKey) {
-            // New Codable path.
-            runnerIndex = try JSONDecoder().decode([String: String].self, from: data)
-            log("LocalRunnerIndex › loadIndex — \(runnerIndex.count) entry(ies): \(runnerIndex.keys.sorted())")
+            do {
+                runnerIndex = try JSONDecoder().decode([String: String].self, from: data)
+                log("LocalRunnerIndex › loadIndex — \(runnerIndex.count) entry(ies): \(runnerIndex.keys.sorted())")
+            } catch {
+                log("LocalRunnerIndex › loadIndex — JSON decode failed: \(error). Starting with empty index.")
+                runnerIndex = [:]
+            }
         } else if let legacy = defaults.dictionary(forKey: Self.indexKey) as? [String: String] {
             // One-time migration from legacy NSPropertyList dict → JSON Data.
             runnerIndex = legacy

@@ -31,8 +31,16 @@ public struct ScopeEntry: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.isEnabled = isEnabled
     }
 
-    /// Identity-preserving init used by `copying(isEnabled:)`.
-    /// Internal to avoid callers accidentally reusing an existing `id`.
+    /// Identity-preserving init used exclusively by `copying(isEnabled:)`.
+    ///
+    /// Accepts an explicit `id` so that `copying` returns a value with the same
+    /// stable identity as the original — required for correct SwiftUI list diffing
+    /// and lossless `Codable` round-trips. Internal to prevent accidental `id` reuse
+    /// by external callers.
+    /// - Parameters:
+    ///   - id: The existing `UUID` to preserve.
+    ///   - scope: The GitHub scope string.
+    ///   - isEnabled: The new enabled state.
     internal init(id: UUID, scope: String, isEnabled: Bool) {
         self.id = id
         self.scope = scope
