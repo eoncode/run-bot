@@ -52,10 +52,36 @@ public typealias GHTokenProvider = @Sendable () -> String?
 // MARK: - TransportBox
 
 /// Thread-safe wrapper around an `OSAllocatedUnfairLock`-guarded closure.
+///
+/// `OSAllocatedUnfairLock.withLock` accepts a **synchronous** closure only.
+/// This is intentional: `os_unfair_lock` must not be held across a suspension
+/// point. Transport closures are `async`, so they are *never* called from
+/// inside `withLock` — only read out under the lock, then invoked outside it.
+///
+/// **Reconfigurability is intentional.** `TransportBox` deliberately does not
+/// enforce a one-configure-only invariant. `configureGHToken` is called on
+/// every test `init()` and in mid-test token-swap scenarios by design.
+/// If a one-time-configure invariant is needed for a specific box, enforce it
+/// at the call site — do not add a `precondition(isFirstConfigure)` guard
+/// inside this type, as that would silently break all tests that reconfigure
+/// the transport or token provider mid-suite.
 private struct TransportBox<T: Sendable> {
+    /// The underlying unfair lock guarding the stored value.
     private let lock: OSAllocatedUnfairLock<T>
+
+    /// Creates a box with `initialState` as the starting value.
     init(initialState: T) { lock = .init(initialState: initialState) }
+
+    /// Replaces the stored closure under the lock.
+    ///
+    /// Safe to call from any thread or actor context; the lock is held only
+    /// for the duration of the pointer swap — no async work inside.
     func configure(_ value: T) { lock.withLock { $0 = value } }
+
+    /// Returns the stored closure under the lock.
+    ///
+    /// The caller is responsible for invoking the returned closure *outside*
+    /// the lock. Never pass an `async` closure into `withLock`.
     func read() -> T { lock.withLock { $0 } }
 }
 
@@ -115,8 +141,6 @@ func ghAPI(_ endpoint: String) async -> Data? {
 /// Raw log fetches hit S3 and do **not** consume the GitHub REST quota —
 /// `apiCallCounter` is intentionally not incremented here.
 func ghRaw(_ endpoint: String) async -> Data? {
-    rawTransportBox.read()(endpoint)
-    // Note: indirect return via variable avoids 'expression is unused' warning.
     let transport = rawTransportBox.read()
     return await transport(endpoint)
 }

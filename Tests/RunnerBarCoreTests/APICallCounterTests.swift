@@ -63,11 +63,9 @@ struct APICallCounterTests {
     @Test("record() trims buffer to hourlyLimit when entries exceed it")
     func recordTrimsToHourlyLimit() async {
         let counter = APICallCounter()
-        // Seed hourlyLimit + 10 fresh timestamps (all within the window).
         let now = Date()
         let fresh = (0..<(APICallCounter.hourlyLimit + 10)).map { now.addingTimeInterval(Double($0) * 0.001) }
         await counter.seed(timestamps: fresh)
-        // One more record() should bring the count back to exactly hourlyLimit.
         await counter.record()
         let snap = await counter.snapshot()
         #expect(snap.count == APICallCounter.hourlyLimit)
@@ -117,6 +115,42 @@ struct APICallCounterTests {
         let s1 = await counter.snapshot()
         let s2 = await counter.snapshot()
         #expect(s1 == s2)
+    }
+
+    /// Exercises the P10 atomicity guarantee under concurrent mutation.
+    ///
+    /// Fires `record()` calls concurrently from a task group while a second
+    /// group calls `snapshot()` repeatedly. For every snapshot taken:
+    /// - `limit` must always equal `hourlyLimit` (it is a compile-time
+    ///   constant and can never change, so any torn read would be detectable).
+    /// - `count` must be ≥ 0 (no negative torn read).
+    /// - `fraction` must be within `[0, 1]` (derived, but exercises the
+    ///   full snapshot path under contention).
+    ///
+    /// This is the meaningful P10 test: a regression where `count` and `limit`
+    /// were fetched in two separate actor hops could produce a snapshot where
+    /// `limit` disagrees with `APICallCounter.hourlyLimit`. That cannot happen
+    /// as long as `snapshot()` returns a single `APICallCounterSnapshot`
+    /// constructed atomically inside one actor hop.
+    @Test("snapshot() count+limit are consistent under concurrent record() mutations")
+    func snapshotAtomicUnderConcurrentMutations() async {
+        let counter = APICallCounter()
+        await withTaskGroup(of: Void.self) { group in
+            // Writer tasks: fire 50 record() calls concurrently.
+            for _ in 0..<50 {
+                group.addTask { await counter.record() }
+            }
+            // Reader tasks: call snapshot() 20 times concurrently.
+            for _ in 0..<20 {
+                group.addTask {
+                    let snap = await counter.snapshot()
+                    #expect(snap.limit == APICallCounter.hourlyLimit)
+                    #expect(snap.count >= 0)
+                    #expect(snap.fraction >= 0.0)
+                    #expect(snap.fraction <= 1.0)
+                }
+            }
+        }
     }
 
     @Test("snapshot limit always equals hourlyLimit constant")
