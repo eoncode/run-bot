@@ -165,5 +165,6 @@ public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async
 
 /// Returns the active GitHub token via the configured provider.
 func githubTokenCore() -> String? {
-    tokenProviderBox.read()()
+    let provider = tokenProviderBox.read()
+    return provider()
 }
