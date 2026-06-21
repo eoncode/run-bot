@@ -681,7 +681,7 @@ final class GitHubTransportPaginatedTests {
 
         // 404 on the very first page — no prior items accumulated.
         StubURLProtocol.register(.init(
-             "{\"message\":\"Not found\"}".data(using: .utf8)!,
+            data: "{\"message\":\"Not found\"}".data(using: .utf8)!,
             statusCode: 404,
             headers: [:]
         ), for: pageURL)
