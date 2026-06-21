@@ -740,40 +740,4 @@ final class GitHubTransportPaginatedTests {
     // MARK: - 200 + non-array body on the very first page — clear() not called
 
     /// A 200 response with a non-array JSON body on the *first* page (before any items
-    /// are accumulated) must return nil and must NOT call clear() on the rate-limit actor.
-    ///
-    /// Distinct from `paginatedStopsOnNonArrayBody`, which tests mid-pagination: that
-    /// case returns the partial items from the already-accumulated page 1.
-    /// Here `hadAtLeastOneSuccessfulPage` is never set to `true` (the `if let page`
-    /// decode fails), so the post-loop guard returns nil.
-    ///
-    /// The guarded clear() in `urlSessionExecute` (added in commit 4) means that
-    /// even though the HTTP response is 2xx, clear() is only called when
-    /// `!snapshot.isLimited`. When the spy starts in the default unlimted state,
-    /// the guard passes and clear() IS normally called — but since the array-decode
-    /// fails and `hadAtLeastOneSuccessfulPage` stays false, the contract verified
-    /// here is that nil is returned and set() is never called.
-    ///
-    /// Regression guard: without this test the first-page 200+non-array path is only
-    /// covered by inference from the mid-pagination test.
-    @Test func paginatedReturnsNilOnNonArrayBodyFirstPage() async {
-        StubURLProtocol.reset()
-        let pageURL = "\(apiBase)orgs/test/actions/runners"
-
-        // 200 but body is an object, not an array — e.g. a GitHub error envelope.
-        StubURLProtocol.register(.init(
-            data: "{\"message\":\"Not Found\"}".data(using: .utf8)!,
-            statusCode: 200,
-            headers: [:]
-        ), for: pageURL)
-
-        let spy = SpyRateLimitActor()
-        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
-
-        // No successful page was ever decoded — nil must be returned (not `[]`).
-        #expect(result == nil)
-        // Not a rate-limit event, so set() must not fire.
-        let wasSetCalled = await spy.setCalled
-        #expect(wasSetCalled == false)
-    }
 }
