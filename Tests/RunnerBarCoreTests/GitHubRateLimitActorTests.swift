@@ -109,25 +109,22 @@ struct RateLimitActorTests {
 
     // MARK: - Generation-guard (stale-task race)
 
-    /// The core invariant: a stale `didFire` after a newer `set(resetAt:)` must
-    /// be silently ignored. Without the guard, a slow timer from window N could
-    /// clear the flag for window N+1, unblocking the app mid-limit.
+    /// Verifies that a second `set()` cancels the prior window's reset task via
+    /// `resetTask?.cancel()` inside `set()`, and that window-2's state remains
+    /// intact after a brief sleep (giving any already-sleeping stale didFire a
+    /// chance to arrive — it will be rejected by the generation guard).
     ///
-    /// This test approximates the generation guard by confirming that a second
-    /// `set()` replaces the first synchronously: the first task is cancelled via
-    /// `resetTask?.cancel()` inside `set()`, and the brief sleep allows any
-    /// already-sleeping stale didFire to arrive (it will be rejected).
-    ///
-    /// The actual timer-boundary race — where window-1's reset task has *exited*
-    /// `Task.sleep` (so `.cancel()` no longer stops it) and calls `didFire` after
-    /// window-2 has incremented `generation` — is not directly exercisable from
-    /// the public API without clock injection. A full race test would require
-    /// injecting a controllable time source into `RateLimitActor`, which is out
-    /// of scope for this PR. The generation-guard logic is instead verified by
-    /// code review and the swift-testing run that confirms the guard path
+    /// NOTE: This does NOT exercise the full generation-guard race. The actual
+    /// timer-boundary race — where window-1's reset task has *exited* `Task.sleep`
+    /// (so `.cancel()` no longer stops it) and calls `didFire` after window-2 has
+    /// incremented `generation` — is not directly exercisable from the public API
+    /// without clock injection. A full race test would require injecting a
+    /// controllable time source into `RateLimitActor`, which is out of scope for
+    /// this PR. The generation-guard logic is instead verified by code review and
+    /// the swift-testing run that confirms the guard path
     /// (`guard generation == self.generation else { ... }`) compiles and executes.
-    @Test("stale didFire from earlier generation is ignored")
-    func staleDidFireIsIgnored() async {
+    @Test("set after set cancels prior window and preserves new window state")
+    func set_after_set_cancels_prior_window() async {
         let actor = RateLimitActor()
 
         // Window 1
@@ -147,6 +144,8 @@ struct RateLimitActorTests {
     }
 
     /// Multiple rapid set calls: only the last window's state survives.
+    /// Loop starts at i=1 so every call passes a strictly future timestamp
+    /// (now + 10 … now + 40), keeping the test off the clamp-floor path.
     /// Uses the captured `now` timestamp for assertions to avoid wall-clock
     /// drift in slow CI environments.
     @Test("rapid successive sets keep only the latest window")
@@ -154,7 +153,7 @@ struct RateLimitActorTests {
         let actor = RateLimitActor()
         let now = Date().timeIntervalSince1970
 
-        for i in 0..<5 {
+        for i in 1..<5 {
             await actor.set(resetAt: now + Double(i * 10))
         }
 
@@ -241,6 +240,8 @@ struct RateLimitActorTests {
         #expect(set.count == 1)
     }
 
+    /// Compile check only — confirms `RateLimitSnapshot` satisfies `Sendable`
+    /// at build time. No runtime behaviour is asserted beyond valid construction.
     @Test("RateLimitSnapshot is Sendable — compiles")
     func snapshotSendable() {
         let snap = RateLimitSnapshot(isLimited: false, resetDate: nil)
