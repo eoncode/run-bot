@@ -189,8 +189,16 @@ public func urlSessionAPIAsync(_ endpoint: String, timeout: TimeInterval = 20) a
 @concurrent
 public func urlSessionAPIPaginated(
     _ endpoint: String,
+    timeout: TimeInterval = 60
+) async -> Data? {
+    await urlSessionAPIPaginated(endpoint, timeout: timeout, rateLimiter: rateLimitActor)
+}
+
+@concurrent
+func urlSessionAPIPaginated(
+    _ endpoint: String,
     timeout: TimeInterval = 60,
-    rateLimiter: some RateLimitActorProtocol = rateLimitActor
+    rateLimiter: some RateLimitActorProtocol
 ) async -> Data? {
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [AnyJSON] = []
@@ -203,7 +211,7 @@ public func urlSessionAPIPaginated(
     // Tracks whether at least one page decoded successfully. Used in the post-loop
     // guard to distinguish a legitimate empty-array response (200 []) — which should
     // return encoded empty Data, not nil — from a loop that never got any successful page.
-    var hadAtLeastOnePage = false
+    var hadAtLeastOneSuccessfulPage = false
 
     pagination: while let urlString = nextURL {
         let result = await urlSessionExecute(
@@ -213,7 +221,7 @@ public func urlSessionAPIPaginated(
         switch result {
         case .success(let data, _, let linkHeader):
             if let page = try? sharedDecoder.decode([AnyJSON].self, from: data) {
-                hadAtLeastOnePage = true
+                hadAtLeastOneSuccessfulPage = true
                 allItems.append(contentsOf: page)
                 nextURL = extractNextURL(from: linkHeader)
             } else {
@@ -275,10 +283,10 @@ public func urlSessionAPIPaginated(
     }
     // Auth failure and rate-limited-on-first-page both return nil explicitly above.
     // For all other paths:
-    //   - hadAtLeastOnePage && allItems.isEmpty → server returned 200 [], encode as "[]"
-    //   - hadAtLeastOnePage && !allItems.isEmpty → partial results, encode normally
-    //   - !hadAtLeastOnePage → loop never got a successful page (e.g. 404 on first page)
-    guard hadAtLeastOnePage else {
+    //   - hadAtLeastOneSuccessfulPage && allItems.isEmpty → server returned 200 [], encode as "[]"
+    //   - hadAtLeastOneSuccessfulPage && !allItems.isEmpty → partial results, encode normally
+    //   - !hadAtLeastOneSuccessfulPage → loop never got a successful page (e.g. 404 on first page)
+    guard hadAtLeastOneSuccessfulPage else {
         log("urlSessionAPIPaginated › loop ended without any successful page — returning nil")
         return nil
     }

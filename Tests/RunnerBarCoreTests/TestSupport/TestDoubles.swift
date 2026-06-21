@@ -157,6 +157,14 @@ actor SpyRateLimitActor: RateLimitActorProtocol {
     func snapshot() -> RateLimitSnapshot {
         RateLimitSnapshot(isLimited: isLimited, resetDate: resetDate)
     }
+
+    /// Resets all spy observation and stub state to their default configurations.
+    func reset() {
+        isLimited = false
+        resetDate = nil
+        setCalled = false
+        clearCalled = false
+    }
 }
 
 // MARK: - TestError

@@ -614,7 +614,7 @@ final class GitHubTransportPaginatedTests {
         StubURLProtocol.register(.init(
             data: page1Data,
             statusCode: 200,
-            headers: ["Link": "<\\(page2URL)>; rel=\"next\""]
+            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
         ), for: page1URL)
         // 404 on page 2 — non-auth HTTP error.
         StubURLProtocol.register(.init(

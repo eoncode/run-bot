@@ -217,6 +217,9 @@ public let rateLimitActor = RateLimitActor()
 ///
 /// - Note: If you need both `isLimited` and `resetDate` in the same call, prefer
 ///   `ghRateLimitSnapshot()` to avoid the TOCTOU window between two separate actor hops.
+///
+/// - Important: If this is ever refactored to a `func`, annotate it `nonisolated(nonsending)`
+///   to align with P12 and ensure caller-context executor inheritance is enforced.
 public var ghIsRateLimited: Bool {
     get async { await rateLimitActor.isLimited }
 }

@@ -68,14 +68,21 @@ public typealias GHTokenProvider = @Sendable () -> String?
 /// invoke the closure outside (important for async closures — `withLock`
 /// cannot contain an `await`).
 private struct TransportBox<T: Sendable> {
-    /// The underlying unfair lock protecting the stored value.
-    private let lock: OSAllocatedUnfairLock<T>
+    /// The underlying unfair lock protecting the stored value and configured state.
+    private let lock: OSAllocatedUnfairLock<(value: T, isConfigured: Bool)>
     /// Creates a box with the given initial value.
-    init(initialState: T) { lock = .init(initialState: initialState) }
+    init(initialState: T) { lock = .init(initialState: (initialState, false)) }
     /// Replaces the stored value under the lock.
-    func configure(_ value: T) { lock.withLock { $0 = value } }
+    func configure(_ value: T) {
+        lock.withLock { state in
+            if state.isConfigured {
+                log("Warning: TransportBox reconfigured — replacing existing value.")
+            }
+            state = (value, true)
+        }
+    }
     /// Returns the stored value under the lock.
-    func read() -> T { lock.withLock { $0 } }
+    func read() -> T { lock.withLock { $0.value } }
 }
 
 // MARK: - Module-level state
