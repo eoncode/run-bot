@@ -14,6 +14,27 @@ import Observation
 import RunnerBarCore
 import SwiftUI
 
+// MARK: - TaskBox
+
+/// Reference-type wrapper that stores a cancellable `Task`.
+///
+/// `@Observable` expands every stored property of the annotated type via the
+/// `@ObservationTracked` macro. Both `nonisolated` and `nonisolated(unsafe)`
+/// are forbidden on such expanded stored properties in Swift 6:
+/// - `nonisolated(unsafe)` — "has no effect on Sendable Task, use nonisolated"
+/// - `nonisolated` — "cannot be applied to a mutable stored property"
+///
+/// Wrapping the `Task` in a `final class` sidesteps the constraint entirely:
+/// the `@Observable` macro does not descend into reference-type properties,
+/// so `TaskBox` is invisible to `@ObservationTracked`. `deinit` can then
+/// reach into the box without any actor-isolation violation.
+private final class TaskBox {
+    var task: Task<Void, Never>?
+    init() {}
+}
+
+// MARK: - APICallCounterViewModel
+
 /// View-model that polls `APICallCounterProtocol` every 5 seconds and
 /// exposes derived display state for `APICallCounterRow`.
 @Observable
@@ -29,19 +50,12 @@ public final class APICallCounterViewModel {
     /// override in tests via the initialiser.
     private let counter: any APICallCounterProtocol
 
-    /// Structured polling task. Cancelled in `deinit`.
+    /// Reference-type box holding the structured polling task.
     ///
-    /// Must be `nonisolated(unsafe)` because:
-    /// 1. `deinit` is nonisolated in Swift 6 and cannot touch a
-    ///    `@MainActor`-isolated stored property.
-    /// 2. The `@Observable` macro expands stored properties via
-    ///    `@ObservationTracked`, and the compiler forbids plain
-    ///    `nonisolated` on *mutable* stored properties entirely.
-    ///    Its own fixit reads: "consider declaring it
-    ///    'nonisolated(unsafe)' if manually managing concurrency safety".
-    /// Safety: this property is only ever written from `@MainActor`
-    /// context (`init` → `startPolling()`), so the unsafety is bounded.
-    nonisolated(unsafe) private var pollTask: Task<Void, Never>?
+    /// Stored as a `final class` so that `@Observable`'s `@ObservationTracked`
+    /// macro expansion does not touch it, and `deinit` can cancel via
+    /// `taskBox.task?.cancel()` without any actor-isolation violation.
+    private let taskBox = TaskBox()
 
     /// Creates the view-model.
     ///
@@ -52,7 +66,7 @@ public final class APICallCounterViewModel {
         startPolling()
     }
 
-    deinit { pollTask?.cancel() }
+    deinit { taskBox.task?.cancel() }
 
     // MARK: - Derived display state
 
@@ -73,12 +87,8 @@ public final class APICallCounterViewModel {
     // MARK: - Private
 
     /// Starts a structured polling loop that refreshes `snap` every 5 seconds.
-    ///
-    /// Uses `[weak self]` to avoid retaining the view-model after the owning
-    /// view has been deallocated. `Task.isCancelled` is checked before each
-    /// sleep so cancellation from `deinit` is honoured promptly.
     private func startPolling() {
-        pollTask = Task { [weak self] in
+        taskBox.task = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 self.snap = await self.counter.snapshot()

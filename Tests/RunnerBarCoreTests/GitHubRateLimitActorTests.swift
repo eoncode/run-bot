@@ -259,7 +259,7 @@ struct RateLimitActorTests {
     /// transferring a live snapshot across a `Task` boundary and asserting
     /// the values survive the crossing intact.
     @Test("RateLimitSnapshot is Sendable across task boundary")
-    func snapshotSendable() async throws {
+    func snapshotSendable() async {
         let actor = RateLimitActor()
         let resetTS = Date().timeIntervalSince1970 + 120
         await actor.set(resetAt: resetTS)
@@ -267,8 +267,10 @@ struct RateLimitActorTests {
         // Capture snapshot on the current task, then read it from a child task.
         // The compiler enforces Sendable here; the assertion confirms value
         // integrity across the task boundary.
+        // Task.detached returning a Sendable value is non-throwing; 'try' is
+        // not needed and triggers a warning-as-error in CI.
         let snap = await actor.snapshot()
-        let transferred = try await Task.detached { snap }.value
+        let transferred = await Task.detached { snap }.value
 
         #expect(transferred.isLimited == snap.isLimited)
         #expect(transferred.resetDate == snap.resetDate)
