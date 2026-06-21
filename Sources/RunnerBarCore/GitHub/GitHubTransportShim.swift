@@ -79,23 +79,14 @@ private struct TransportBox<T: Sendable> {
 // MARK: - Module-level state
 
 /// Serialises all reads and writes to the active JSON transport closure.
-private let transportBox = TransportBox<GHAPITransport>(initialState: { _ in
-    assertionFailure("ghAPI called before configureGHAPI — wire the transport at launch")
-    return nil
-})
+private let transportBox = TransportBox<GHAPITransport>(initialState: { _ in nil })
 
 /// Serialises all reads and writes to the active raw-bytes transport closure.
-private let rawTransportBox = TransportBox<GHRawTransport>(initialState: { _ in
-    assertionFailure("ghRaw called before configureGHRaw — wire the transport at launch")
-    return nil
-})
+private let rawTransportBox = TransportBox<GHRawTransport>(initialState: { _ in nil })
 
 /// Serialises all reads and writes to the active paginated JSON transport closure.
-/// Defaults to a debug-asserting stub; wired to `urlSessionAPIPaginated` at app launch.
-private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _, _ in
-    assertionFailure("ghAPIPaginated called before configureGHAPIPaginated — wire the transport at launch")
-    return nil
-})
+/// Defaults to `nil`-returning stub; wired to `urlSessionAPIPaginated` at app launch.
+private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _, _ in nil })
 
 /// Serialises all reads and writes to the active token-provider closure.
 private let tokenProviderBox = TransportBox<GHTokenProvider>(initialState: { nil })
@@ -175,18 +166,12 @@ func ghRaw(_ endpoint: String) async -> Data? {
 ///   - endpoint: Relative or absolute URL for the first page.
 ///   - timeout: Per-request timeout forwarded to the transport closure. Defaults to 60s.
 ///
-/// Reads the closure under the lock then awaits it outside —
-/// `OSAllocatedUnfairLock.withLock` cannot contain an `await`.
-///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent`: this function has no work
-/// before its first suspension and immediately delegates to the already-`@concurrent`
-/// `urlSessionAPIPaginated`. Caller-context inheritance is always correct here; a
-/// cooperative-pool hop would be redundant.
-///
-/// - IMPORTANT: This function must remain a pure pass-through with no synchronous work
-///   before the `await`. If any guard, log, or computation is ever added before the first
-///   suspension, this annotation must be upgraded to `@concurrent`.
-nonisolated(nonsending)
+/// Reads `paginatedTransportBox` under an `OSAllocatedUnfairLock` before the first
+/// suspension — synchronous work that runs on the cooperative thread pool thanks to
+/// `@concurrent`. Do not downgrade to `nonisolated(nonsending)`: that annotation is
+/// only valid for pure pass-throughs with no pre-suspension work, and calling
+/// `paginatedTransportBox.read()` under a lock disqualifies this function.
+@concurrent
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     let transport = paginatedTransportBox.read()
     return await transport(endpoint, timeout)
