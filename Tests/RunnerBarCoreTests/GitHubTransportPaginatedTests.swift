@@ -630,11 +630,15 @@ final class GitHubTransportPaginatedTests {
     /// A pre-armed rate-limit state (`spy.isLimited = true` before the call) does
     /// NOT block the initial request — the rate-limit check only fires inside
     /// `urlSessionExecute` after receiving a 403/429 response. Since page 1
-    /// returns 200, clear() fires after the 2xx and resets isLimited to false.
+    /// returns 200, the 2xx handler snapshots the rate-limiter and skips
+    /// `clear()` because `isLimited` is already true (pre-armed), preserving
+    /// the active limit window set by a concurrent scope fetch.
     ///
     /// Verifies: the pre-armed state is not checked at call-entry, so page-1 items
-    /// are returned and `spy.setCalled` remains false (no rate-limit response was
-    /// received to trigger `handleRateLimitResponse`).
+    /// are returned; `spy.setCalled` remains false (no rate-limit response was
+    /// received to trigger `handleRateLimitResponse`); `clear()` is NOT called
+    /// because the guard `if !snapshot.isLimited` prevents clearing an already-armed
+    /// actor; the pre-armed `isLimited` state is preserved.
     @Test func paginatedReturnsItemsWhenPreArmedRateLimit() async {
         StubURLProtocol.reset()
         let pageURL = "\(apiBase)orgs/test/actions/runners"
@@ -657,12 +661,14 @@ final class GitHubTransportPaginatedTests {
         // set() must NOT have been called — no rate-limit response was received.
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
-        // clear() IS called after page 1 success (2xx response clears the limiter).
+        // clear() is NOT called — the 2xx handler snapshots the limiter and skips
+        // clear() when isLimited is already true, preventing the race condition
+        // where a concurrent request's active limit window would be erased.
         let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled)
-        // isLimited is reset by clear() after page 1 success.
+        #expect(wasClearCalled == false)
+        // isLimited remains true — the pre-armed state is preserved.
         let snap = await spy.snapshot()
-        #expect(snap.isLimited == false)
+        #expect(snap.isLimited == true)
     }
 
     // MARK: - Non-auth HTTP error (404) returns partial results
