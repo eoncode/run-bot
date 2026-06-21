@@ -165,6 +165,14 @@ func ghRaw(_ endpoint: String) async -> Data? {
 /// - Parameters:
 ///   - endpoint: Relative or absolute URL for the first page.
 ///   - timeout: Per-request timeout forwarded to the transport. Defaults to 60s.
+///
+/// - Important: This function is annotated `@concurrent`, **not**
+///   `nonisolated(nonsending)`. `paginatedTransportBox.read()` acquires an
+///   `OSAllocatedUnfairLock` before the first suspension point; `@concurrent`
+///   guarantees execution on the cooperative thread pool at that point.
+///   `nonisolated(nonsending)` is only valid for pure pass-throughs with no
+///   pre-suspension work — switching to it would silently remove that
+///   guarantee without a compiler error.
 @concurrent
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     let transport = paginatedTransportBox.read()
