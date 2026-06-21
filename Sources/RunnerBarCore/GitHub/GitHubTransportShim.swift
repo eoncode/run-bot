@@ -30,12 +30,24 @@ public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 ///
 /// - Parameters:
 ///   - endpoint: Relative or absolute URL for the first page.
-///   - timeout: Per-request timeout forwarded to `URLSession`.
+///   - timeout: Per-request timeout forwarded to `URLSession` **for each page**.
 ///
-/// - Warning: The `timeout` value is forwarded directly to each page request.
-///   Callers must account for the fact that a paginated fetch may issue many
-///   sequential requests; total wall-clock time can therefore exceed `timeout`
-///   by a factor of the page count.
+/// - Warning: The `timeout` value must be forwarded explicitly into the inner
+///   call. The closure signature accepts `timeout` as its second parameter, but
+///   Swift’s type-checker will silently accept a `_` wildcard that drops it:
+///   ```swift
+///   // ⚠️ WRONG — compiles but silently falls back to the 60-second default:
+///   configureGHAPIPaginated { endpoint, _ in
+///       await urlSessionAPIPaginated(endpoint)
+///   }
+///   // ✅ CORRECT — forward timeout explicitly:
+///   configureGHAPIPaginated { endpoint, timeout in
+///       await urlSessionAPIPaginated(endpoint, timeout: timeout)
+///   }
+///   ```
+///   Callers must also account for the fact that a paginated fetch may issue
+///   many sequential requests; total wall-clock time can exceed `timeout` by
+///   a factor of the page count.
 ///
 /// - Note: `apiCallCounter` counts one call per `ghAPIPaginated()` invocation,
 ///   not one per page fetched. Real quota consumption for a 40-page list fetch
@@ -106,7 +118,10 @@ public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
 }
 
 /// Wire up the real (or mock) paginated JSON transport. Call once at launch.
+///
 /// - Parameter transport: Async closure for paginated REST calls.
+///   **Always forward `timeout` explicitly** — see `GHAPIPaginatedTransport`
+///   for the silent-misconfiguration warning.
 public func configureGHAPIPaginated(_ transport: @escaping GHAPIPaginatedTransport) {
     paginatedTransportBox.configure(transport)
 }

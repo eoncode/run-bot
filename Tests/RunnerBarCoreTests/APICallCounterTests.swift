@@ -63,10 +63,22 @@ struct APICallCounterTests {
 
     // MARK: - fraction clamping
 
+    @Test("fraction returns 0.0 when limit is zero to prevent NaN propagation")
+    func fractionWithZeroLimitIsZero() {
+        let snap = APICallCounterSnapshot(count: 42, limit: 0)
+        #expect(snap.fraction == 0.0)
+    }
+
     @Test("fraction is clamped to 1.0 when count exceeds limit")
     func fractionClampedToOne() {
         let snap = APICallCounterSnapshot(count: 9_999, limit: APICallCounter.hourlyLimit)
         #expect(snap.fraction == 1.0)
+    }
+
+    @Test("fraction is clamped to 0.0 when count is negative")
+    func fractionClampedToZeroForNegativeCount() {
+        let snap = APICallCounterSnapshot(count: -1, limit: APICallCounter.hourlyLimit)
+        #expect(snap.fraction == 0.0)
     }
 
     @Test("fraction is exactly 0.5 at half the limit")
@@ -111,19 +123,14 @@ struct APICallCounterTests {
     /// return zero, not the stale count from before the idle period.
     ///
     /// **How it works without real time travel:**
-    /// `APICallCounter` has an internal `@testable` seam: `seed(timestamps:)`
-    /// allows tests to inject pre-aged timestamps directly into the actor's
-    /// rolling buffer. By seeding two timestamps that are 90 minutes in the
-    /// past and then calling `snapshot()` without `record()`, we prove that
-    /// `snapshot()` calls `purge()` itself rather than relying on a prior
-    /// `record()` call to have done so.
+    /// `APICallCounter` has a test-only `seed(timestamps:)` extension in
+    /// `Tests/RunnerBarCoreTests/APICallCounter+TestSeam.swift` that allows
+    /// injecting pre-aged timestamps directly into the actor’s rolling buffer.
     @Test("snapshot() returns zero after all timestamps expire without a record() call")
     func snapshotPurgesIdleStaleEntries() async {
         let counter = APICallCounter()
-        // Inject two timestamps 90 minutes in the past — well outside the 60-min window.
         let stale = Date().addingTimeInterval(-5_400)
         await counter.seed(timestamps: [stale, stale])
-        // No record() call — simulates an idle actor.
         let snap = await counter.snapshot()
         #expect(snap.count == 0, "snapshot() must purge stale entries even without a prior record() call")
     }
@@ -139,11 +146,6 @@ struct APICallCounterTests {
         #expect(a != c)
     }
 
-    /// Exercises `APICallCounterSnapshot`'s `Sendable` conformance at runtime
-    /// by transferring a live snapshot across a `Task` boundary.
-    /// `Task.detached` returning a `Sendable` value is non-throwing, so
-    /// `try` is not needed here (unlike the pattern copied from
-    /// `GitHubRateLimitActorTests` where the Task closure throws).
     @Test("APICallCounterSnapshot is Sendable across task boundary")
     func snapshotSendable() async {
         let counter = APICallCounter()

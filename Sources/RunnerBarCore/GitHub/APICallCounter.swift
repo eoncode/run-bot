@@ -26,13 +26,14 @@ public struct APICallCounterSnapshot: Sendable, Equatable {
     public let limit: Int
     /// Fraction of the hourly limit consumed, clamped to `[0, 1]`.
     ///
-    /// Returns `0.0` when `limit == 0` to avoid `NaN` propagation.
-    /// (`Double(count) / Double(0)` is `NaN`; Swift's `min(nan, 1.0)`
-    /// propagates `NaN` rather than clamping it, which would trap downstream
-    /// in `Int(fraction * 100)`.)
+    /// - Returns `0.0` when `limit == 0` to avoid `NaN` propagation
+    ///   (`Double(n) / Double(0)` is `NaN`; `min(nan, 1.0)` propagates it).
+    /// - Lower-bounded at `0.0` so a negative `count` (possible via the
+    ///   public `init`) cannot produce a negative fraction and break
+    ///   `ProgressView(value:)` or `Int(fraction * 100)` in the UI.
     public var fraction: Double {
         guard limit > 0 else { return 0.0 }
-        return min(Double(count) / Double(limit), 1.0)
+        return max(0.0, min(Double(count) / Double(limit), 1.0))
     }
 
     /// Creates a new snapshot.
