@@ -29,7 +29,9 @@ private final class TaskBox: @unchecked Sendable {
     /// Invariant: must only be written from `@MainActor` context.
     var task: Task<Void, Never>?
     /// Creates an empty `TaskBox` with no active polling task.
-    init() {}
+    init() {
+        // Default property initializers fully define state.
+    }
 }
 
 // MARK: - APICallCounterViewModel
