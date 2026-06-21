@@ -25,13 +25,22 @@ public struct APICallCounterSnapshot: Sendable, Equatable {
     /// GitHub authenticated REST rate limit per rolling hour.
     public let limit: Int
     /// Fraction of the hourly limit consumed, clamped to `[0, 1]`.
-    public var fraction: Double { min(Double(count) / Double(limit), 1.0) }
+    ///
+    /// Returns `0.0` when `limit == 0` to avoid `NaN` propagation.
+    /// (`Double(count) / Double(0)` is `NaN`; Swift's `min(nan, 1.0)`
+    /// propagates `NaN` rather than clamping it, which would trap downstream
+    /// in `Int(fraction * 100)`.)
+    public var fraction: Double {
+        guard limit > 0 else { return 0.0 }
+        return min(Double(count) / Double(limit), 1.0)
+    }
 
     /// Creates a new snapshot.
     ///
     /// - Parameters:
     ///   - count: Calls made in the last rolling 60 minutes.
     ///   - limit: GitHub hourly REST rate limit (typically 5,000).
+    ///            Passing `0` is safe — `fraction` will return `0.0`.
     public init(count: Int, limit: Int) {
         self.count = count
         self.limit = limit
