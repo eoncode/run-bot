@@ -13,6 +13,7 @@
 //   7. ghAPI() / ghAPIPaginated() increment on non-nil AND skip on nil transport result.
 //   8. record() trims buffer to hourlyLimit at >5,000 entries.
 //   9. purge() retains entries exactly at the 60-minute boundary (inclusive).
+//  10. purge() evicts entries just beyond the 60-minute boundary (exclusive).
 import Foundation
 import Testing
 @testable import RunnerBarCore
@@ -179,6 +180,23 @@ struct APICallCounterTests {
         await counter.seed(timestamps: [boundary])
         let snap = await counter.snapshot()
         #expect(snap.count == 1, "entry at exactly the cutoff boundary must be retained (inclusive window)")
+    }
+
+    /// Regression test for purge() exclusive-boundary eviction.
+    ///
+    /// Seeds an entry 1 s beyond the 60-minute window (`now - 3_601 s`) to
+    /// verify it is evicted. A 1 s buffer avoids a microsecond timing race
+    /// between `seed()` and the `ContinuousClock.now` call inside `purge()`
+    /// while still exercising the near-boundary eviction path.
+    /// The complementary retention test (`snapshotRetainsEntryExactlyAtCutoffBoundary`)
+    /// uses `now - 3_599 s` to verify entries inside the window are kept.
+    @Test("purge() evicts entry seeded just beyond the 60-minute boundary")
+    func snapshotEvictsEntryBeyondCutoff() async {
+        let counter = APICallCounter()
+        let stale = ContinuousClock.now.advanced(by: .seconds(-3_601))
+        await counter.seed(timestamps: [stale])
+        let snap = await counter.snapshot()
+        #expect(snap.count == 0, "entry 1 s past the cutoff must be evicted")
     }
 
     // MARK: - APICallCounterSnapshot struct
