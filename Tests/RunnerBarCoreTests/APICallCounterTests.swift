@@ -12,6 +12,7 @@
 //   6. snapshot() returns zero after all timestamps expire (idle-gap regression).
 //   7. ghAPI() / ghAPIPaginated() increment on non-nil AND skip on nil transport result.
 //   8. record() trims buffer to hourlyLimit at >5,000 entries.
+//   9. purge() retains entries exactly at the 60-minute boundary (inclusive).
 import Foundation
 import Testing
 @testable import RunnerBarCore
@@ -155,11 +156,27 @@ struct APICallCounterTests {
     @Test("snapshot() returns zero after all timestamps expire without a record() call")
     func snapshotPurgesIdleStaleEntries() async {
         let counter = APICallCounter()
-        // Seed two instants 90 minutes in the past (well outside the 60-min window).
         let stale = ContinuousClock.now.advanced(by: .seconds(-5_400))
         await counter.seed(timestamps: [stale, stale])
         let snap = await counter.snapshot()
         #expect(snap.count == 0)
+    }
+
+    // MARK: - Boundary regression
+
+    /// Regression test for purge() inclusive-boundary semantics.
+    ///
+    /// An entry seeded at exactly the 60-minute cutoff (`now - 3_600 s`)
+    /// satisfies `$0 >= cutoff` (idx == 0) and must be **retained** —
+    /// the `if idx > 0` guard is intentional. If `>=` were changed to `>`
+    /// this test would fail.
+    @Test("purge() retains entry seeded exactly at the 60-minute boundary")
+    func snapshotRetainsEntryExactlyAtCutoffBoundary() async {
+        let counter = APICallCounter()
+        let boundary = ContinuousClock.now.advanced(by: .seconds(-3_600))
+        await counter.seed(timestamps: [boundary])
+        let snap = await counter.snapshot()
+        #expect(snap.count == 1, "entry at exactly the cutoff boundary must be retained (inclusive window)")
     }
 
     // MARK: - APICallCounterSnapshot struct
@@ -190,9 +207,12 @@ struct APICallCounterTests {
     /// Serialized sub-suite for all tests that touch module-level singletons
     /// (`apiCallCounter`, `configureGHAPI`, `configureGHAPIPaginated`).
     ///
-    /// `.serialized` prevents Swift Testing from scheduling these concurrently,
-    /// eliminating the reset()+call+snapshot interleaving race.
-    /// See issue #1511 for the follow-up to make `apiCallCounter` overridable.
+    /// `.serialized` prevents intra-suite concurrent execution.
+    ///
+    /// KNOWN RACE: see #1511 — `.serialized` does not prevent inter-suite
+    /// contamination. A parallel suite that calls `ghAPI()` mid-flight could
+    /// land an increment between `reset()` and `#expect(snap.count == ...)`.
+    /// The follow-up in #1511 (`@TaskLocal` override) will eliminate this.
     @Suite("Transport increment guard", .serialized)
     struct TransportIncrementGuard {
 

@@ -113,6 +113,12 @@ public actor APICallCounter: APICallCounterProtocol {
     /// shift) — total O(n), but avoids the full-array predicate evaluation
     /// of `removeAll(where:)` when most entries are fresh.
     ///
+    /// **Boundary semantics:** the cutoff predicate is `>= cutoff`, so an
+    /// instant exactly 3,600 s old (idx == 0) is treated as *within* the
+    /// rolling window and retained. The `if idx > 0` guard is correct and
+    /// intentional — do not change `>=` to `>` without updating this comment
+    /// and the boundary regression test.
+    ///
     /// `ContinuousClock` is monotonic, so the cutoff calculation is not
     /// susceptible to sleep/wake NTP corrections or user clock changes.
     private func purge() {

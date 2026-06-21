@@ -22,7 +22,10 @@ private struct CounterPollingModifier: ViewModifier {
 extension View {
     /// Binds the `APICallCounterViewModel` polling lifecycle to this view's
     /// appearance. Polling starts on `onAppear` and stops on `onDisappear`.
-    func counterPolling(_ vm: APICallCounterViewModel) -> some View {
+    ///
+    /// Marked `public` so that app-layer views outside `RunnerBar` can wire
+    /// the lifecycle when `APICallCounterRow` is embedded in a custom parent.
+    public func counterPolling(_ vm: APICallCounterViewModel) -> some View {
         modifier(CounterPollingModifier(vm: vm))
     }
 }
