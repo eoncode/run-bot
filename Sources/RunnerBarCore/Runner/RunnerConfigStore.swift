@@ -50,7 +50,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     // MARK: Private properties
 
     /// Decoder used for reading `.runner` JSON. Thread-safe: `JSONDecoder` has no mutable state after init.
-    nonisolated private let decoder = JSONDecoder()
+    private nonisolated let decoder = JSONDecoder()
 
     // Note: JSONEncoder is intentionally created per-call in the @concurrent save helper rather
     // than hoisted as a shared instance, because two concurrent save() calls can invoke
@@ -64,16 +64,6 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
         // Singleton — intentionally empty; use `RunnerConfigStore.shared`.
     }
 
-    // MARK: Private helpers
-
-    /// Strips the UTF-8 BOM (`0xEF 0xBB 0xBF`) from `data` if present.
-    ///
-    /// The GitHub runner agent emits a UTF-8 BOM at the start of `.runner` files on some
-    /// platforms. `JSONDecoder` rejects the BOM, so it must be removed before decoding.
-    private static func stripBOM(from data: Data) -> Data {
-        data.prefix(3).elementsEqual([0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
-    }
-
     // MARK: Public
 
     /// Loads the typed runner config from `installPath/.runner`.
@@ -85,7 +75,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
         let url = runnerConfigURL(for: installPath)
         let data: Data
         do {
-            data = try await _loadData(from: url, installPath: installPath)
+            data = try await loadRunnerData(from: url, installPath: installPath)
         } catch let configError as RunnerConfigStoreError {
             throw configError
         } catch {
@@ -117,7 +107,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     public func save(_ config: borrowing RunnerConfig, at installPath: String) async throws(RunnerConfigStoreError) {
         let url = runnerConfigURL(for: installPath)
         do {
-            try await _saveConfig(config, to: url, installPath: installPath, decoder: decoder)
+            try await saveRunnerConfig(config, to: url, installPath: installPath, decoder: decoder)
         } catch let configError as RunnerConfigStoreError {
             throw configError
         } catch {
@@ -140,10 +130,10 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 /// Runs on the Swift cooperative thread pool without blocking an actor's serial
 /// executor. Throws `RunnerConfigStoreError.readFailed` on any I/O error.
 @concurrent
-private func _loadData(from url: URL, installPath: String) throws -> Data {
+private func loadRunnerData(from url: URL, installPath: String) throws -> Data {
     do {
         let raw = try Data(contentsOf: url)
-        return RunnerConfigStore_stripBOM(raw)
+        return stripRunnerConfigBOM(raw)
     } catch {
         throw RunnerConfigStoreError.readFailed(installPath, error)
     }
@@ -155,7 +145,7 @@ private func _loadData(from url: URL, installPath: String) throws -> Data {
 /// executor. `config` is a plain value parameter here — no `borrowing` escape
 /// issue arises because `@concurrent` functions do not use `@escaping` closures.
 @concurrent
-private func _saveConfig(
+private func saveRunnerConfig(
     _ config: RunnerConfig,
     to url: URL,
     installPath: String,
@@ -164,7 +154,7 @@ private func _saveConfig(
     // Read-modify-write: load existing keys so agent-managed keys are preserved.
     var raw: [String: AnyJSON] = [:]
     if let existingData = try? Data(contentsOf: url) {
-        let data = RunnerConfigStore_stripBOM(existingData)
+        let data = stripRunnerConfigBOM(existingData)
         if let dict = try? decoder.decode([String: AnyJSON].self, from: data) {
             raw = dict
         } else {
@@ -212,9 +202,12 @@ private func _saveConfig(
     }
 }
 
-/// BOM-strip helper accessible to the `@concurrent` free functions above.
-/// Mirrors `RunnerConfigStore.stripBOM` — extracted so it is callable outside
-/// the actor without synthesising `nonisolated` access.
-private func RunnerConfigStore_stripBOM(_ data: Data) -> Data {
+/// Strips the UTF-8 BOM (`0xEF 0xBB 0xBF`) prefix from `data` if present.
+///
+/// Extracted as a file-scope free function so both `loadRunnerData` and
+/// `saveRunnerConfig` can call it without synthesising `nonisolated` actor access.
+/// The GitHub runner agent emits a UTF-8 BOM on some platforms; `JSONDecoder`
+/// rejects the BOM, so it must be removed before decoding.
+private func stripRunnerConfigBOM(_ data: Data) -> Data {
     data.prefix(3).elementsEqual([0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
 }
