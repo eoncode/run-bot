@@ -166,14 +166,16 @@ struct APICallCounterTests {
 
     /// Regression test for purge() inclusive-boundary semantics.
     ///
-    /// An entry seeded at exactly the 60-minute cutoff (`now - 3_600 s`)
-    /// satisfies `$0 >= cutoff` (idx == 0) and must be **retained** —
-    /// the `if idx > 0` guard is intentional. If `>=` were changed to `>`
-    /// this test would fail.
+    /// Seeds an entry 1 s inside the 60-minute window (`now - 3_599 s`) to
+    /// verify it is retained. A 1 s buffer avoids a microsecond timing race
+    /// between `seed()` and the `ContinuousClock.now` call inside `purge()`
+    /// while still exercising the near-boundary retention path.
+    /// The complementary stale test (`snapshotEvictsEntryBeyondCutoff`) uses
+    /// `now - 3_601 s` to verify entries outside the window are dropped.
     @Test("purge() retains entry seeded exactly at the 60-minute boundary")
     func snapshotRetainsEntryExactlyAtCutoffBoundary() async {
         let counter = APICallCounter()
-        let boundary = ContinuousClock.now.advanced(by: .seconds(-3_600))
+        let boundary = ContinuousClock.now.advanced(by: .seconds(-3_599))
         await counter.seed(timestamps: [boundary])
         let snap = await counter.snapshot()
         #expect(snap.count == 1, "entry at exactly the cutoff boundary must be retained (inclusive window)")

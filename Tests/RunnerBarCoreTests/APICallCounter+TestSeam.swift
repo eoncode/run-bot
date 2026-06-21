@@ -2,9 +2,9 @@
 // RunnerBarCoreTests
 //
 // Test-only extensions on APICallCounter for seeding and resetting state
-// without real time travel. Compiled only in DEBUG / test targets.
-#if DEBUG
+// without real time travel. Compiled only in the test target.
 import Foundation
+@testable import RunnerBarCore
 
 extension APICallCounter {
     /// Seeds the rolling buffer with pre-built `ContinuousClock.Instant` values.
@@ -20,4 +20,3 @@ extension APICallCounter {
         timestamps = []
     }
 }
-#endif

@@ -66,17 +66,25 @@ public typealias GHTokenProvider = @Sendable () -> String?
 /// inside this type, as that would silently break all tests that reconfigure
 /// the transport or token provider mid-suite.
 private struct TransportBox<T: Sendable> {
+    /// Unfair lock guarding mutable transport state.
     private let lock: OSAllocatedUnfairLock<T>
+    /// Creates a `TransportBox` seeded with `initialState`.
     init(initialState: T) { lock = .init(initialState: initialState) }
+    /// Replaces the stored transport with `value` under the lock.
     func configure(_ value: T) { lock.withLock { $0 = value } }
+    /// Returns the current transport value under the lock.
     func read() -> T { lock.withLock { $0 } }
 }
 
 // MARK: - Module-level state
 
+/// Lock-protected box holding the active GitHub JSON transport.
 private let transportBox = TransportBox<GHAPITransport>(initialState: { _ in nil })
+/// Lock-protected box holding the active raw-bytes transport.
 private let rawTransportBox = TransportBox<GHRawTransport>(initialState: { _ in nil })
+/// Lock-protected box holding the active paginated transport.
 private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _, _ in nil })
+/// Lock-protected box holding the active token provider.
 private let tokenProviderBox = TransportBox<GHTokenProvider>(initialState: { nil })
 
 // MARK: - Configuration

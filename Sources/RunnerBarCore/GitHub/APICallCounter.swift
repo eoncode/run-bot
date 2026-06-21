@@ -75,7 +75,11 @@ public actor APICallCounter: APICallCounterProtocol {
     ///
     /// Stored as `ContinuousClock.Instant` to avoid wall-clock skew.
     /// Entries are appended in call order; `purge()` drops the front.
-    private var timestamps: [ContinuousClock.Instant] = []
+    ///
+    /// Declared `internal` (not `private`) so that the test-target seam
+    /// `APICallCounter+TestSeam.swift` can inject pre-built timestamps
+    /// via `@testable import RunnerBarCore` without needing a public API.
+    var timestamps: [ContinuousClock.Instant] = []
 
     /// Creates a new `APICallCounter` instance.
     public init() {
