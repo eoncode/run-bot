@@ -187,6 +187,12 @@ public func urlSessionAPIPaginated(
             didFailAuth = true
             break pagination
         case .httpError:
+            // Non-auth HTTP errors (404, 410, 503, etc.) stop pagination but do
+            // NOT discard partial items — the items collected from earlier pages
+            // are returned. This is a deliberate design choice: only auth failures
+            // (no-token, 401, permission-denied 403) discard all items. Callers
+            // that need to distinguish total failure from partial success should
+            // check the result length relative to their expected total.
             log("urlSessionAPIPaginated › non-2xx error at \(urlString) — stopping pagination")
             break pagination
         case .rateLimited:

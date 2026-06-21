@@ -225,6 +225,32 @@ final class GitHubTransportPaginatedTests {
         #expect(items?[0]["id"] == .string("1"))
     }
 
+// MARK: - Single-page (no Link header) happy path
+
+    /// A single page with no `Link: rel=\"next\"` header returns just that page's items.
+    ///
+    /// Verifies: `extractNextURL(from: nil)` returns `nil`, terminating the pagination
+    /// loop after the first page. This is the common case for endpoints that return
+    /// all results in one response.
+    @Test func paginatedSinglePageReturnsItems() async {
+        StubURLProtocol.reset()
+        let pageURL = "\\(apiBase)orgs/test/actions/runners"
+
+        // No Link header — just a single page.
+        StubURLProtocol.register(.init(
+            data: jsonPage([[\"id\": \"1\", \"name\": \"runner-a\"], [\"id\": \"2\", \"name\": \"runner-b\"]]),
+            statusCode: 200,
+            headers: [:]
+        ), for: pageURL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated(\"/orgs/test/actions/runners\", rateLimiter: spy)
+
+        let items = decodeItems(result)
+        #expect(items?.count == 2)
+        #expect(items?[0][\"id\"] == .string(\"1\"))
+        #expect(items?[1][\"id\"] == .string(\"2\"))
+    }
     // MARK: - Rate-limit partial return
 
     /// A genuine 429 rate-limit mid-pagination arms the spy and returns partial items.
@@ -232,6 +258,13 @@ final class GitHubTransportPaginatedTests {
     /// Verifies: `.rateLimited` path returns collected items (not nil), and
     /// `SpyRateLimitActor.setCalled` is true — confirming the injected actor
     /// (not the global) was armed.
+    ///
+    /// - Note: 429 is chosen over 403 because the GitHub API uses 429 exclusively
+    ///   for genuine rate limits (Retry-After is always present on GitHub 429s, which
+    ///   triggers the `rateLimiter.set` call). A 403 with `X-RateLimit-Remaining: 0`
+    ///   would also work, but 429 avoids any ambiguity about whether the rate-limit
+    ///   actor is being armed vs. permission-denied logic. Do not swap this to a 403
+    ///   without also verifying the spy's `set(resetAt:)` is still called.
     @Test func paginatedReturnsPartialResultsOnRateLimit() async {
         StubURLProtocol.reset()
         let page1URL = "\(apiBase)orgs/test/actions/runners"
