@@ -142,6 +142,8 @@ The concurrency model goes beyond a single background actor. Each mutable domain
 
 Synchronous disk I/O is kept off actor cooperative threads using `@concurrent` async free functions. A function marked `@concurrent` runs on the Swift cooperative thread pool but is not bound to any actor's serial executor, so a blocking `Data(contentsOf:)` or `Data.write(to:)` call inside it cannot stall the actor that called it.
 
+**Important limitation:** `@concurrent` is an *isolation* solution, not a *non-blocking I/O* solution. A blocking call inside a `@concurrent` function still occupies one cooperative thread pool worker for the duration of the I/O. This is the same trade-off the legacy `DispatchQueue.global(qos: .utility)` bridge made — actor starvation is eliminated, but pool-thread starvation under high I/O concurrency remains a theoretical concern. For the low-frequency disk operations in this codebase (reading and writing a single `.runner` file per user action), this is an acceptable trade-off.
+
 This is the preferred pattern for new I/O helpers in this codebase, replacing the legacy `withCheckedContinuation` / `withCheckedThrowingContinuation` + `DispatchQueue.global(qos: .utility)` bridge. The older bridge pattern remains in `ProcessRunner` where a deliberate `DispatchQueue.sync` barrier is required as a cross-boundary join point (see `handleTermination` doc comment), but it should not be introduced in new code.
 
 **Key requirement:** `@concurrent` is only valid on `async` functions. The attribute instructs the runtime to schedule the call onto the cooperative thread pool, which requires an async context — a `throws`-only function is not eligible.
