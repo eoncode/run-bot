@@ -74,7 +74,9 @@ public typealias GHTokenProvider = @Sendable () -> String?
 /// invariant is needed for a specific box, enforce it at the call site with a
 /// `precondition` before the first `configure(_:)` call.
 private struct TransportBox<T: Sendable> {
+    /// The underlying unfair lock guarding the stored value.
     private let lock: OSAllocatedUnfairLock<T>
+    /// Creates a box with `initialState` as the starting value.
     init(initialState: T) { lock = .init(initialState: initialState) }
     /// Replaces the stored value under the lock.
     func configure(_ value: T) {
