@@ -118,7 +118,9 @@ private func decodeItems(_ data: Data?) -> [[String: AnyJSON]]? {
 /// Trailing-slash base URL derived from `GitHubConstants.apiBase`.
 /// All stub URL construction uses this so that if apiBase ever changes
 /// (e.g. GHE support), test URLs stay in sync automatically.
-private let apiBase = GitHubConstants.apiBase + "/"
+private let apiBase: String = {
+    GitHubConstants.apiBase.hasSuffix("/") ? GitHubConstants.apiBase : GitHubConstants.apiBase + "/"
+}()
 
 // MARK: - GitHubTransportPaginatedTests
 
@@ -225,9 +227,14 @@ final class GitHubTransportPaginatedTests {
         let items = decodeItems(result)
         #expect(items?.count == 1)
         #expect(items?[0]["id"] == .string("1"))
-    }
+        // Decode failure on page 2 must not arm the rate-limit actor.
+        // (clearCalled may be true — page 1's 200 triggers rateLimiter.clear() once.)
+        let wasSetCalled = await spy.setCalled
 
-// MARK: - Single-page (no Link header) happy path
+        #expect(wasSetCalled == false)
+    }
+    
+    // MARK: - Single-page (no Link header) happy path
 
     /// A single page with no `Link: rel="next"` header returns just that page's items.
     ///
@@ -408,6 +415,45 @@ final class GitHubTransportPaginatedTests {
         #expect(result == nil)
     }
 
+// MARK: - HTTP error (non-401) mid-pagination returns partial results
+
+    /// A 404 (or other non-auth HTTP error) on page 2 must return the page-1 items
+    /// already accumulated, not nil.
+    ///
+    /// Verifies the documented contract: non-auth HTTP errors (404, 410, 503) stop
+    /// pagination but return partial items. Only auth failures discard all items.
+    @Test func paginatedReturnsPartialResultsOnHttpError() async {
+        StubURLProtocol.reset()
+        let page1URL = "\(apiBase)orgs/test/actions/runners"
+        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
+        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
+
+        StubURLProtocol.register(.init(
+            data: page1Data,
+            statusCode: 200,
+            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
+        ), for: page1URL)
+        // 404 on page 2 — non-auth HTTP error.
+        StubURLProtocol.register(.init(
+            data: "{\"message\":\"Not found\"}".data(using: .utf8)!,
+            statusCode: 404,
+            headers: [:]
+        ), for: page2URL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // Partial item from page 1 must be returned — not nil.
+        #expect(result != nil)
+        let items = decodeItems(result)
+        #expect(items?.count == 1)
+        #expect(items?.first?["id"] == .string("1"))
+        // A non-auth HTTP error must never arm the rate-limit actor.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+    }
+
+    // MARK: - No token returns nil immediately
     // MARK: - No token returns nil immediately
 
     /// When no GitHub token is configured, `urlSessionAPIPaginated` returns nil
@@ -437,9 +483,18 @@ final class GitHubTransportPaginatedTests {
     ///
     /// Mechanism: page 1 is served normally (200 + Link header). Before page 2
     /// can be fetched, the token provider is swapped to `{ nil }`. On the page-2
-    /// request, `urlSessionExecute` fails the `guard let token = githubTokenCore()`
-    /// guard and returns `.noToken` — no network call is made. The pagination loop
-    /// catches `.noToken`, sets `didFailAuth`, breaks, and returns nil.
+    /// request, `urlSessionExecute` hits `guard let token = githubTokenCore()`
+    /// synchronously (inside `@concurrent` but before any suspension) and returns
+    /// `.noToken` — no network call is made. The pagination loop matches
+    /// `.noToken`, sets `didFailAuth = true`, breaks, and returns nil.
+    ///
+    /// - Important: The real guard is the synchronous `guard let token` check in
+    ///   `urlSessionExecute`, not a happens-before guarantee at the async-scheduler
+    ///   level. The serialised suite prevents concurrent test execution, but the
+    ///   token swap and the page-2 URLSession call are eventually consistent; the
+    ///   URLSession `data(for:)` suspension gives the lock-write time to complete.
+    ///   If this test ever becomes flaky, it means the lock-contention window grew —
+    ///   not a logic error in the .noToken path.
     ///
     /// - Note: The old code path returned `.networkError(URLError(.userAuthenticationRequired))`
     ///   for this scenario. The `.noToken` case was added in the #1476 refactor to make
