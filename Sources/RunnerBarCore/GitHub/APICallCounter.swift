@@ -71,20 +71,13 @@ public actor APICallCounter: APICallCounterProtocol {
     /// GitHub authenticated REST rate limit per rolling hour.
     public static let hourlyLimit = 5_000
 
-    /// Rolling buffer of call instants, always in ascending order.
-    ///
-    /// Stored as `ContinuousClock.Instant` to avoid wall-clock skew.
-    /// Entries are appended in call order; `purge()` drops the front.
-    ///
-    /// Declared `internal` (not `private`) so that the test-target seam
-    /// `APICallCounter+TestSeam.swift` can inject pre-built timestamps
-    /// via `@testable import RunnerBarCore` without needing a public API.
+    // swiftlint:disable:next missing_docs
+    /// Rolling buffer of call instants; `internal` so the `#if DEBUG` test-seam
+    /// extension can seed and reset the buffer without reflection.
     var timestamps: [ContinuousClock.Instant] = []
 
     /// Creates a new `APICallCounter` instance.
-    public init() {
-        // Default property initializers fully define state.
-    }
+    public init() {}
 
     // MARK: - Protocol
 
@@ -122,9 +115,6 @@ public actor APICallCounter: APICallCounterProtocol {
     /// rolling window and retained. The `if idx > 0` guard is correct and
     /// intentional — do not change `>=` to `>` without updating this comment
     /// and the boundary regression test.
-    ///
-    /// `ContinuousClock` is monotonic, so the cutoff calculation is not
-    /// susceptible to sleep/wake NTP corrections or user clock changes.
     private func purge() {
         let cutoff = ContinuousClock.now - .seconds(3_600)
         if let idx = timestamps.firstIndex(where: { $0 >= cutoff }) {

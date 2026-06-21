@@ -11,9 +11,9 @@ import SwiftUI
 /// stops it when the view disappears, so the background Task only runs
 /// while the Settings panel is on screen.
 private struct CounterPollingModifier: ViewModifier {
-    /// The view model whose polling lifecycle this modifier manages.
+    /// The view-model whose polling lifecycle is managed by this modifier.
     let vm: APICallCounterViewModel
-    /// Wraps `content` with `onAppear`/`onDisappear` hooks that start and stop polling.
+    // swiftlint:disable:next missing_docs
     func body(content: Content) -> some View {
         content
             .onAppear { vm.startPolling() }
@@ -21,7 +21,6 @@ private struct CounterPollingModifier: ViewModifier {
     }
 }
 
-/// Extends `View` with a convenience modifier for wiring `APICallCounterViewModel` polling.
 extension View {
     /// Binds the `APICallCounterViewModel` polling lifecycle to this view's
     /// appearance. Polling starts on `onAppear` and stops on `onDisappear`.
@@ -45,13 +44,12 @@ extension View {
 /// APICallCounterRow()
 /// ```
 public struct APICallCounterRow: View {
-    /// View model that drives the counter label, colour, and snapshot.
     @State private var vm = APICallCounterViewModel()
 
-    /// Creates a new `APICallCounterRow` with a fresh view model.
+    /// Creates a new `APICallCounterRow` backed by the shared `apiCallCounter`.
     public init() {}
 
-    /// The row's body: label, formatted count, and colour-coded progress bar.
+    /// The row's body: label, formatted count, and a tinted progress bar.
     public var body: some View {
         HStack {
             Text("API Calls (last hour)")
