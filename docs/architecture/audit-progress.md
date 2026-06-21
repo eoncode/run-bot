@@ -4,7 +4,7 @@ Tracking file for the principles audit against:
 - [Issue #1471](https://github.com/eoncode/runner-bar/issues/1471) + [`project-principles.md`](../architecture/project-principles.md)
 - [Issue #1387](https://github.com/eoncode/runner-bar/issues/1387) + [`reach-goal-principles.md`](../principles/reach-goal-principles.md)
 
-Last updated: 2026-06-21 (session 8)
+Last updated: 2026-06-21 (session 9 — **AUDIT COMPLETE**)
 
 ---
 
@@ -27,13 +27,13 @@ Last updated: 2026-06-21 (session 8)
 | `AppDelegate+PanelSetup.swift` | ✅ | **Finding #51.** Triple `RunnerStore` init — first two orphaned with live Tasks. |
 | `AppDelegate+Navigation.swift` | ✅ | Finding #15 — stale guard on `observable.jobs`. TODO present. |
 | `AppDelegate+Polling.swift` | ✅ | **Clean.** One actor-bound `Task` on app lifetime; structured `for await`. |
-| `AppDelegate+StatusItem.swift` | ✅ | **Clean.** `updateStatusIcon()` reads from `observable.runners` (already pushed to `@MainActor` snapshot by `RunnerStore`), not from the actor directly. Triple-fallback chain for `NSImage` is correct. No GCD, no singletons, no raw strings. |
+| `AppDelegate+StatusItem.swift` | ✅ | **Clean.** No GCD, no singletons, no raw strings. |
 | `AppDelegate+StoreSetup.swift` | ✅ | **Clean.** `configureGH*` closures are the existing transport injection points — relevant to Finding #1 migration. |
-| `AppDelegate+OAuthCallback.swift` | ✅ | **Clean.** One guard on URL scheme/host using `GitHubConstants` typed constants, then delegates to `OAuthService.shared.handleCallback`. `OAuthService.shared` here is justified: the delegate is called by the OS with no injection opportunity. |
+| `AppDelegate+OAuthCallback.swift` | ✅ | **Clean.** `OAuthService.shared` justified (OS delegate, no injection opportunity). |
 | `PopoverLifecycleCoordinator.swift` | ✅ | **Clean, exemplary.** |
-| `PanelVisibilityState.swift` | 🔲 | |
-| `PanelSheetState.swift` | 🔲 | |
-| `NavState.swift` | 🔲 | |
+| `PanelVisibilityState.swift` | ✅ | **Clean, exemplary.** `@MainActor @Observable`; documented regression guard for #377. |
+| `PanelSheetState.swift` | ✅ | **Clean.** Correct transient-hide capture/restore pattern. |
+| `NavState.swift` | ✅ | **Clean.** Minimal typed enum; history comments intact. |
 
 ### DesignSystem/
 | File | Status | Notes |
@@ -46,15 +46,15 @@ Last updated: 2026-06-21 (session 8)
 | File | Status | Notes |
 |------|--------|-------|
 | `GitHubHelpers.swift` | ✅ | Root of Finding #1 — free transport functions `ghAPI`, `ghPost`, `cancelRun` (P7) |
-| `GitHubTokenCache.swift` | 🔲 | |
+| `GitHubTokenCache.swift` | ✅ | **Mostly clean.** `Mutex<String?>` correctly guards concurrent access (P16). Free-function shape intentionally justified in comment. Finding #59 (minor) — `invalidateTokenCache`/`githubToken` are untestable free functions with no injection seam; the comment explicitly argues against namespacing, but a `TokenCacheProtocol` would enable unit tests for sign-out flows. Tier 4 — low priority. |
 | `OAuthService.swift` | ✅ | **Clean.** |
-| `OAuthSecrets.swift` | 🔲 | |
+| `OAuthSecrets.swift` | ✅ | **Clean.** Committed secret is intentional and documented (open-source native app, standard practice). |
 
 ### Preferences/
 | File | Status | Notes |
 |------|--------|-------|
-| `AppPreferencesStore.swift` | 🔲 | |
-| `NotificationPreferences.swift` | 🔲 | |
+| `AppPreferencesStore.swift` | ✅ | **Finding #60.** `static let shared` singleton; all `didSet` writes hardcode `UserDefaults.standard` — same P7 pattern as `ScopePreferencesStore` (#11b). Unlike `NotificationPreferences`, there is no `register(into:)` escape hatch for tests. Tier 3. |
+| `NotificationPreferences.swift` | ✅ | **Mostly clean.** `static let shared` singleton, but `register(into:)` provides a test-defaults escape hatch — better than `AppPreferencesStore`. Same `UserDefaults.standard` hardcode but partially mitigated. |
 
 ### Runner/
 | File | Status | Notes |
@@ -75,7 +75,7 @@ Last updated: 2026-06-21 (session 8)
 | `Keychain.swift` | ✅ | Finding #12 FIXME(P24) atomicity gap |
 | `DefaultRunnerLabelsService.swift` | ⏭️ | Small |
 | `FailureHookRunner.swift` | ✅ | **Clean.** Thin shim. |
-| `FailureHookRunnerAdapters.swift` | ✅ | **Clean.** `DefaultScopePreferencesStore` and `DefaultTerminalLauncher` are textbook adapters: no logic, each method is a single forwarding call. `@MainActor` on `DefaultTerminalLauncher.open` correctly propagates the `TerminalLauncherProtocol` requirement from `FailureHookRunnerDependencies.swift`. |
+| `FailureHookRunnerAdapters.swift` | ✅ | **Clean, exemplary.** Textbook adapters: one forwarding call per method. |
 | `LoginItem.swift` | ⏭️ | Small |
 | `TerminalLauncher.swift` | ⏭️ | Small |
 
@@ -94,7 +94,7 @@ Last updated: 2026-06-21 (session 8)
 |------|--------|-------|
 | `WorkflowContextMenuModifier.swift` | ✅ | Finding #3 three `Task.detached` (P9); Finding #8 `JobContextMenuModifier` free fn calls (P7) |
 | `SystemStatsViewModel.swift` | ✅ | **Clean, exemplary.** |
-| `SystemStatsView.swift` | 🔲 | |
+| `SystemStatsView.swift` | ✅ | **Clean.** `GlassBadgeContainer`, `HeaderStatsBar`, `DiskPillBadge`, `SparklineMetricView` — pure rendering, no singletons, no GCD. `viewModel.start()`/`stop()` correctly scoped to `onAppear`/`onDisappear`. |
 | `DonutStatusView.swift` | ⏭️ | Pure rendering |
 | `SparklineView.swift` | ⏭️ | Pure rendering |
 | `RingBuffer.swift` | ⏭️ | Data structure |
@@ -102,13 +102,13 @@ Last updated: 2026-06-21 (session 8)
 ### Views/Main/
 | File | Status | Notes |
 |------|--------|-------|
-| `InlineJobRowsView.swift` | ✅ | Finding #20 — `jobStatus(for:)` duplicates `ActionRowView.rowStatus`. |
-| `ActionRowView.swift` | ✅ | **Clean.** Typed enums, no GCD, no singletons. |
+| `InlineJobRowsView.swift` | ✅ | Finding #20 — `jobStatus(for:)` duplicates `ActionRowView.rowStatus`. Self-annotated TODO+NOSONAR present. |
+| `ActionRowView.swift` | ✅ | **Clean.** Typed enums, no GCD, no singletons. Reference for #6/#7 fixes. |
 | `PanelContainerView.swift` | ✅ | **Clean, exemplary.** |
 | `PanelMainView.swift` | ✅ | Finding #19 — `localRunnerStore: LocalRunnerStore = .shared` singleton default (P7) |
-| `RunnerRowViews.swift` | ✅ | **Finding #58 (new — minor).** `normaliseArch(_:)` switches on raw uppercased strings (`"ARM64"`, `"X64"`, `"X86"`). These are display-only labels sourced from `RunnerModel.platformArchitecture`, which itself comes from a local LaunchAgent plist field (not a GitHub API enum), so a typed enum would need to live in `RunnerBarCore` and track GitHub's possible label values. Low priority — no correctness risk, only a DRY/typed-safety observation. `normalisePlatform(_:)` uses string prefix matching which is appropriate for the open-ended OS label field. No other findings: glass architecture comments are thorough and correct, `maxVisibleRunners` overflow guard is clean, `RunnerMetricsBadge` nil-vs-zero distinction is correct. |
+| `RunnerRowViews.swift` | ✅ | Finding #58 (minor) — `normaliseArch(_:)` raw string switch; display-only labels. |
 | `WorkflowActionGroup+Progress.swift` | ✅ | Finding #25 — `progressFraction` done-semantics inconsistency |
-| `PanelHeaderView.swift` | ⏭️ | Small |
+| `PanelHeaderView.swift` | ✅ | **Clean.** Pure layout; `onSelectSettings` correctly injected. |
 | `PanelMainView+Subviews.swift` | ⏭️ | Small |
 
 ### Views/Runner/
@@ -147,7 +147,7 @@ Last updated: 2026-06-21 (session 8)
 ### Root
 | File | Status | Notes |
 |------|--------|-------|
-| `main.swift` | 🔲 | Entry point |
+| `main.swift` | ⏭️ | Entry point — `NSApplication.shared.run()`; no logic to audit |
 | `Exports.swift` | ⏭️ | Re-exports only |
 
 ---
@@ -160,14 +160,14 @@ Last updated: 2026-06-21 (session 8)
 | `GitHubTransportShim.swift` | ✅ | Root of Finding #1 — free functions defined here |
 | `GitHubURLSessionTransport.swift` | ✅ | **Clean.** One intentional `DispatchQueue.sync {}` documented. |
 | `GitHubRateLimitHandler.swift` | ✅ | **Clean, exemplary.** |
-| `GitHubResponseDecoder.swift` | ✅ | **Clean, exemplary.** `handleRateLimitResponse` correctly distinguishes genuine rate-limit 403s from permission-denied 403s using `X-RateLimit-Remaining: 0` and `Retry-After` header semantics. No default provided for `rateLimiter:` parameter — intentional (documented: prevents silent fallback to global actor if called outside `urlSessionExecute`). `extractNextURL` is RFC 8288 compliant (scans all semicolon-delimited segments, not just position 1). No GCD, no free function calls, no raw status strings. |
-| `GitHubRequestBuilder.swift` | ✅ | **Clean.** Module-level `private let slashCharacterSet` avoids per-call `CharacterSet` allocation. `makeBaseRequest` correctly shared between `makeRequest`/`makeRawRequest`. S3 redirect safety documented. Bearer header stripping by URLSession on cross-origin redirect is explicitly noted. |
+| `GitHubResponseDecoder.swift` | ✅ | **Clean, exemplary.** |
+| `GitHubRequestBuilder.swift` | ✅ | **Clean.** Module-level CharacterSet constant; S3 redirect + Bearer-stripping documented. |
 | `GitHubConstants.swift` | ⏭️ | Constants |
 
 ### Runner/
 | File | Status | Notes |
 |------|--------|-------|
-| `PollResultBuilder.swift` | ✅ | **Clean.** Pure static, all side-effects injected. Typed enums. |
+| `PollResultBuilder.swift` | ✅ | **Clean, exemplary.** Pure static; all side-effects injected; typed enums. |
 | `WorkflowActionGroupFetch.swift` | ✅ | Finding #50 — `ghAPI` free fn on hot poll path (P7) |
 | `RunnerStatusEnricher.swift` | ✅ | Finding #2b singleton as default param; Finding #8b `JSONDecoder()` per loop |
 | `RunnerConfigStore.swift` | ✅ | Finding #6b BOM stripping duplicated (P6 DRY) |
@@ -180,7 +180,7 @@ Last updated: 2026-06-21 (session 8)
 | `LocalRunnerIndex.swift` | ✅ | Clean |
 | `RunnerEditDraft.swift` | ⏭️ | Small model |
 | `WorkflowActionGroup.swift` | ✅ | Finding #10 — identity-only `==` |
-| `Runner.swift` | ✅ | **Clean.** `CodingKeys` correctly excludes `metrics` (assigned post-decode). `copying(metrics:)` pattern is correct immutable-mutation idiom. `displayStatus` uses typed `RunnerStatus` enum cases throughout. |
+| `Runner.swift` | ✅ | **Clean.** `CodingKeys` excludes post-decode field; `copying(metrics:)` immutable-mutation. |
 | `RunnerConfigStoreProtocol.swift` | ⏭️ | Protocol definition |
 | `RunnerLabelsServiceProtocol.swift` | ⏭️ | Protocol definition |
 | `RunnerStatusEnricherProtocol.swift` | ⏭️ | Protocol definition |
@@ -198,7 +198,7 @@ Last updated: 2026-06-21 (session 8)
 | `ScopePreferencesStore.swift` | ✅ | Finding #11b — `UserDefaults.standard` hardcoded (P7) |
 | `ScopeEntry.swift` | ⏭️ | Small model |
 | `GitHubScope.swift` | ⏭️ | Small model |
-| `FailureHookRunnerDependencies.swift` | ✅ | **Clean.** `ScopePreferencesStoreProtocol` and `TerminalLauncherProtocol` are minimal, correctly scoped to the use-case’s actual needs. `@MainActor` on `open(command:)` at protocol level correctly propagates the NSAppleScript main-thread requirement to all conformers. `Sendable` conformance on both protocols is correct for cross-actor passing. |
+| `FailureHookRunnerDependencies.swift` | ✅ | **Clean, exemplary.** Protocol surface minimal; `@MainActor` at protocol level. |
 
 ### Services/
 | File | Status | Notes |
@@ -218,10 +218,10 @@ Last updated: 2026-06-21 (session 8)
 
 ---
 
-## All Confirmed Findings (Ranked by Priority)
+## ✅ AUDIT COMPLETE — All Confirmed Findings (Ranked by Priority)
 
 | # | File | Principle | Tier | Notes |
-|---|------|-----------|------|
+|---|------|-----------|------|-------|
 | 1 | `GitHubTransportShim.swift` — free transport fns | P7 DI | 🔴 1 | Root cause of #8, #9, #50, #52, #55 |
 | 55 | `LogFetcher.swift` — `fetchJobLog`/`fetchActionLogs` → `ghRaw` | P7 DI | 🔴 1 | Same transport surface |
 | 51 | `AppDelegate+PanelSetup.swift` — triple `RunnerStore` init | P9 | 🔴 1 | Competing poll loops |
@@ -239,21 +239,24 @@ Last updated: 2026-06-21 (session 8)
 | 8 | `JobContextMenuModifier` — free fn calls | P7 DI | 🟠 2 | Blocked by #1/#55 |
 | 9 | `BranchSelectorSheet` — `ghAPI` free fn | P7 DI | 🟠 2 | Blocked by #1 |
 | 53 | `FailureHookRunnerUseCase` — `JSONDecoder()` per loop | P6 | 🟡 3 | Trivial hoist |
-| 20 | `InlineJobRowsView` — duplicates `ActionRowView.rowStatus` | P6 DRY | 🟡 3 | |
+| 20 | `InlineJobRowsView` — duplicates `ActionRowView.rowStatus` | P6 DRY | 🟡 3 | Self-annotated TODO present |
+| 60 | `AppPreferencesStore` — `UserDefaults.standard` hardcoded, no test escape hatch | P7 DI | 🟡 3 | No `register(into:)` unlike `NotificationPreferences` |
 | 10 | `WorkflowActionGroup` — identity-only `==` | P5 | 🟡 3 | |
 | 12 | `Keychain` — FIXME(P24) atomicity gap | P24 | 🟡 3 | Tracked FIXME |
 | 58 | `RunnerRowViews` — `normaliseArch` raw string switch | P5 typed | 🟢 4 | Display-only labels, open-ended source |
+| 59 | `GitHubTokenCache` — `invalidateTokenCache`/`githubToken` free fns, no injection seam | P7 DI | 🟢 4 | Justified in comment; minor testability gap |
 | 11 | `RunnerLifecycleService` — singleton, no injection seam | P7 DI | 🟢 4 | |
 
 ---
 
 ## Notable Clean Files (Reference Implementations)
 
-| File | Why It’s Exemplary |
-|------|--------------------|
+| File | Why It's Exemplary |
+|------|-------------------|
 | `SystemStatsViewModel.swift` | Generation-stamped loop; `nonisolated(unsafe)` with correct deinit pattern |
 | `PopoverLifecycleCoordinator.swift` | `Task { @MainActor }` for unspecified-thread callbacks; `MainActor.assumeIsolated` |
 | `PanelContainerView.swift` | Timer + `Task { @MainActor }` for NSWindow.sheets; transient-hide invariant |
+| `PanelVisibilityState.swift` | `@MainActor @Observable`; documented regression guard; explicit `init()` for signature safety |
 | `GitHubRateLimitHandler.swift` | `RateLimitActor` with generation-stamped didFire; `snapshot()` single-hop |
 | `GitHubResponseDecoder.swift` | Rate-limit vs permission-denied 403 distinction; `rateLimiter` no-default intentional |
 | `GitHubRequestBuilder.swift` | Module-level CharacterSet constant; S3 redirect Bearer-stripping note |
@@ -269,16 +272,3 @@ Last updated: 2026-06-21 (session 8)
 ## Key Architecture Note: Transport Injection Point
 
 `AppDelegate+StoreSetup.swift` calls `configureGHAPI`, `configureGHRaw`, `configureGHAPIPaginated`, and `configureGHToken` — the current closure-based injection points. Any `GitHubTransportProtocol` migration (Finding #1) will replace these four closure registrations with constructor injection.
-
----
-
-## Next Files to Read (Priority Order)
-
-1. `RunnerBar/App/PanelVisibilityState.swift`
-2. `RunnerBar/App/PanelSheetState.swift`
-3. `RunnerBar/App/NavState.swift`
-4. `RunnerBar/GitHub/GitHubTokenCache.swift`
-5. `RunnerBar/GitHub/OAuthSecrets.swift`
-6. `RunnerBar/Preferences/AppPreferencesStore.swift`
-7. `RunnerBar/Preferences/NotificationPreferences.swift`
-8. `RunnerBar/Views/Components/SystemStatsView.swift`
