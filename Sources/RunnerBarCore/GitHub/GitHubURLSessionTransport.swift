@@ -213,6 +213,7 @@ public func urlSessionAPIPaginated(
         switch result {
         case .success(let data, _, let linkHeader):
             if let page = try? sharedDecoder.decode([AnyJSON].self, from: data) {
+                hadAtLeastOnePage = true
                 allItems.append(contentsOf: page)
                 nextURL = extractNextURL(from: linkHeader)
             } else {
@@ -272,12 +273,23 @@ public func urlSessionAPIPaginated(
         }
         log("urlSessionAPIPaginated › pagination stopped by rate limit — returning \(allItems.count) partial items")
     }
-    // Encode allItems unconditionally: a valid empty-array response (200 []) must
-    // return non-nil so callers can distinguish "confirmed zero items" from a failure.
-    // Encoding [] produces the JSON bytes for "[]" which decodes back to an empty
-    // array — never nil. Auth-failure and first-page-rate-limit paths already
-    // returned nil explicitly above, so their behaviour is unchanged.
-    return try? sharedEncoder.encode(allItems)
+    // Auth failure and rate-limited-on-first-page both return nil explicitly above.
+    // For all other paths:
+    //   - hadAtLeastOnePage && allItems.isEmpty → server returned 200 [], encode as "[]"
+    //   - hadAtLeastOnePage && !allItems.isEmpty → partial results, encode normally
+    //   - !hadAtLeastOnePage → loop never got a successful page (e.g. 404 on first page)
+    guard hadAtLeastOnePage else {
+        log("urlSessionAPIPaginated › loop ended without any successful page — returning nil")
+        return nil
+    }
+    do {
+        let encoded = try sharedEncoder.encode(allItems)
+        log("urlSessionAPIPaginated › returning \\(allItems.count) items (\\(encoded.count)b)")
+        return encoded
+    } catch {
+        log("urlSessionAPIPaginated › encode failed: \\(error) — returning nil")
+        return nil
+    }
 }
 
 // MARK: - Raw async (log endpoints)
