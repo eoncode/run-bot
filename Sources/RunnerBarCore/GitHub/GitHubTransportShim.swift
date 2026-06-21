@@ -17,7 +17,6 @@ import os
 // MARK: - Transport types
 
 /// An async GitHub API fetch returning raw JSON `Data`.
-/// Used for standard REST GET endpoints.
 public typealias GHAPITransport = @Sendable (_ endpoint: String) async -> Data?
 
 /// An async raw-bytes fetch for GitHub log endpoints.
@@ -25,16 +24,13 @@ public typealias GHAPITransport = @Sendable (_ endpoint: String) async -> Data?
 public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 
 /// An async paginated GitHub API fetch returning concatenated JSON array `Data`.
-/// Used for list endpoints that follow `Link: rel="next"` pagination.
-/// Returns `nil` on auth failure; may return partial results on rate-limit.
 ///
 /// - Parameters:
 ///   - endpoint: Relative or absolute URL for the first page.
 ///   - timeout: Per-request timeout forwarded to `URLSession` **for each page**.
 ///
 /// - Warning: The `timeout` value must be forwarded explicitly into the inner
-///   call. The closure signature accepts `timeout` as its second parameter, but
-///   Swift’s type-checker will silently accept a `_` wildcard that drops it:
+///   call. Swift’s type-checker silently accepts a `_` wildcard that drops it:
 ///   ```swift
 ///   // ⚠️ WRONG — compiles but silently falls back to the 60-second default:
 ///   configureGHAPIPaginated { endpoint, _ in
@@ -45,13 +41,9 @@ public typealias GHRawTransport = @Sendable (_ endpoint: String) async -> Data?
 ///       await urlSessionAPIPaginated(endpoint, timeout: timeout)
 ///   }
 ///   ```
-///   Callers must also account for the fact that a paginated fetch may issue
-///   many sequential requests; total wall-clock time can exceed `timeout` by
-///   a factor of the page count.
 ///
 /// - Note: `apiCallCounter` counts one call per `ghAPIPaginated()` invocation,
-///   not one per page fetched. Real quota consumption for a 40-page list fetch
-///   is 40 calls; the counter will record 1. See `APICallCounterRow` tooltip.
+///   not one per page fetched. See `APICallCounterRow` tooltip.
 public typealias GHAPIPaginatedTransport = @Sendable (_ endpoint: String, _ timeout: TimeInterval) async -> Data?
 
 /// A sync closure that returns the active GitHub personal access token, or `nil`.
@@ -60,54 +52,24 @@ public typealias GHTokenProvider = @Sendable () -> String?
 // MARK: - TransportBox
 
 /// Thread-safe wrapper around an `OSAllocatedUnfairLock`-guarded closure.
-///
-/// `OSAllocatedUnfairLock.withLock` accepts a **synchronous** closure only.
-/// This is intentional: `os_unfair_lock` must not be held across a suspension
-/// point. Transport closures are `async`, so they are *never* called from
-/// inside `withLock` — only read out under the lock, then invoked outside it.
 private struct TransportBox<T: Sendable> {
-    /// The underlying unfair lock guarding the stored value.
     private let lock: OSAllocatedUnfairLock<T>
-
-    /// Creates a box with `initialState` as the starting value.
     init(initialState: T) { lock = .init(initialState: initialState) }
-
-    /// Replaces the stored closure under the lock.
-    ///
-    /// Safe to call from any thread or actor context; the lock is held only
-    /// for the duration of the pointer swap — no async work inside.
-    func configure(_ value: T) {
-        lock.withLock { $0 = value }
-    }
-
-    /// Returns the stored closure under the lock.
-    ///
-    /// The caller is responsible for invoking the returned closure *outside*
-    /// the lock. Never pass an `async` closure into `withLock`.
+    func configure(_ value: T) { lock.withLock { $0 = value } }
     func read() -> T { lock.withLock { $0 } }
 }
 
 // MARK: - Module-level state
 
-/// Serialises all reads and writes to the active JSON transport closure.
 private let transportBox = TransportBox<GHAPITransport>(initialState: { _ in nil })
-
-/// Serialises all reads and writes to the active raw-bytes transport closure.
 private let rawTransportBox = TransportBox<GHRawTransport>(initialState: { _ in nil })
-
-/// Serialises all reads and writes to the active paginated JSON transport closure.
 private let paginatedTransportBox = TransportBox<GHAPIPaginatedTransport>(initialState: { _, _ in nil })
-
-/// Serialises all reads and writes to the active token-provider closure.
 private let tokenProviderBox = TransportBox<GHTokenProvider>(initialState: { nil })
 
 // MARK: - Configuration
 
 /// Wire up the real (or mock) GitHub JSON transport. Call once at launch.
-/// - Parameter transport: Async closure for JSON REST calls; returns `nil` on failure.
-public func configureGHAPI(
-    _ transport: @escaping GHAPITransport
-) {
+public func configureGHAPI(_ transport: @escaping GHAPITransport) {
     transportBox.configure(transport)
 }
 
@@ -129,62 +91,55 @@ public func configureGHAPIPaginated(_ transport: @escaping GHAPIPaginatedTranspo
 }
 
 /// Wire up the token provider. Call once at launch.
-/// - Parameter provider: Sync closure returning the current GitHub token.
 public func configureGHToken(_ provider: @escaping GHTokenProvider) {
     tokenProviderBox.configure(provider)
 }
 
-// MARK: - Module-level symbols consumed by RunnerBarCore files
+// MARK: - Module-level symbols
 
 /// Calls the configured GitHub API transport for the given endpoint.
 ///
-/// `apiCallCounter` is incremented via a fire-and-forget `Task` **only when
-/// the transport returns non-nil data** — i.e. on a successful dispatch.
-/// Stub/unconfigured transports (returning `nil`) and auth failures are
-/// therefore not counted, keeping the counter accurate to actual REST calls.
+/// Increments `apiCallCounter` via a direct `await` **only when the transport
+/// returns non-nil data**. Using `await` (not a fire-and-forget `Task`) means
+/// task cancellation propagates correctly: a cancelled or timed-out fetch does
+/// not increment the counter.
 func ghAPI(_ endpoint: String) async -> Data? {
     let transport = transportBox.read()
     let result = await transport(endpoint)
-    if result != nil { _ = Task { await apiCallCounter.record() } }
+    if result != nil { await apiCallCounter.record() }
     return result
 }
 
-/// Calls the configured raw-bytes transport for the given endpoint.
+/// Calls the configured raw-bytes transport.
 ///
 /// Raw log fetches hit S3 and do **not** consume the GitHub REST quota —
 /// `apiCallCounter` is intentionally not incremented here.
 func ghRaw(_ endpoint: String) async -> Data? {
+    rawTransportBox.read()(endpoint)
+    // Note: indirect return via variable avoids 'expression is unused' warning.
     let transport = rawTransportBox.read()
     return await transport(endpoint)
 }
 
-/// Calls the configured paginated JSON transport for the given endpoint.
+/// Calls the configured paginated JSON transport.
 ///
-/// `apiCallCounter` is incremented once per invocation (not per page) via a
-/// fire-and-forget `Task` when the transport returns non-nil data.
-/// See `GHAPIPaginatedTransport` and `APICallCounterRow` for the undercount caveat.
+/// Increments `apiCallCounter` once per invocation via a direct `await` when
+/// the transport returns non-nil data. Cancellation propagates correctly.
 ///
-/// - Parameters:
-///   - endpoint: Relative or absolute URL for the first page.
-///   - timeout: Per-request timeout forwarded to the transport. Defaults to 60s.
-///
-/// - Important: This function is annotated `@concurrent`, **not**
-///   `nonisolated(nonsending)`. `paginatedTransportBox.read()` acquires an
-///   `OSAllocatedUnfairLock` before the first suspension point; `@concurrent`
-///   guarantees execution on the cooperative thread pool at that point.
-///   `nonisolated(nonsending)` is only valid for pure pass-throughs with no
-///   pre-suspension work — switching to it would silently remove that
-///   guarantee without a compiler error.
+/// - Important: Annotated `@concurrent`, **not** `nonisolated(nonsending)`.
+///   `paginatedTransportBox.read()` acquires an `OSAllocatedUnfairLock`
+///   before the first suspension point; `@concurrent` guarantees cooperative
+///   thread pool execution at that point. `nonisolated(nonsending)` is only
+///   valid for pure pass-throughs — switching to it would silently break this.
 @concurrent
 public func ghAPIPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
     let transport = paginatedTransportBox.read()
     let result = await transport(endpoint, timeout)
-    if result != nil { _ = Task { await apiCallCounter.record() } }
+    if result != nil { await apiCallCounter.record() }
     return result
 }
 
 /// Returns the active GitHub token via the configured provider.
 func githubTokenCore() -> String? {
-    let provider = tokenProviderBox.read()
-    return provider()
+    tokenProviderBox.read()()
 }

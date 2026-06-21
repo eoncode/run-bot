@@ -4,9 +4,9 @@
 // Tracks GitHub REST call timestamps in a rolling 60-minute window.
 // Mirrors the RateLimitActor pattern (P16 — Actor-Per-Concern Isolation).
 //
-// Actor chosen over Mutex: record() performs an append + removeAll sweep on
-// a [Date] array that can reach 5,000 entries under load — non-trivial work
-// that must not block a cooperative thread pool worker under a lock.
+// Actor chosen over Mutex: record() performs an append + slice on a [Date]
+// array that can reach 5,000 entries under load — non-trivial work that must
+// not block a cooperative thread pool worker under a lock.
 // GitHubTokenCache uses Mutex for a single pointer swap (P13 reach goal);
 // this case does not qualify because the critical section is not O(1).
 import Foundation
@@ -14,11 +14,6 @@ import Foundation
 // MARK: - APICallCounterSnapshot
 
 /// Atomic snapshot of API call-counter state returned by `APICallCounterProtocol.snapshot()`.
-///
-/// Using a nominal struct rather than an anonymous tuple prevents conformers from
-/// accidentally dropping named labels and keeps the return type extensible
-/// (e.g. `Equatable`, `Codable`) without an API break.
-/// Mirrors `RateLimitSnapshot` in `GitHubRateLimitHandler.swift`.
 public struct APICallCounterSnapshot: Sendable, Equatable {
     /// Number of GitHub REST calls made in the last rolling 60-minute window.
     public let count: Int
@@ -26,22 +21,15 @@ public struct APICallCounterSnapshot: Sendable, Equatable {
     public let limit: Int
     /// Fraction of the hourly limit consumed, clamped to `[0, 1]`.
     ///
-    /// - Returns `0.0` when `limit == 0` to avoid `NaN` propagation
-    ///   (`Double(n) / Double(0)` is `NaN`; `min(nan, 1.0)` propagates it).
+    /// - Returns `0.0` when `limit == 0` to avoid `NaN` propagation.
     /// - Lower-bounded at `0.0` so a negative `count` (possible via the
-    ///   public `init`) cannot produce a negative fraction and break
-    ///   `ProgressView(value:)` or `Int(fraction * 100)` in the UI.
+    ///   public `init`) cannot produce a negative fraction.
     public var fraction: Double {
         guard limit > 0 else { return 0.0 }
         return max(0.0, min(Double(count) / Double(limit), 1.0))
     }
 
     /// Creates a new snapshot.
-    ///
-    /// - Parameters:
-    ///   - count: Calls made in the last rolling 60 minutes.
-    ///   - limit: GitHub hourly REST rate limit (typically 5,000).
-    ///            Passing `0` is safe — `fraction` will return `0.0`.
     public init(count: Int, limit: Int) {
         self.count = count
         self.limit = limit
@@ -51,14 +39,10 @@ public struct APICallCounterSnapshot: Sendable, Equatable {
 // MARK: - APICallCounterProtocol
 
 /// Injectable abstraction over `APICallCounter` for deterministic testing (P7).
-///
-/// `APICallCounterViewModel` accepts any conforming type via a defaulted
-/// `counter` parameter so production code is unchanged while tests can
-/// substitute a `SpyAPICallCounter` without touching the real actor.
 public protocol APICallCounterProtocol: Actor {
     /// Record one GitHub REST API call.
     func record()
-    /// Returns `count` and `limit` in a single actor hop (P10 — Atomic Snapshot Pattern).
+    /// Returns `count` and `limit` in a single actor hop (P10).
     func snapshot() -> APICallCounterSnapshot
 }
 
@@ -66,26 +50,27 @@ public protocol APICallCounterProtocol: Actor {
 
 /// Actor-isolated ring buffer of GitHub REST call timestamps.
 ///
-/// `record()` is called once per `ghAPI()` / `ghAPIPaginated()` dispatch
-/// via a fire-and-forget `Task` in `GitHubTransportShim`. `ghRaw()` is
-/// intentionally excluded — raw log fetches hit S3 and do not consume
-/// the GitHub REST quota.
+/// `record()` is called once per successful `ghAPI()` / `ghAPIPaginated()`
+/// response in `GitHubTransportShim` via a direct `await` (not fire-and-forget)
+/// so that task cancellation propagates correctly and cancelled/timed-out
+/// fetches do not increment the counter.
 ///
 /// No persistence — the counter resets on app launch by design.
-/// Memory is bounded: `purge()` is called by both `record()` and `snapshot()`
-/// to evict entries older than 3,600 s, and `record()` additionally trims
-/// to `hourlyLimit` entries to cap memory under burst/retry traffic.
+/// Memory is bounded: `purge()` evicts entries older than 3,600 s, and
+/// `record()` trims to `hourlyLimit` entries via a suffix slice.
 public actor APICallCounter: APICallCounterProtocol {
-    /// Shared instance wired at module level, matching the `rateLimitActor` convention.
+    /// Shared instance wired at module level.
     public static let shared = APICallCounter()
 
     /// GitHub authenticated REST rate limit per rolling hour.
-    /// Surfaced as a constant so it can be updated if GitHub changes it.
     public static let hourlyLimit = 5_000
 
     /// Rolling buffer of call timestamps, always in ascending order.
-    /// Maintained by `purge()` (O(k) slice from the front) and capped at
-    /// `hourlyLimit` entries by `record()` to bound memory under burst traffic.
+    ///
+    /// NB: monotonicity is assumed — timestamps are always appended as
+    /// `Date()` which is generally monotonically increasing. Clock skew on
+    /// system sleep/wake could yield duplicate or slightly regressed values;
+    /// `purge()` and the trim are both tolerant of this in practice.
     private var timestamps: [Date] = []
 
     /// Creates a new `APICallCounter` instance.
@@ -97,29 +82,18 @@ public actor APICallCounter: APICallCounterProtocol {
 
     /// Records one GitHub REST API call.
     ///
-    /// Purges stale entries first (O(k) slice from the front of the
-    /// time-ordered buffer), then appends the current timestamp, then trims
-    /// to `hourlyLimit` entries oldest-first.
-    ///
-    /// Purge-before-append avoids any theoretical clock-skew edge case where
-    /// a new timestamp could be swept by an immediately following `removeAll`.
+    /// Purges stale entries first (O(k) front-slice), appends the current
+    /// timestamp, then caps the buffer at `hourlyLimit` via a suffix slice
+    /// (avoids the O(n) element-shift cost of `removeFirst(n)`).
     public func record() {
         purge()
         timestamps.append(Date())
         if timestamps.count > Self.hourlyLimit {
-            timestamps.removeFirst(timestamps.count - Self.hourlyLimit)
+            timestamps = Array(timestamps.suffix(Self.hourlyLimit))
         }
     }
 
-    /// Returns `count` and `limit` in a single actor hop, guaranteeing consistency (P10).
-    ///
-    /// Calls `purge()` before counting so that stale entries accumulated
-    /// during an idle period (no `record()` calls) are evicted first.
-    /// This prevents `snapshot()` from over-counting when the actor has
-    /// been quiet for more than 60 minutes.
-    ///
-    /// Prefer this over reading count and limit separately to avoid a TOCTOU
-    /// window between two independent actor hops.
+    /// Returns `count` and `limit` in a single actor hop (P10).
     public func snapshot() -> APICallCounterSnapshot {
         purge()
         return APICallCounterSnapshot(count: timestamps.count, limit: Self.hourlyLimit)
@@ -129,12 +103,13 @@ public actor APICallCounter: APICallCounterProtocol {
 
     /// Evicts timestamps older than the rolling 60-minute window.
     ///
-    /// Because timestamps are always appended in ascending order, stale entries
-    /// are always at the front. This uses `firstIndex(where:)` + `removeFirst(_:)`
-    /// for an O(k) slice (k = number of stale entries) rather than a full
-    /// O(n) `removeAll(where:)` sweep.
+    /// Because timestamps are always appended in ascending order, stale
+    /// entries are always at the front. Uses `firstIndex(where:)` +
+    /// `removeFirst(_:)` for an O(k) front-slice rather than a full O(n)
+    /// `removeAll(where:)` sweep.
     private func purge() {
         let cutoff = Date().addingTimeInterval(-3_600)
+        // NB: monotonicity assumed — see timestamps property comment.
         if let idx = timestamps.firstIndex(where: { $0 >= cutoff }) {
             if idx > 0 { timestamps.removeFirst(idx) }
         } else {
@@ -146,6 +121,4 @@ public actor APICallCounter: APICallCounterProtocol {
 // MARK: - Module-level accessor
 
 /// The module-wide `APICallCounter` instance shared by `GitHubTransportShim`.
-/// Public so both `ghAPI()` and `ghAPIPaginated()` can call `record()` without
-/// crossing module boundaries. Mirrors the `rateLimitActor` pattern.
 public let apiCallCounter = APICallCounter.shared

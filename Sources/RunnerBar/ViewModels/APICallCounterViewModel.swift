@@ -34,11 +34,14 @@ private final class TaskBox: @unchecked Sendable {
 
 // MARK: - APICallCounterViewModel
 
-/// View-model that polls `APICallCounterProtocol` every 5 seconds and
-/// exposes derived display state for `APICallCounterRow`.
+/// View-model that polls `APICallCounterProtocol` every `pollingInterval` seconds
+/// and exposes derived display state for `APICallCounterRow`.
 @Observable
 @MainActor
 public final class APICallCounterViewModel {
+    /// Interval between counter refreshes.
+    private static let pollingInterval: Duration = .seconds(5)
+
     /// Latest atomic snapshot from the counter actor.
     public private(set) var snap = APICallCounterSnapshot(
         count: 0,
@@ -83,25 +86,19 @@ public final class APICallCounterViewModel {
 
     // MARK: - Private
 
-    /// Starts a structured polling loop that refreshes `snap` every 5 seconds.
+    /// Starts a structured polling loop that refreshes `snap` every `pollingInterval`.
     ///
     /// `self` is only held strongly during the actor hop for `snapshot()` —
-    /// it is released before `Task.sleep` so that `deinit` can fire immediately
-    /// when the view disappears, cancelling the task without waiting for the
-    /// full 5-second sleep window. The loop re-checks `Task.isCancelled` after
-    /// waking and re-acquires `self` only if still alive and not cancelled.
+    /// released before sleeping so `deinit` can fire immediately on view disappear.
     private func startPolling() {
         taskBox.task = Task { [weak self] in
             while !Task.isCancelled {
-                // Borrow self only for the snapshot hop, then release.
                 if let self { self.snap = await self.counter.snapshot() }
-                // Sleep without holding self so deinit can fire immediately.
                 do {
-                    try await Task.sleep(for: .seconds(5))
+                    try await Task.sleep(for: Self.pollingInterval)
                 } catch {
-                    return  // CancellationError — exit immediately.
+                    return
                 }
-                // Re-check after waking: task may have been cancelled during sleep.
                 guard !Task.isCancelled else { return }
             }
         }
