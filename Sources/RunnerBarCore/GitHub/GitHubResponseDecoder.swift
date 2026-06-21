@@ -45,6 +45,12 @@ func logErrorBody(_ data: Data?, endpoint: String, status: Int) {
 ///   The injection chain is: call site → `urlSessionAPIPaginated`/`urlSessionAPIAsync`
 ///   (default actor) → `urlSessionExecute` (passes actor through) → here.
 ///
+/// - Parameter statusCode: The HTTP status code of the response.
+/// - Parameter data: The response body, if any.
+/// - Parameter response: The full `HTTPURLResponse`.
+/// - Parameter endpoint: The endpoint string, used for logging.
+/// - Parameter rateLimiter: The rate-limit actor to arm on a genuine rate-limit response.
+///
 /// See https://docs.github.com/en/rest/overview/rate-limits-for-the-rest-api
 func handleRateLimitResponse(
     statusCode: Int,
