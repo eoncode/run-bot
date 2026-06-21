@@ -36,8 +36,13 @@ private final class TaskBox: @unchecked Sendable {
 
 // MARK: - APICallCounterViewModel
 
-/// View-model that polls `APICallCounterProtocol` every `pollingInterval` seconds
-/// and exposes derived display state for `APICallCounterRow`.
+/// View-model that polls `APICallCounterProtocol` every `pollingInterval` and
+/// exposes derived display state for `APICallCounterRow`.
+///
+/// Polling is **not** started automatically at init. Call `startPolling()` when
+/// the owning view appears and `stopPolling()` when it disappears, so the
+/// background Task does not run while Settings is off screen.
+/// `APICallCounterRow` wires this via the `.counterPolling()` view modifier.
 @Observable
 @MainActor
 public final class APICallCounterViewModel {
@@ -54,21 +59,40 @@ public final class APICallCounterViewModel {
     private let counter: any APICallCounterProtocol
 
     /// Box holding the structured polling task so `deinit` can cancel it.
-    ///
-    /// Marked `nonisolated(unsafe)` so the Swift 6 nonisolated `deinit`
-    /// can read `taskBox.task` to call `cancel()` without a main-actor hop.
-    /// Safe because `task` is only written from `@MainActor` context
-    /// (in `startPolling()`) and `Task.cancel()` is concurrency-safe.
     nonisolated(unsafe) private let taskBox = TaskBox()
 
     /// Creates the view-model.
     /// - Parameter counter: Counter to poll. Defaults to `apiCallCounter`.
     public init(counter: any APICallCounterProtocol = apiCallCounter) {
         self.counter = counter
-        startPolling()
+        // Polling is not started here — call startPolling() from onAppear.
     }
 
     deinit { taskBox.task?.cancel() }
+
+    // MARK: - Lifecycle
+
+    /// Starts the polling loop. Call from `onAppear` or `.counterPolling()`.
+    public func startPolling() {
+        guard taskBox.task == nil else { return }
+        taskBox.task = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self { self.snap = await self.counter.snapshot() }
+                do {
+                    try await Task.sleep(for: Self.pollingInterval)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+            }
+        }
+    }
+
+    /// Stops the polling loop. Call from `onDisappear` or `.counterPolling()`.
+    public func stopPolling() {
+        taskBox.task?.cancel()
+        taskBox.task = nil
+    }
 
     // MARK: - Derived display state
 
@@ -83,26 +107,6 @@ public final class APICallCounterViewModel {
         case ..<0.60: .green
         case ..<0.85: .yellow
         default: .red
-        }
-    }
-
-    // MARK: - Private
-
-    /// Starts a structured polling loop that refreshes `snap` every `pollingInterval`.
-    ///
-    /// `self` is only held strongly during the actor hop for `snapshot()` —
-    /// released before sleeping so `deinit` can fire immediately on view disappear.
-    private func startPolling() {
-        taskBox.task = Task { [weak self] in
-            while !Task.isCancelled {
-                if let self { self.snap = await self.counter.snapshot() }
-                do {
-                    try await Task.sleep(for: Self.pollingInterval)
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-            }
         }
     }
 }

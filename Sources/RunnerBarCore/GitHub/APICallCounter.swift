@@ -4,11 +4,13 @@
 // Tracks GitHub REST call timestamps in a rolling 60-minute window.
 // Mirrors the RateLimitActor pattern (P16 — Actor-Per-Concern Isolation).
 //
-// Actor chosen over Mutex: record() performs an append + slice on a [Date]
-// array that can reach 5,000 entries under load — non-trivial work that must
-// not block a cooperative thread pool worker under a lock.
-// GitHubTokenCache uses Mutex for a single pointer swap (P13 reach goal);
-// this case does not qualify because the critical section is not O(1).
+// Actor chosen over Mutex: record() performs an append + slice on an array
+// that can reach 5,000 entries under load — non-trivial work that must not
+// block a cooperative thread pool worker under a lock.
+//
+// ContinuousClock is used instead of Date() for timestamps so that purge()
+// is unaffected by macOS sleep/wake NTP corrections or user time-zone
+// changes. ContinuousClock advances monotonically from system boot.
 import Foundation
 
 // MARK: - APICallCounterSnapshot
@@ -22,8 +24,8 @@ public struct APICallCounterSnapshot: Sendable, Equatable {
     /// Fraction of the hourly limit consumed, clamped to `[0, 1]`.
     ///
     /// - Returns `0.0` when `limit == 0` to avoid `NaN` propagation.
-    /// - Lower-bounded at `0.0` so a negative `count` (possible via the
-    ///   public `init`) cannot produce a negative fraction.
+    /// - Lower-bounded at `0.0` so a negative `count` cannot produce a
+    ///   negative fraction.
     public var fraction: Double {
         guard limit > 0 else { return 0.0 }
         return max(0.0, min(Double(count) / Double(limit), 1.0))
@@ -48,16 +50,20 @@ public protocol APICallCounterProtocol: Actor {
 
 // MARK: - APICallCounter
 
-/// Actor-isolated ring buffer of GitHub REST call timestamps.
+/// Actor-isolated rolling buffer of GitHub REST call timestamps.
 ///
-/// `record()` is called once per successful `ghAPI()` / `ghAPIPaginated()`
-/// response in `GitHubTransportShim` via a direct `await` (not fire-and-forget)
-/// so that task cancellation propagates correctly and cancelled/timed-out
-/// fetches do not increment the counter.
+/// Timestamps are stored as `ContinuousClock.Instant` rather than `Date` so
+/// that `purge()` is unaffected by macOS sleep/wake NTP corrections or user
+/// clock adjustments. `ContinuousClock` advances monotonically from system
+/// boot — a wake-from-sleep event does not cause the clock to jump backward.
+///
+/// `record()` is called via a direct `await` in `GitHubTransportShim` (not
+/// fire-and-forget) so that task cancellation propagates correctly and
+/// cancelled/timed-out fetches do not increment the counter.
 ///
 /// No persistence — the counter resets on app launch by design.
 /// Memory is bounded: `purge()` evicts entries older than 3,600 s, and
-/// `record()` trims to `hourlyLimit` entries via a suffix slice.
+/// `record()` trims to `hourlyLimit` via a suffix slice.
 public actor APICallCounter: APICallCounterProtocol {
     /// Shared instance wired at module level.
     public static let shared = APICallCounter()
@@ -65,13 +71,11 @@ public actor APICallCounter: APICallCounterProtocol {
     /// GitHub authenticated REST rate limit per rolling hour.
     public static let hourlyLimit = 5_000
 
-    /// Rolling buffer of call timestamps, always in ascending order.
+    /// Rolling buffer of call instants, always in ascending order.
     ///
-    /// NB: monotonicity is assumed — timestamps are always appended as
-    /// `Date()` which is generally monotonically increasing. Clock skew on
-    /// system sleep/wake could yield duplicate or slightly regressed values;
-    /// `purge()` and the trim are both tolerant of this in practice.
-    private var timestamps: [Date] = []
+    /// Stored as `ContinuousClock.Instant` to avoid wall-clock skew.
+    /// Entries are appended in call order; `purge()` drops the front.
+    private var timestamps: [ContinuousClock.Instant] = []
 
     /// Creates a new `APICallCounter` instance.
     public init() {
@@ -80,14 +84,14 @@ public actor APICallCounter: APICallCounterProtocol {
 
     // MARK: - Protocol
 
-    /// Records one GitHub REST API call.
+    /// Records one GitHub REST API call at the current `ContinuousClock` instant.
     ///
     /// Purges stale entries first (O(k) front-slice), appends the current
-    /// timestamp, then caps the buffer at `hourlyLimit` via a suffix slice
+    /// instant, then caps the buffer at `hourlyLimit` via a suffix slice
     /// (avoids the O(n) element-shift cost of `removeFirst(n)`).
     public func record() {
         purge()
-        timestamps.append(Date())
+        timestamps.append(.now)
         if timestamps.count > Self.hourlyLimit {
             timestamps = Array(timestamps.suffix(Self.hourlyLimit))
         }
@@ -101,15 +105,16 @@ public actor APICallCounter: APICallCounterProtocol {
 
     // MARK: - Private
 
-    /// Evicts timestamps older than the rolling 60-minute window.
+    /// Evicts instants older than the rolling 60-minute window.
     ///
-    /// Because timestamps are always appended in ascending order, stale
-    /// entries are always at the front. Uses `firstIndex(where:)` +
-    /// `removeFirst(_:)` for an O(k) front-slice rather than a full O(n)
-    /// `removeAll(where:)` sweep.
+    /// Because instants are always appended in ascending order, stale entries
+    /// are always at the front. Uses `firstIndex(where:)` + `removeFirst(_:)`
+    /// for an O(k) front-slice rather than a full O(n) `removeAll(where:)` sweep.
+    ///
+    /// `ContinuousClock` is monotonic, so the cutoff calculation is not
+    /// susceptible to sleep/wake NTP corrections or user clock changes.
     private func purge() {
-        let cutoff = Date().addingTimeInterval(-3_600)
-        // NB: monotonicity assumed — see timestamps property comment.
+        let cutoff = ContinuousClock.now - .seconds(3_600)
         if let idx = timestamps.firstIndex(where: { $0 >= cutoff }) {
             if idx > 0 { timestamps.removeFirst(idx) }
         } else {
@@ -121,4 +126,5 @@ public actor APICallCounter: APICallCounterProtocol {
 // MARK: - Module-level accessor
 
 /// The module-wide `APICallCounter` instance shared by `GitHubTransportShim`.
+/// See issue #1511 for the follow-up to make this overridable via `@TaskLocal`.
 public let apiCallCounter = APICallCounter.shared

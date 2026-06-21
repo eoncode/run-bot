@@ -1,48 +1,67 @@
 // APICallCounterRow.swift
 // RunnerBar
 //
-// Settings row that shows live GitHub REST API usage as
-// `410 / 5,000  ████░░░░░░` with colour-coded progress (P5 — Liquid Glass).
-import RunnerBarCore
+// SwiftUI Settings row displaying the live GitHub REST API call counter.
 import SwiftUI
+import RunnerBarCore
 
-/// A Settings row that displays the number of GitHub REST API calls made in
-/// the last rolling 60-minute window alongside a colour-coded progress indicator.
+// MARK: - CounterPollingModifier
+
+/// Starts the counter's polling loop when the modified view appears and
+/// stops it when the view disappears, so the background Task only runs
+/// while the Settings panel is on screen.
+private struct CounterPollingModifier: ViewModifier {
+    let vm: APICallCounterViewModel
+    func body(content: Content) -> some View {
+        content
+            .onAppear { vm.startPolling() }
+            .onDisappear { vm.stopPolling() }
+    }
+}
+
+extension View {
+    /// Binds the `APICallCounterViewModel` polling lifecycle to this view's
+    /// appearance. Polling starts on `onAppear` and stops on `onDisappear`.
+    func counterPolling(_ vm: APICallCounterViewModel) -> some View {
+        modifier(CounterPollingModifier(vm: vm))
+    }
+}
+
+// MARK: - APICallCounterRow
+
+/// Settings row that shows `"410 / 5,000"` with a colour-coded progress bar.
 ///
-/// Drop this view into the GitHub section of the Settings panel:
+/// **Not yet wired into the Settings panel** — left for a follow-up app-layer
+/// PR to keep this PR focused on the core implementation and tests.
+///
+/// Usage:
 /// ```swift
 /// APICallCounterRow()
 /// ```
-///
-/// - Note: Each appearance of this view creates its own `APICallCounterViewModel`
-///   and polling task via `@State`. This is correct for a single Settings row.
-///   Do **not** embed this view in a `List` or `ForEach` — each cell would
-///   spawn an independent 5-second polling loop.
-struct APICallCounterRow: View {
-    /// View-model powering this row. A new instance is created per row appearance.
+public struct APICallCounterRow: View {
     @State private var vm = APICallCounterViewModel()
 
-    /// The view body.
-    var body: some View {
-        HStack(spacing: 12) {
-            Text("API calls (last 60 min)")
-                .foregroundStyle(.secondary)
+    public init() {}
+
+    public var body: some View {
+        HStack {
+            Text("API Calls (last hour)")
             Spacer()
             Text(vm.label)
-                .monospacedDigit()
                 .foregroundStyle(vm.statusColor)
+                .monospacedDigit()
             ProgressView(value: vm.snap.fraction)
+                .frame(width: 60)
                 .tint(vm.statusColor)
-                .frame(width: 80)
-                .animation(.easeInOut, value: vm.snap.fraction)
         }
-        .padding(.vertical, 2)
         .help(
-            "GitHub allows 5,000 authenticated REST calls per rolling hour. " +
-            "Current usage: \(Int(vm.snap.fraction * 100))%. " +
-            "Only successful calls are counted. " +
-            "Paginated fetches count as 1 call regardless of page count — " +
-            "real quota usage may be higher for list endpoints."
+            """
+            GitHub REST calls in the last 60 minutes.
+            Limit resets on a rolling basis.
+            Paginated fetches count as 1 call regardless of page count.
+            Only successful (non-nil) calls are counted.
+            """
         )
+        .counterPolling(vm)
     }
 }
