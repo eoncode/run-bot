@@ -3,6 +3,7 @@
 //
 // Regression tests for #1209 / #1192: org-scoped runners must receive CPU/MEM
 // metrics even when the local .runner JSON AgentId differs from the GitHub API id.
+import Foundation
 import Testing
 import RunnerBarCore
 
@@ -29,7 +30,7 @@ struct OrgRunnerMetricsResolutionTests {
     ) -> RunnerModel {
         RunnerModel(
             runnerName: "org-runner-1",
-            gitHubUrl: "https://github.com/myorg",
+            gitHubUrl: URL(string: "https://github.com/myorg"),
             agentId: agentId,
             apiId: apiId,
             workFolder: nil,

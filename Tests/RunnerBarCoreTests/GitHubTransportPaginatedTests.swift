@@ -262,6 +262,49 @@ final class GitHubTransportPaginatedTests {
         #expect(items?[0]["id"] == .string("1"))
     }
 
+    // MARK: - Non-array body on the very first page returns nil
+
+    /// A 200 response with a non-array JSON body on the *first* page must return nil
+    /// and must NOT arm or clear the rate-limit actor.
+    ///
+    /// This is the complement of `paginatedStopsOnNonArrayBody`, which only covers
+    /// the mid-pagination case (page 2 is bad after page 1 succeeds).
+    ///
+    /// The decode failure path sets `hadAtLeastOneSuccessfulPage = false` (the flag
+    /// is only set *after* a successful `decode([AnyJSON].self, ...)` call), so the
+    /// post-loop `guard hadAtLeastOneSuccessfulPage` fires and nil is returned.
+    ///
+    /// Verifies:
+    /// - `result == nil` — no successful page was ever decoded
+    /// - `setCalled == false` — a 200 non-array is not a rate-limit event
+    /// - `clearCalled == true` — `urlSessionExecute` calls `clearIfNotLimited()` on
+    ///   any 2xx response before the pagination loop attempts decode
+    @Test func paginatedNonArrayFirstPageDoesNotArmRateLimiter() async {
+        StubURLProtocol.reset()
+        let pageURL = "\(apiBase)orgs/test/actions/runners"
+
+        // 200 with a non-array body on the very first page — e.g. GitHub returns
+        // an error object instead of the expected runner list.
+        let badData = "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com\"}".data(using: .utf8)!
+        StubURLProtocol.register(.init(
+            data: badData,
+            statusCode: 200,
+            headers: [:]
+        ), for: pageURL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // hadAtLeastOneSuccessfulPage is false — nil must be returned.
+        #expect(result == nil)
+        // A 200 with a non-array body is not a rate-limit event — set() must not fire.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+        // clear() IS called — urlSessionExecute calls clearIfNotLimited() on every 2xx.
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == true)
+    }
+
     // MARK: - Single-page (no Link header) happy path
 
     /// A single page with no `Link: rel="next"` header returns just that page's items.
@@ -559,6 +602,11 @@ final class GitHubTransportPaginatedTests {
         // githubTokenCore() read (page-1 iteration) and nil for all subsequent
         // reads (page-2 iteration onward). The lock makes the counter safe under
         // @Suite(.serialized) without requiring an actor hop.
+        //
+        // - Note: `@unchecked Sendable` is intentional. `count` is guarded by
+        //   `lock` on every read and write, making concurrent access safe.
+        //   `@unchecked` is required because this local class predates Swift
+        //   concurrency. Test-only — P4's production carve-out applies.
         final class TokenCallCounter: @unchecked Sendable {
             let lock = NSLock()
             var count = 0
@@ -592,11 +640,15 @@ final class GitHubTransportPaginatedTests {
     /// A pre-armed rate-limit state (`spy.isLimited = true` before the call) does
     /// NOT block the initial request — the rate-limit check only fires inside
     /// `urlSessionExecute` after receiving a 403/429 response. Since page 1
-    /// returns 200, clear() fires after the 2xx and resets isLimited to false.
+    /// returns 200, the 2xx handler calls `clearIfNotLimited()` which is a no-op
+    /// because `isLimited` is already true, preserving the active limit window
+    /// set by a concurrent scope fetch.
     ///
     /// Verifies: the pre-armed state is not checked at call-entry, so page-1 items
-    /// are returned and `spy.setCalled` remains false (no rate-limit response was
-    /// received to trigger `handleRateLimitResponse`).
+    /// are returned; `spy.setCalled` remains false (no rate-limit response was
+    /// received to trigger `handleRateLimitResponse`); `clear()` is NOT called
+    /// because `clearIfNotLimited()` guards against clearing an already-armed actor;
+    /// the pre-armed `isLimited` state is preserved.
     @Test func paginatedReturnsItemsWhenPreArmedRateLimit() async {
         StubURLProtocol.reset()
         let pageURL = "\(apiBase)orgs/test/actions/runners"
@@ -619,12 +671,12 @@ final class GitHubTransportPaginatedTests {
         // set() must NOT have been called — no rate-limit response was received.
         let wasSetCalled = await spy.setCalled
         #expect(wasSetCalled == false)
-        // clear() IS called after page 1 success (2xx response clears the limiter).
+        // clear() is NOT called — clearIfNotLimited() is a no-op when isLimited is true.
         let wasClearCalled = await spy.clearCalled
-        #expect(wasClearCalled)
-        // isLimited is reset by clear() after page 1 success.
+        #expect(wasClearCalled == false)
+        // isLimited remains true — the pre-armed state is preserved.
         let snap = await spy.snapshot()
-        #expect(snap.isLimited == false)
+        #expect(snap.isLimited == true)
     }
 
     // MARK: - Non-auth HTTP error (404) returns partial results
@@ -697,5 +749,40 @@ final class GitHubTransportPaginatedTests {
         #expect(wasSetCalled == false)
         let wasClearCalled = await spy.clearCalled
         #expect(wasClearCalled == false)
+    }
+
+    // MARK: - 200 + non-array body on the very first page — clear() IS called
+
+    /// A 200 response with a non-array JSON body on the *first* page (before any items
+    /// are accumulated) must return nil.
+    ///
+    /// `clear()` IS called here because `urlSessionExecute` clears the rate-limiter on any
+    /// 2xx response (line 156) before returning `.success` to the pagination loop. The decode
+    /// failure happens afterward in the loop — `clear()` is based on the HTTP status code
+    /// alone, not on whether the body decodes as a valid JSON array.
+    ///
+    /// Verifies:
+    /// - `result == nil` — no successful page decoded
+    /// - `setCalled == false` — not a rate-limit event
+    /// - `clearCalled == true` — 2xx response in `urlSessionExecute` calls clear()
+    @Test func paginatedReturnsNilOnNonArrayBodyFirstPage() async {
+        StubURLProtocol.reset()
+        let pageURL = "\(apiBase)orgs/test/actions/runners"
+
+        // 200 with a non-array body — e.g. GitHub error object on first page.
+        StubURLProtocol.register(.init(
+            data: "{\"message\":\"Not Found\"}".data(using: .utf8)!,
+            statusCode: 200,
+            headers: [:]
+        ), for: pageURL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        #expect(result == nil)
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+        let wasClearCalled = await spy.clearCalled
+        #expect(wasClearCalled == true)
     }
 }

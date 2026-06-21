@@ -10,7 +10,7 @@ import Testing
 private func makeRunner(
     runnerName: String = "test-runner",
     agentId: Int? = 42,
-    gitHubUrl: String? = "https://github.com/owner/repo",
+    gitHubUrl: URL? = URL(string: "https://github.com/owner/repo"),
     installPath: String? = testRunnerInstallPath
 ) -> RunnerModel {
     RunnerModel(
@@ -129,7 +129,7 @@ struct SaveRunnerEditsUseCaseTests {
 
     @Test("calls labelsService with correct scope and runnerID")
     func labelsCalledWithCorrectArgs() async {
-        let runner   = makeRunner(agentId: 99, gitHubUrl: "https://github.com/myorg/myrepo")
+        let runner   = makeRunner(agentId: 99, gitHubUrl: URL(string: "https://github.com/myorg/myrepo"))
         var draft    = RunnerEditDraft(runner: runner)
         let original = RunnerEditDraft(runner: runner)
         draft.labelsText = "gpu, large"
@@ -349,5 +349,73 @@ struct SaveRunnerEditsUseCaseTests {
         #expect(result == .success)
         #expect(await labels.callCount == 0)
         #expect(await config.saveCalled)
+    }
+
+    // MARK: - LabelsPrerequisiteError
+
+    /// #1480 — When agentId is nil, execute() must append the `.missingAgentId` message
+    /// and must NOT call labelsService.patch.
+    @Test("labels step — missing agentId appends correct error and skips patch")
+    func labelsPrereqMissingAgentId() async {
+        let runner   = makeRunner(agentId: nil)
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        draft.labelsText = "some-label"
+
+        let labels  = SpyLabelsService()
+        let useCase = makeUseCase(labels: labels)
+
+        let result = await useCase.execute(runner: runner, draft: draft, original: original)
+
+        guard case .failure(let msgs) = result else {
+            Issue.record("expected .failure, got .success")
+            return
+        }
+        #expect(msgs.contains(where: { $0.contains("missing agent ID") }))
+        #expect(await labels.callCount == 0)
+    }
+
+    /// #1480 — When agentId is present but gitHubUrl is nil, execute() must append
+    /// the `.missingGitHubUrl` message and must NOT call labelsService.patch.
+    @Test("labels step — nil gitHubUrl appends correct error and skips patch")
+    func labelsPrereqMissingGitHubUrl() async {
+        let runner   = makeRunner(gitHubUrl: nil)
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        draft.labelsText = "some-label"
+
+        let labels  = SpyLabelsService()
+        let useCase = makeUseCase(labels: labels)
+
+        let result = await useCase.execute(runner: runner, draft: draft, original: original)
+
+        guard case .failure(let msgs) = result else {
+            Issue.record("expected .failure, got .success")
+            return
+        }
+        #expect(msgs.contains(where: { $0.contains("missing GitHub URL") }))
+        #expect(await labels.callCount == 0)
+    }
+
+    /// #1480 — When gitHubUrl is present but is a bare-host URL (no org/repo path),
+    /// execute() must append the `.invalidScope` message and must NOT call labelsService.patch.
+    @Test("labels step — bare-host gitHubUrl appends invalidScope error and skips patch")
+    func labelsPrereqInvalidScope() async {
+        let runner   = makeRunner(gitHubUrl: URL(string: "https://github.com"))
+        var draft    = RunnerEditDraft(runner: runner)
+        let original = RunnerEditDraft(runner: runner)
+        draft.labelsText = "some-label"
+
+        let labels  = SpyLabelsService()
+        let useCase = makeUseCase(labels: labels)
+
+        let result = await useCase.execute(runner: runner, draft: draft, original: original)
+
+        guard case .failure(let msgs) = result else {
+            Issue.record("expected .failure, got .success")
+            return
+        }
+        #expect(msgs.contains(where: { $0.contains("no org/repo path") }))
+        #expect(await labels.callCount == 0)
     }
 }
