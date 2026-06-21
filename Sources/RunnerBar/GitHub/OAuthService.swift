@@ -247,9 +247,13 @@ final class OAuthService {
         /// The one-time authorization code received in the OAuth redirect callback.
         let code: String
 
+        /// Maps Swift property names to the snake_case JSON keys expected by the GitHub OAuth endpoint.
         private enum CodingKeys: String, CodingKey {
+            /// Maps `clientID` to the `client_id` JSON key.
             case clientID     = "client_id"
+            /// Maps `clientSecret` to the `client_secret` JSON key.
             case clientSecret = "client_secret"
+            /// Maps `code` directly — the JSON key and property name are identical.
             case code
         }
     }
