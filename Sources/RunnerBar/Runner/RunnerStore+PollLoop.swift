@@ -1,6 +1,9 @@
 // RunnerStore+PollLoop.swift
 // RunnerBar
 //
+// Migration boundary established in PR #1256 (closed 2026-06-09) and
+// superseded by the PollLoopCoordinator extraction in this PR (PR-D).
+//
 // The poll-loop methods (`start`, `nextPollInterval`, `startObservingPreferences`,
 // `startObservingScopes`) remain in `RunnerStore.swift` because they are `private`
 // and therefore file-scoped. Moving them here would require widening them to

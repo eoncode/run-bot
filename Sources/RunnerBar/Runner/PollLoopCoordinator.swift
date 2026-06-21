@@ -24,10 +24,12 @@ import Foundation
 ///    `setScopeObservationTask` is already serialised without any additional
 ///    locking.
 ///
-/// 2. **`deinit` only calls `Task.cancel()`.** `Task.cancel()` is itself
-///    `Sendable` and safe to call from any isolation context. `cancelAll()`
-///    in `deinit` performs no reads or writes of mutable state beyond flipping
-///    the cancellation flag on each `Task`.
+/// 2. **`deinit` performs no reads or writes that race with concurrent callers.**
+///    By the time `deinit` runs, all strong references are gone, so there are
+///    no concurrent callers. Within `deinit`, `cancelAll()` calls `Task.cancel()`
+///    (safe from any context) and then nils the stored handles. Both operations
+///    are safe for exactly the same reason: no other code can observe or mutate
+///    those properties after the last strong reference is released.
 ///
 /// 3. **`deinit` runs after all strong references are gone.** By the time
 ///    `RunnerStore.deinit` (and therefore `PollLoopCoordinator.deinit`) runs,

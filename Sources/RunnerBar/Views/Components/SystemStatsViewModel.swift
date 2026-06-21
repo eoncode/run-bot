@@ -31,11 +31,19 @@ final class SystemStatsViewModel {
     /// make `start()` silently no-op on a loop that has already exited.
     ///
     /// Both `start()` and the task body itself reset this flag: `start()` sets it
-    /// `true`, the task sets it `false` on every exit path (cooperative cancellation,
-    /// weak-self nil, unexpected error), and `stop()` sets it `false` via cancellation.
-    /// This ensures `isSampling` is never permanently stuck `true` regardless of how
-    /// the task exits.
+    /// `true`, the task’s `defer` sets it `false` on every exit path, and `stop()`
+    /// sets it `false` via cancellation. The `defer` is generation-stamped so a
+    /// stale task exiting after a rapid `stop()→start()` cannot reset `isSampling`
+    /// on the newly started loop.
     private var isSampling = false
+    /// Monotonically increasing counter incremented on every `start()` call.
+    ///
+    /// Each task closure captures its own generation value at launch. The `defer`
+    /// block only resets `isSampling` when the captured generation still matches
+    /// `samplingGeneration`, i.e. no newer `start()` has run since this task began.
+    /// This prevents a stale task’s `defer` from permanently no-opping future
+    /// `start()` calls after a rapid `stop()→start()` cycle.
+    private var samplingGeneration: Int = 0
     /// Per-core CPU tick counts from the previous `host_processor_info` call.
     ///
     /// Written exclusively on `@MainActor` (inside `sampleCPU()`’s `defer` block).
@@ -72,6 +80,10 @@ final class SystemStatsViewModel {
     /// This separation ensures that a direct `samplingTask?.cancel()` call (without niling)
     /// cannot make `start()` silently no-op on a loop that has already exited.
     ///
+    /// The task captures `generation` at launch. The `defer` only resets `isSampling` when
+    /// the captured generation still matches `samplingGeneration` — preventing a stale
+    /// exiting task from no-opping a freshly started loop after a rapid `stop()→start()`.
+    ///
     /// `Task { @MainActor [weak self] in }` is used rather than the bare `Task { [weak self] in }`
     /// to make the `@MainActor` isolation explicit. A bare `Task { }` created from an
     /// `@MainActor`-isolated context does inherit `@MainActor` today, but the annotation
@@ -79,8 +91,17 @@ final class SystemStatsViewModel {
     func start() {
         guard !isSampling else { return }
         isSampling = true
+        samplingGeneration &+= 1
+        let generation = samplingGeneration
         samplingTask = Task { @MainActor [weak self] in
-            defer { self?.isSampling = false }  // reset on every exit path
+            defer {
+                // Only reset isSampling if this is still the current generation.
+                // A stale task exiting after a rapid stop→start must not clobber
+                // the liveness flag owned by the newer task.
+                if self?.samplingGeneration == generation {
+                    self?.isSampling = false
+                }
+            }
             // Immediate first sample before the first sleep.
             self?.sample()
             while !Task.isCancelled {
