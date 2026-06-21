@@ -14,6 +14,7 @@ private struct CounterPollingModifier: ViewModifier {
     /// The view-model whose polling lifecycle is managed by this modifier.
     let vm: APICallCounterViewModel
     /// Wraps `content` with `onAppear`/`onDisappear` hooks that start and stop polling.
+    // swiftlint:disable:next missing_docs
     func body(content: Content) -> some View {
         content
             .onAppear { vm.startPolling() }

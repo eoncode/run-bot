@@ -75,6 +75,7 @@ public actor APICallCounter: APICallCounterProtocol {
     ///
     /// Stored as `ContinuousClock.Instant` to avoid wall-clock skew.
     /// Entries are appended in call order; `purge()` drops the front.
+    // swiftlint:disable:next missing_docs
     private var timestamps: [ContinuousClock.Instant] = []
 
     /// Creates a new `APICallCounter` instance.
