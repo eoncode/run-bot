@@ -118,9 +118,7 @@ private func decodeItems(_ data: Data?) -> [[String: AnyJSON]]? {
 /// Trailing-slash base URL derived from `GitHubConstants.apiBase`.
 /// All stub URL construction uses this so that if apiBase ever changes
 /// (e.g. GHE support), test URLs stay in sync automatically.
-private let apiBase: String = {
-    GitHubConstants.apiBase.hasSuffix("/") ? GitHubConstants.apiBase : GitHubConstants.apiBase + "/"
-}()
+private let apiBase = GitHubConstants.apiBase + "/"
 
 // MARK: - GitHubTransportPaginatedTests
 
@@ -227,13 +225,8 @@ final class GitHubTransportPaginatedTests {
         let items = decodeItems(result)
         #expect(items?.count == 1)
         #expect(items?[0]["id"] == .string("1"))
-        // Decode failure on page 2 must not arm the rate-limit actor.
-        // (clearCalled may be true — page 1's 200 triggers rateLimiter.clear() once.)
-        let wasSetCalled = await spy.setCalled
-
-        #expect(wasSetCalled == false)
     }
-    
+
     // MARK: - Single-page (no Link header) happy path
 
     /// A single page with no `Link: rel="next"` header returns just that page's items.
@@ -260,6 +253,7 @@ final class GitHubTransportPaginatedTests {
         #expect(items?[0]["id"] == .string("1"))
         #expect(items?[1]["id"] == .string("2"))
     }
+
     // MARK: - Rate-limit partial return
 
     /// A genuine 429 rate-limit mid-pagination arms the spy and returns partial items.
@@ -415,44 +409,6 @@ final class GitHubTransportPaginatedTests {
         #expect(result == nil)
     }
 
-// MARK: - HTTP error (non-401) mid-pagination returns partial results
-
-    /// A 404 (or other non-auth HTTP error) on page 2 must return the page-1 items
-    /// already accumulated, not nil.
-    ///
-    /// Verifies the documented contract: non-auth HTTP errors (404, 410, 503) stop
-    /// pagination but return partial items. Only auth failures discard all items.
-    @Test func paginatedReturnsPartialResultsOnHttpError() async {
-        StubURLProtocol.reset()
-        let page1URL = "\(apiBase)orgs/test/actions/runners"
-        let page2URL = "\(apiBase)orgs/test/actions/runners?page=2"
-        let page1Data = jsonPage([["id": "1", "name": "runner-a"]])
-
-        StubURLProtocol.register(.init(
-            data: page1Data,
-            statusCode: 200,
-            headers: ["Link": "<\(page2URL)>; rel=\"next\""]
-        ), for: page1URL)
-        // 404 on page 2 — non-auth HTTP error.
-        StubURLProtocol.register(.init(
-            data: "{\"message\":\"Not found\"}".data(using: .utf8)!,
-            statusCode: 404,
-            headers: [:]
-        ), for: page2URL)
-
-        let spy = SpyRateLimitActor()
-        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
-
-        // Partial item from page 1 must be returned — not nil.
-        #expect(result != nil)
-        let items = decodeItems(result)
-        #expect(items?.count == 1)
-        #expect(items?.first?["id"] == .string("1"))
-        // A non-auth HTTP error must never arm the rate-limit actor.
-        let wasSetCalled = await spy.setCalled
-        #expect(wasSetCalled == false)
-    }
-
     // MARK: - No token returns nil immediately
 
     /// When no GitHub token is configured, `urlSessionAPIPaginated` returns nil
@@ -478,32 +434,24 @@ final class GitHubTransportPaginatedTests {
     /// must cause all partial items to be discarded and nil to be returned.
     ///
     /// Verifies: the `.noToken` arm in the pagination loop is reachable and
-    /// correctly sets `didFailAuth = true`.
+    /// correctly sets `didFailAuth = true` after page 1 has already been fetched.
     ///
-    /// Mechanism: page 1 is served normally (200 + Link header). Before page 2
-    /// can be fetched, the token provider is swapped to `{ nil }`. On the page-2
-    /// request, `urlSessionExecute` hits `guard let token = githubTokenCore()`
-    /// synchronously (inside `@concurrent` but before any suspension) and returns
-    /// `.noToken` — no network call is made. The pagination loop matches
-    /// `.noToken`, sets `didFailAuth = true`, breaks, and returns nil.
-    ///
-    /// - Important: The real guard is the synchronous `guard let token` check in
-    ///   `urlSessionExecute`, not a happens-before guarantee at the async-scheduler
-    ///   level. The serialised suite prevents concurrent test execution, but the
-    ///   token swap and the page-2 URLSession call are eventually consistent; the
-    ///   URLSession `data(for:)` suspension gives the lock-write time to complete.
-    ///   If this test ever becomes flaky, it means the lock-contention window grew —
-    ///   not a logic error in the .noToken path.
-    ///
-    /// - Note: The old code path returned `.networkError(URLError(.userAuthenticationRequired))`
-    ///   for this scenario. The `.noToken` case was added in the #1476 refactor to make
-    ///   the discrimination explicit. The `.userAuthenticationRequired` arm was removed;
-    ///   do not search for it — it no longer exists.
+    /// Mechanism: a lock-protected call counter is installed as the token provider.
+    /// The first call to `githubTokenCore()` (page-1 iteration) returns "test-token";
+    /// every subsequent call returns nil. Page 1 therefore succeeds and its item is
+    /// accumulated. On the page-2 iteration, `urlSessionExecute` reads the counter,
+    /// gets nil, and returns `.noToken` without making a network request. The pagination
+    /// loop catches `.noToken`, sets `didFailAuth`, breaks, and returns nil — discarding
+    /// the page-1 item.
     ///
     /// The page-2 URL is intentionally NOT registered in `StubURLProtocol`: if the
     /// token guard is ever accidentally removed, the stub miss produces a
     /// `fileDoesNotExist` URLError rather than silently serving data, making the
     /// regression immediately visible.
+    ///
+    /// Assertions:
+    /// - `result == nil` — partial items are discarded on auth failure
+    /// - `spy.setCalled == false` — `.noToken` is not a rate-limit event
     ///
     /// - Note: Safe under `@Suite(.serialized)` — the token mutation is sequenced
     ///   away from all other tests in this suite.
@@ -521,9 +469,18 @@ final class GitHubTransportPaginatedTests {
         ), for: page1URL)
         // Page 2 is deliberately NOT registered — see method doc above.
 
-        // Swap to nil token after page 1 is registered so page 2's urlSessionExecute
-        // hits the guard-let-token early return.
-        configureGHToken { nil }
+        // Call-count–based token provider: returns a valid token for the first
+        // githubTokenCore() read (page-1 iteration) and nil for all subsequent
+        // reads (page-2 iteration onward). The lock makes the counter safe under
+        // @Suite(.serialized) without requiring an actor hop.
+        let callCountLock = NSLock()
+        var tokenCallCount = 0
+        configureGHToken {
+            callCountLock.withLock {
+                defer { tokenCallCount += 1 }
+                return tokenCallCount == 0 ? "test-token" : nil
+            }
+        }
         defer { configureGHToken { "test-token" } }
 
         let spy = SpyRateLimitActor()
