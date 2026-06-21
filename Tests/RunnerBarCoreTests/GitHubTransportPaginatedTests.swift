@@ -262,6 +262,47 @@ final class GitHubTransportPaginatedTests {
         #expect(items?[0]["id"] == .string("1"))
     }
 
+    // MARK: - Non-array body on the very first page returns nil
+
+    /// A 200 response with a non-array JSON body on the *first* page — before any
+    /// items are accumulated — must return nil.
+    ///
+    /// This is the complement of `paginatedStopsOnNonArrayBody`, which only covers
+    /// the mid-pagination case (page 2 is bad after page 1 succeeds).
+    ///
+    /// The decode failure path sets `hadAtLeastOneSuccessfulPage = false` (the flag
+    /// is only set *after* a successful `decode([AnyJSON].self, ...)` call), so the
+    /// post-loop `guard hadAtLeastOneSuccessfulPage` fires and nil is returned.
+    ///
+    /// Verifies:
+    /// - `result == nil` — no successful page was ever decoded
+    /// - `clear()` must NOT be called — no 2xx successful-array page preceded the failure
+    @Test func paginatedReturnsNilOnNonArrayBodyFirstPage() async {
+        StubURLProtocol.reset()
+        let pageURL = "\(apiBase)orgs/test/actions/runners"
+
+        // 200 with a non-array body on the very first page — e.g. GitHub returns
+        // an error object instead of the expected runner list.
+        let badData = "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com\"}".data(using: .utf8)!
+        StubURLProtocol.register(.init(
+            data: badData,
+            statusCode: 200,
+            headers: [:]
+        ), for: pageURL)
+
+        let spy = SpyRateLimitActor()
+        let result = await urlSessionAPIPaginated("/orgs/test/actions/runners", rateLimiter: spy)
+
+        // hadAtLeastOneSuccessfulPage is false — nil must be returned.
+        #expect(result == nil)
+        // clear() IS called after any 2xx response (urlSessionExecute calls rateLimiter.clear()
+        // on success before returning .success). The decode failure happens *after* the HTTP
+        // success response, so clear() fires. set() must NOT be called — a 200 is not a
+        // rate-limit event.
+        let wasSetCalled = await spy.setCalled
+        #expect(wasSetCalled == false)
+    }
+
     // MARK: - Single-page (no Link header) happy path
 
     /// A single page with no `Link: rel="next"` header returns just that page's items.
