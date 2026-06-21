@@ -9,9 +9,9 @@ import Foundation
 /// and established community practice, though not a formally documented API guarantee.
 private let sharedDecoder = JSONDecoder()
 
-/// Shared encoder hoisted alongside `sharedDecoder` for symmetry and to avoid
-/// re-instantiation on every paginated call.
+/// Shared encoder hoisted to avoid re-instantiation on every call.
 /// Thread-safe: `JSONEncoder` has no mutable state after initialisation.
+/// Used by `urlSessionAPIPaginated` (page accumulation) and `patchRunnerLabels` (label body).
 private let sharedEncoder = JSONEncoder()
 
 // MARK: - Shared execution core
@@ -151,8 +151,11 @@ public func urlSessionAPIPaginated(
 ) async -> Data? {
     var nextURL: String? = resolveURL(endpoint)
     var allItems: [AnyJSON] = []
-    var didFailAuthentication = false
-    var didFailPermission = false
+    // Both auth failure (401, no-token) and permission denial (403 non-rate-limit)
+    // discard all collected items and return nil. They are collapsed into a single
+    // flag because the post-loop behaviour is identical; the log messages below
+    // retain the distinction so operators can tell them apart.
+    var didFailAuth = false
     var didRateLimit = false
 
     pagination: while let urlString = nextURL {
@@ -171,7 +174,7 @@ public func urlSessionAPIPaginated(
             }
         case .httpError(401):
             log("urlSessionAPIPaginated › 401 Unauthorized — token may have been revoked, stopping pagination")
-            didFailAuthentication = true
+            didFailAuth = true
             break pagination
         case .httpError:
             log("urlSessionAPIPaginated › non-2xx error at \(urlString) — stopping pagination")
@@ -181,15 +184,20 @@ public func urlSessionAPIPaginated(
             didRateLimit = true
             break pagination
         case .permissionDenied:
+            // 403 that did not arm the rate-limit actor — token scope, revoked PAT, or
+            // repo access denial. Treated identically to an auth failure: discard all
+            // collected items and return nil. Folded into didFailAuth (not a separate flag)
+            // because the post-loop behaviour is the same; the log line preserves the
+            // distinction for operators.
             log("urlSessionAPIPaginated › 403 permission denied — discarding \(allItems.count) partial items, returning nil")
-            didFailPermission = true
+            didFailAuth = true
             break pagination
         case .networkError(let error as URLError) where error.code == .userAuthenticationRequired:
             // Token was nil or cleared mid-pagination — treat as auth failure so
             // partial items are discarded and nil is returned, matching the documented
             // "returns nil on auth failure or no token" contract.
             log("urlSessionAPIPaginated › no token mid-pagination — discarding \(allItems.count) partial items, returning nil")
-            didFailAuthentication = true
+            didFailAuth = true
             break pagination
         case .networkError:
             log("urlSessionAPIPaginated › network error at \(urlString) — stopping pagination")
@@ -197,7 +205,7 @@ public func urlSessionAPIPaginated(
         }
     }
 
-    if didFailAuthentication || didFailPermission {
+    if didFailAuth {
         if allItems.isEmpty {
             log("urlSessionAPIPaginated › auth/permission failure on first page — no items collected, returning nil")
         } else {
@@ -341,8 +349,7 @@ public func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: 
     }
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(runnerID)/labels"
     log("patchRunnerLabels › PUT \(endpoint) labels=\(labels)")
-    let encoder = JSONEncoder()
-    guard let bodyData = try? encoder.encode(["labels": labels]) else {
+    guard let bodyData = try? sharedEncoder.encode(["labels": labels]) else {
         log("patchRunnerLabels › failed to serialise request body")
         return nil
     }
