@@ -150,17 +150,12 @@ struct APICallCounterTests {
     /// tests that may have already incremented the shared instance.
     @Test("ghAPI() does not increment counter when transport returns nil")
     func ghAPISkipsCounterOnNilResult() async {
-        // Reset shared actor to isolate from other test runs.
         await apiCallCounter.reset()
-        // Wire a nil-returning stub transport.
         configureGHAPI { _ in nil }
-        // Call ghAPI — transport returns nil, counter must not increment.
         _ = await ghAPI("https://api.github.com/test")
-        // Allow any fire-and-forget Tasks a tick to settle (none should have fired).
         await Task.yield()
         let snap = await apiCallCounter.snapshot()
         #expect(snap.count == 0, "counter must not increment when transport returns nil")
-        // Restore unconfigured stub so other tests are unaffected.
         configureGHAPI { _ in nil }
     }
 

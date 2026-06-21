@@ -112,7 +112,9 @@ public func configureGHAPI(
 }
 
 /// Wire up the raw-bytes transport for log endpoints. Call once at launch.
-/// - Parameter rawTransport: Async closure that fetches raw log bytes.
+/// - Parameter rawTransport: Async closure that fetches raw log bytes;
+///   must follow 302 redirects, as GitHub log endpoints redirect to S3.
+///   Returns `nil` on failure.
 public func configureGHRaw(_ rawTransport: @escaping GHRawTransport) {
     rawTransportBox.configure(rawTransport)
 }
