@@ -102,10 +102,11 @@ private func urlSessionExecute(
                 statusCode: http.statusCode, data, response: http,
                 endpoint: urlString, rateLimiter: rateLimiter
             )
-            // Use snapshot() for a single atomic actor hop (P10 — Atomic Snapshot Pattern).
-            // A separate await rateLimiter.isLimited read would introduce a TOCTOU window:
-            // a concurrent caller could clear() the actor between handleRateLimitResponse
-            // and the isLimited read, causing the wrong result to be returned.
+            // snapshot() returns isLimited and resetDate in a single actor hop, keeping
+            // both values consistent with each other. Only isLimited is used here, but
+            // snapshot() is preferred over a bare await rateLimiter.isLimited so that a
+            // future reader who adds a resetDate check does not accidentally introduce a
+            // TOCTOU between two separate awaits (P10 — Atomic Snapshot Pattern).
             let snap = await rateLimiter.snapshot()
             return snap.isLimited ? .rateLimited : .permissionDenied
         }
