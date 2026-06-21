@@ -229,8 +229,17 @@ func urlSessionAPIPaginated(
                 break pagination
             }
         case .noToken:
-            // Token was nil when urlSessionExecute ran the guard — treat as auth failure:
-            // discard partial results and return nil, matching the documented contract.
+            // Token was nil when urlSessionExecute ran its `guard let token = githubTokenCore()`
+            // at the top of the function. This is the sole mechanism for the mid-pagination
+            // token-revocation path: `urlSessionExecute` returns `.noToken`, never
+            // `.networkError(URLError(.userAuthenticationRequired))`. The
+            // `.userAuthenticationRequired` URLError code is produced by URLSession only for
+            // HTTP Basic/Digest auth challenges and is never emitted on the GitHub Bearer-token
+            // path. An arm matching that code was removed from this switch in a prior commit;
+            // do not re-add it.
+            //
+            // Treat as auth failure: discard partial results and return nil, matching the
+            // documented contract.
             log("urlSessionAPIPaginated › no token — discarding \(allItems.count) partial items, returning nil")
             didFailAuth = true
             break pagination
