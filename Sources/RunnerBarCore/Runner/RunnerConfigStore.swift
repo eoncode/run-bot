@@ -28,9 +28,9 @@ public enum RunnerConfigStoreError: LocalizedError {
             "Failed to decode runner configuration at \(installPath)/.runner"
         case .writeFailed(let installPath, let underlying):
             "Failed to write runner configuration at \(installPath)/.runner: \(underlying.localizedDescription)"
-        }
         case .malformedExistingFile(let installPath):
             "Existing runner configuration at \(installPath)/.runner is malformed and cannot be safely overwritten — agent-managed keys would be lost"
+        }
     }
 }
 
@@ -48,6 +48,12 @@ public enum RunnerConfigStoreError: LocalizedError {
 /// `DispatchQueue.global` + `withCheckedThrowingContinuation` bridge pattern and also
 /// removes the `let config = copy config` workaround that was needed because a
 /// `borrowing` parameter cannot escape into an `@escaping` closure.
+///
+/// **Error contract for `save(_:at:)`:** if the existing `.runner` file is present but
+/// cannot be decoded (malformed JSON), `save()` throws `malformedExistingFile` rather
+/// than proceeding from an empty dictionary — which would silently drop agent-managed
+/// keys such as `jitConfig`. See `RunnerConfigStoreError.malformedExistingFile`.
+/// `load(at:)` never throws `malformedExistingFile` — only `readFailed` / `decodeFailed`.
 public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 
     // MARK: Shared instance
@@ -57,8 +63,10 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 
     // MARK: Private properties
 
-    /// Decoder used for reading `.runner` JSON in `load()`. Thread-safe: `@MainActor`-equivalent
-    /// actor isolation serialises all access; `load()` is never called concurrently on the same actor.
+    /// Decoder used for reading `.runner` JSON in `load(at:)`.
+    /// Actor isolation serialises all `load()` calls; this instance is never
+    /// accessed concurrently. `nonisolated` allows passing it into the
+    /// `@concurrent` free function without crossing the actor boundary at runtime.
     private nonisolated let decoder = JSONDecoder()
 
     // MARK: Init
@@ -77,14 +85,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     /// thread is never blocked.
     public func load(at installPath: String) async throws(RunnerConfigStoreError) -> RunnerConfig {
         let url = runnerConfigURL(for: installPath)
-        let data: Data
-        do {
-            data = try await loadRunnerData(from: url, installPath: installPath)
-        } catch let configError as RunnerConfigStoreError {
-            throw configError
-        } catch {
-            throw RunnerConfigStoreError.readFailed(installPath, error)
-        }
+        let data = try await loadRunnerData(from: url, installPath: installPath)
         do {
             return try decoder.decode(RunnerConfig.self, from: data)
         } catch {
@@ -110,13 +111,7 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
     /// previous `let config = copy config` workaround is no longer needed.
     public func save(_ config: borrowing RunnerConfig, at installPath: String) async throws(RunnerConfigStoreError) {
         let url = runnerConfigURL(for: installPath)
-        do {
-            try await saveRunnerConfig(config, to: url, installPath: installPath)
-        } catch let configError as RunnerConfigStoreError {
-            throw configError
-        } catch {
-            throw RunnerConfigStoreError.writeFailed(installPath, error)
-        }
+        try await saveRunnerConfig(config, to: url, installPath: installPath)
     }
 
     // MARK: Private
@@ -132,9 +127,10 @@ public actor RunnerConfigStore: RunnerConfigStoreProtocol {
 /// Reads and BOM-strips the `.runner` file at `url`.
 ///
 /// Runs on the Swift cooperative thread pool without blocking an actor's serial
-/// executor. Throws `RunnerConfigStoreError.readFailed` on any I/O error.
+/// executor. Declares `throws(RunnerConfigStoreError)` so callers with a typed-throws
+/// context (e.g. `load(at:)`) need no catch bridge — the error type is already known.
 @concurrent
-private func loadRunnerData(from url: URL, installPath: String) throws -> Data {
+private func loadRunnerData(from url: URL, installPath: String) throws(RunnerConfigStoreError) -> Data {
     do {
         let raw = try Data(contentsOf: url)
         return stripRunnerConfigBOM(raw)
@@ -152,12 +148,16 @@ private func loadRunnerData(from url: URL, installPath: String) throws -> Data {
 /// A fresh `JSONDecoder` and `JSONEncoder` are created per call. Apple does not
 /// document either type as safe for concurrent use on the same instance, and two
 /// simultaneous `save()` calls can invoke this helper concurrently.
+///
+/// Throws `RunnerConfigStoreError.malformedExistingFile` if the existing `.runner`
+/// file is present but cannot be decoded — proceeding from an empty dict would
+/// silently drop agent-managed keys such as `jitConfig`.
 @concurrent
 private func saveRunnerConfig(
     _ config: RunnerConfig,
     to url: URL,
     installPath: String
-) throws {
+) throws(RunnerConfigStoreError) {
     // Read-modify-write: load existing keys so agent-managed keys are preserved.
     let decoder = JSONDecoder()
     var raw: [String: AnyJSON] = [:]
@@ -166,15 +166,19 @@ private func saveRunnerConfig(
         if let dict = try? decoder.decode([String: AnyJSON].self, from: data) {
             raw = dict
         } else {
-            // Decode failed — existing file is malformed. Proceeding
-            // from an empty dict will drop unknown agent-managed keys on this save.
+            // Decode failed — the file is present but malformed. Proceeding
+            // from an empty dict would silently drop agent-managed keys (e.g.
+            // jitConfig), de-registering ephemeral JIT runners. Throw so the
+            // caller can surface the error instead of silently corrupting state.
             log("RunnerConfigStore › save: existing .runner at \(url.path) is malformed; aborting save to protect agent-managed keys")
             throw RunnerConfigStoreError.malformedExistingFile(installPath)
         }
     } else {
-        // File is missing or temporarily unreadable. Writing from scratch.
-        // If the file exists but was unreadable, unknown agent-managed keys (e.g.
-        // jitConfig, gitHubUrl) will be dropped — tracked in a follow-up issue (TBD).
+        // File is missing (first registration) or temporarily unreadable (I/O error).
+        // Writing from scratch is correct for a missing file. For a transiently
+        // unreadable file, unknown agent-managed keys (e.g. jitConfig, gitHubUrl)
+        // will be dropped — the malformed-content path above is now protected;
+        // the I/O-failure path is tracked in #1499.
         log("RunnerConfigStore › save: could not read existing .runner at \(url.path); writing from scratch")
     }
 
