@@ -24,11 +24,17 @@ final class SystemStatsViewModel {
     /// the `@Observable` macro's tracking storage.
     @ObservationIgnored private var samplingTask: Task<Void, Never>?
     /// Per-core CPU tick counts from the previous `host_processor_info` call.
-    /// Accessed exclusively on `@MainActor` — no concurrent access is possible,
-    /// so `nonisolated(unsafe)` is no longer needed.
-    @ObservationIgnored private var prevCPUInfo: processor_info_array_t?
+    ///
+    /// Written exclusively on `@MainActor` (inside `sampleCPU()`'s `defer` block).
+    /// `nonisolated(unsafe)` is required because `deinit` is nonisolated in Swift 6
+    /// and must read this pointer to free the Mach buffer — crossing into `@MainActor`
+    /// asynchronously from `deinit` is not possible. This is safe because `deinit`
+    /// only runs after all strong references are gone, guaranteeing no concurrent
+    /// `@MainActor` write can occur at that point.
+    @ObservationIgnored nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
     /// Entry count of `prevCPUInfo`, required by `vm_deallocate` for correct deallocation size.
-    @ObservationIgnored private var prevNumCPUInfo: mach_msg_type_number_t = 0
+    /// Same `nonisolated(unsafe)` rationale as `prevCPUInfo`.
+    @ObservationIgnored nonisolated(unsafe) private var prevNumCPUInfo: mach_msg_type_number_t = 0
     /// Root volume path used for disk-space queries via `FileManager.attributesOfFileSystem`.
     private static let rootVolumePath = NSOpenStepRootDirectory()
 
@@ -38,7 +44,14 @@ final class SystemStatsViewModel {
     deinit {
         // Task.cancel() is safe to call from any isolation context — no DispatchQueue hop needed.
         samplingTask?.cancel()
-        deallocPrevCPUInfo()
+        // deallocPrevCPUInfo() is @MainActor-isolated and cannot be called from nonisolated deinit.
+        // Inline the deallocation here using the nonisolated(unsafe) prevCPUInfo pointer directly.
+        if let prev = prevCPUInfo {
+            let infoSize = vm_size_t(MemoryLayout<integer_t>.size)
+            let totalSize = vm_size_t(prevNumCPUInfo) * infoSize
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prev), totalSize)
+            prevCPUInfo = nil
+        }
     }
 
     // MARK: Lifecycle
@@ -131,7 +144,9 @@ final class SystemStatsViewModel {
     }
 
     /// Deallocates the `prevCPUInfo` Mach buffer via `vm_deallocate` and nils the pointer.
-    /// Called from `sampleCPU()`'s `defer` block (always on `@MainActor`) and from `deinit`.
+    /// Called from `sampleCPU()`'s `defer` block (always on `@MainActor`).
+    /// `deinit` has its own inline copy because this method is `@MainActor`-isolated
+    /// and cannot be called from the nonisolated `deinit` context.
     private func deallocPrevCPUInfo() {
         guard let prev = prevCPUInfo else { return }
         let infoSize = vm_size_t(MemoryLayout<integer_t>.size)
