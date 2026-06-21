@@ -6,8 +6,22 @@ import Foundation
 
 /// Owns the three `Task` handles that drive `RunnerStore`’s poll loop.
 ///
-/// `RunnerStore` holds this as a stored property, so all access is serialised
-/// by the actor’s own executor — no additional isolation annotation is needed.
+/// `RunnerStore` holds this as a stored property, so all mutation is serialised
+/// by the actor’s own executor — no additional isolation annotation is needed
+/// during normal operation.
+///
+/// **`@unchecked Sendable` rationale**
+/// `RunnerStore.deinit` is nonisolated in Swift 6. Accessing a stored property
+/// of a non-`Sendable` type from a nonisolated `deinit` is a compile error
+/// under `-strict-concurrency=complete`. `@unchecked Sendable` satisfies the
+/// compiler; it is safe here because:
+/// - All mutation (`setPollTask`, `setIntervalObservationTask`,
+///   `setScopeObservationTask`) is called exclusively from `RunnerStore`,
+///   serialised by the actor executor.
+/// - `cancelAll()` in `deinit` only calls `Task.cancel()`, which is
+///   concurrency-safe and can be called from any context.
+/// - `deinit` runs only after all strong references to `RunnerStore` are
+///   gone, so no concurrent mutation is possible at that point.
 ///
 /// **Why a dedicated type?**
 /// Swift’s `private` modifier is file-scoped, not type-scoped. The poll-loop
@@ -16,7 +30,7 @@ import Foundation
 /// widening their access to `internal`. Wrapping them here makes the coordinator
 /// itself `internal` while keeping the individual task slots effectively private
 /// to this file.
-final class PollLoopCoordinator {
+final class PollLoopCoordinator: @unchecked Sendable {
 
     // MARK: - Stored task handles
 
