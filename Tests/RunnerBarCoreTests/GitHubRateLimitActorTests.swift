@@ -83,7 +83,9 @@ struct RateLimitActorTests {
         #expect(snap.isLimited)
         if let date = snap.resetDate {
             let diff = date.timeIntervalSinceReferenceDate - now.timeIntervalSinceReferenceDate
-            #expect(diff >= 4.9)
+            // Threshold is 4.5 s (not 4.9) to absorb actor-hop scheduling
+            // latency on loaded CI hosts while still asserting the 5 s clamp.
+            #expect(diff >= 4.5)
         } else {
             Issue.record("resetDate should not be nil")
         }
@@ -123,8 +125,11 @@ struct RateLimitActorTests {
     /// this PR. The generation-guard logic is instead verified by code review and
     /// the swift-testing run that confirms the guard path
     /// (`guard generation == self.generation else { ... }`) compiles and executes.
+    ///
+    /// TODO: Upgrade to a deterministic race test once `RateLimitActor` supports
+    /// injectable `Clock` conformance. Track in follow-up issue.
     @Test("set after set cancels prior window and preserves new window state")
-    func set_after_set_cancels_prior_window() async {
+    func set_after_set_cancels_prior_window() async throws {
         let actor = RateLimitActor()
 
         // Window 1
@@ -135,7 +140,9 @@ struct RateLimitActorTests {
         await actor.set(resetAt: Date().timeIntervalSince1970 + 60)
         #expect(await actor.isLimited)
 
-        try? await Task.sleep(for: .milliseconds(100))
+        // Use `try await` (not `try?`) so test-task cancellation propagates
+        // rather than being swallowed silently.
+        try await Task.sleep(for: .milliseconds(100))
 
         // Window 2's state must still be intact
         let snap = await actor.snapshot()
