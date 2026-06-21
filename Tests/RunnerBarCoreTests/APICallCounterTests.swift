@@ -13,6 +13,7 @@
 //   4. snapshot() is atomic — consistent count + limit in one hop (P10).
 //   5. APICallCounterSnapshot is Equatable and Sendable.
 //   6. snapshot() returns zero after all timestamps expire (idle-gap regression).
+//   7. ghAPI() does NOT increment the counter when the transport returns nil.
 import Foundation
 import Testing
 @testable import RunnerBarCore
@@ -135,6 +136,34 @@ struct APICallCounterTests {
         #expect(snap.count == 0, "snapshot() must purge stale entries even without a prior record() call")
     }
 
+    // MARK: - Transport nil-guard (shared actor pollution regression)
+
+    /// Asserts that `ghAPI()` does **not** increment the counter when the
+    /// configured transport returns `nil`.
+    ///
+    /// This guards against the `apiCallCounter.shared` pollution risk: if the
+    /// `if result != nil` guard were ever removed, any test that exercises a
+    /// nil-returning stub would permanently inflate the shared actor’s count
+    /// for the rest of the test run.
+    ///
+    /// Uses `APICallCounter.shared.reset()` (test seam) to isolate from other
+    /// tests that may have already incremented the shared instance.
+    @Test("ghAPI() does not increment counter when transport returns nil")
+    func ghAPISkipsCounterOnNilResult() async {
+        // Reset shared actor to isolate from other test runs.
+        await apiCallCounter.reset()
+        // Wire a nil-returning stub transport.
+        configureGHAPI { _ in nil }
+        // Call ghAPI — transport returns nil, counter must not increment.
+        _ = await ghAPI("https://api.github.com/test")
+        // Allow any fire-and-forget Tasks a tick to settle (none should have fired).
+        await Task.yield()
+        let snap = await apiCallCounter.snapshot()
+        #expect(snap.count == 0, "counter must not increment when transport returns nil")
+        // Restore unconfigured stub so other tests are unaffected.
+        configureGHAPI { _ in nil }
+    }
+
     // MARK: - APICallCounterSnapshot struct
 
     @Test("APICallCounterSnapshot is Equatable")
@@ -146,6 +175,13 @@ struct APICallCounterTests {
         #expect(a != c)
     }
 
+    /// Compile-time conformance check for `APICallCounterSnapshot.Sendable`.
+    ///
+    /// Transfers a live snapshot across a `Task.detached` boundary to verify
+    /// that the compiler accepts the value as `Sendable`. This test cannot fail
+    /// at runtime for a value-type struct — it is a static conformance check,
+    /// not a behavioural assertion. If `APICallCounterSnapshot` were ever changed
+    /// to a `class`, this test would begin to carry runtime meaning.
     @Test("APICallCounterSnapshot is Sendable across task boundary")
     func snapshotSendable() async {
         let counter = APICallCounter()

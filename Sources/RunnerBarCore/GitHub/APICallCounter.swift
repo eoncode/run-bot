@@ -83,8 +83,9 @@ public actor APICallCounter: APICallCounterProtocol {
     /// Surfaced as a constant so it can be updated if GitHub changes it.
     public static let hourlyLimit = 5_000
 
-    /// Rolling buffer of call timestamps.
-    /// Maintained by `purge()` and capped at `hourlyLimit` entries by `record()`.
+    /// Rolling buffer of call timestamps, always in ascending order.
+    /// Maintained by `purge()` (O(k) slice from the front) and capped at
+    /// `hourlyLimit` entries by `record()` to bound memory under burst traffic.
     private var timestamps: [Date] = []
 
     /// Creates a new `APICallCounter` instance.
@@ -96,13 +97,15 @@ public actor APICallCounter: APICallCounterProtocol {
 
     /// Records one GitHub REST API call.
     ///
-    /// Appends the current timestamp, purges stale entries, then trims the
-    /// buffer to `hourlyLimit` entries oldest-first. The trim prevents unbounded
-    /// growth under burst or retry traffic within a single hour, bounding both
-    /// memory and per-call sweep cost to O(`hourlyLimit`) at most.
+    /// Purges stale entries first (O(k) slice from the front of the
+    /// time-ordered buffer), then appends the current timestamp, then trims
+    /// to `hourlyLimit` entries oldest-first.
+    ///
+    /// Purge-before-append avoids any theoretical clock-skew edge case where
+    /// a new timestamp could be swept by an immediately following `removeAll`.
     public func record() {
-        timestamps.append(Date())
         purge()
+        timestamps.append(Date())
         if timestamps.count > Self.hourlyLimit {
             timestamps.removeFirst(timestamps.count - Self.hourlyLimit)
         }
@@ -126,11 +129,17 @@ public actor APICallCounter: APICallCounterProtocol {
 
     /// Evicts timestamps older than the rolling 60-minute window.
     ///
-    /// Called by both `record()` and `snapshot()` to ensure the array is
-    /// always bounded and counts are never stale regardless of call order.
+    /// Because timestamps are always appended in ascending order, stale entries
+    /// are always at the front. This uses `firstIndex(where:)` + `removeFirst(_:)`
+    /// for an O(k) slice (k = number of stale entries) rather than a full
+    /// O(n) `removeAll(where:)` sweep.
     private func purge() {
         let cutoff = Date().addingTimeInterval(-3_600)
-        timestamps.removeAll { $0 < cutoff }
+        if let idx = timestamps.firstIndex(where: { $0 >= cutoff }) {
+            if idx > 0 { timestamps.removeFirst(idx) }
+        } else {
+            timestamps.removeAll()
+        }
     }
 }
 
