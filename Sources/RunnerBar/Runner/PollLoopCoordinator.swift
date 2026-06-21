@@ -69,28 +69,39 @@ final class PollLoopCoordinator: @unchecked Sendable {
 
     // MARK: - Mutation
 
-    /// Replaces the active poll task, cancelling the previous one first.
+    /// Cancels the existing poll task (if any) and replaces it with `task`.
+    /// Passing `nil` cancels without installing a replacement.
     func setPollTask(_ task: Task<Void, Never>?) {
         pollTask?.cancel()
         pollTask = task
     }
 
-    /// Replaces the interval-observation task, cancelling the previous one first.
+    /// Cancels the existing interval-observation task (if any) and replaces it with `task`.
+    /// Passing `nil` cancels without installing a replacement.
     func setIntervalObservationTask(_ task: Task<Void, Never>?) {
         intervalObservationTask?.cancel()
         intervalObservationTask = task
     }
 
-    /// Replaces the scope-observation task, cancelling the previous one first.
+    /// Cancels the existing scope-observation task (if any) and replaces it with `task`.
+    /// Passing `nil` cancels without installing a replacement.
     func setScopeObservationTask(_ task: Task<Void, Never>?) {
         scopeObservationTask?.cancel()
         scopeObservationTask = task
     }
 
-    /// Cancels all three tasks. Called from `RunnerStore.deinit` and this type’s own `deinit`.
+    /// Cancels all three tasks and nils their handles.
+    ///
+    /// Niling after cancel keeps this method consistent with the setter contract
+    /// (`setPollTask(nil)` also nils) and releases the `Task` references immediately,
+    /// leaving the coordinator in a clean, fully-reset state.
+    /// Called from `RunnerStore.deinit` and this type’s own `deinit`.
     func cancelAll() {
         pollTask?.cancel()
+        pollTask = nil
         intervalObservationTask?.cancel()
+        intervalObservationTask = nil
         scopeObservationTask?.cancel()
+        scopeObservationTask = nil
     }
 }

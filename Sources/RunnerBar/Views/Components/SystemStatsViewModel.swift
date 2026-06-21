@@ -20,9 +20,16 @@ final class SystemStatsViewModel {
     /// Rolling 60-sample history for disk-usage sparkline charts.
     private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
     /// Structured task driving the 2-second sample loop.
-    /// Cancelled in `stop()` and `deinit`; `@ObservationIgnored` keeps it out of
+    /// Cancelled and niled in `stop()` and `deinit`; `@ObservationIgnored` keeps it out of
     /// the `@Observable` macro’s tracking storage.
     @ObservationIgnored private var samplingTask: Task<Void, Never>?
+    /// Liveness flag for the sample loop, decoupled from `samplingTask`.
+    ///
+    /// `samplingTask` is the cancellation handle only. `isSampling` is the single
+    /// source of truth for whether the loop is running. Keeping them separate means
+    /// a caller that calls `samplingTask?.cancel()` directly (without niling) cannot
+    /// make `start()` silently no-op on a loop that has already exited.
+    private var isSampling = false
     /// Per-core CPU tick counts from the previous `host_processor_info` call.
     ///
     /// Written exclusively on `@MainActor` (inside `sampleCPU()`’s `defer` block).
@@ -58,12 +65,17 @@ final class SystemStatsViewModel {
     /// Starts the 2-second structured sample loop and takes an immediate first sample.
     /// Safe to call multiple times — no-ops if the loop is already running.
     ///
+    /// `isSampling` is the liveness guard; `samplingTask` is the cancellation handle only.
+    /// This separation ensures that a direct `samplingTask?.cancel()` call (without niling)
+    /// cannot make `start()` silently no-op on a loop that has already exited.
+    ///
     /// `Task { @MainActor [weak self] in }` is used rather than the bare `Task { [weak self] in }`
     /// to make the `@MainActor` isolation explicit. A bare `Task { }` created from an
     /// `@MainActor`-isolated context does inherit `@MainActor` today, but the annotation
     /// anchors that guarantee against a future refactor that moves `start()` off `@MainActor`.
     func start() {
-        guard samplingTask == nil else { return }
+        guard !isSampling else { return }
+        isSampling = true
         samplingTask = Task { @MainActor [weak self] in
             // Immediate first sample before the first sleep.
             self?.sample()
@@ -85,6 +97,7 @@ final class SystemStatsViewModel {
     func stop() {
         samplingTask?.cancel()
         samplingTask = nil
+        isSampling = false
     }
 
     // MARK: Sampling
