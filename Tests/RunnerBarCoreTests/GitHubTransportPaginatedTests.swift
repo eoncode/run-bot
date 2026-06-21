@@ -137,8 +137,11 @@ private let apiBase = GitHubConstants.apiBase + "/"
 /// The suite is a `final class` so that `deinit` is available to call
 /// `URLProtocol.unregisterClass`. Swift Testing supports class-based suites;
 /// `@Suite` and `@Test` behave identically to the struct form.
-@Suite("GitHubTransportPaginated", .serialized)
-final class GitHubTransportPaginatedTests {
+@Suite("GitHubTransportTests", .serialized)
+struct GitHubTransportTests {
+
+    @Suite("GitHubTransportPaginated")
+    final class GitHubTransportPaginatedTests {
 
     init() {
         // Register stub protocol and a valid token before every test.
