@@ -117,6 +117,25 @@ public actor APICallCounter: APICallCounterProtocol {
         let cutoff = Date().addingTimeInterval(-3_600)
         timestamps.removeAll { $0 < cutoff }
     }
+
+#if DEBUG
+    // MARK: - Test seam
+
+    /// Directly replaces the internal timestamp buffer.
+    ///
+    /// **For testing only.** Allows unit tests to inject pre-aged timestamps
+    /// without sleeping for real time, enabling deterministic verification of
+    /// the idle-gap purge behaviour in `snapshot()`.
+    ///
+    /// Guarded by `#if DEBUG` so the method is stripped from release builds
+    /// and invisible to Periphery dead-code analysis.
+    ///
+    /// - Parameter timestamps: The replacement timestamp array. Pass dates in
+    ///   the past to simulate stale entries, or in the future for edge-case tests.
+    func seed(timestamps injected: [Date]) {
+        timestamps = injected
+    }
+#endif
 }
 
 // MARK: - Module-level accessor
