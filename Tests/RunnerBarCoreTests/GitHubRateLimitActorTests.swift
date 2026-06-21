@@ -19,6 +19,13 @@ import Testing
 @Suite("RateLimitActor")
 struct RateLimitActorTests {
 
+    // MARK: - Constants
+
+    /// Acceptable scheduling latency budget for clamp assertions.
+    /// Covers actor-hop overhead on loaded CI hosts; increase if tests
+    /// flake on a particularly slow runner.
+    private static let clampTolerance: Double = 0.5
+
     // MARK: - Basic set / clear
 
     @Test("set arms the flag and schedules a reset date")
@@ -83,9 +90,10 @@ struct RateLimitActorTests {
         #expect(snap.isLimited)
         if let date = snap.resetDate {
             let diff = date.timeIntervalSinceReferenceDate - now.timeIntervalSinceReferenceDate
-            // Threshold is 4.5 s (not 4.9) to absorb actor-hop scheduling
-            // latency on loaded CI hosts while still asserting the 5 s clamp.
-            #expect(diff >= 4.5)
+            // Assert diff ≥ (minClamp - clampTolerance) so a loaded CI host
+            // with up to `clampTolerance` seconds of scheduling latency still
+            // passes without losing the signal that the 5 s floor was applied.
+            #expect(diff >= 5.0 - Self.clampTolerance)
         } else {
             Issue.record("resetDate should not be nil")
         }
@@ -247,12 +255,22 @@ struct RateLimitActorTests {
         #expect(set.count == 1)
     }
 
-    /// Compile check only — confirms `RateLimitSnapshot` satisfies `Sendable`
-    /// at build time. No runtime behaviour is asserted beyond valid construction.
-    @Test("RateLimitSnapshot is Sendable — compiles")
-    func snapshotSendable() {
-        let snap = RateLimitSnapshot(isLimited: false, resetDate: nil)
-        #expect(snap.isLimited == false)
-        #expect(snap.resetDate == nil)
+    /// Exercises `RateLimitSnapshot`'s `Sendable` conformance at runtime by
+    /// transferring a live snapshot across a `Task` boundary and asserting
+    /// the values survive the crossing intact.
+    @Test("RateLimitSnapshot is Sendable across task boundary")
+    func snapshotSendable() async throws {
+        let actor = RateLimitActor()
+        let resetTS = Date().timeIntervalSince1970 + 120
+        await actor.set(resetAt: resetTS)
+
+        // Capture snapshot on the current task, then read it from a child task.
+        // The compiler enforces Sendable here; the assertion confirms value
+        // integrity across the task boundary.
+        let snap = await actor.snapshot()
+        let transferred = try await Task.detached { snap }.value
+
+        #expect(transferred.isLimited == snap.isLimited)
+        #expect(transferred.resetDate == snap.resetDate)
     }
 }
