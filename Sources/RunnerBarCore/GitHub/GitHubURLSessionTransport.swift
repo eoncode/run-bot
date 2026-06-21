@@ -39,6 +39,15 @@ private enum ExecuteResult {
     /// No GitHub token is currently available — the token provider returned `nil`.
     /// Distinct from `.networkError` and `.httpError(401)` so callers can treat
     /// "never had a token" separately from "token was valid but rejected by GitHub".
+    ///
+    /// - Note: Non-paginated callers (`urlSessionAPIAsync`, `urlSessionPost`,
+    ///   `urlSessionPut`, `urlSessionRaw`) use `guard case .success` and therefore
+    ///   treat `.noToken` identically to every other non-success result — a `nil`
+    ///   return. Only `urlSessionAPIPaginated` pattern-matches this case explicitly,
+    ///   to discard any partially collected items and return `nil` rather than partial
+    ///   results. If you add a new call site that needs to distinguish "never had a
+    ///   token" from other failures, match `.noToken` directly instead of relying on
+    ///   the `guard case .success` collapse.
     case noToken
     /// Non-2xx response that is not a rate-limit or permission error; the request failed.
     case httpError(Int)
