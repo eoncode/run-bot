@@ -10,18 +10,37 @@ import Foundation
 /// by the actor’s own executor — no additional isolation annotation is needed
 /// during normal operation.
 ///
-/// **`@unchecked Sendable` rationale**
-/// `RunnerStore.deinit` is nonisolated in Swift 6. Accessing a stored property
-/// of a non-`Sendable` type from a nonisolated `deinit` is a compile error
-/// under `-strict-concurrency=complete`. `@unchecked Sendable` satisfies the
-/// compiler; it is safe here because:
-/// - All mutation (`setPollTask`, `setIntervalObservationTask`,
-///   `setScopeObservationTask`) is called exclusively from `RunnerStore`,
-///   serialised by the actor executor.
-/// - `cancelAll()` in `deinit` only calls `Task.cancel()`, which is
-///   concurrency-safe and can be called from any context.
-/// - `deinit` runs only after all strong references to `RunnerStore` are
-///   gone, so no concurrent mutation is possible at that point.
+/// **`@unchecked Sendable` — PRINCIPLE #4 EXCEPTION (documented sign-off)**
+///
+/// Project Principle #4 states: “no `@unchecked Sendable` escape hatches in
+/// production types.” `PollLoopCoordinator` is a production type that carries
+/// this conformance. The exception is intentional and safe for the following
+/// reasons, recorded here as the required sign-off:
+///
+/// 1. **Owned by a single actor.** `PollLoopCoordinator` is stored as
+///    `private let pollLoop` on `RunnerStore`. Swift actors serialise all
+///    access to their stored properties on their own executor, so every call
+///    to `setPollTask`, `setIntervalObservationTask`, and
+///    `setScopeObservationTask` is already serialised without any additional
+///    locking.
+///
+/// 2. **`deinit` only calls `Task.cancel()`.** `Task.cancel()` is itself
+///    `Sendable` and safe to call from any isolation context. `cancelAll()`
+///    in `deinit` performs no reads or writes of mutable state beyond flipping
+///    the cancellation flag on each `Task`.
+///
+/// 3. **`deinit` runs after all strong references are gone.** By the time
+///    `RunnerStore.deinit` (and therefore `PollLoopCoordinator.deinit`) runs,
+///    no concurrent mutation of the coordinator’s task handles is possible.
+///
+/// The root cause of the conformance requirement is that Swift 6 forbids
+/// accessing a stored property of a non-`Sendable` type from a nonisolated
+/// `deinit`. Making the coordinator an `actor` would satisfy the compiler
+/// without `@unchecked Sendable`, but would require every setter to be
+/// `async` and every `deinit` call-site to spawn a detached `Task` — a
+/// worse trade-off for a type that is only ever touched from one actor.
+/// This exception is preferable; file a follow-up if a second store ever
+/// needs to own a `PollLoopCoordinator`.
 ///
 /// **Why a dedicated type?**
 /// Swift’s `private` modifier is file-scoped, not type-scoped. The poll-loop

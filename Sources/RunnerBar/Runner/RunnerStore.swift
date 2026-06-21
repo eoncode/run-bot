@@ -142,7 +142,7 @@ private final class ScopesObserver {
 /// - `preferencesStore` and `scopeStore` are `@MainActor`-isolated `Sendable` protocol
 ///   values; any read of their properties must happen inside `await MainActor.run { }`.
 /// - After every fetch cycle, results are pushed to the injected `RunnerViewModel` on the
-///   main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
+///   main actor via `await MainActor.run { }`. SwiftUI’s `@Observable` machinery
 ///   picks up the mutation automatically — no Combine `PassthroughSubject` needed.
 /// - `LocalRunnerStore` is an `actor`; its state is read via the main-actor snapshot
 ///   pushed to `RunnerViewModel`, not by crossing the actor boundary synchronously.
@@ -171,7 +171,7 @@ actor RunnerStore {
     /// IDs of action groups whose failure hook has already fired.
     ///
     /// Kept separate from `actionGroupCache` so that cache eviction does not re-arm
-    /// the hook for old completed groups still present in GitHub's last-completed feed.
+    /// the hook for old completed groups still present in GitHub’s last-completed feed.
     private var seenGroupIDs: Set<String> = []
 
     /// Whether the GitHub API is currently rate-limiting this client.
@@ -207,7 +207,7 @@ actor RunnerStore {
     private let onStatusUpdate: @MainActor @Sendable () -> Void
 
     /// Shared `JSONDecoder` — reused across all decode calls in the actor.
-    /// Declared as a stored instance property so it is serialised by the actor's own
+    /// Declared as a stored instance property so it is serialised by the actor’s own
     /// executor; no concurrent access is possible. Used by `backfillSteps` in
     /// `RunnerStore+PollBridge.swift`.
     let decoder = JSONDecoder()
@@ -215,7 +215,7 @@ actor RunnerStore {
     // MARK: - Aggregate status
 
     /// The combined health status across all runners, derived from the current `runners` array.
-    /// Read by external consumers (e.g. `AppDelegate`) outside this file's analysis scope.
+    /// Read by external consumers (e.g. `AppDelegate`) outside this file’s analysis scope.
     /// periphery:ignore
     var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
 
@@ -244,7 +244,7 @@ actor RunnerStore {
     /// - Note: Swift 6 actor `init` is nonisolated. The observation task `Task` handles
     ///   are assigned synchronously inside `startObservingPreferences` /
     ///   `startObservingScopes` (in the calling function body, before any suspension in
-    ///   the task's async work). This means `deinit` always holds real `Task` values by
+    ///   the task’s async work). This means `deinit` always holds real `Task` values by
     ///   the time any suspension occurs, even if the actor is deallocated immediately after
     ///   `init`.
     init(
@@ -274,14 +274,14 @@ actor RunnerStore {
     /// Starts (or restarts) the `pollingInterval` observation loop.
     ///
     /// `pollLoop.intervalObservationTask` is assigned synchronously in this function body —
-    /// before the task's async work runs — so `deinit` always cancels a real `Task`
+    /// before the task’s async work runs — so `deinit` always cancels a real `Task`
     /// rather than a `nil` optional, even if the actor is deallocated immediately
     /// after `init`.
     ///
     /// `AsyncStream.makeStream` returns the stream and a separate continuation value.
     /// The continuation is handed to `PreferencesObserver`, a `@MainActor` class that
     /// owns the recursive `withObservationTracking` registration entirely on the main
-    /// actor. The observer is returned from `MainActor.run` and held in the Task's
+    /// actor. The observer is returned from `MainActor.run` and held in the Task’s
     /// async scope so it stays alive for the full lifetime of the stream — without
     /// this, `[weak self]` in `onChange` would find `self == nil` on the first change
     /// and silently stop all future polling-interval updates.
@@ -297,6 +297,11 @@ actor RunnerStore {
             for await newInterval in stream {
                 guard !Task.isCancelled else { break }
                 log("RunnerStore › pollingInterval changed to \(newInterval) — restarting poll loop")
+                // Intentional self-cancellation: startObservingPreferences() calls
+                // pollLoop.setIntervalObservationTask(...), which cancels the task
+                // currently executing this line and installs a fresh one. This is the
+                // designed recursive-restart pattern — the current task exits cleanly
+                // on the next Task.isCancelled check or suspension point.
                 await self?.startObservingPreferences()
                 guard !Task.isCancelled else { break }
                 await self?.start()
@@ -309,13 +314,13 @@ actor RunnerStore {
     /// Starts (or restarts) the `activeScopes` observation loop.
     ///
     /// `pollLoop.scopeObservationTask` is assigned synchronously in this function body —
-    /// before the task's async work runs — so `deinit` always cancels a real `Task`
+    /// before the task’s async work runs — so `deinit` always cancels a real `Task`
     /// rather than a `nil` optional, even if the actor is deallocated immediately
     /// after `init`.
     ///
-    /// Same approach as `startObservingPreferences` — see that method's
+    /// Same approach as `startObservingPreferences` — see that method’s
     /// doc-comment for the full rationale, including why the observer must be
-    /// retained in the Task's async scope beyond the `MainActor.run` closure.
+    /// retained in the Task’s async scope beyond the `MainActor.run` closure.
     private func startObservingScopes() {
         let injectedStore = scopeStore
         pollLoop.setScopeObservationTask(Task { [weak self] in
@@ -328,6 +333,11 @@ actor RunnerStore {
             for await _ in stream {
                 guard !Task.isCancelled else { break }
                 log("RunnerStore › ScopeStore.activeScopes changed — restarting fetch")
+                // Intentional self-cancellation: startObservingScopes() calls
+                // pollLoop.setScopeObservationTask(...), which cancels the task
+                // currently executing this line and installs a fresh one. This is the
+                // designed recursive-restart pattern — the current task exits cleanly
+                // on the next Task.isCancelled check or suspension point.
                 await self?.startObservingScopes()
                 guard !Task.isCancelled else { break }
                 await self?.start()
@@ -383,7 +393,7 @@ actor RunnerStore {
     }
 
     /// Computes the delay before the next poll: 10 s while jobs/actions are active,
-    /// otherwise the user's configured idle interval (clamped to ≥ 10 s). Also widened
+    /// otherwise the user’s configured idle interval (clamped to ≥ 10 s). Also widened
     /// to the idle interval while rate-limited.
     ///
     /// `async` because it reads `preferencesStore.pollingInterval` which is

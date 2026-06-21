@@ -21,16 +21,16 @@ final class SystemStatsViewModel {
     private(set) var diskHistory: RingBuffer = RingBuffer(capacity: 60)
     /// Structured task driving the 2-second sample loop.
     /// Cancelled in `stop()` and `deinit`; `@ObservationIgnored` keeps it out of
-    /// the `@Observable` macro's tracking storage.
+    /// the `@Observable` macro’s tracking storage.
     @ObservationIgnored private var samplingTask: Task<Void, Never>?
     /// Per-core CPU tick counts from the previous `host_processor_info` call.
     ///
-    /// Written exclusively on `@MainActor` (inside `sampleCPU()`'s `defer` block).
+    /// Written exclusively on `@MainActor` (inside `sampleCPU()`’s `defer` block).
     /// `nonisolated(unsafe)` is required because `deinit` is nonisolated in Swift 6
-    /// and must read this pointer to free the Mach buffer — crossing into `@MainActor`
-    /// asynchronously from `deinit` is not possible. This is safe because `deinit`
-    /// only runs after all strong references are gone, guaranteeing no concurrent
-    /// `@MainActor` write can occur at that point.
+    /// and must read this pointer to pass to `deallocBuffer(_:count:)` — crossing
+    /// into `@MainActor` asynchronously from `deinit` is not possible. This is safe
+    /// because `deinit` only runs after all strong references are gone, guaranteeing
+    /// no concurrent `@MainActor` write can occur at that point.
     @ObservationIgnored nonisolated(unsafe) private var prevCPUInfo: processor_info_array_t?
     /// Entry count of `prevCPUInfo`, required by `vm_deallocate` for correct deallocation size.
     /// Same `nonisolated(unsafe)` rationale as `prevCPUInfo`.
@@ -44,15 +44,13 @@ final class SystemStatsViewModel {
     deinit {
         // Task.cancel() is safe to call from any isolation context — no DispatchQueue hop needed.
         samplingTask?.cancel()
-        // deallocPrevCPUInfo() is @MainActor-isolated and cannot be called from nonisolated deinit.
-        // This block is an intentional duplicate — KEEP IN SYNC WITH deallocPrevCPUInfo() below.
-        // If the size calculation ever changes, update both sites.
-        if let prev = prevCPUInfo {
-            let infoSize = vm_size_t(MemoryLayout<integer_t>.size)
-            let totalSize = vm_size_t(prevNumCPUInfo) * infoSize
-            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prev), totalSize)
-            prevCPUInfo = nil
-        }
+        // Capture pointer and count as locals before calling the nonisolated static helper.
+        // deallocPrevCPUInfo() is @MainActor-isolated and unreachable from nonisolated deinit;
+        // deallocBuffer(_:count:) takes values, requires no actor hop, and avoids duplication.
+        let ptr = prevCPUInfo
+        let count = prevNumCPUInfo
+        prevCPUInfo = nil
+        SystemStatsViewModel.deallocBuffer(ptr, count: count)
     }
 
     // MARK: Lifecycle
@@ -149,19 +147,33 @@ final class SystemStatsViewModel {
         return totalUsed / totalAll * 100
     }
 
-    /// Deallocates the `prevCPUInfo` Mach buffer via `vm_deallocate` and nils the pointer.
-    /// Called from `sampleCPU()`'s `defer` block (always on `@MainActor`).
-    ///
-    /// - Important: `deinit` contains an intentional duplicate of this logic because this method
-    ///   is `@MainActor`-isolated and cannot be called from the nonisolated `deinit` context.
-    ///   KEEP IN SYNC WITH the inline block in `deinit` above.
-    ///   If the size calculation changes, update both sites.
+    /// Frees the current `prevCPUInfo` Mach buffer and nils the pointer.
+    /// Called from `sampleCPU()`’s `defer` block (always on `@MainActor`).
+    /// Delegates to `deallocBuffer(_:count:)` so the deallocation logic lives in one place.
     private func deallocPrevCPUInfo() {
-        guard let prev = prevCPUInfo else { return }
-        let infoSize = vm_size_t(MemoryLayout<integer_t>.size)
-        let totalSize = vm_size_t(prevNumCPUInfo) * infoSize
-        vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prev), totalSize)
+        let ptr = prevCPUInfo
+        let count = prevNumCPUInfo
         prevCPUInfo = nil
+        SystemStatsViewModel.deallocBuffer(ptr, count: count)
+    }
+
+    /// Frees a Mach `processor_info_array_t` buffer obtained from `host_processor_info`.
+    ///
+    /// This helper is `private static nonisolated` so it can be called from both
+    /// the `@MainActor`-isolated `deallocPrevCPUInfo()` (hot path) and the
+    /// nonisolated `deinit` (cleanup path) without duplication or an actor hop.
+    /// The pointer and count are passed by value — no instance state is read.
+    ///
+    /// - Parameters:
+    ///   - ptr: The `processor_info_array_t` returned by `host_processor_info`, or `nil`.
+    ///   - count: The `mach_msg_type_number_t` entry count returned alongside `ptr`.
+    private static nonisolated func deallocBuffer(
+        _ ptr: processor_info_array_t?,
+        count: mach_msg_type_number_t
+    ) {
+        guard let ptr else { return }
+        let size = vm_size_t(MemoryLayout<integer_t>.size) * vm_size_t(count)
+        vm_deallocate(mach_task_self_, vm_address_t(bitPattern: ptr), size)
     }
 
     // MARK: Memory
