@@ -47,18 +47,20 @@ import Foundation
 /// state (`pollTask`, `intervalObservationTask`, `scopeObservationTask`) cannot
 /// be moved into `RunnerStore+PollLoop.swift` as raw stored properties without
 /// widening their access to `internal`. Wrapping them here makes the coordinator
-/// itself `internal` while keeping the individual task slots effectively private
-/// to this file.
+/// itself `internal` while keeping the individual task slots private.
 final class PollLoopCoordinator: @unchecked Sendable {
 
     // MARK: - Stored task handles
+    // These are intentionally private (not private(set)) — no external caller
+    // needs to read raw Task handles. cancelAll() and the setters are the full
+    // public surface for task lifecycle management.
 
     /// Active structured poll task. Cancelled and replaced on every `start()` call.
-    private(set) var pollTask: Task<Void, Never>?
+    private var pollTask: Task<Void, Never>?
     /// Observation task that restarts the poll loop when `pollingInterval` changes.
-    private(set) var intervalObservationTask: Task<Void, Never>?
+    private var intervalObservationTask: Task<Void, Never>?
     /// Observation task that restarts the poll loop when `activeScopes` changes.
-    private(set) var scopeObservationTask: Task<Void, Never>?
+    private var scopeObservationTask: Task<Void, Never>?
 
     // MARK: - Init
 

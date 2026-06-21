@@ -29,6 +29,12 @@ final class SystemStatsViewModel {
     /// source of truth for whether the loop is running. Keeping them separate means
     /// a caller that calls `samplingTask?.cancel()` directly (without niling) cannot
     /// make `start()` silently no-op on a loop that has already exited.
+    ///
+    /// Both `start()` and the task body itself reset this flag: `start()` sets it
+    /// `true`, the task sets it `false` on every exit path (cooperative cancellation,
+    /// weak-self nil, unexpected error), and `stop()` sets it `false` via cancellation.
+    /// This ensures `isSampling` is never permanently stuck `true` regardless of how
+    /// the task exits.
     private var isSampling = false
     /// Per-core CPU tick counts from the previous `host_processor_info` call.
     ///
@@ -53,11 +59,8 @@ final class SystemStatsViewModel {
         samplingTask?.cancel()
         // Capture pointer and count as locals before calling the nonisolated static helper.
         // deallocPrevCPUInfo() is @MainActor-isolated and unreachable from nonisolated deinit;
-        // deallocBuffer(_:count:) takes values, requires no actor hop, and avoids duplication.
-        let ptr = prevCPUInfo
-        let count = prevNumCPUInfo
-        prevCPUInfo = nil
-        SystemStatsViewModel.deallocBuffer(ptr, count: count)
+        // deallocBuffer(_:count:) takes values by copy, requires no actor hop, no duplication.
+        SystemStatsViewModel.deallocBuffer(prevCPUInfo, count: prevNumCPUInfo)
     }
 
     // MARK: Lifecycle
@@ -77,6 +80,7 @@ final class SystemStatsViewModel {
         guard !isSampling else { return }
         isSampling = true
         samplingTask = Task { @MainActor [weak self] in
+            defer { self?.isSampling = false }  // reset on every exit path
             // Immediate first sample before the first sleep.
             self?.sample()
             while !Task.isCancelled {
