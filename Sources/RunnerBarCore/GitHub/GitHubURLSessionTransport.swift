@@ -194,7 +194,7 @@ internal enum ExecuteResult {
     case networkError(Error)
 }
 
-// MARK: - Private response models
+// MARK: - Internal response models
 
 /// Decoding model for the GitHub "set runner labels" PUT response.
 struct LabelsResponse: Decodable {

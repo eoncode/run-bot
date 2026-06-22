@@ -76,11 +76,12 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 /// - Note: Intentionally discards response body (converts `Data?` → `Bool`).
 ///   Use the transport method directly if the body is needed.
 /// - SeeAlso: ``GitHubTransport/post(_:body:timeout:)``
-@concurrent
-@discardableResult
-/// - Note: Returns `Bool` (success/failure) rather than `Data?`. This is an intentional
+///
+///   Returns `Bool` (success/failure) rather than `Data?`. This is an intentional
 ///   lossy conversion — existing callers only care whether the POST succeeded. If the
 ///   response body ever becomes relevant, call `sharedGitHubTransport.post(_:)` directly.
+@concurrent
+@discardableResult
 public func ghPost(_ endpoint: String) async -> Bool {
     let result = await sharedGitHubTransport.post(endpoint)
     let success = result != nil
