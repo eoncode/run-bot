@@ -65,6 +65,70 @@ private let sharedDecoder = JSONDecoder()
 ///   benefit of locality. #1477 is closed as resolved by this documented decision.
 private let sharedEncoder = JSONEncoder()
 
+// MARK: - GitHubTransport
+
+/// The concrete `URLSession`-backed implementation of `GitHubTransportProtocol`.
+///
+/// `GitHubTransport` owns the decoder, encoder, rate-limiter, and token-provider
+/// that were previously scattered as module-level globals. Callers that need a
+/// real network transport use `sharedGitHubTransport`; tests inject a mock
+/// conformer or construct a custom instance via `init(decoder:encoder:rateLimiter:tokenProvider:)`.
+///
+/// **Thread safety:** `GitHubTransport` is a value type (`struct`) whose stored
+/// `let` properties are all either value types (`JSONDecoder`, `JSONEncoder`) or
+/// `Sendable` reference types (`any RateLimitActorProtocol`, the token closure).
+/// Concurrent reads are safe; there is no mutable state.
+public struct GitHubTransport: GitHubTransportProtocol {
+
+    // MARK: - Stored properties (previously module-level globals)
+
+    /// JSON decoder — stateless after `init`, safe for concurrent reads.
+    /// Kept as a stored `let` (one allocation per `GitHubTransport` instance)
+    /// rather than per-call-site to preserve the same performance characteristic
+    /// as the former `private let sharedDecoder` module global.
+    let decoder: JSONDecoder
+
+    /// JSON encoder — stateless after `init`, safe for concurrent reads.
+    /// Same rationale as `decoder`; mirrors the former `private let sharedEncoder`.
+    let encoder: JSONEncoder
+
+    /// Rate-limit actor used to arm/clear the global back-off window.
+    /// Defaults to the module-level `rateLimitActor` singleton so existing
+    /// production behaviour is preserved without any call-site changes.
+    let rateLimiter: any RateLimitActorProtocol
+
+    /// Synchronous closure that returns the current GitHub PAT, or `nil` when
+    /// the user is signed out. Defaults to `githubTokenCore()` from
+    /// `GitHubTransportShim` so the token pipeline is unchanged at launch.
+    let tokenProvider: @Sendable () -> String?
+
+    // MARK: - Init
+
+    /// Creates a `GitHubTransport` with the given dependencies.
+    ///
+    /// All parameters have defaults that reproduce the previous module-global
+    /// behaviour, so `GitHubTransport()` is a drop-in replacement for the
+    /// former free functions without any configuration.
+    ///
+    /// - Parameters:
+    ///   - decoder: JSON decoder instance. Defaults to a fresh `JSONDecoder()`.
+    ///   - encoder: JSON encoder instance. Defaults to a fresh `JSONEncoder()`.
+    ///   - rateLimiter: Rate-limit actor. Defaults to the shared `rateLimitActor`.
+    ///   - tokenProvider: Closure returning the current GitHub PAT or `nil`.
+    ///     Defaults to `githubTokenCore()` from `GitHubTransportShim`.
+    public init(
+        decoder: JSONDecoder = JSONDecoder(),
+        encoder: JSONEncoder = JSONEncoder(),
+        rateLimiter: some RateLimitActorProtocol = rateLimitActor,
+        tokenProvider: @escaping @Sendable () -> String? = { githubTokenCore() }
+    ) {
+        self.decoder = decoder
+        self.encoder = encoder
+        self.rateLimiter = rateLimiter
+        self.tokenProvider = tokenProvider
+    }
+}
+
 // MARK: - Shared execution core
 
 /// The result of a single URLSession round-trip through `urlSessionExecute`.
