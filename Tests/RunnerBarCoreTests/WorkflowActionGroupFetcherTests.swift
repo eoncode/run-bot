@@ -215,7 +215,8 @@ struct WorkflowActionGroupFetcherTests {
         #expect(r.first?.jobs.first?.id == 999)
         #expect(t.callCount == 3)
     }
-@Test func fetchActionGroups_concludedCacheWithInProgressStep_refetchesJobs() async {
+
+    @Test func fetchActionGroups_concludedCacheWithInProgressStep_refetchesJobs() async {
         // A cached entry where a job is concluded but a step is still in-progress
         // must NOT serve from cache — the stale-step guard re-fetches via API.
         let sha = "staledash"
