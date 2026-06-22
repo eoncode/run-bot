@@ -53,6 +53,49 @@ public struct LogFetcher: Sendable {
         if text.hasPrefix("{") { return nil }
         return text
     }
+
+    // MARK: - Action logs (ZIP per run, N calls)
+
+    /// Fetches and concatenates all job logs for every run in a group.
+    ///
+    /// Issues one async task per run inside a `TaskGroup`, each retrieving a ZIP
+    /// archive and extracting all `.txt` log files via `unzipLogs(_:)`. Results are
+    /// collected and sorted by filename for stable ordering when names are unique.
+    ///
+    /// - Parameter group: The `WorkflowActionGroup` whose runs should be fetched.
+    /// - Returns: A single concatenated string with `=== <name> ===` section headers,
+    ///   or `nil` if `scope` is invalid, `runs` is empty, or all fetches fail.
+    public func fetchActionLogs(group: WorkflowActionGroup) async -> String? {
+        let scope = group.repo
+        guard scope.contains("/") else { return nil }
+        let runIDs = group.runs.map { $0.id }
+        guard !runIDs.isEmpty else { return nil }
+
+        let parts: [(name: String, text: String)] = await withTaskGroup(
+            of: [(name: String, text: String)].self
+        ) { taskGroup in
+            for runID in runIDs {
+                taskGroup.addTask {
+                    guard let data = await transport.raw("repos/\(scope)/actions/runs/\(runID)/logs") else {
+                        log("fetchActionLogs › run \(runID) — transport.raw returned nil, skipping")
+                        return []
+                    }
+                    return await unzipLogs(data)
+                }
+            }
+            var collected: [(name: String, text: String)] = []
+            for await batch in taskGroup {
+                collected.append(contentsOf: batch)
+            }
+            return collected
+        }
+
+        guard !parts.isEmpty else { return nil }
+        return parts
+            .sorted { $0.name < $1.name }
+            .map { "=== \($0.name) ===\n\($0.text)" }
+            .joined(separator: "\n\n")
+    }
 }
 
 // MARK: - Free-function forwarding wrappers (legacy)
@@ -65,47 +108,12 @@ public func fetchJobLog(jobID: Int, scope: String) async -> String? {
     await LogFetcher().fetchJobLog(jobID: jobID, scope: scope)
 }
 
-// MARK: - Action logs (ZIP per run, N calls)
-
 /// Fetches and concatenates all job logs for every run in a group.
 ///
-/// Issues one async task per run inside a `TaskGroup`, each retrieving a ZIP
-/// archive and extracting all `.txt` log files via `unzipLogs(_:)`. Results are
-/// collected and sorted by filename for stable ordering when names are unique.
-///
-/// - Parameter group: The `WorkflowActionGroup` whose runs should be fetched.
-/// - Returns: A single concatenated string with `=== <name> ===` section headers,
-///   or `nil` if `scope` is invalid, `runs` is empty, or all fetches fail.
+/// Delegates to `LogFetcher().fetchActionLogs(group:)` for backward compatibility.
+@available(*, deprecated, message: "Use LogFetcher().fetchActionLogs instead")
 public func fetchActionLogs(group: WorkflowActionGroup) async -> String? {
-    let scope = group.repo
-    guard scope.contains("/") else { return nil }
-    let runIDs = group.runs.map { $0.id }
-    guard !runIDs.isEmpty else { return nil }
-
-    let parts: [(name: String, text: String)] = await withTaskGroup(
-        of: [(name: String, text: String)].self
-    ) { taskGroup in
-        for runID in runIDs {
-            taskGroup.addTask {
-                guard let data = await ghRaw("repos/\(scope)/actions/runs/\(runID)/logs") else {
-                    log("fetchActionLogs › run \(runID) — ghRaw returned nil, skipping")
-                    return []
-                }
-                return await unzipLogs(data)
-            }
-        }
-        var collected: [(name: String, text: String)] = []
-        for await batch in taskGroup {
-            collected.append(contentsOf: batch)
-        }
-        return collected
-    }
-
-    guard !parts.isEmpty else { return nil }
-    return parts
-        .sorted { $0.name < $1.name }
-        .map { "=== \($0.name) ===\n\($0.text)" }
-        .joined(separator: "\n\n")
+    await LogFetcher().fetchActionLogs(group: group)
 }
 
 // MARK: - ZIP extraction (uses /usr/bin/unzip — always available on macOS)
