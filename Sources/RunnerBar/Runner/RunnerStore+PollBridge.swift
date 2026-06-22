@@ -26,7 +26,7 @@ extension RunnerStore {
             snapPrev: snapPrev,
             snapCache: snapCache,
             fetchJobs: {
-                let scopes = await MainActor.run { ScopeStore.shared.scopes }
+                let scopes = await MainActor.run { self.scopeStore.activeScopes }
                 var jobs: [ActiveJob] = []
                 for scope in scopes {
                     jobs.append(contentsOf: await fetchActiveJobs(for: scope))
@@ -53,7 +53,7 @@ extension RunnerStore {
             snapGroupCache: snapGroupCache,
             snapSeenGroupIDs: snapSeenGroupIDs,
             fetchGroups: { shaKeyedCache in
-                let scopes = await MainActor.run { ScopeStore.shared.scopes }
+                let scopes = await MainActor.run { self.scopeStore.activeScopes }
                 var groups: [WorkflowActionGroup] = []
                 for scope in scopes {
                     groups.append(contentsOf: await fetchActionGroups(for: scope, cache: shaKeyedCache))
