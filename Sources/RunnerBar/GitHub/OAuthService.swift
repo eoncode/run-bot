@@ -268,7 +268,7 @@ private struct OAuthTokenResponse: Decodable {
     let errorDescription: String?
 
     /// Maps Swift property names to the snake_case JSON keys returned by the GitHub OAuth endpoint.
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         /// JSON key: `access_token`.
         case accessToken = "access_token"
         /// JSON key: `error` — maps directly (no rename).
@@ -303,7 +303,7 @@ private struct OAuthTokenRequest: Encodable {
     let code: String
 
     /// Maps Swift property names to the snake_case JSON keys expected by the GitHub OAuth endpoint.
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         /// JSON key: `client_id`.
         case clientID     = "client_id"
         /// JSON key: `client_secret`.

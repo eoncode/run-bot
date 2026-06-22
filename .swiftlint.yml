@@ -25,7 +25,7 @@ opt_in_rules:
   - file_header            # enforce standard file header format
 
 # ── Rule configuration ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-esting:
+nesting:
   type_level:
     warning: 2
   function_level:
@@ -60,7 +60,7 @@ disabled_rules:
   # opening_brace re-enabled — PR #205 fixed these
   # colon re-enabled — PR #205 did a full sweep
   # cyclomatic_complexity re-enabled with warning: 17 (target 15 in #1406)
-# file_length re-enabled with warning: 685, error: 800 (target 500 in #1406)
+  # file_length re-enabled with warning: 685, error: 800 (target 500 in #1406)
   # superfluous_disable_command re-enabled — stale suppressions now caught by CI
   # line_length re-enabled with warning: 200, error: 240 (target 160 in #1406)
   # function_body_length re-enabled with warning: 90 (target 80 in #1406)

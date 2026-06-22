@@ -40,34 +40,36 @@ public protocol GitHubTransportProtocol: Sendable {
 
 // MARK: - GitHubTransportProtocol defaults
 
-/// Default `timeout` values for all protocol methods, matching the concrete
-/// `GitHubTransport` defaults. Call sites typed as `any GitHubTransportProtocol`
-/// (e.g. in tests using a mock conformer) can omit the `timeout:` argument and
-/// receive the same defaults as the production implementation.
+/// Timeout-free convenience overloads for all protocol methods.
+///
+/// These are **distinct selectors** from the protocol requirements (no `timeout:` label),
+/// so they dispatch unambiguously to the required `timeout:`-bearing methods. A mock
+/// conformer that implements only the required signatures will never accidentally recurse
+/// into these defaults — the call sites simply resolve to the correct concrete method.
 public extension GitHubTransportProtocol {
-    /// Fetches a single GitHub REST API page. Returns decoded `Data` on success, `nil` on any failure.
-    func apiAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
-        await apiAsync(endpoint, timeout: timeout)
+    /// Fetches a single GitHub REST API page using the default 20 s timeout.
+    func apiAsync(_ endpoint: String) async -> Data? {
+        await apiAsync(endpoint, timeout: 20)
     }
-    /// Fetches and concatenates all pages for a paginated GitHub REST endpoint.
-    func apiPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
-        await apiPaginated(endpoint, timeout: timeout)
+    /// Fetches and concatenates all pages for a paginated endpoint using the default 60 s timeout.
+    func apiPaginated(_ endpoint: String) async -> Data? {
+        await apiPaginated(endpoint, timeout: 60)
     }
-    /// Fetches raw bytes (e.g. log files) following redirects. Returns `nil` on failure.
-    func raw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
-        await raw(endpoint, timeout: timeout)
+    /// Fetches raw bytes using the default 60 s timeout.
+    func raw(_ endpoint: String) async -> Data? {
+        await raw(endpoint, timeout: 60)
     }
-    /// Posts `body` to `endpoint`. Returns decoded response `Data`, or `nil` on failure.
-    func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
-        await post(endpoint, body: body, timeout: timeout)
+    /// Posts `body` to `endpoint` using the default 30 s timeout.
+    func post(_ endpoint: String, body: Data? = nil) async -> Data? {
+        await post(endpoint, body: body, timeout: 30)
     }
-    /// Sends a PUT with `body` to `endpoint`. Returns decoded response `Data`, or `nil` on failure.
-    func put(_ endpoint: String, body: Data, timeout: TimeInterval = 30) async -> Data? {
-        await put(endpoint, body: body, timeout: timeout)
+    /// Sends a PUT with `body` to `endpoint` using the default 30 s timeout.
+    func put(_ endpoint: String, body: Data) async -> Data? {
+        await put(endpoint, body: body, timeout: 30)
     }
-    /// Sends a DELETE to `endpoint`. Returns `true` on 2xx, `false` otherwise.
-    func delete(_ endpoint: String, timeout: TimeInterval = 30) async -> Bool {
-        await delete(endpoint, timeout: timeout)
+    /// Sends a DELETE to `endpoint` using the default 30 s timeout.
+    func delete(_ endpoint: String) async -> Bool {
+        await delete(endpoint, timeout: 30)
     }
 }
 
@@ -445,9 +447,7 @@ extension GitHubTransport {
             return false
         }
         let endpoint = "\(scope.apiPrefix)/actions/runs/\(runID)/cancel"
-        let result = await post(endpoint) != nil
-        log("cancelRun › run=\(runID) scope=\(scopeString) success=\(result)")
-        return result
+        return await post(endpoint) != nil
     }
 
     // MARK: patchRunnerLabels
