@@ -25,10 +25,10 @@ struct StubTransport: GitHubTransportProtocol {
     private let responses: [(prefix: String, data: Data)]
 
     /// Thread-safe call counter.
-    private let _callCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+    private let callCountLock = OSAllocatedUnfairLock<Int>(initialState: 0)
 
     /// The number of times `apiAsync` has been called. Thread-safe.
-    var callCount: Int { _callCount.withLock { $0 } }
+    var callCount: Int { callCountLock.withLock { $0 } }
 
     /// Creates a stub with the given endpoint-prefix → Data map.
     init(responses: [String: Data] = [:]) {
@@ -38,33 +38,33 @@ struct StubTransport: GitHubTransportProtocol {
             .sorted { $0.prefix.count > $1.prefix.count }
     }
 
-    func apiAsync(_ endpoint: String, timeout: TimeInterval) async -> Data? {
-        _callCount.withLock { $0 += 1 }
+    func apiAsync(_ endpoint: String, timeout _: TimeInterval) async -> Data? {
+        callCountLock.withLock { $0 += 1 }
         return responses.first(where: { endpoint.hasPrefix($0.prefix) })?.data
     }
 
-    func apiPaginated(_: String, timeout: TimeInterval) async -> Data? { nil }
-    func raw(_: String, timeout: TimeInterval) async -> Data? { nil }
-    func post(_: String, body: Data?, timeout: TimeInterval) async -> Data? { nil }
-    func put(_: String, body: Data, timeout: TimeInterval) async -> Data? { nil }
-    func delete(_: String, timeout: TimeInterval) async -> Bool { false }
-    func cancelRun(runID: Int, scope: String) async -> Bool { false }
-    func patchRunnerLabels(scope: String, runnerID: Int, labels: [String]) async -> [String]? { nil }
-    func fetchRegistrationToken(scope: String) async -> String? { nil }
-    func fetchRemovalToken(scope: String) async -> String? { nil }
-    func deleteRunnerByID(scope: String, runnerID: Int) async -> Bool { false }
+    func apiPaginated(_: String, timeout _: TimeInterval) async -> Data? { nil }
+    func raw(_: String, timeout _: TimeInterval) async -> Data? { nil }
+    func post(_: String, body _: Data?, timeout _: TimeInterval) async -> Data? { nil }
+    func put(_: String, body _: Data, timeout _: TimeInterval) async -> Data? { nil }
+    func delete(_: String, timeout _: TimeInterval) async -> Bool { false }
+    func cancelRun(runID _: Int, scope _: String) async -> Bool { false }
+    func patchRunnerLabels(scope _: String, runnerID _: Int, labels _: [String]) async -> [String]? { nil }
+    func fetchRegistrationToken(scope _: String) async -> String? { nil }
+    func fetchRemovalToken(scope _: String) async -> String? { nil }
+    func deleteRunnerByID(scope _: String, runnerID _: Int) async -> Bool { false }
 }
 
 // MARK: - JSON fixture helpers
 
 private func runsEnvelope(_ runs: [[String: Any]]) -> Data {
     let envelope: [String: Any] = ["workflow_runs": runs]
-    return try! JSONSerialization.data(withJSONObject: envelope)
+    return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data()
 }
 
 private func jobsEnvelope(_ jobs: [[String: Any]]) -> Data {
     let envelope: [String: Any] = ["jobs": jobs]
-    return try! JSONSerialization.data(withJSONObject: envelope)
+    return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data()
 }
 
 private func minimalRun(id: Int, sha: String, status: String = "completed",
@@ -321,7 +321,7 @@ struct WorkflowActionGroupFetcherTests {
         for i in 1 ... 3 {
             let job = minimalJob(id: 100 + i, status: "in_progress", conclusion: nil)
             responses["repos/owner/repo/actions/jobs/\(100 + i)"] =
-                try! JSONSerialization.data(withJSONObject: job)
+                (try? JSONSerialization.data(withJSONObject: job)) ?? Data()
         }
         let t = StubTransport(responses: responses)
         let f = WorkflowActionGroupFetcher(transport: t)
