@@ -13,16 +13,6 @@ private let prNumberPattern = #"/(\d+)/"# // NOSONAR — fixed regex pattern
 /// many steps still in-progress simultaneously (e.g. a large matrix job).
 private let maxRefreshConcurrency = 3
 
-/// Shared JSON decoder reused across all API response decoding in this file.
-///
-/// Hoisted to a file-scoped constant to avoid allocating a new instance on every
-/// API call in the hot polling path.
-///
-/// **Thread safety:** `JSONDecoder.decode` is stateless and safe for concurrent use.
-/// All configuration (key decoding strategy, date decoding strategy, etc.) MUST be
-/// set at the declaration site below — never mutated after initialisation.
-/// Post-init mutation would race with concurrent `withTaskGroup` decode calls.
-private let decoder = JSONDecoder()
 
 // MARK: - Codable helpers (private to this file)
 

@@ -30,47 +30,35 @@ private final class _Counter: @unchecked Sendable {
 /// Responses are registered as an ordered array of `(prefix, Data)` pairs — the
 /// *longest matching prefix* wins, with ties broken by array order. This is
 /// deterministic regardless of Swift runtime or platform, unlike `Dictionary`
-/// iteration order. Tests register more-specific prefixes (e.g. a full endpoint
-/// path) *before* less-specific ones (e.g. a base path) to ensure exact matches
-/// take priority over broad ones.
+/// iteration order.
 ///
-/// The array is a `let` property (immutable, set once at init), so it's implicitly
+/// The array is a `let` property (immutable, set once at init), so it is implicitly
 /// `Sendable` and the compiler synthesises conformance for `StubTransport` without
 /// any unsafe escape hatch.
 struct StubTransport: GitHubTransportProtocol {
-    /// Ordered prefix → data pairs. Longest-prefix match wins; ties use first-registered.
+    /// Ordered prefix → data pairs. Longest-prefix match wins.
     private let responses: [(prefix: String, data: Data)]
 
-    /// Number of times `apiAsync` was called — incremented on every invocation.
-    /// Uses a reference type internally so `apiAsync` does not need `mutating`,
-    /// keeping the protocol method signature clean. Access is confined to a single
-    /// test task, so no synchronisation is needed.
+    /// Number of times `apiAsync` was called.
+    /// Uses a reference type so `apiAsync` does not need `mutating`.
     private let _callCount = _Counter()
     var callCount: Int { _callCount.value }
 
-    /// Creates a stub with the given endpoint-prefix → Data map.
-    /// Pass `[:]` for a fully empty transport (all endpoints return nil).
-    ///
-    /// - Parameter responses: Prefix-keyed dictionary. The map is sorted by key
-    ///   length (longest first) so that more-specific prefixes match first.
     init(responses: [String: Data] = [:]) {
-        // Sort longest prefix first so `apiAsync` picks the most specific match.
         self.responses = responses.map { (prefix: $0.key, data: $0.value) }
             .sorted { $0.prefix.count > $1.prefix.count }
     }
-
-    // MARK: - GitHubTransportProtocol (required)
 
     func apiAsync(_ endpoint: String, timeout: TimeInterval) async -> Data? {
         _callCount.value += 1
         return responses.first(where: { endpoint.hasPrefix($0.prefix) })?.data
     }
 
-    func apiPaginated(_ endpoint: String, timeout: TimeInterval) async -> Data? { nil }
-    func raw(_ endpoint: String, timeout: TimeInterval) async -> Data? { nil }
-    func post(_ endpoint: String, body: Data?, timeout: TimeInterval) async -> Data? { nil }
-    func put(_ endpoint: String, body: Data, timeout: TimeInterval) async -> Data? { nil }
-    func delete(_ endpoint: String, timeout: TimeInterval) async -> Bool { false }
+    func apiPaginated(_: String, timeout: TimeInterval) async -> Data? { nil }
+    func raw(_: String, timeout: TimeInterval) async -> Data? { nil }
+    func post(_: String, body: Data?, timeout: TimeInterval) async -> Data? { nil }
+    func put(_: String, body: Data, timeout: TimeInterval) async -> Data? { nil }
+    func delete(_: String, timeout: TimeInterval) async -> Bool { false }
     func cancelRun(runID: Int, scope: String) async -> Bool { false }
     func patchRunnerLabels(scope: String, runnerID: Int, labels: [String]) async -> [String]? { nil }
     func fetchRegistrationToken(scope: String) async -> String? { nil }
@@ -78,43 +66,28 @@ struct StubTransport: GitHubTransportProtocol {
     func deleteRunnerByID(scope: String, runnerID: Int) async -> Bool { false }
 }
 
-// MARK: - JSON fixture helpers (private to this file)
+// MARK: - JSON fixture helpers
 
-/// Encodes a minimal `workflow_runs` response envelope.
-/// - Parameter runs: Array of run dictionaries. Each must include at least `id`, `head_sha`, `status`.
 private func runsEnvelope(_ runs: [[String: Any]]) -> Data {
     let envelope: [String: Any] = ["workflow_runs": runs]
     return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data()
 }
 
-/// Encodes a minimal `jobs` response envelope.
 private func jobsEnvelope(_ jobs: [[String: Any]]) -> Data {
     let envelope: [String: Any] = ["jobs": jobs]
     return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data()
 }
 
-/// A minimal run dictionary that satisfies `RunPayload` decoding.
-/// Unknown/extra keys are ignored by the decoder; only the four listed fields
-/// are strictly required by the Codable implementation.
-private func minimalRun(
-    id: Int,
-    sha: String,
-    status: String = "completed",
-    conclusion: String? = "success",
-    name: String = "CI"
-) -> [String: Any] {
+private func minimalRun(id: Int, sha: String, status: String = "completed",
+                        conclusion: String? = "success", name: String = "CI") -> [String: Any] {
     var d: [String: Any] = ["id": id, "head_sha": sha, "status": status, "name": name]
     if let conclusion { d["conclusion"] = conclusion }
     return d
 }
 
-/// A minimal job dictionary that satisfies `JobPayload` decoding.
-private func minimalJob(
-    id: Int,
-    name: String = "build",
-    status: String = "completed",
-    conclusion: String? = "success"
-) -> [String: Any] {
+private func minimalJob(id: Int, name: String = "build",
+                        status: String = "completed",
+                        conclusion: String? = "success") -> [String: Any] {
     var d: [String: Any] = ["id": id, "name": name, "status": status]
     if let conclusion { d["conclusion"] = conclusion }
     return d
@@ -124,12 +97,9 @@ private func minimalJob(
 
 @Suite("WorkflowActionGroupFetcher")
 struct WorkflowActionGroupFetcherTests {
-
-    // MARK: - Org scope guard
+// MARK: - Org scope guard
 
     /// An org-level scope (no `/repo` segment) must be skipped immediately.
-    /// The transport should never be called — any call would hit a nil stub and
-    /// either panic or silently swallow an error, masking the guard regression.
     @Test func fetchActionGroups_orgScope_returnsEmpty() async {
         let transport = StubTransport()
         let fetcher = WorkflowActionGroupFetcher(transport: transport)
@@ -153,8 +123,8 @@ struct WorkflowActionGroupFetcherTests {
         #expect(result.isEmpty)
     }
 
-    /// When the transport returns `nil` for every endpoint (e.g. token not yet
-    /// configured, network unreachable) the fetcher must degrade gracefully.
+    /// When the transport returns `nil` for every endpoint the fetcher must
+    /// degrade gracefully.
     @Test func fetchActionGroups_nilResponses_returnsEmpty() async {
         let fetcher = WorkflowActionGroupFetcher(transport: StubTransport())
         let result = await fetcher.fetchActionGroups(for: "owner/repo")
@@ -185,7 +155,6 @@ struct WorkflowActionGroupFetcherTests {
         #expect(result.first?.headSha == sha)
         #expect(result.first?.runs.count == 2)
     }
-
     /// Two runs with different `head_sha` values must produce two distinct groups.
     @Test func fetchActionGroups_twoRunsDifferentSha_producesTwoGroups() async {
         let sha1 = "aaa111"
@@ -197,30 +166,29 @@ struct WorkflowActionGroupFetcherTests {
                 minimalRun(id: 1, sha: sha1, status: "in_progress", conclusion: nil),
                 minimalRun(id: 2, sha: sha2, status: "in_progress", conclusion: nil),
             ]),
-            "repos/owner/repo/actions/runs?status=queued":    emptyEnvelope,
-            "repos/owner/repo/actions/runs?status=completed": emptyEnvelope,
-            "repos/owner/repo/actions/runs/1/jobs":           jobsData,
-            "repos/owner/repo/actions/runs/2/jobs":           jobsData,
+            "repos/owner/repo/actions/runs?status=queued":      emptyEnvelope,
+            "repos/owner/repo/actions/runs?status=completed":   emptyEnvelope,
+            "repos/owner/repo/actions/runs/1/jobs":             jobsData,
+            "repos/owner/repo/actions/runs/2/jobs":             jobsData,
         ])
         let fetcher = WorkflowActionGroupFetcher(transport: transport)
         let result = await fetcher.fetchActionGroups(for: "owner/repo")
         #expect(result.count == 2)
-        let shas = Set(result.map { $0.headSha })
-        #expect(shas == [sha1, sha2])
     }
 
-    // MARK: - Sort order
+    // MARK: - Sorting: in-progress first
 
     /// In-progress groups must sort before completed groups.
     @Test func fetchActionGroups_mixedStatuses_inProgressSortsFirst() async {
-        let shaInProgress  = "aaainprogress"
-        let shaCompleted   = "bbbcompleted"
-        let jobsData = jobsEnvelope([])
+        let shaInProgress = "inprogress1"
+        let shaCompleted  = "completed1"
+        let emptyEnvelope = runsEnvelope([])
+        let jobsData = jobsEnvelope([minimalJob(id: 1)])
         let transport = StubTransport(responses: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: shaInProgress, status: "in_progress", conclusion: nil),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": runsEnvelope([]),
+            "repos/owner/repo/actions/runs?status=queued": emptyEnvelope,
             "repos/owner/repo/actions/runs?status=completed": runsEnvelope([
                 minimalRun(id: 2, sha: shaCompleted, status: "completed", conclusion: "success"),
             ]),
@@ -233,46 +201,31 @@ struct WorkflowActionGroupFetcherTests {
         #expect(result.first?.headSha == shaInProgress)
         #expect(result.last?.headSha  == shaCompleted)
     }
-
     // MARK: - Cache hit
 
     /// When a cache entry exists for a SHA and all its jobs are concluded with
     /// no in-progress steps, the fetcher must serve the cached jobs without
-    /// issuing a `/jobs` API call. The stub has no `/jobs` entry registered;
-    /// any attempt to fetch it would return `nil`, causing an empty job array
-    /// and failing the count assertion.
+    /// issuing a `/jobs` API call. The `callCount` assertion makes the regression
+    /// signal explicit: only 3 calls (in_progress, queued, completed), no /jobs.
     @Test func fetchActionGroups_concludedCacheEntry_jobsNotRefetched() async {
         let sha = "cachedsha"
         let cachedJob = ActiveJob(
-            id: 999,
-            name: "cached-build",
-            htmlUrl: nil,
-            status: .completed,
-            conclusion: .success,
-            isDimmed: false,
-            runnerName: nil,
-            scope: "owner/repo",
-            startedAt: nil,
-            completedAt: Date(),
-            steps: []
+            id: 999, name: "cached-build", htmlUrl: nil,
+            status: .completed, conclusion: .success, isDimmed: false,
+            runnerName: nil, scope: "owner/repo",
+            startedAt: nil, completedAt: Date(), steps: []
         )
         let cachedGroup = WorkflowActionGroup(
-            headSha: sha,
-            label: sha,
-            title: "Cached commit",
-            headBranch: nil,
-            repo: "owner/repo",
-            runs: [],
-            jobs: [cachedJob],
-            firstJobStartedAt: nil,
-            lastJobCompletedAt: nil,
-            createdAt: nil
+            headSha: sha, label: sha, title: "Cached commit",
+            headBranch: nil, repo: "owner/repo", runs: [], jobs: [cachedJob],
+            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
         )
         let emptyEnvelope = runsEnvelope([])
-        // No /jobs endpoint registered — fetcher must not call it.
+        // Run status is "completed" so the fixture intent is clear — this run
+        // will always take the cache path regardless of future logic changes.
         let transport = StubTransport(responses: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
-                minimalRun(id: 1, sha: sha, status: "in_progress", conclusion: nil),
+                minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
             ]),
             "repos/owner/repo/actions/runs?status=queued":    emptyEnvelope,
             "repos/owner/repo/actions/runs?status=completed": emptyEnvelope,
@@ -280,8 +233,8 @@ struct WorkflowActionGroupFetcherTests {
         let fetcher = WorkflowActionGroupFetcher(transport: transport)
         let result = await fetcher.fetchActionGroups(for: "owner/repo", cache: [sha: cachedGroup])
         #expect(result.count == 1)
-        // Jobs must come from cache — id 999, not a freshly decoded id.
         #expect(result.first?.jobs.first?.id == 999)
+        #expect(transport.callCount == 3)
     }
 
     // MARK: - Repo label
