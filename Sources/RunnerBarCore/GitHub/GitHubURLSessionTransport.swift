@@ -129,6 +129,81 @@ public struct GitHubTransport: GitHubTransportProtocol {
     }
 }
 
+// MARK: - GitHubTransport: core execution
+
+extension GitHubTransport {
+
+    /// Single shared token-guard → URL-resolve → send → handle-response pipeline
+    /// used by all `GitHubTransportProtocol` methods on this struct.
+    ///
+    /// Mirrors the module-level `urlSessionExecute` free function exactly, but
+    /// reads `tokenProvider`, `rateLimiter` from `self` instead of module globals.
+    ///
+    /// - Parameters:
+    ///   - endpoint: Relative path or absolute URL string.
+    ///   - timeout: `URLRequest.timeoutInterval` for this request.
+    ///   - logTag: Short prefix for all `log()` calls within the function.
+    ///   - useRawAccept: When `true`, sets the raw-bytes `Accept` header instead
+    ///     of the standard JSON header. Required for log endpoints that redirect to S3.
+    ///   - configure: Closure applied to the pre-built `URLRequest` before sending.
+    ///     Defaults to the identity closure. Must be `@Sendable`.
+    @concurrent
+    func execute(
+        _ endpoint: String,
+        timeout: TimeInterval,
+        logTag: String,
+        useRawAccept: Bool = false,
+        configure: @Sendable (URLRequest) -> URLRequest = { $0 }
+    ) async -> ExecuteResult {
+        guard let token = tokenProvider() else {
+            log("\(logTag) › no token available")
+            return .noToken
+        }
+        let urlString = resolveURL(endpoint)
+        guard let url = URL(string: urlString) else {
+            log("\(logTag) › invalid URL: \(urlString)")
+            return .networkError(URLError(.badURL))
+        }
+        let baseReq = useRawAccept
+            ? makeRawRequest(url: url, token: token, timeout: timeout)
+            : makeRequest(url: url, token: token, timeout: timeout)
+        let req = configure(baseReq)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                return .networkError(URLError(.badServerResponse))
+            }
+            if http.statusCode == 403 || http.statusCode == 429 {
+                // Use the Bool return value from handleRateLimitResponse to classify
+                // this response directly from its headers — never from the actor state.
+                // Reading the actor after the call is a TOCTOU: a prior concurrent
+                // request may have already armed the actor, causing a plain
+                // permission-denied 403 (no rate-limit headers) to be misclassified
+                // as .rateLimited instead of .permissionDenied.
+                let wasRateLimited = await handleRateLimitResponse(
+                    statusCode: http.statusCode, data, response: http,
+                    endpoint: urlString, rateLimiter: rateLimiter
+                )
+                return wasRateLimited ? .rateLimited : .permissionDenied
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                logErrorBody(data, endpoint: urlString, status: http.statusCode)
+                return .httpError(http.statusCode)
+            }
+            // Clear the rate-limit flag after a successful 2xx response, but only
+            // when the actor is not currently limited. A single `clearIfNotLimited()`
+            // call performs the check and the clear in one atomic actor hop, eliminating
+            // the TOCTOU window that existed with the old snapshot+clear two-hop pattern.
+            await rateLimiter.clearIfNotLimited()
+            let linkHeader = http.value(forHTTPHeaderField: "Link")
+            return .success(data, statusCode: http.statusCode, linkHeader: linkHeader)
+        } catch {
+            log("\(logTag) › \(urlString) network error: \(error.localizedDescription)")
+            return .networkError(error)
+        }
+    }
+}
+
 // MARK: - Shared execution core
 
 /// The result of a single URLSession round-trip through `urlSessionExecute`.
