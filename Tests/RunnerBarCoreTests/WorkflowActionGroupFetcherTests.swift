@@ -57,14 +57,17 @@ struct StubTransport: GitHubTransportProtocol {
 
 // MARK: - JSON fixture helpers
 
-private func runsEnvelope(_ runs: [[String: Any]]) -> Data {
-    let envelope: [String: Any] = ["workflow_runs": runs]
+private func envelope(key: String, _ values: [[String: Any]]) -> Data {
+    let envelope: [String: Any] = [key: values]
     return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data()
 }
 
+private func runsEnvelope(_ runs: [[String: Any]]) -> Data {
+    envelope(key: "workflow_runs", runs)
+}
+
 private func jobsEnvelope(_ jobs: [[String: Any]]) -> Data {
-    let envelope: [String: Any] = ["jobs": jobs]
-    return (try? JSONSerialization.data(withJSONObject: envelope)) ?? Data()
+    envelope(key: "jobs", jobs)
 }
 
 private func minimalRun(id: Int, sha: String, status: String = "completed",
