@@ -202,62 +202,6 @@ final class OAuthService {
 
     // MARK: Token Exchange
 
-    /// Response body from the GitHub OAuth token exchange.
-    /// GitHub returns HTTP 200 even on failure, so both `accessToken` and `error` are optional.
-    private struct OAuthTokenResponse: Decodable {
-        /// The access token returned on success; `nil` when GitHub reports an error.
-        let accessToken: String?
-        /// Short error code returned by GitHub on failure (e.g. `"bad_verification_code"`).
-        let error: String?
-        /// Human-readable description of the error, if present.
-        let errorDescription: String?
-
-        /// Maps Swift property names to the snake_case JSON keys returned by the GitHub OAuth endpoint.
-        private enum CodingKeys: String, CodingKey {
-            /// JSON key: `access_token`.
-            case accessToken = "access_token"
-            /// JSON key: `error` — maps directly (no rename).
-            case error
-            /// JSON key: `error_description`.
-            case errorDescription = "error_description"
-        }
-
-        /// Returns the names of modelled fields that are non-nil, for safe diagnostic logging.
-        var debugKeys: [String] {
-            var keys: [String] = []
-            if accessToken != nil { keys.append("access_token") }
-            if error != nil { keys.append("error") }
-            if errorDescription != nil { keys.append("error_description") }
-            return keys
-        }
-    }
-
-    /// Typed request body for the GitHub OAuth token-exchange POST.
-    ///
-    /// Replaces the `[String: String]` dictionary literal previously used in
-    /// `exchangeCode(_:)`. Using a concrete `Encodable` struct:
-    /// - Makes the three required fields explicit and compiler-checked.
-    /// - Eliminates stringly-typed key spellings (`"client_id"` etc.) at the call site.
-    /// - Documents the contract of the GitHub OAuth token endpoint inline.
-    private struct OAuthTokenRequest: Encodable {
-        /// The GitHub OAuth app client ID.
-        let clientID: String
-        /// The GitHub OAuth app client secret.
-        let clientSecret: String
-        /// The one-time authorization code received in the OAuth redirect callback.
-        let code: String
-
-        /// Maps Swift property names to the snake_case JSON keys expected by the GitHub OAuth endpoint.
-        private enum CodingKeys: String, CodingKey {
-            /// JSON key: `client_id`.
-            case clientID     = "client_id"
-            /// JSON key: `client_secret`.
-            case clientSecret = "client_secret"
-            /// JSON key: `code` — maps directly (no rename).
-            case code
-        }
-    }
-
     /// POSTs the authorization code to GitHub and saves the returned access token to Keychain.
     private func exchangeCode(_ code: String) async {
         log("OAuthService › exchangeCode — POST to GitHub")
@@ -308,5 +252,63 @@ final class OAuthService {
         log("OAuthService › exchangeCode — Keychain.save result=\(saved), calling onCompletion(\(saved))")
         if !saved { log("OAuthService › exchangeCode: Keychain.save failed") }
         onCompletion?(saved)
+    }
+}
+
+// MARK: - Private response models
+
+/// Response body from the GitHub OAuth token exchange.
+/// GitHub returns HTTP 200 even on failure, so both `accessToken` and `error` are optional.
+private struct OAuthTokenResponse: Decodable {
+    /// The access token returned on success; `nil` when GitHub reports an error.
+    let accessToken: String?
+    /// Short error code returned by GitHub on failure (e.g. `"bad_verification_code"`).
+    let error: String?
+    /// Human-readable description of the error, if present.
+    let errorDescription: String?
+
+    /// Maps Swift property names to the snake_case JSON keys returned by the GitHub OAuth endpoint.
+    private enum CodingKeys: String, CodingKey {
+        /// JSON key: `access_token`.
+        case accessToken = "access_token"
+        /// JSON key: `error` — maps directly (no rename).
+        case error
+        /// JSON key: `error_description`.
+        case errorDescription = "error_description"
+    }
+
+    /// Returns the names of modelled fields that are non-nil, for safe diagnostic logging.
+    var debugKeys: [String] {
+        var keys: [String] = []
+        if accessToken != nil { keys.append("access_token") }
+        if error != nil { keys.append("error") }
+        if errorDescription != nil { keys.append("error_description") }
+        return keys
+    }
+}
+
+/// Typed request body for the GitHub OAuth token-exchange POST.
+///
+/// Replaces the `[String: String]` dictionary literal previously used in
+/// `exchangeCode(_:)`. Using a concrete `Encodable` struct:
+/// - Makes the three required fields explicit and compiler-checked.
+/// - Eliminates stringly-typed key spellings (`"client_id"` etc.) at the call site.
+/// - Documents the contract of the GitHub OAuth token endpoint inline.
+private struct OAuthTokenRequest: Encodable {
+    /// The GitHub OAuth app client ID.
+    let clientID: String
+    /// The GitHub OAuth app client secret.
+    let clientSecret: String
+    /// The one-time authorization code received in the OAuth redirect callback.
+    let code: String
+
+    /// Maps Swift property names to the snake_case JSON keys expected by the GitHub OAuth endpoint.
+    private enum CodingKeys: String, CodingKey {
+        /// JSON key: `client_id`.
+        case clientID     = "client_id"
+        /// JSON key: `client_secret`.
+        case clientSecret = "client_secret"
+        /// JSON key: `code` — maps directly (no rename).
+        case code
     }
 }
