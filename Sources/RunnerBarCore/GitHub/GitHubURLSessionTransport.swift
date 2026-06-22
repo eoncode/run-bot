@@ -45,25 +45,6 @@ public protocol GitHubTransportProtocol: Sendable {
 /// (e.g. in tests using a mock conformer) can omit the `timeout:` argument and
 /// receive the same defaults as the production implementation.
 public extension GitHubTransportProtocol {
-<<<<<<< HEAD
-    func apiAsync(_ endpoint: String) async -> Data? {
-        await apiAsync(endpoint, timeout: 20)
-    }
-    func apiPaginated(_ endpoint: String) async -> Data? {
-        await apiPaginated(endpoint, timeout: 60)
-    }
-    func raw(_ endpoint: String) async -> Data? {
-        await raw(endpoint, timeout: 60)
-    }
-    func post(_ endpoint: String, body: Data? = nil) async -> Data? {
-        await post(endpoint, body: body, timeout: 30)
-    }
-    func put(_ endpoint: String, body: Data) async -> Data? {
-        await put(endpoint, body: body, timeout: 30)
-    }
-    func delete(_ endpoint: String) async -> Bool {
-        await delete(endpoint, timeout: 30)
-=======
     /// Fetches a single GitHub REST API page. Returns decoded `Data` on success, `nil` on any failure.
     func apiAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
         await apiAsync(endpoint, timeout: timeout)
@@ -87,7 +68,6 @@ public extension GitHubTransportProtocol {
     /// Sends a DELETE to `endpoint`. Returns `true` on 2xx, `false` otherwise.
     func delete(_ endpoint: String, timeout: TimeInterval = 30) async -> Bool {
         await delete(endpoint, timeout: timeout)
->>>>>>> 5a3409b6 (fix(#1513): address PR review feedback - protocol default timeouts, private encapsulation, ghPost double-log, cancelRun execute pattern, ghAPI direct hop)
     }
 }
 
