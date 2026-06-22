@@ -215,6 +215,13 @@ actor RunnerStore {
     /// `RunnerStore+PollBridge.swift`.
     let decoder = JSONDecoder()
 
+    /// Fetcher for workflow action groups. Injected at init so the polling path
+    /// is testable without live network access.
+    ///
+    /// Production callers use the default (`sharedGitHubTransport`); unit tests
+    /// substitute a `StubTransport` or other `GitHubTransportProtocol` conformer.
+    let actionGroupFetcher: WorkflowActionGroupFetcher
+
     // MARK: - Aggregate status
 
     /// The combined health status across all runners, derived from the current `runners` array.
@@ -255,13 +262,15 @@ actor RunnerStore {
         localRunnerStore: LocalRunnerStore,
         preferencesStore: any AppPreferencesStoreProtocol,
         scopeStore: any ScopeStoreProtocol,
-        onStatusUpdate: @escaping @MainActor @Sendable () -> Void
+        onStatusUpdate: @escaping @MainActor @Sendable () -> Void,
+        actionGroupFetcher: WorkflowActionGroupFetcher = WorkflowActionGroupFetcher()
     ) {
         self.viewModel = viewModel
         self.localRunnerStore = localRunnerStore
         self.preferencesStore = preferencesStore
         self.scopeStore = scopeStore
         self.onStatusUpdate = onStatusUpdate
+        self.actionGroupFetcher = actionGroupFetcher
         Task { await self.startObservingPreferences() }
         Task { await self.startObservingScopes() }
     }
