@@ -223,12 +223,13 @@ actor RunnerStore {
     /// after `init`.
     ///
     /// `AsyncStream.makeStream` returns the stream and a separate continuation value.
-    /// The continuation is handed to `PreferencesObserver`, a `@MainActor` class that
-    /// owns the recursive `withObservationTracking` registration entirely on the main
-    /// actor. The observer is returned from `MainActor.run` and held in the Task's
-    /// async scope so it stays alive for the full lifetime of the stream — without
-    /// this, `[weak self]` in `onChange` would find `self == nil` on the first change
-    /// and silently stop all future polling-interval updates.
+    /// The continuation is handed to `PreferencesObserver` (defined in
+    /// `RunnerStore+Observers.swift`), a `@MainActor` class that owns the recursive
+    /// `withObservationTracking` registration entirely on the main actor. The observer
+    /// is returned from `MainActor.run` and held in the Task's async scope so it stays
+    /// alive for the full lifetime of the stream — without this, `[weak self]` in
+    /// `onChange` would find `self == nil` on the first change and silently stop all
+    /// future polling-interval updates.
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
         pollLoop.setIntervalObservationTask(Task { [weak self] in
@@ -262,9 +263,10 @@ actor RunnerStore {
     /// rather than a `nil` optional, even if the actor is deallocated immediately
     /// after `init`.
     ///
-    /// Same approach as `startObservingPreferences` — see that method's
-    /// doc-comment for the full rationale, including why the observer must be
-    /// retained in the Task's async scope beyond the `MainActor.run` closure.
+    /// Same approach as `startObservingPreferences` — see that method's doc-comment
+    /// for the full rationale, including why the observer must be retained in the
+    /// Task's async scope beyond the `MainActor.run` closure.
+    /// `ScopesObserver` is defined in `RunnerStore+Observers.swift`.
     private func startObservingScopes() {
         let injectedStore = scopeStore
         pollLoop.setScopeObservationTask(Task { [weak self] in
