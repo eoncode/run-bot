@@ -10,15 +10,19 @@ import Foundation
 /// test double at init time (dependency injection) rather than calling the
 /// production free function directly from inside the actor body.
 ///
-/// Production callers pass `WorkflowActionGroupFetcher()` (the default);
-/// unit tests substitute a subclass or a protocol-conforming fake.
+/// `Sendable` conformance is safe: the class is stateless — it holds no
+/// mutable stored properties and delegates entirely to the free function.
+/// The conformance is required so that the instance can cross the actor
+/// isolation boundary in `RunnerStore+PollBridge`.
 ///
-/// - Note: `final` is intentional. The DI seam is subclassing-based for now
-///   (override `fetch(for:cache:)` in a test double). A follow-up issue will
-///   extract a `WorkflowActionGroupFetcherProtocol` to align with the
-///   protocol-oriented DI pattern used by every other injected dependency
-///   in this codebase (Principle 7).
-public final class WorkflowActionGroupFetcher {
+/// Production callers pass `WorkflowActionGroupFetcher()` (the default);
+/// unit tests substitute a subclass that overrides `fetch(for:cache:)`.
+///
+/// - Note: `final` is intentional. A follow-up issue will extract a
+///   `WorkflowActionGroupFetcherProtocol` to align with the protocol-oriented
+///   DI pattern used by every other injected dependency in this codebase
+///   (Principle 7).
+public final class WorkflowActionGroupFetcher: @unchecked Sendable {
 
     /// Creates a new fetcher instance.
     public init() {}
