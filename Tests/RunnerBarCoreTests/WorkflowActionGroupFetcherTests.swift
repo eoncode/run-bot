@@ -89,6 +89,34 @@ private func minimalJob(id: Int, name: String = "build",
 struct WorkflowActionGroupFetcherTests {
     /// Creates a `StubTransport` with empty response envelopes for the three
     /// status endpoints. Callers supply additional endpoint fixtures to override.
+    /// Builds a concluded `WorkflowActionGroup` cache entry for the given SHA.
+    /// Callers supply only the fields that vary between tests.
+    private func makeCachedGroup(
+        sha: String,
+        title: String = "Cached commit",
+        repo: String = "owner/repo",
+        jobID: Int = 999,
+        jobName: String = "cached-build",
+        jobScope: String = "owner/repo",
+        steps: [JobStep] = []
+    ) -> WorkflowActionGroup {
+        WorkflowActionGroup(
+            headSha: sha,
+            label: sha,
+            title: title,
+            headBranch: nil,
+            repo: repo,
+            runs: [],
+            jobs: [ActiveJob(
+                id: jobID, name: jobName, htmlUrl: nil,
+                status: .completed, conclusion: .success, isDimmed: false,
+                runnerName: nil, scope: jobScope,
+                startedAt: nil, completedAt: Date(), steps: steps
+            )],
+            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
+        )
+    }
+
     private func makeTransport(with responses: [String: Data] = [:]) -> StubTransport {
         let e = runsEnvelope([])
         var base: [String: Data] = [
@@ -185,21 +213,7 @@ struct WorkflowActionGroupFetcherTests {
 
     @Test func fetchActionGroupsConcludedCacheEntryJobsNotRefetched() async {
         let sha = "cachedsha"
-        let cached = WorkflowActionGroup(
-            headSha: sha,
-            label: sha,
-            title: "Cached commit",
-            headBranch: nil,
-            repo: "owner/repo",
-            runs: [],
-            jobs: [ActiveJob(
-                id: 999, name: "cached-build", htmlUrl: nil,
-                status: .completed, conclusion: .success, isDimmed: false,
-                runnerName: nil, scope: "owner/repo",
-                startedAt: nil, completedAt: Date(), steps: []
-            )],
-            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
-        )
+        let cached = makeCachedGroup(sha: sha)
         // No /jobs endpoints registered — fetcher must not call them.
         let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
@@ -217,21 +231,12 @@ struct WorkflowActionGroupFetcherTests {
         // A cached entry where a job is concluded but a step is still in-progress
         // must NOT serve from cache — the stale-step guard re-fetches via API.
         let sha = "staledash"
-        let cached = WorkflowActionGroup(
-            headSha: sha,
-            label: sha,
+        let cached = makeCachedGroup(
+            sha: sha,
             title: "Stale step commit",
-            headBranch: nil,
-            repo: "owner/repo",
-            runs: [],
-            jobs: [ActiveJob(
-                id: 888, name: "stale-build", htmlUrl: nil,
-                status: .completed, conclusion: .success, isDimmed: false,
-                runnerName: nil, scope: "owner/repo",
-                startedAt: nil, completedAt: Date(),
-                steps: [JobStep(id: 1, name: "lint", status: .inProgress)]
-            )],
-            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
+            jobID: 888,
+            jobName: "stale-build",
+            steps: [JobStep(id: 1, name: "lint", status: .inProgress)]
         )
         let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
