@@ -465,6 +465,9 @@ extension GitHubTransport {
             log("cancelRun › invalid scope: \(scopeString)")
             return false
         }
+        // Intentionally repo-only: GitHub has no uniform org-scope cancel endpoint.
+        // POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel exists; the org-level
+        // equivalent does not. Org/enterprise callers must resolve to a repo scope first.
         guard case .repo = scope else {
             log("cancelRun › scope must be a repo (owner/name), got: \(scopeString)")
             return false
@@ -654,6 +657,9 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 /// - SeeAlso: ``GitHubTransport/post(_:body:timeout:)``
 @concurrent
 @discardableResult
+/// - Note: Returns `Bool` (success/failure) rather than `Data?`. This is an intentional
+///   lossy conversion — existing callers only care whether the POST succeeded. If the
+///   response body ever becomes relevant, call `sharedGitHubTransport.post(_:)` directly.
 public func ghPost(_ endpoint: String) async -> Bool {
     let result = await sharedGitHubTransport.post(endpoint)
     let success = result != nil
