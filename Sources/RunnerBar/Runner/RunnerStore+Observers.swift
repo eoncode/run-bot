@@ -8,6 +8,13 @@ import Foundation
 /// entirely on the `@MainActor`. Because every method is `@MainActor`-isolated, the local
 /// `func observe()` inside `start()` is implicitly `@MainActor` — no `@Sendable` annotation
 /// is required and no value crosses an isolation boundary.
+///
+/// - Note: This class is `internal` (not `private`) intentionally. It was `private final class`
+///   in `RunnerStore.swift` before being extracted to this file. Swift `private` is file-scoped,
+///   so moving it to a separate file requires at least `internal` visibility for
+///   `RunnerStore.swift` to reference it across the file boundary. It remains invisible
+///   outside the `RunnerBar` module. Do not narrow back to `private` — that will break
+///   the cross-file reference in `RunnerStore.swift`.
 @MainActor
 final class PreferencesObserver {
     /// The continuation used to push new `pollingInterval` values into the `AsyncStream`.
@@ -42,6 +49,9 @@ final class PreferencesObserver {
 
 /// Drives a recursive `withObservationTracking` loop for `ScopeStoreProtocol.activeScopes`
 /// entirely on the `@MainActor`. Same isolation rationale as `PreferencesObserver`.
+///
+/// - Note: `internal` visibility is intentional — see `PreferencesObserver` doc-comment
+///   for the full rationale. Do not narrow back to `private`.
 @MainActor
 final class ScopesObserver {
     /// The continuation used to push new `activeScopes` values into the `AsyncStream`.

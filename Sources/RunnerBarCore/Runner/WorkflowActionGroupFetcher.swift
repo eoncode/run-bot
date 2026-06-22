@@ -12,7 +12,13 @@ import Foundation
 ///
 /// Production callers pass `WorkflowActionGroupFetcher()` (the default);
 /// unit tests substitute a subclass or a protocol-conforming fake.
-public class WorkflowActionGroupFetcher {
+///
+/// - Note: `final` is intentional. The DI seam is subclassing-based for now
+///   (override `fetch(for:cache:)` in a test double). A follow-up issue will
+///   extract a `WorkflowActionGroupFetcherProtocol` to align with the
+///   protocol-oriented DI pattern used by every other injected dependency
+///   in this codebase (Principle 7).
+public final class WorkflowActionGroupFetcher {
 
     /// Creates a new fetcher instance.
     public init() {}
