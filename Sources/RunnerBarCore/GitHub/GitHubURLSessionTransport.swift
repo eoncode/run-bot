@@ -250,6 +250,19 @@ private enum ExecuteResult {
     case networkError(Error)
 }
 
+// MARK: - Private response models
+
+/// Decoding model for the GitHub "set runner labels" PUT response.
+private struct LabelsResponse: Decodable {
+    /// A single runner label entry returned by the GitHub API.
+    struct Label: Decodable {
+        /// The display name of the runner label.
+        let name: String
+    }
+    /// The full list of labels attached to the runner after the PUT.
+    let labels: [Label]
+}
+
 // MARK: - GitHubTransport: protocol conformance
 
 /// Conformance to ``GitHubTransportProtocol`` — all public API surface.
@@ -455,10 +468,6 @@ extension GitHubTransport {
         guard let outData = await put(endpoint, body: bodyData) else {
             log("patchRunnerLabels › request failed for endpoint=\(endpoint)")
             return nil
-        }
-        struct LabelsResponse: Decodable {
-            struct Label: Decodable { let name: String }
-            let labels: [Label]
         }
         guard let resp = try? decoder.decode(LabelsResponse.self, from: outData) else {
             let raw = String(data: outData, encoding: .utf8) ?? ""
