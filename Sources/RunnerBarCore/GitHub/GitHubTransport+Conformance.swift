@@ -191,9 +191,31 @@ extension GitHubTransport {
             return false
         }
         let endpoint = "\(scope.apiPrefix)/actions/runs/\(runID)/cancel"
-        let result = await post(endpoint) != nil
-        log("cancelRun › run=\(runID) scope=\(scopeString) success=\(result)")
-        return result
+        let executeResult = await execute(endpoint, timeout: 30, logTag: "cancelRun") { req in
+            var request = req
+            request.httpMethod = "POST"
+            return request
+        }
+        switch executeResult {
+        case .success:
+            log("cancelRun › run=\(runID) scope=\(scopeString) success=true")
+            return true
+        case .httpError(let code):
+            log("cancelRun › run=\(runID) scope=\(scopeString) failed — HTTP \(code)")
+            return false
+        case .noToken:
+            log("cancelRun › run=\(runID) scope=\(scopeString) failed — no token")
+            return false
+        case .rateLimited:
+            log("cancelRun › run=\(runID) scope=\(scopeString) failed — rate limited")
+            return false
+        case .permissionDenied:
+            log("cancelRun › run=\(runID) scope=\(scopeString) failed — permission denied")
+            return false
+        case .networkError(let error):
+            log("cancelRun › run=\(runID) scope=\(scopeString) failed — network error: \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: patchRunnerLabels
