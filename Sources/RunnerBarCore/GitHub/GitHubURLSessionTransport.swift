@@ -38,30 +38,30 @@ public protocol GitHubTransportProtocol: Sendable {
     func deleteRunnerByID(scope: String, runnerID: Int) async -> Bool
 }
 
-// MARK: - GitHubTransportProtocol default timeouts
+// MARK: - GitHubTransportProtocol defaults
 
-/// Provides default `timeout` values at the protocol level so that callers
-/// typed as `any GitHubTransportProtocol` (e.g. mock conformers in tests) can
-/// omit explicit timeout arguments, matching the ergonomics of the concrete
-/// `GitHubTransport` methods.
+/// Default `timeout` values for all protocol methods, matching the concrete
+/// `GitHubTransport` defaults. Call sites typed as `any GitHubTransportProtocol`
+/// (e.g. in tests using a mock conformer) can omit the `timeout:` argument and
+/// receive the same defaults as the production implementation.
 public extension GitHubTransportProtocol {
-    func apiAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
-        await apiAsync(endpoint, timeout: timeout)
+    func apiAsync(_ endpoint: String) async -> Data? {
+        await apiAsync(endpoint, timeout: 20)
     }
-    func apiPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
-        await apiPaginated(endpoint, timeout: timeout)
+    func apiPaginated(_ endpoint: String) async -> Data? {
+        await apiPaginated(endpoint, timeout: 60)
     }
-    func raw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
-        await raw(endpoint, timeout: timeout)
+    func raw(_ endpoint: String) async -> Data? {
+        await raw(endpoint, timeout: 60)
     }
-    func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
-        await post(endpoint, body: body, timeout: timeout)
+    func post(_ endpoint: String, body: Data? = nil) async -> Data? {
+        await post(endpoint, body: body, timeout: 30)
     }
-    func put(_ endpoint: String, body: Data, timeout: TimeInterval = 30) async -> Data? {
-        await put(endpoint, body: body, timeout: timeout)
+    func put(_ endpoint: String, body: Data) async -> Data? {
+        await put(endpoint, body: body, timeout: 30)
     }
-    func delete(_ endpoint: String, timeout: TimeInterval = 30) async -> Bool {
-        await delete(endpoint, timeout: timeout)
+    func delete(_ endpoint: String) async -> Bool {
+        await delete(endpoint, timeout: 30)
     }
 }
 
@@ -86,21 +86,21 @@ public struct GitHubTransport: GitHubTransportProtocol {
     /// Kept as a stored `let` (one allocation per `GitHubTransport` instance)
     /// rather than per-call-site to avoid repeated allocations while remaining
     /// functionally identical to a local instance in every call site.
-    private let decoder: JSONDecoder
+    let decoder: JSONDecoder
 
     /// JSON encoder — stateless after `init`, safe for concurrent reads.
     /// Same rationale as `decoder`.
-    private let encoder: JSONEncoder
+    let encoder: JSONEncoder
 
     /// Rate-limit actor used to arm/clear the global back-off window.
     /// Defaults to the module-level `rateLimitActor` singleton so existing
     /// production behaviour is preserved without any call-site changes.
-    private let rateLimiter: any RateLimitActorProtocol
+    let rateLimiter: any RateLimitActorProtocol
 
     /// Synchronous closure that returns the current GitHub PAT, or `nil` when
     /// the user is signed out. Defaults to `githubTokenCore()` from
     /// `GitHubTransportShim` so the token pipeline is unchanged at launch.
-    private let tokenProvider: @Sendable () -> String?
+    let tokenProvider: @Sendable () -> String?
 
     // MARK: - Init
 
@@ -426,19 +426,9 @@ extension GitHubTransport {
             return false
         }
         let endpoint = "\(scope.apiPrefix)/actions/runs/\(runID)/cancel"
-        let result = await execute(endpoint, timeout: 30, logTag: "cancelRun") { req in
-            var request = req
-            request.httpMethod = "POST"
-            return request
-        }
-        let success: Bool
-        if case .success = result {
-            success = true
-        } else {
-            success = false
-        }
-        log("cancelRun › run=\(runID) scope=\(scopeString) success=\(success)")
-        return success
+        let result = await post(endpoint) != nil
+        log("cancelRun › run=\(runID) scope=\(scopeString) success=\(result)")
+        return result
     }
 
     // MARK: patchRunnerLabels
@@ -625,7 +615,7 @@ public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) asy
 /// - SeeAlso: ``GitHubTransport/apiAsync(_:timeout:)``
 nonisolated(nonsending)
 public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
-    await sharedGitHubTransport.apiAsync(endpoint, timeout: timeout)
+    await urlSessionAPIAsync(endpoint, timeout: timeout)
 }
 
 /// Fire-and-forget POST alias. Returns `true` on 2xx.
@@ -633,10 +623,10 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 @concurrent
 @discardableResult
 public func ghPost(_ endpoint: String) async -> Bool {
-    // Note: GitHubTransport.post already logs the status code; no additional
-    // log here to avoid double-logging. Remove this shim once callers migrate
-    // to GitHubTransportProtocol (tracked in #1513 Items 4 & 8).
-    return await sharedGitHubTransport.post(endpoint) != nil
+    let result = await sharedGitHubTransport.post(endpoint)
+    let success = result != nil
+    log("ghPost › \(endpoint) success=\(success)")
+    return success
 }
 
 /// Deregisters a runner from GitHub via DELETE.
