@@ -14,31 +14,56 @@ import Foundation
 import Testing
 @testable import RunnerBarCore
 
+// MARK: - Helper
+
+/// A trivial reference-type counter so `StubTransport` can track call counts
+/// without making `apiAsync` `mutating` (which would conflict with the
+/// `GitHubTransportProtocol` existential `let` in `WorkflowActionGroupFetcher`).
+private final class _Counter: @unchecked Sendable {
+    var value = 0
+}
+
 // MARK: - StubTransport
 
 /// Minimal `GitHubTransportProtocol` stub for `WorkflowActionGroupFetcher` tests.
 ///
-/// Responses are registered by endpoint *prefix*: the first registered key that
-/// is a prefix of the requested endpoint wins. This lets tests register
-/// `"repos/owner/repo/actions/runs?status=in_progress"` without worrying about
-/// the trailing `&per_page=N` that the fetcher appends.
+/// Responses are registered as an ordered array of `(prefix, Data)` pairs — the
+/// *longest matching prefix* wins, with ties broken by array order. This is
+/// deterministic regardless of Swift runtime or platform, unlike `Dictionary`
+/// iteration order. Tests register more-specific prefixes (e.g. a full endpoint
+/// path) *before* less-specific ones (e.g. a base path) to ensure exact matches
+/// take priority over broad ones.
 ///
-/// The `responses` dictionary is a `let` property (immutable, set once at init),
-/// so `[String: Data]` is implicitly `Sendable` and the compiler synthesises
-/// `Sendable` conformance for `StubTransport` without any unsafe escape hatch.
+/// The array is a `let` property (immutable, set once at init), so it's implicitly
+/// `Sendable` and the compiler synthesises conformance for `StubTransport` without
+/// any unsafe escape hatch.
 struct StubTransport: GitHubTransportProtocol {
-    private let responses: [String: Data]
+    /// Ordered prefix → data pairs. Longest-prefix match wins; ties use first-registered.
+    private let responses: [(prefix: String, data: Data)]
+
+    /// Number of times `apiAsync` was called — incremented on every invocation.
+    /// Uses a reference type internally so `apiAsync` does not need `mutating`,
+    /// keeping the protocol method signature clean. Access is confined to a single
+    /// test task, so no synchronisation is needed.
+    private let _callCount = _Counter()
+    var callCount: Int { _callCount.value }
 
     /// Creates a stub with the given endpoint-prefix → Data map.
     /// Pass `[:]` for a fully empty transport (all endpoints return nil).
+    ///
+    /// - Parameter responses: Prefix-keyed dictionary. The map is sorted by key
+    ///   length (longest first) so that more-specific prefixes match first.
     init(responses: [String: Data] = [:]) {
-        self.responses = responses
+        // Sort longest prefix first so `apiAsync` picks the most specific match.
+        self.responses = responses.map { (prefix: $0.key, data: $0.value) }
+            .sorted { $0.prefix.count > $1.prefix.count }
     }
 
     // MARK: - GitHubTransportProtocol (required)
 
     func apiAsync(_ endpoint: String, timeout: TimeInterval) async -> Data? {
-        responses.first(where: { endpoint.hasPrefix($0.key) })?.value
+        _callCount.value += 1
+        return responses.first(where: { endpoint.hasPrefix($0.prefix) })?.data
     }
 
     func apiPaginated(_ endpoint: String, timeout: TimeInterval) async -> Data? { nil }
