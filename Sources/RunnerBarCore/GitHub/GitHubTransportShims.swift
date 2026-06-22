@@ -68,12 +68,13 @@ public func urlSessionDelete(_ endpoint: String, timeout: TimeInterval = 30) asy
 /// Thin GET alias used widely across the module.
 /// - SeeAlso: ``GitHubTransport/apiAsync(_:timeout:)``
 ///
-/// Uses `nonisolated(nonsending)` rather than `@concurrent` because this is a
-/// pure pass-through with no lock acquisition before the first suspension point
-/// — `@concurrent` would add unnecessary cooperative-pool dispatch overhead.
-nonisolated(nonsending)
+/// Uses `@concurrent` (not `nonisolated(nonsending)`) because this calls
+/// `sharedGitHubTransport.apiAsync` directly rather than the `@concurrent`
+/// `urlSessionAPIAsync` shim. Consistent with all other shims in this file
+/// (`ghPost`, `deleteRunnerByID`, etc.) that delegate directly to the struct.
+@concurrent
 public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
-    await urlSessionAPIAsync(endpoint, timeout: timeout)
+    await sharedGitHubTransport.apiAsync(endpoint, timeout: timeout)
 }
 
 /// Fire-and-forget POST alias. Returns `true` on 2xx.
