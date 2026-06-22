@@ -7,7 +7,7 @@
 // without wiring up an HTTP stub).
 //
 // - Note: `Sendable` conformance is required so the existential can be stored as
-//   a `let` inside `RunnerStore` (a `@MainActor` class) without triggering
+//   a `let` inside `RunnerStore` (a custom `actor`) without triggering
 //   non-Sendable-capture warnings at the actor boundary.
 import Foundation
 
@@ -39,6 +39,7 @@ public protocol WorkflowActionGroupFetcherProtocol: Sendable {
     ///   - scope: A repo scope string in the form `"owner/repo"`. Org scopes (no `/`) return empty.
     ///   - cache: An optional SHA-keyed cache of previously-fetched groups to avoid redundant API calls.
     /// - Returns: An array of `WorkflowActionGroup` values, one per unique `head_sha`.
+    @concurrent
     func fetch(for scope: String, cache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup]
 }
 
