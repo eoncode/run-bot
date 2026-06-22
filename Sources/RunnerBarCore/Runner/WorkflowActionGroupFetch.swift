@@ -345,7 +345,7 @@ public struct WorkflowActionGroupFetcher: Sendable {
         let needsRefresh = allNeedingRefresh.prefix(maxRefreshConcurrency)
         let skippedCount = allNeedingRefresh.count - needsRefresh.count
         if skippedCount > 0 {
-            log("fetchJobsForRun -- \(skippedCount) in-progress job(s) skipped beyond cap (\(maxRefreshConcurrency)) — will serve stale data for those jobs this poll cycle")
+            log("fetchJobsForRun -- \(skippedCount) in-progress job(s) skipped beyond cap (\(maxRefreshConcurrency)) — these jobs will serve stale data every poll cycle until the capped jobs conclude")
         }
         guard !needsRefresh.isEmpty else { return initial }
 
