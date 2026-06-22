@@ -119,16 +119,39 @@ private func prLabel(from run: RunPayload) -> String {
     return String(run.headSha.prefix(7))
 }
 
-// MARK: - Fetch + Group
+// MARK: - WorkflowActionGroupFetcher
 
-/// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
-/// enriches each group with its flattened job list, and returns groups sorted:
-/// in-progress first, then queued, then completed — newest first within each tier.
+/// Fetches and groups workflow action groups for one or more repo scopes.
 ///
-/// All three status fetches (in_progress, queued, completed) run concurrently.
-/// Per-run job fetches within each group also run concurrently.
-/// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
-public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
+/// Accepts any `GitHubTransportProtocol` conformer so the hot polling path
+/// is testable without live network access. Production callers use the
+/// default `sharedGitHubTransport`; tests inject a stub.
+///
+/// - SeeAlso: ``GitHubTransportProtocol``
+public struct WorkflowActionGroupFetcher: Sendable {
+
+    /// The transport used for all GitHub API calls made by this fetcher.
+    private let transport: any GitHubTransportProtocol
+
+    /// Creates a fetcher backed by the given transport.
+    ///
+    /// - Parameter transport: Defaults to `sharedGitHubTransport` so existing
+    ///   production call sites need no change beyond switching to the instance method.
+    public init(transport: any GitHubTransportProtocol = sharedGitHubTransport) {
+        self.transport = transport
+    }
+
+    // MARK: - Fetch + Group
+
+    /// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
+    /// enriches each group with its flattened job list, and returns groups sorted:
+    /// in-progress first, then queued, then completed — newest first within each tier.
+    ///
+    /// All three status fetches (in_progress, queued, completed) run concurrently.
+    /// Per-run job fetches within each group also run concurrently.
+    /// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
+    @concurrent
+    public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
     guard scope.contains("/") else {
         log("fetchActionGroups -- skipping org scope \(scope)")
         return []
