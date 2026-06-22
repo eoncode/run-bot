@@ -136,6 +136,8 @@ struct WorkflowActionGroupFetcherTests {
         #expect(r.count == 1)
         #expect(r.first?.headSha == sha)
         #expect(r.first?.runs.count == 2)
+        // Both runs return the same two jobs (101, 102); verify dedup produces exactly 2, not 4.
+        #expect(r.first?.jobs.count == 2)
     }
 
     @Test func fetchActionGroups_twoRunsDifferentSha_producesTwoGroups() async {

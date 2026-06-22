@@ -354,7 +354,7 @@ public struct WorkflowActionGroupFetcher: Sendable {
             for (idx, job) in needsRefresh {
                 group.addTask {
                     guard let freshData = await self.transport.apiAsync("repos/\(scope)/actions/jobs/\(job.id)"),
-                          let fresh = try? decoder.decode(JobPayload.self, from: freshData)
+                          let fresh = try? self.decoder.decode(JobPayload.self, from: freshData)
                     else { return (idx, nil) }
                     let freshJob = await ISO8601DateParser.shared.makeJob(from: fresh)
                     if fresh.conclusion != nil { return (idx, freshJob) }
