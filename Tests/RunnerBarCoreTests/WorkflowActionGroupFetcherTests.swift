@@ -89,7 +89,7 @@ private func minimalJob(id: Int, name: String = "build",
 struct WorkflowActionGroupFetcherTests {
     // MARK: - Org scope guard
 
-    @Test func fetchActionGroups_orgScope_returnsEmpty() async {
+    @Test func fetchActionGroupsOrgScopeReturnsEmpty() async {
         let s = StubTransport()
         let f = WorkflowActionGroupFetcher(transport: s)
         let r = await f.fetch(for: "myorg")
@@ -99,7 +99,7 @@ struct WorkflowActionGroupFetcherTests {
 
     // MARK: - Empty API responses
 
-    @Test func fetchActionGroups_allEndpointsEmpty_returnsEmpty() async {
+    @Test func fetchActionGroupsAllEndpointsEmptyReturnsEmpty() async {
         let e = runsEnvelope([])
         let t = StubTransport(responses: [
             "repos/owner/repo/actions/runs?status=in_progress": e,
@@ -110,14 +110,14 @@ struct WorkflowActionGroupFetcherTests {
         #expect(await f.fetch(for: "owner/repo").isEmpty)
     }
 
-    @Test func fetchActionGroups_nilResponses_returnsEmpty() async {
+    @Test func fetchActionGroupsNilResponsesReturnsEmpty() async {
         let f = WorkflowActionGroupFetcher(transport: StubTransport())
         #expect(await f.fetch(for: "owner/repo").isEmpty)
     }
 
     // MARK: - Grouping by head_sha
 
-    @Test func fetchActionGroups_twoRunsSameSha_producesOneGroup() async {
+    @Test func fetchActionGroupsTwoRunsSameShaProducesOneGroup() async {
         let sha = "abc1234567890"
         let runs = [
             minimalRun(id: 1, sha: sha, status: "in_progress", conclusion: nil, name: "build"),
@@ -141,7 +141,7 @@ struct WorkflowActionGroupFetcherTests {
         #expect(r.first?.jobs.count == 2)
     }
 
-    @Test func fetchActionGroups_twoRunsDifferentSha_producesTwoGroups() async {
+    @Test func fetchActionGroupsTwoRunsDifferentShaProducesTwoGroups() async {
         let t = StubTransport(responses: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: "aaa111", status: "in_progress", conclusion: nil),
@@ -160,7 +160,7 @@ struct WorkflowActionGroupFetcherTests {
 
     // MARK: - Sort order
 
-    @Test func fetchActionGroups_mixedStatuses_inProgressSortsFirst() async {
+    @Test func fetchActionGroupsMixedStatusesInProgressSortsFirst() async {
         let j = jobsEnvelope([])
         let e = runsEnvelope([])
         let t = StubTransport(responses: [
@@ -183,7 +183,7 @@ struct WorkflowActionGroupFetcherTests {
 
     // MARK: - Cache hit
 
-    @Test func fetchActionGroups_concludedCacheEntry_jobsNotRefetched() async {
+    @Test func fetchActionGroupsConcludedCacheEntryJobsNotRefetched() async {
         let sha = "cachedsha"
         let cached = WorkflowActionGroup(
             headSha: sha,
@@ -216,7 +216,7 @@ struct WorkflowActionGroupFetcherTests {
         #expect(t.callCount == 3)
     }
 
-    @Test func fetchActionGroups_concludedCacheWithInProgressStep_refetchesJobs() async {
+    @Test func fetchActionGroupsConcludedCacheWithInProgressStepRefetchesJobs() async {
         // A cached entry where a job is concluded but a step is still in-progress
         // must NOT serve from cache — the stale-step guard re-fetches via API.
         let sha = "staledash"
@@ -253,51 +253,9 @@ struct WorkflowActionGroupFetcherTests {
         // 3 status calls + 1 jobs-list call = 4 (not 3 — cache was bypassed)
         #expect(t.callCount == 4)
     }
-
-@Test func fetchActionGroups_cacheFromDifferentRepo_bypassesCache() async {
-        // A cache entry from a different repo with the same head_sha must NOT
-        // serve from cache — the cached.repo == scope guard re-fetches via API.
-        let sha = "sharedsha"
-        let crossRepoCache = WorkflowActionGroup(
-            headSha: sha,
-            label: sha,
-            title: "Cross-repo cache entry",
-            headBranch: nil,
-            repo: "other/repo",
-            runs: [],
-            jobs: [ActiveJob(
-                id: 777, name: "cross-repo-build", htmlUrl: nil,
-                status: .completed, conclusion: .success, isDimmed: false,
-                runnerName: nil, scope: "other/repo",
-                startedAt: nil, completedAt: Date(), steps: []
-            )],
-            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
-        )
-        let e = runsEnvelope([])
-        // Register /jobs endpoints — cache bypass should hit them.
-        let t = StubTransport(responses: [
-            "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
-                minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
-            ]),
-            "repos/owner/repo/actions/runs?status=queued": e,
-            "repos/owner/repo/actions/runs?status=completed": e,
-            "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([
-                minimalJob(id: 101, status: "completed", conclusion: "success"),
-            ]),
-        ])
-        let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetch(for: "owner/repo", cache: [sha: crossRepoCache])
-        #expect(r.count == 1)
-        // Cache miss forces API call: 3 status + 1 jobs-list = 4 (not 3)
-        #expect(t.callCount == 4)
-        // Live data used, not cross-repo cached data.
-        #expect(r.first?.jobs.first?.id == 101)
-    }
-
-    // MARK: - Refresh cap
     // MARK: - Refresh cap
 
-    @Test func fetchActionGroups_inProgressJobsCapped_atMaxRefreshConcurrency() async {
+    @Test func fetchActionGroupsInProgressJobsCappedAtMaxRefreshConcurrency() async {
         // When a single run has 4 in-progress jobs but maxRefreshConcurrency is 3,
         // only 3 individual /actions/jobs/{id} refresh calls are dispatched.
         // The 4th job silently uses stale data — verified by the call count not reaching 8.
@@ -334,7 +292,7 @@ struct WorkflowActionGroupFetcherTests {
 
     // MARK: - Cross-scope cache miss
 
-    @Test func fetchActionGroups_cachedEntryForDifferentRepo_notServedAsCacheHit() async {
+    @Test func fetchActionGroupsCachedEntryForDifferentRepoNotServedAsCacheHit() async {
         // A concluded cache entry whose `repo` doesn't match the fetch scope must
         // NOT be served — the `cached.repo == scope` guard must fire and re-fetch.
         let sha = "crossreposha"
@@ -375,7 +333,7 @@ struct WorkflowActionGroupFetcherTests {
 
     // MARK: - Repo label
 
-    @Test func fetchActionGroups_singleRun_groupHasCorrectRepoScope() async {
+    @Test func fetchActionGroupsSingleRunGroupHasCorrectRepoScope() async {
         let t = StubTransport(responses: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: "scopecheck", status: "in_progress", conclusion: nil),
