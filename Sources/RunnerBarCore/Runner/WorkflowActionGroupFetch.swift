@@ -130,8 +130,9 @@ public struct WorkflowActionGroupFetcher: Sendable {
     /// strategy, date decoding strategy, etc.) MUST be set at the declaration site
     /// below — never mutated after initialisation. Post-init mutation would race
     /// with concurrent `withTaskGroup` / `@concurrent` decode calls.
-    /// - Note: A `struct` stored `let` does not need `nonisolated` — value-semantics
-    ///   guarantees each copy has its own decoder; concurrent reads are safe.
+    /// - Note: A `struct` stored `let` does not need `nonisolated` — `JSONDecoder` is a
+    ///   class, so all struct copies share the same instance, but
+    ///   `JSONDecoder.decode(_:from:)` is stateless and safe for concurrent reads.
     ///   Principle 17's `nonisolated` requirement applies to actor-isolated properties.
     private let decoder = JSONDecoder()
 
