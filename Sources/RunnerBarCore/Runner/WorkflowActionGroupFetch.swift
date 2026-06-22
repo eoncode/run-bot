@@ -158,9 +158,9 @@ public struct WorkflowActionGroupFetcher: Sendable {
     }
 
     // Fetch in_progress, queued, and completed runs concurrently.
-    async let inProgressData = ghAPI("repos/\(scope)/actions/runs?status=in_progress&per_page=\(GitHubConstants.activeRunsPageSize)")
-    async let queuedData = ghAPI("repos/\(scope)/actions/runs?status=queued&per_page=\(GitHubConstants.activeRunsPageSize)")
-    async let completedData = ghAPI("repos/\(scope)/actions/runs?status=completed&per_page=\(GitHubConstants.maxPageSize)")
+    async let inProgressData = transport.apiAsync("repos/\(scope)/actions/runs?status=in_progress&per_page=\(GitHubConstants.activeRunsPageSize)")
+    async let queuedData = transport.apiAsync("repos/\(scope)/actions/runs?status=queued&per_page=\(GitHubConstants.activeRunsPageSize)")
+    async let completedData = transport.apiAsync("repos/\(scope)/actions/runs?status=completed&per_page=\(GitHubConstants.maxPageSize)")
     let (ipData, qData, cData) = await (inProgressData, queuedData, completedData)
 
     var runPayloads: [RunPayload] = []
@@ -196,7 +196,7 @@ public struct WorkflowActionGroupFetcher: Sendable {
     var groups = Array(repeating: WorkflowActionGroup?.none, count: shaEntries.count)
     await withTaskGroup(of: (Int, WorkflowActionGroup).self) { group in
         for (i, (sha, shaRuns)) in shaEntries.enumerated() {
-            group.addTask { await buildActionGroup(index: i, sha: sha, shaRuns: shaRuns, scope: scope, cache: cache) }
+            group.addTask { await self.buildActionGroup(index: i, sha: sha, shaRuns: shaRuns, scope: scope, cache: cache) }
         }
         for await (i, actionGroup) in group { groups[i] = actionGroup }
     }
@@ -212,20 +212,20 @@ public struct WorkflowActionGroupFetcher: Sendable {
     return result
 }
 
-// MARK: - Private helpers
+    // MARK: - Private helpers
 
-/// Constructs a single `WorkflowActionGroup` for one `head_sha` bucket.
-///
-/// Extracted from the `withTaskGroup` `addTask` body so each task closure
-/// stays at depth ≤ 2 and the overall nesting score drops below the
-/// SonarCloud `FunctionNestingDepth:3` threshold.
-private func buildActionGroup(
-    index: Int,
-    sha: String,
-    shaRuns: [RunPayload],
-    scope: String,
-    cache: [String: WorkflowActionGroup]
-) async -> (Int, WorkflowActionGroup) {
+    /// Constructs a single `WorkflowActionGroup` for one `head_sha` bucket.
+    ///
+    /// Extracted from the `withTaskGroup` `addTask` body so each task closure
+    /// stays at depth ≤ 2 and the overall nesting score drops below the
+    /// SonarCloud `FunctionNestingDepth:3` threshold.
+    private func buildActionGroup(
+        index: Int,
+        sha: String,
+        shaRuns: [RunPayload],
+        scope: String,
+        cache: [String: WorkflowActionGroup]
+    ) async -> (Int, WorkflowActionGroup) {
     // `shaRuns` originates from `Dictionary(grouping:)` which never produces an empty
     // value array, so this is expected to always succeed. The guard defends against
     // a future caller constructing the dict incorrectly rather than crashing silently.
@@ -267,107 +267,108 @@ private func buildActionGroup(
     ))
 }
 
-/// Returns the flattened job list for all runs sharing a `head_sha`.
-///
-/// Uses the SHA-keyed cache when all cached jobs are concluded and none have
-/// in-progress steps, avoiding redundant API calls for finished groups.
-/// Falls back to a live fetch via `fetchJobsForRun` when the cache is stale or missing.
-///
-/// Per-run job fetches run concurrently via `withTaskGroup`.
-private func fetchJobsForGroup(
-    shaRuns: [RunPayload],
-    scope: String,
-    cache: [String: WorkflowActionGroup],
-    sha: String
-) async -> [ActiveJob] {
-    if let cached = cache[sha],
-       !cached.jobs.isEmpty,
-       // Both conditions required: a job can be concluded while one of its steps
-       // is still marked in-progress (stale step data from a mid-poll snapshot).
-       // Serving that cache entry would show a spinning step on an already-finished job.
-       cached.jobs.allSatisfy({ $0.conclusion != nil }),
-       !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } }) {
-        return cached.jobs
-    }
-
-    var fetched: [ActiveJob] = []
-    var seenJobIDs = Set<Int>()
-    await withTaskGroup(of: [ActiveJob].self) { group in
-        for runID in shaRuns.map({ $0.id }) {
-            group.addTask { await fetchJobsForRun(runID, scope: scope) }
+    /// Returns the flattened job list for all runs sharing a `head_sha`.
+    ///
+    /// Uses the SHA-keyed cache when all cached jobs are concluded and none have
+    /// in-progress steps, avoiding redundant API calls for finished groups.
+    /// Falls back to a live fetch via `fetchJobsForRun` when the cache is stale or missing.
+    ///
+    /// Per-run job fetches run concurrently via `withTaskGroup`.
+    private func fetchJobsForGroup(
+        shaRuns: [RunPayload],
+        scope: String,
+        cache: [String: WorkflowActionGroup],
+        sha: String
+    ) async -> [ActiveJob] {
+        if let cached = cache[sha],
+           !cached.jobs.isEmpty,
+           // Both conditions required: a job can be concluded while one of its steps
+           // is still marked in-progress (stale step data from a mid-poll snapshot).
+           // Serving that cache entry would show a spinning step on an already-finished job.
+           cached.jobs.allSatisfy({ $0.conclusion != nil }),
+           !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } }) {
+            return cached.jobs
         }
-        for await jobs in group {
-            for job in jobs where seenJobIDs.insert(job.id).inserted {
-                fetched.append(job)
+
+        var fetched: [ActiveJob] = []
+        var seenJobIDs = Set<Int>()
+        await withTaskGroup(of: [ActiveJob].self) { group in
+            for runID in shaRuns.map({ $0.id }) {
+                group.addTask { await self.fetchJobsForRun(runID, scope: scope) }
             }
-        }
-    }
-    fetched.sort { $0.id < $1.id }
-    return fetched
-}
-
-/// Fetches and decodes the job list for a single run ID, refreshing any
-/// in-progress or inconclusive jobs with a targeted single-job API call.
-///
-/// - Note: `filter=latest` is intentionally omitted — it drops queued jobs that
-///   haven't started yet, causing `jobsTotal` to be lower than the detail view.
-///   `per_page=100` is the GitHub API maximum and covers all realistic job counts.
-///
-/// Refresh calls for in-progress/inconclusive jobs run concurrently,
-/// capped at `maxRefreshConcurrency` to avoid a thundering-herd of single-job
-/// API calls on runs with many simultaneously in-progress steps.
-/// All date parsing goes through `ISO8601DateParser.shared`.
-private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
-    guard let data = await ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
-          let resp = try? decoder.decode(JobsResponse.self, from: data)
-    else { return [] }
-
-    let initial = await withTaskGroup(of: ActiveJob.self) { group in
-        for payload in resp.jobs {
-            group.addTask { await ISO8601DateParser.shared.makeJob(from: payload) }
-        }
-        var out: [ActiveJob] = []
-        for await job in group { out.append(job) }
-        return out
-    }
-
-    // Refresh in-progress/inconclusive jobs concurrently, capped at maxRefreshConcurrency.
-    let needsRefresh = initial.enumerated().filter { _, job in
-        job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
-    }.prefix(maxRefreshConcurrency)
-    guard !needsRefresh.isEmpty else { return initial }
-
-    var result = initial
-    await withTaskGroup(of: (Int, ActiveJob?).self) { group in
-        for (idx, job) in needsRefresh {
-            group.addTask {
-                guard let freshData = await ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
-                      let fresh = try? decoder.decode(JobPayload.self, from: freshData)
-                else { return (idx, nil) }
-                let freshJob = await ISO8601DateParser.shared.makeJob(from: fresh)
-                if fresh.conclusion != nil { return (idx, freshJob) }
-                let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
-                if betterSteps {
-                    return (idx, ActiveJob(
-                        id: job.id,
-                        name: job.name,
-                        htmlUrl: job.htmlUrl,
-                        status: job.status,
-                        conclusion: job.conclusion,
-                        isDimmed: job.isDimmed,
-                        runnerName: freshJob.runnerName ?? job.runnerName,
-                        scope: job.scope,
-                        startedAt: freshJob.startedAt ?? job.startedAt,
-                        completedAt: freshJob.completedAt ?? job.completedAt,
-                        steps: freshJob.steps
-                    ))
+            for await jobs in group {
+                for job in jobs where seenJobIDs.insert(job.id).inserted {
+                    fetched.append(job)
                 }
-                return (idx, nil)
             }
         }
-        for await (idx, updated) in group {
-            if let updated { result[idx] = updated }
-        }
+        fetched.sort { $0.id < $1.id }
+        return fetched
     }
-    return result
+
+    /// Fetches and decodes the job list for a single run ID, refreshing any
+    /// in-progress or inconclusive jobs with a targeted single-job API call.
+    ///
+    /// - Note: `filter=latest` is intentionally omitted — it drops queued jobs that
+    ///   haven't started yet, causing `jobsTotal` to be lower than the detail view.
+    ///   `per_page=100` is the GitHub API maximum and covers all realistic job counts.
+    ///
+    /// Refresh calls for in-progress/inconclusive jobs run concurrently,
+    /// capped at `maxRefreshConcurrency` to avoid a thundering-herd of single-job
+    /// API calls on runs with many simultaneously in-progress steps.
+    /// All date parsing goes through `ISO8601DateParser.shared`.
+    private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
+        guard let data = await transport.apiAsync("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
+              let resp = try? decoder.decode(JobsResponse.self, from: data)
+        else { return [] }
+
+        let initial = await withTaskGroup(of: ActiveJob.self) { group in
+            for payload in resp.jobs {
+                group.addTask { await ISO8601DateParser.shared.makeJob(from: payload) }
+            }
+            var out: [ActiveJob] = []
+            for await job in group { out.append(job) }
+            return out
+        }
+
+        // Refresh in-progress/inconclusive jobs concurrently, capped at maxRefreshConcurrency.
+        let needsRefresh = initial.enumerated().filter { _, job in
+            job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
+        }.prefix(maxRefreshConcurrency)
+        guard !needsRefresh.isEmpty else { return initial }
+
+        var result = initial
+        await withTaskGroup(of: (Int, ActiveJob?).self) { group in
+            for (idx, job) in needsRefresh {
+                group.addTask {
+                    guard let freshData = await self.transport.apiAsync("repos/\(scope)/actions/jobs/\(job.id)"),
+                          let fresh = try? decoder.decode(JobPayload.self, from: freshData)
+                    else { return (idx, nil) }
+                    let freshJob = await ISO8601DateParser.shared.makeJob(from: fresh)
+                    if fresh.conclusion != nil { return (idx, freshJob) }
+                    let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
+                    if betterSteps {
+                        return (idx, ActiveJob(
+                            id: job.id,
+                            name: job.name,
+                            htmlUrl: job.htmlUrl,
+                            status: job.status,
+                            conclusion: job.conclusion,
+                            isDimmed: job.isDimmed,
+                            runnerName: freshJob.runnerName ?? job.runnerName,
+                            scope: job.scope,
+                            startedAt: freshJob.startedAt ?? job.startedAt,
+                            completedAt: freshJob.completedAt ?? job.completedAt,
+                            steps: freshJob.steps
+                        ))
+                    }
+                    return (idx, nil)
+                }
+            }
+            for await (idx, updated) in group {
+                if let updated { result[idx] = updated }
+            }
+        }
+        return result
+    }
 }
