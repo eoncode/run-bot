@@ -254,6 +254,47 @@ struct WorkflowActionGroupFetcherTests {
         #expect(t.callCount == 4)
     }
 
+@Test func fetchActionGroups_cacheFromDifferentRepo_bypassesCache() async {
+        // A cache entry from a different repo with the same head_sha must NOT
+        // serve from cache — the cached.repo == scope guard re-fetches via API.
+        let sha = "sharedsha"
+        let crossRepoCache = WorkflowActionGroup(
+            headSha: sha,
+            label: sha,
+            title: "Cross-repo cache entry",
+            headBranch: nil,
+            repo: "other/repo",
+            runs: [],
+            jobs: [ActiveJob(
+                id: 777, name: "cross-repo-build", htmlUrl: nil,
+                status: .completed, conclusion: .success, isDimmed: false,
+                runnerName: nil, scope: "other/repo",
+                startedAt: nil, completedAt: Date(), steps: []
+            )],
+            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
+        )
+        let e = runsEnvelope([])
+        // Register /jobs endpoints — cache bypass should hit them.
+        let t = StubTransport(responses: [
+            "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
+                minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
+            ]),
+            "repos/owner/repo/actions/runs?status=queued": e,
+            "repos/owner/repo/actions/runs?status=completed": e,
+            "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([
+                minimalJob(id: 101, status: "completed", conclusion: "success"),
+            ]),
+        ])
+        let f = WorkflowActionGroupFetcher(transport: t)
+        let r = await f.fetch(for: "owner/repo", cache: [sha: crossRepoCache])
+        #expect(r.count == 1)
+        // Cache miss forces API call: 3 status + 1 jobs-list = 4 (not 3)
+        #expect(t.callCount == 4)
+        // Live data used, not cross-repo cached data.
+        #expect(r.first?.jobs.first?.id == 101)
+    }
+
+    // MARK: - Refresh cap
     // MARK: - Refresh cap
 
     @Test func fetchActionGroups_inProgressJobsCapped_atMaxRefreshConcurrency() async {

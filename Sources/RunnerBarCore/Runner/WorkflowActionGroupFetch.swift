@@ -126,8 +126,13 @@ public struct WorkflowActionGroupFetcher: Sendable {
     ///
     /// Owned by the struct (rather than captured from file scope) so this type is
     /// self-contained and safe to use across actor boundaries. `JSONDecoder.decode`
-    /// is stateless and safe for concurrent use. All configuration is set at the
-    /// declaration site below — never mutated after initialisation.
+    /// is stateless and safe for concurrent use. All configuration (key decoding
+    /// strategy, date decoding strategy, etc.) MUST be set at the declaration site
+    /// below — never mutated after initialisation. Post-init mutation would race
+    /// with concurrent `withTaskGroup` / `@concurrent` decode calls.
+    /// - Note: A `struct` stored `let` does not need `nonisolated` — value-semantics
+    ///   guarantees each copy has its own decoder; concurrent reads are safe.
+    ///   Principle 17's `nonisolated` requirement applies to actor-isolated properties.
     private let decoder = JSONDecoder()
 
     /// Creates a fetcher backed by the given transport.
