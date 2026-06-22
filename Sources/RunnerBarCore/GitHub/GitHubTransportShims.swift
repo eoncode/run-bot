@@ -11,7 +11,7 @@ import Foundation
 /// shims below forward to real network behaviour with zero configuration.
 /// Tests that need a fake transport should construct a `GitHubTransport` directly
 /// (or provide a mock conformer to `GitHubTransportProtocol`) and NOT use this global.
-public let sharedGitHubTransport = GitHubTransport()
+let sharedGitHubTransport = GitHubTransport()
 
 // MARK: - Backward-compatibility shims
 //
@@ -76,12 +76,11 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 /// - Note: Intentionally discards response body (converts `Data?` → `Bool`).
 ///   Use the transport method directly if the body is needed.
 /// - SeeAlso: ``GitHubTransport/post(_:body:timeout:)``
-///
-///   Returns `Bool` (success/failure) rather than `Data?`. This is an intentional
-///   lossy conversion — existing callers only care whether the POST succeeded. If the
-///   response body ever becomes relevant, call `sharedGitHubTransport.post(_:)` directly.
 @concurrent
 @discardableResult
+/// - Note: Returns `Bool` (success/failure) rather than `Data?`. This is an intentional
+///   lossy conversion — existing callers only care whether the POST succeeded. If the
+///   response body ever becomes relevant, call `sharedGitHubTransport.post(_:)` directly.
 public func ghPost(_ endpoint: String) async -> Bool {
     let result = await sharedGitHubTransport.post(endpoint)
     let success = result != nil
