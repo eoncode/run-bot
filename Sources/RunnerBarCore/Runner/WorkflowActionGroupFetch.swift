@@ -13,17 +13,6 @@ private let prNumberPattern = #"/(\d+)/"# // NOSONAR — fixed regex pattern
 /// many steps still in-progress simultaneously (e.g. a large matrix job).
 private let maxRefreshConcurrency = 3
 
-/// Shared JSON decoder reused across all API response decoding in this file.
-///
-/// Hoisted to a file-scoped constant to avoid allocating a new instance on every
-/// API call in the hot polling path.
-///
-/// **Thread safety:** `JSONDecoder.decode` is stateless and safe for concurrent use.
-/// All configuration (key decoding strategy, date decoding strategy, etc.) MUST be
-/// set at the declaration site below — never mutated after initialisation.
-/// Post-init mutation would race with concurrent `withTaskGroup` decode calls.
-private let decoder = JSONDecoder()
-
 // MARK: - Codable helpers (private to this file)
 
 /// Response envelope for the workflow runs list API endpoint.
@@ -119,232 +108,292 @@ private func prLabel(from run: RunPayload) -> String {
     return String(run.headSha.prefix(7))
 }
 
-// MARK: - Fetch + Group
+// MARK: - WorkflowActionGroupFetcher
 
-/// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
-/// enriches each group with its flattened job list, and returns groups sorted:
-/// in-progress first, then queued, then completed — newest first within each tier.
+/// Fetches and groups workflow action groups for one or more repo scopes.
 ///
-/// All three status fetches (in_progress, queued, completed) run concurrently.
-/// Per-run job fetches within each group also run concurrently.
-/// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
-public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
-    guard scope.contains("/") else {
-        log("fetchActionGroups -- skipping org scope \(scope)")
-        return []
-    }
-
-    // Fetch in_progress, queued, and completed runs concurrently.
-    async let inProgressData = ghAPI("repos/\(scope)/actions/runs?status=in_progress&per_page=\(GitHubConstants.activeRunsPageSize)")
-    async let queuedData = ghAPI("repos/\(scope)/actions/runs?status=queued&per_page=\(GitHubConstants.activeRunsPageSize)")
-    async let completedData = ghAPI("repos/\(scope)/actions/runs?status=completed&per_page=\(GitHubConstants.maxPageSize)")
-    let (ipData, qData, cData) = await (inProgressData, queuedData, completedData)
-
-    var runPayloads: [RunPayload] = []
-    var seenIDs = Set<Int>()
-
-    for data in [ipData, qData].compactMap({ $0 }) {
-        if let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
-            for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
-                runPayloads.append(run)
-            }
-        }
-    }
-
-    var bySha: [String: [RunPayload]] = [:]
-    for run in runPayloads { bySha[run.headSha, default: []].append(run) }
-
-    // Phase 2: fetch recently completed runs and merge into ALL SHA groups.
-    // Fix #1041: completed-only SHAs (groups that finished between polls) are
-    // now included so they can be routed through the normal cache/display pipeline.
-    // De-duplication of old completed groups re-triggering the failure hook is
-    // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
-    if let data = cData,
-       let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
-        for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
-            bySha[run.headSha, default: []].append(run)
-        }
-    }
-
-    // Build groups concurrently — index-keyed to preserve insertion order.
-    // `buildActionGroup` is extracted to a private async function so each
-    // `addTask` closure body stays at depth ≤ 2 (withTaskGroup → addTask).
-    let shaEntries = Array(bySha)
-    var groups = Array(repeating: WorkflowActionGroup?.none, count: shaEntries.count)
-    await withTaskGroup(of: (Int, WorkflowActionGroup).self) { group in
-        for (i, (sha, shaRuns)) in shaEntries.enumerated() {
-            group.addTask { await buildActionGroup(index: i, sha: sha, shaRuns: shaRuns, scope: scope, cache: cache) }
-        }
-        for await (i, actionGroup) in group { groups[i] = actionGroup }
-    }
-
-    var result = groups.compactMap { $0 }
-    result.sort { lhs, rhs in
-        if lhs.groupStatus.sortPriority != rhs.groupStatus.sortPriority {
-            return lhs.groupStatus.sortPriority < rhs.groupStatus.sortPriority
-        }
-        return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
-    }
-    log("fetchActionGroups -- \(result.count) group(s) for \(scope)")
-    return result
-}
-
-// MARK: - Private helpers
-
-/// Constructs a single `WorkflowActionGroup` for one `head_sha` bucket.
+/// Accepts any `GitHubTransportProtocol` conformer so the hot polling path
+/// is testable without live network access. Production callers use the
+/// default `sharedGitHubTransport`; tests inject a stub.
 ///
-/// Extracted from the `withTaskGroup` `addTask` body so each task closure
-/// stays at depth ≤ 2 and the overall nesting score drops below the
-/// SonarCloud `FunctionNestingDepth:3` threshold.
-private func buildActionGroup(
-    index: Int,
-    sha: String,
-    shaRuns: [RunPayload],
-    scope: String,
-    cache: [String: WorkflowActionGroup]
-) async -> (Int, WorkflowActionGroup) {
-    // `shaRuns` originates from `Dictionary(grouping:)` which never produces an empty
-    // value array, so this is expected to always succeed. The guard defends against
-    // a future caller constructing the dict incorrectly rather than crashing silently.
-    guard let representative = shaRuns.sorted(by: { ($0.createdAt ?? "") > ($1.createdAt ?? "") }).first else {
-        assertionFailure("buildActionGroup: shaRuns must not be empty (sha: \(sha))")
-        return (index, WorkflowActionGroup(headSha: sha, label: String(sha.prefix(7)),
-            title: sha, headBranch: nil, repo: scope, runs: [], jobs: [],
-            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil))
-    }
-    let label = prLabel(from: representative)
-    let rawTitle = representative.displayTitle
-        ?? representative.headCommit.map { String($0.message.components(separatedBy: "\n").first ?? "") }
-        ?? String(sha.prefix(7))
-    let title = String(rawTitle.prefix(40))
-    let runs: [WorkflowRunRef] = shaRuns.map {
-        WorkflowRunRef(id: $0.id, name: $0.name, status: $0.status, conclusion: $0.conclusion, htmlUrl: $0.htmlUrl)
-    }
-    let allJobs = await fetchJobsForGroup(shaRuns: shaRuns, scope: scope, cache: cache, sha: sha)
-    let starts = allJobs.compactMap { $0.startedAt }
-    let ends = allJobs.compactMap { $0.completedAt }
-    // Optional.flatMap does not accept an async closure — use if let.
-    let createdAt: Date?
-    if let dateStr = representative.createdAt {
-        createdAt = await ISO8601DateParser.shared.parse(dateStr)
-    } else {
-        createdAt = nil
-    }
-    return (index, WorkflowActionGroup(
-        headSha: sha,
-        label: label,
-        title: title,
-        headBranch: representative.headBranch,
-        repo: scope,
-        runs: runs,
-        jobs: allJobs,
-        firstJobStartedAt: starts.min(),
-        lastJobCompletedAt: ends.max(),
-        createdAt: createdAt
-    ))
-}
+/// - SeeAlso: ``GitHubTransportProtocol``
+public struct WorkflowActionGroupFetcher: Sendable {
 
-/// Returns the flattened job list for all runs sharing a `head_sha`.
-///
-/// Uses the SHA-keyed cache when all cached jobs are concluded and none have
-/// in-progress steps, avoiding redundant API calls for finished groups.
-/// Falls back to a live fetch via `fetchJobsForRun` when the cache is stale or missing.
-///
-/// Per-run job fetches run concurrently via `withTaskGroup`.
-private func fetchJobsForGroup(
-    shaRuns: [RunPayload],
-    scope: String,
-    cache: [String: WorkflowActionGroup],
-    sha: String
-) async -> [ActiveJob] {
-    if let cached = cache[sha],
-       !cached.jobs.isEmpty,
-       // Both conditions required: a job can be concluded while one of its steps
-       // is still marked in-progress (stale step data from a mid-poll snapshot).
-       // Serving that cache entry would show a spinning step on an already-finished job.
-       cached.jobs.allSatisfy({ $0.conclusion != nil }),
-       !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } }) {
-        return cached.jobs
+    /// The transport used for all GitHub API calls made by this fetcher.
+    private let transport: any GitHubTransportProtocol
+
+    /// Shared JSON decoder reused across all API response decoding.
+    ///
+    /// Owned by the struct (rather than captured from file scope) so this type is
+    /// self-contained and safe to use across actor boundaries. `JSONDecoder.decode`
+    /// is stateless and safe for concurrent use. All configuration (key decoding
+    /// strategy, date decoding strategy, etc.) MUST be set at the declaration site
+    /// below — never mutated after initialisation. Post-init mutation would race
+    /// with concurrent `withTaskGroup` / `@concurrent` decode calls.
+    /// - Note: A `struct` stored `let` does not need `nonisolated` — `JSONDecoder` is a
+    ///   class, so all struct copies share the same instance, but
+    ///   `JSONDecoder.decode(_:from:)` is stateless and safe for concurrent reads.
+    ///   Principle 17's `nonisolated` requirement applies to actor-isolated properties.
+    private let decoder = JSONDecoder()
+
+    /// Creates a fetcher backed by the given transport.
+    ///
+    /// - Parameter transport: Defaults to `sharedGitHubTransport` so existing
+    ///   production call sites need no change beyond switching to the instance method.
+    public init(transport: any GitHubTransportProtocol = sharedGitHubTransport) {
+        self.transport = transport
     }
 
-    var fetched: [ActiveJob] = []
-    var seenJobIDs = Set<Int>()
-    await withTaskGroup(of: [ActiveJob].self) { group in
-        for runID in shaRuns.map({ $0.id }) {
-            group.addTask { await fetchJobsForRun(runID, scope: scope) }
+    // MARK: - Fetch + Group
+
+    /// Fetches active workflow runs for a repo scope, groups them by `head_sha`,
+    /// enriches each group with its flattened job list, and returns groups sorted:
+    /// in-progress first, then queued, then completed — newest first within each tier.
+    ///
+    /// All three status fetches (in_progress, queued, completed) run concurrently.
+    /// Per-run job fetches within each group also run concurrently.
+    /// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
+    ///
+    /// - Note: `@concurrent` is applied only to this public entry point so that
+    ///   callers on an actor-bound context (e.g. `RunnerStore`'s custom actor executor) hop
+    ///   off the actor executor for the entire fetch pipeline. The private helpers
+    ///   (`buildActionGroup`, `fetchJobsForGroup`, `fetchJobsForRun`) are internal
+    ///   to `withTaskGroup` and already run on the task's executor, so they don't
+    ///   need the annotation. See also: SE-0420 (``@_unsupportedInheritActorContext``).
+    @concurrent
+    public func fetch(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
+        guard scope.contains("/") else {
+            log("fetchActionGroups -- skipping org scope \(scope)")
+            return []
         }
-        for await jobs in group {
-            for job in jobs where seenJobIDs.insert(job.id).inserted {
-                fetched.append(job)
-            }
-        }
-    }
-    fetched.sort { $0.id < $1.id }
-    return fetched
-}
 
-/// Fetches and decodes the job list for a single run ID, refreshing any
-/// in-progress or inconclusive jobs with a targeted single-job API call.
-///
-/// - Note: `filter=latest` is intentionally omitted — it drops queued jobs that
-///   haven't started yet, causing `jobsTotal` to be lower than the detail view.
-///   `per_page=100` is the GitHub API maximum and covers all realistic job counts.
-///
-/// Refresh calls for in-progress/inconclusive jobs run concurrently,
-/// capped at `maxRefreshConcurrency` to avoid a thundering-herd of single-job
-/// API calls on runs with many simultaneously in-progress steps.
-/// All date parsing goes through `ISO8601DateParser.shared`.
-private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
-    guard let data = await ghAPI("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
-          let resp = try? decoder.decode(JobsResponse.self, from: data)
-    else { return [] }
+        // Fetch in_progress, queued, and completed runs concurrently.
+        async let inProgressData = transport.apiAsync("repos/\(scope)/actions/runs?status=in_progress&per_page=\(GitHubConstants.activeRunsPageSize)")
+        async let queuedData = transport.apiAsync("repos/\(scope)/actions/runs?status=queued&per_page=\(GitHubConstants.activeRunsPageSize)")
+        async let completedData = transport.apiAsync("repos/\(scope)/actions/runs?status=completed&per_page=\(GitHubConstants.maxPageSize)")
+        let (ipData, qData, cData) = await (inProgressData, queuedData, completedData)
 
-    let initial = await withTaskGroup(of: ActiveJob.self) { group in
-        for payload in resp.jobs {
-            group.addTask { await ISO8601DateParser.shared.makeJob(from: payload) }
-        }
-        var out: [ActiveJob] = []
-        for await job in group { out.append(job) }
-        return out
-    }
+        var runPayloads: [RunPayload] = []
+        var seenIDs = Set<Int>()
 
-    // Refresh in-progress/inconclusive jobs concurrently, capped at maxRefreshConcurrency.
-    let needsRefresh = initial.enumerated().filter { _, job in
-        job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
-    }.prefix(maxRefreshConcurrency)
-    guard !needsRefresh.isEmpty else { return initial }
-
-    var result = initial
-    await withTaskGroup(of: (Int, ActiveJob?).self) { group in
-        for (idx, job) in needsRefresh {
-            group.addTask {
-                guard let freshData = await ghAPI("repos/\(scope)/actions/jobs/\(job.id)"),
-                      let fresh = try? decoder.decode(JobPayload.self, from: freshData)
-                else { return (idx, nil) }
-                let freshJob = await ISO8601DateParser.shared.makeJob(from: fresh)
-                if fresh.conclusion != nil { return (idx, freshJob) }
-                let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
-                if betterSteps {
-                    return (idx, ActiveJob(
-                        id: job.id,
-                        name: job.name,
-                        htmlUrl: job.htmlUrl,
-                        status: job.status,
-                        conclusion: job.conclusion,
-                        isDimmed: job.isDimmed,
-                        runnerName: freshJob.runnerName ?? job.runnerName,
-                        scope: job.scope,
-                        startedAt: freshJob.startedAt ?? job.startedAt,
-                        completedAt: freshJob.completedAt ?? job.completedAt,
-                        steps: freshJob.steps
-                    ))
+        for data in [ipData, qData].compactMap({ $0 }) {
+            if let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
+                for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
+                    runPayloads.append(run)
                 }
-                return (idx, nil)
             }
         }
-        for await (idx, updated) in group {
-            if let updated { result[idx] = updated }
+
+        var bySha: [String: [RunPayload]] = [:]
+        for run in runPayloads { bySha[run.headSha, default: []].append(run) }
+
+        // Phase 2: fetch recently completed runs and merge into ALL SHA groups.
+        // Fix #1041: completed-only SHAs (groups that finished between polls) are
+        // now included so they can be routed through the normal cache/display pipeline.
+        // De-duplication of old completed groups re-triggering the failure hook is
+        // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
+        if let data = cData,
+           let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
+            for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
+                bySha[run.headSha, default: []].append(run)
+            }
         }
+
+        // Build groups concurrently — index-keyed to preserve insertion order.
+        // `buildActionGroup` is extracted to a private async function so each
+        // `addTask` closure body stays at depth ≤ 2 (withTaskGroup → addTask).
+        let shaEntries = Array(bySha)
+        var groups = Array(repeating: WorkflowActionGroup?.none, count: shaEntries.count)
+        await withTaskGroup(of: (Int, WorkflowActionGroup).self) { group in
+            for (i, (sha, shaRuns)) in shaEntries.enumerated() {
+                group.addTask { await self.buildActionGroup(index: i, sha: sha, shaRuns: shaRuns, scope: scope, cache: cache) }
+            }
+            for await (i, actionGroup) in group { groups[i] = actionGroup }
+        }
+
+        var result = groups.compactMap { $0 }
+        result.sort { lhs, rhs in
+            if lhs.groupStatus.sortPriority != rhs.groupStatus.sortPriority {
+                return lhs.groupStatus.sortPriority < rhs.groupStatus.sortPriority
+            }
+            return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
+        }
+        log("fetchActionGroups -- \(result.count) group(s) for \(scope)")
+        return result
     }
-    return result
+
+    // MARK: - Private helpers
+
+    /// Constructs a single `WorkflowActionGroup` for one `head_sha` bucket.
+    ///
+    /// Extracted from the `withTaskGroup` `addTask` body so each task closure
+    /// stays at depth ≤ 2 and the overall nesting score drops below the
+    /// SonarCloud `FunctionNestingDepth:3` threshold.
+    private func buildActionGroup(
+        index: Int,
+        sha: String,
+        shaRuns: [RunPayload],
+        scope: String,
+        cache: [String: WorkflowActionGroup]
+    ) async -> (Int, WorkflowActionGroup) {
+        // `shaRuns` originates from `Dictionary(grouping:)` which never produces an empty
+        // value array, so this is expected to always succeed. The guard defends against
+        // a future caller constructing the dict incorrectly rather than crashing silently.
+        guard let representative = shaRuns.sorted(by: { ($0.createdAt ?? "") > ($1.createdAt ?? "") }).first else {
+            assertionFailure("buildActionGroup: shaRuns must not be empty (sha: \(sha))")
+            return (index, WorkflowActionGroup(headSha: sha, label: String(sha.prefix(7)),
+                title: sha, headBranch: nil, repo: scope, runs: [], jobs: [],
+                firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil))
+        }
+        let label = prLabel(from: representative)
+        let rawTitle = representative.displayTitle
+            ?? representative.headCommit.map { String($0.message.components(separatedBy: "\n").first ?? "") }
+            ?? String(sha.prefix(7))
+        let title = String(rawTitle.prefix(40))
+        let runs: [WorkflowRunRef] = shaRuns.map {
+            WorkflowRunRef(id: $0.id, name: $0.name, status: $0.status, conclusion: $0.conclusion, htmlUrl: $0.htmlUrl)
+        }
+        let allJobs = await fetchJobsForGroup(shaRuns: shaRuns, scope: scope, cache: cache, sha: sha)
+        let starts = allJobs.compactMap { $0.startedAt }
+        let ends = allJobs.compactMap { $0.completedAt }
+        // Optional.flatMap does not accept an async closure — use if let.
+        let createdAt: Date?
+        if let dateStr = representative.createdAt {
+            createdAt = await ISO8601DateParser.shared.parse(dateStr)
+        } else {
+            createdAt = nil
+        }
+        return (index, WorkflowActionGroup(
+            headSha: sha,
+            label: label,
+            title: title,
+            headBranch: representative.headBranch,
+            repo: scope,
+            runs: runs,
+            jobs: allJobs,
+            firstJobStartedAt: starts.min(),
+            lastJobCompletedAt: ends.max(),
+            createdAt: createdAt
+        ))
+    }
+
+    /// Returns the flattened job list for all runs sharing a `head_sha`.
+    ///
+    /// Uses the SHA-keyed cache when all cached jobs are concluded and none have
+    /// in-progress steps, avoiding redundant API calls for finished groups.
+    /// Falls back to a live fetch via `fetchJobsForRun` when the cache is stale or missing.
+    ///
+    /// Per-run job fetches run concurrently via `withTaskGroup`.
+    private func fetchJobsForGroup(
+        shaRuns: [RunPayload],
+        scope: String,
+        cache: [String: WorkflowActionGroup],
+        sha: String
+    ) async -> [ActiveJob] {
+        if let cached = cache[sha],
+           cached.repo == scope,
+           !cached.jobs.isEmpty,
+           // Both conditions required: a job can be concluded while one of its steps
+           // is still marked in-progress (stale step data from a mid-poll snapshot).
+           // Serving that cache entry would show a spinning step on an already-finished job.
+           cached.jobs.allSatisfy({ $0.conclusion != nil }),
+           !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } }) {
+            return cached.jobs
+        }
+
+        var fetched: [ActiveJob] = []
+        var seenJobIDs = Set<Int>()
+        await withTaskGroup(of: [ActiveJob].self) { group in
+            for runID in shaRuns.map({ $0.id }) {
+                group.addTask { await self.fetchJobsForRun(runID, scope: scope) }
+            }
+            for await jobs in group {
+                for job in jobs where seenJobIDs.insert(job.id).inserted {
+                    fetched.append(job)
+                }
+            }
+        }
+        fetched.sort { $0.id < $1.id }
+        return fetched
+    }
+
+    /// Fetches and decodes the job list for a single run ID, refreshing any
+    /// in-progress or inconclusive jobs with a targeted single-job API call.
+    ///
+    /// - Note: `filter=latest` is intentionally omitted — it drops queued jobs that
+    ///   haven't started yet, causing `jobsTotal` to be lower than the detail view.
+    ///   `per_page=100` is the GitHub API maximum and covers all realistic job counts.
+    ///
+    /// Refresh calls for in-progress/inconclusive jobs run concurrently,
+    /// capped at `maxRefreshConcurrency` to avoid a thundering-herd of single-job
+    /// API calls on runs with many simultaneously in-progress steps.
+    /// All date parsing goes through `ISO8601DateParser.shared`.
+    private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
+        guard let data = await transport.apiAsync("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
+              let resp = try? decoder.decode(JobsResponse.self, from: data)
+        else { return [] }
+
+        let initial = await withTaskGroup(of: ActiveJob.self) { group in
+            for payload in resp.jobs {
+                group.addTask { await ISO8601DateParser.shared.makeJob(from: payload) }
+            }
+            var out: [ActiveJob] = []
+            for await job in group { out.append(job) }
+            return out
+        }
+
+        // Refresh in-progress/inconclusive jobs concurrently, capped at maxRefreshConcurrency.
+        // Note: `idx` is the position in `initial`/`result`, not the position in `needsRefresh`.
+        // The `.prefix(maxRefreshConcurrency)` reduces the number of refresh tasks, but the
+        // original enumerated indices are preserved for the `result[idx]` write-back below.
+        let allNeedingRefresh = initial.enumerated().filter { _, job in
+            job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
+        }
+        let needsRefresh = allNeedingRefresh.prefix(maxRefreshConcurrency)
+        let skippedCount = allNeedingRefresh.count - needsRefresh.count
+        if skippedCount > 0 {
+            log("fetchJobsForRun -- \(skippedCount) in-progress job(s) skipped beyond cap (\(maxRefreshConcurrency)) — "
+                + "these jobs will serve stale data every poll cycle until the capped jobs conclude")
+        }
+        guard !needsRefresh.isEmpty else { return initial }
+
+        var result = initial
+        await withTaskGroup(of: (Int, ActiveJob?).self) { group in
+            for (idx, job) in needsRefresh {
+                group.addTask {
+                    guard let freshData = await self.transport.apiAsync("repos/\(scope)/actions/jobs/\(job.id)"),
+                          let fresh = try? self.decoder.decode(JobPayload.self, from: freshData)
+                    else { return (idx, nil) }
+                    let freshJob = await ISO8601DateParser.shared.makeJob(from: fresh)
+                    if fresh.conclusion != nil { return (idx, freshJob) }
+                    let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
+                    if betterSteps {
+                        return (idx, ActiveJob(
+                            id: job.id,
+                            name: job.name,
+                            htmlUrl: job.htmlUrl,
+                            status: job.status,
+                            conclusion: job.conclusion,
+                            isDimmed: job.isDimmed,
+                            runnerName: freshJob.runnerName ?? job.runnerName,
+                            scope: job.scope,
+                            startedAt: freshJob.startedAt ?? job.startedAt,
+                            completedAt: freshJob.completedAt ?? job.completedAt,
+                            steps: freshJob.steps
+                        ))
+                    }
+                    return (idx, nil)
+                }
+            }
+            for await (idx, updated) in group {
+                if let updated { result[idx] = updated }
+            }
+        }
+        return result
+    }
 }
+
+// MARK: - Protocol conformance
+/// Empty conformance — the struct already satisfies the protocol requirement via its ``fetch(for:cache:)`` method.
+
+extension WorkflowActionGroupFetcher: WorkflowActionGroupFetcherProtocol {}
