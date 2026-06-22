@@ -87,6 +87,19 @@ private func minimalJob(id: Int, name: String = "build",
 
 @Suite("WorkflowActionGroupFetcher")
 struct WorkflowActionGroupFetcherTests {
+    /// Creates a `StubTransport` with empty response envelopes for the three
+    /// status endpoints. Callers supply additional endpoint fixtures to override.
+    private func makeTransport(with responses: [String: Data] = [:]) -> StubTransport {
+        let e = runsEnvelope([])
+        var base: [String: Data] = [
+            "repos/owner/repo/actions/runs?status=in_progress": e,
+            "repos/owner/repo/actions/runs?status=queued": e,
+            "repos/owner/repo/actions/runs?status=completed": e,
+        ]
+        for (k, v) in responses { base[k] = v }
+        return StubTransport(responses: base)
+    }
+
     // MARK: - Org scope guard
 
     @Test func fetchActionGroupsOrgScopeReturnsEmpty() async {
@@ -100,13 +113,7 @@ struct WorkflowActionGroupFetcherTests {
     // MARK: - Empty API responses
 
     @Test func fetchActionGroupsAllEndpointsEmptyReturnsEmpty() async {
-        let e = runsEnvelope([])
-        let t = StubTransport(responses: [
-            "repos/owner/repo/actions/runs?status=in_progress": e,
-            "repos/owner/repo/actions/runs?status=queued": e,
-            "repos/owner/repo/actions/runs?status=completed": e,
-        ])
-        let f = WorkflowActionGroupFetcher(transport: t)
+        let f = WorkflowActionGroupFetcher(transport: makeTransport())
         #expect(await f.fetch(for: "owner/repo").isEmpty)
     }
 
@@ -124,11 +131,8 @@ struct WorkflowActionGroupFetcherTests {
             minimalRun(id: 2, sha: sha, status: "in_progress", conclusion: nil, name: "test"),
         ]
         let j = jobsEnvelope([minimalJob(id: 101), minimalJob(id: 102)])
-        let e = runsEnvelope([])
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope(runs),
-            "repos/owner/repo/actions/runs?status=queued": e,
-            "repos/owner/repo/actions/runs?status=completed": e,
             "repos/owner/repo/actions/runs/1/jobs": j,
             "repos/owner/repo/actions/runs/2/jobs": j,
         ])
@@ -142,13 +146,11 @@ struct WorkflowActionGroupFetcherTests {
     }
 
     @Test func fetchActionGroupsTwoRunsDifferentShaProducesTwoGroups() async {
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: "aaa111", status: "in_progress", conclusion: nil),
                 minimalRun(id: 2, sha: "bbb222", status: "in_progress", conclusion: nil),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": runsEnvelope([]),
-            "repos/owner/repo/actions/runs?status=completed": runsEnvelope([]),
             "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([]),
             "repos/owner/repo/actions/runs/2/jobs": jobsEnvelope([]),
         ])
@@ -162,12 +164,10 @@ struct WorkflowActionGroupFetcherTests {
 
     @Test func fetchActionGroupsMixedStatusesInProgressSortsFirst() async {
         let j = jobsEnvelope([])
-        let e = runsEnvelope([])
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: "aaainprogress", status: "in_progress", conclusion: nil),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": e,
             "repos/owner/repo/actions/runs?status=completed": runsEnvelope([
                 minimalRun(id: 2, sha: "bbbcompleted", status: "completed", conclusion: "success"),
             ]),
@@ -200,14 +200,11 @@ struct WorkflowActionGroupFetcherTests {
             )],
             firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
         )
-        let e = runsEnvelope([])
         // No /jobs endpoints registered — fetcher must not call them.
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": e,
-            "repos/owner/repo/actions/runs?status=completed": e,
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
         let r = await f.fetch(for: "owner/repo", cache: [sha: cached])
@@ -236,13 +233,10 @@ struct WorkflowActionGroupFetcherTests {
             )],
             firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
         )
-        let e = runsEnvelope([])
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": e,
-            "repos/owner/repo/actions/runs?status=completed": e,
             "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([
                 minimalJob(id: 888, status: "completed", conclusion: "success"),
             ]),
@@ -311,13 +305,10 @@ struct WorkflowActionGroupFetcherTests {
             )],
             firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
         )
-        let e = runsEnvelope([])
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": e,
-            "repos/owner/repo/actions/runs?status=completed": e,
             "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([
                 minimalJob(id: 888, status: "completed", conclusion: "success"),
             ]),
@@ -334,12 +325,10 @@ struct WorkflowActionGroupFetcherTests {
     // MARK: - Repo label
 
     @Test func fetchActionGroupsSingleRunGroupHasCorrectRepoScope() async {
-        let t = StubTransport(responses: [
+        let t = makeTransport(with: [
             "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
                 minimalRun(id: 1, sha: "scopecheck", status: "in_progress", conclusion: nil),
             ]),
-            "repos/owner/repo/actions/runs?status=queued": runsEnvelope([]),
-            "repos/owner/repo/actions/runs?status=completed": runsEnvelope([]),
             "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([]),
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
