@@ -38,6 +38,33 @@ public protocol GitHubTransportProtocol: Sendable {
     func deleteRunnerByID(scope: String, runnerID: Int) async -> Bool
 }
 
+// MARK: - GitHubTransportProtocol default timeouts
+
+/// Provides default `timeout` values at the protocol level so that callers
+/// typed as `any GitHubTransportProtocol` (e.g. mock conformers in tests) can
+/// omit explicit timeout arguments, matching the ergonomics of the concrete
+/// `GitHubTransport` methods.
+public extension GitHubTransportProtocol {
+    func apiAsync(_ endpoint: String, timeout: TimeInterval = 20) async -> Data? {
+        await apiAsync(endpoint, timeout: timeout)
+    }
+    func apiPaginated(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
+        await apiPaginated(endpoint, timeout: timeout)
+    }
+    func raw(_ endpoint: String, timeout: TimeInterval = 60) async -> Data? {
+        await raw(endpoint, timeout: timeout)
+    }
+    func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
+        await post(endpoint, body: body, timeout: timeout)
+    }
+    func put(_ endpoint: String, body: Data, timeout: TimeInterval = 30) async -> Data? {
+        await put(endpoint, body: body, timeout: timeout)
+    }
+    func delete(_ endpoint: String, timeout: TimeInterval = 30) async -> Bool {
+        await delete(endpoint, timeout: timeout)
+    }
+}
+
 // MARK: - GitHubTransport
 
 /// The concrete `URLSession`-backed implementation of `GitHubTransportProtocol`.
@@ -606,10 +633,10 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 @concurrent
 @discardableResult
 public func ghPost(_ endpoint: String) async -> Bool {
-    let result = await sharedGitHubTransport.post(endpoint)
-    let success = result != nil
-    log("ghPost › \(endpoint) success=\(success)")
-    return success
+    // Note: GitHubTransport.post already logs the status code; no additional
+    // log here to avoid double-logging. Remove this shim once callers migrate
+    // to GitHubTransportProtocol (tracked in #1513 Items 4 & 8).
+    return await sharedGitHubTransport.post(endpoint) != nil
 }
 
 /// Deregisters a runner from GitHub via DELETE.
