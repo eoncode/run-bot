@@ -95,10 +95,10 @@ public extension GitHubTransportProtocol {
 /// inject a mock conformer or construct a custom instance via
 /// `init(decoder:encoder:session:rateLimiter:tokenProvider:)`.
 ///
-/// **Thread safety:** `GitHubTransport` is a value type (`struct`) whose `let` properties are
-/// either value types or `Sendable` reference types. `JSONDecoder`/`JSONEncoder` are reference
-/// types (classes) but are `@unchecked Sendable` and stateless after `init`, making them safe
-/// for concurrent reads. Concurrent reads are safe; there is no mutable state.
+/// **Thread safety:** `GitHubTransport` is a value type whose `let` properties are either
+/// value types or `Sendable` reference types. `JSONDecoder`/`JSONEncoder` are reference types
+/// but are `@unchecked Sendable` and stateless after `init`, safe for concurrent reads.
+/// Concurrent reads are safe; there is no mutable state.
 public struct GitHubTransport: GitHubTransportProtocol {
 
     // MARK: - Stored properties
@@ -650,10 +650,8 @@ public func ghAPI(_ endpoint: String, timeout: TimeInterval = 20) async -> Data?
 }
 
 /// Fire-and-forget POST alias. Returns `true` on 2xx.
-///
-/// - Note: This shim intentionally discards the response body by converting the
-///   `Data?` return from ``GitHubTransport/post(_:body:timeout:)`` to a `Bool`.
-///   If a future caller needs the response body, use the transport method directly.
+/// - Note: Intentionally discards response body (converts `Data?` → `Bool`).
+///   Use the transport method directly if the body is needed.
 /// - SeeAlso: ``GitHubTransport/post(_:body:timeout:)``
 @concurrent
 @discardableResult
