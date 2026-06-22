@@ -339,9 +339,14 @@ public struct WorkflowActionGroupFetcher: Sendable {
         // Note: `idx` is the position in `initial`/`result`, not the position in `needsRefresh`.
         // The `.prefix(maxRefreshConcurrency)` reduces the number of refresh tasks, but the
         // original enumerated indices are preserved for the `result[idx]` write-back below.
-        let needsRefresh = initial.enumerated().filter { _, job in
+        let allNeedingRefresh = initial.enumerated().filter { _, job in
             job.conclusion == nil || job.steps.contains { $0.status == JobStatus.inProgress }
-        }.prefix(maxRefreshConcurrency)
+        }
+        let needsRefresh = allNeedingRefresh.prefix(maxRefreshConcurrency)
+        let skippedCount = allNeedingRefresh.count - needsRefresh.count
+        if skippedCount > 0 {
+            log("fetchJobsForRun -- \(skippedCount) in-progress job(s) skipped beyond cap (\(maxRefreshConcurrency)) — will serve stale data for those jobs this poll cycle")
+        }
         guard !needsRefresh.isEmpty else { return initial }
 
         var result = initial
