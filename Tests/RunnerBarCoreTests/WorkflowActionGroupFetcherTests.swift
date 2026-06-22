@@ -215,6 +215,45 @@ struct WorkflowActionGroupFetcherTests {
         #expect(r.first?.jobs.first?.id == 999)
         #expect(t.callCount == 3)
     }
+@Test func fetchActionGroups_concludedCacheWithInProgressStep_refetchesJobs() async {
+        // A cached entry where a job is concluded but a step is still in-progress
+        // must NOT serve from cache — the stale-step guard re-fetches via API.
+        let sha = "staledash"
+        let cached = WorkflowActionGroup(
+            headSha: sha,
+            label: sha,
+            title: "Stale step commit",
+            headBranch: nil,
+            repo: "owner/repo",
+            runs: [],
+            jobs: [ActiveJob(
+                id: 888, name: "stale-build", htmlUrl: nil,
+                status: .completed, conclusion: .success, isDimmed: false,
+                runnerName: nil, scope: "owner/repo",
+                startedAt: nil, completedAt: Date(),
+                steps: [JobStep(id: 1, name: "lint", status: .inProgress)]
+            )],
+            firstJobStartedAt: nil, lastJobCompletedAt: nil, createdAt: nil
+        )
+        let e = runsEnvelope([])
+        let t = StubTransport(responses: [
+            "repos/owner/repo/actions/runs?status=in_progress": runsEnvelope([
+                minimalRun(id: 1, sha: sha, status: "completed", conclusion: "success"),
+            ]),
+            "repos/owner/repo/actions/runs?status=queued": e,
+            "repos/owner/repo/actions/runs?status=completed": e,
+            "repos/owner/repo/actions/runs/1/jobs?per_page=100": jobsEnvelope([
+                minimalJob(id: 888, status: "completed", conclusion: "success"),
+            ]),
+        ])
+        let f = WorkflowActionGroupFetcher(transport: t)
+        let r = await f.fetch(for: "owner/repo", cache: [sha: cached])
+        #expect(r.count == 1)
+        // 3 status calls + 1 jobs-list call = 4 (not 3 — cache was bypassed)
+        #expect(t.callCount == 4)
+    }
+
+    // MARK: - Refresh cap
     // MARK: - Refresh cap
 
     @Test func fetchActionGroups_inProgressJobsCapped_atMaxRefreshConcurrency() async {
