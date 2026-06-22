@@ -38,41 +38,14 @@ public protocol GitHubTransportProtocol: Sendable {
     func deleteRunnerByID(scope: String, runnerID: Int) async -> Bool
 }
 
-/// Shared decoder — intentionally kept as a module-level singleton rather than
-/// replaced with per-call-site `let decoder = JSONDecoder()`. The decoder is
-/// stateless after initialisation and safe for concurrent reads (no mutable
-/// stored properties that interact with `decode`). Keeping it shared avoids
-/// one allocation per call while being functionally identical to a local
-/// instance in every call site.
-///
-/// - Note: Issue #1477 was originally scoped to replace the encoder with per-call-site
-///   local instances. After review, both the encoder and decoder are deliberately
-///   retained as shared: both are stateless after initialisation so the allocation
-///   savings outweigh the cosmetic benefit of locality.
-private let sharedDecoder = JSONDecoder()
-
-/// Shared encoder — intentionally kept as a module-level singleton rather than
-/// replaced with per-call-site `let encoder = JSONEncoder()`. The encoder is
-/// stateless after initialisation and safe for concurrent reads (no mutable
-/// stored properties that interact with `encode`). Keeping it shared avoids
-/// one allocation per call while being functionally identical to a local
-/// instance in every call site.
-/// Used by `urlSessionAPIPaginated` (page accumulation) and `patchRunnerLabels` (label body).
-///
-/// - Note: Issue #1477 was originally scoped to replace this with per-call-site local
-///   instances. After review, the shared approach is deliberately retained: `JSONEncoder`
-///   is stateless after initialisation so the allocation savings outweigh the cosmetic
-///   benefit of locality. #1477 is closed as resolved by this documented decision.
-private let sharedEncoder = JSONEncoder()
-
 // MARK: - GitHubTransport
 
 /// The concrete `URLSession`-backed implementation of `GitHubTransportProtocol`.
 ///
-/// `GitHubTransport` owns the decoder, encoder, rate-limiter, and token-provider
-/// that were previously scattered as module-level globals. Callers that need a
-/// real network transport use `sharedGitHubTransport`; tests inject a mock
-/// conformer or construct a custom instance via `init(decoder:encoder:rateLimiter:tokenProvider:)`.
+/// `GitHubTransport` owns the decoder, encoder, rate-limiter, and token-provider.
+/// Callers that need a real network transport use `sharedGitHubTransport`; tests
+/// inject a mock conformer or construct a custom instance via
+/// `init(decoder:encoder:rateLimiter:tokenProvider:)`.
 ///
 /// **Thread safety:** `GitHubTransport` is a value type (`struct`) whose stored
 /// `let` properties are all either value types (`JSONDecoder`, `JSONEncoder`) or
@@ -80,16 +53,16 @@ private let sharedEncoder = JSONEncoder()
 /// Concurrent reads are safe; there is no mutable state.
 public struct GitHubTransport: GitHubTransportProtocol {
 
-    // MARK: - Stored properties (previously module-level globals)
+    // MARK: - Stored properties
 
     /// JSON decoder — stateless after `init`, safe for concurrent reads.
     /// Kept as a stored `let` (one allocation per `GitHubTransport` instance)
-    /// rather than per-call-site to preserve the same performance characteristic
-    /// as the former `private let sharedDecoder` module global.
+    /// rather than per-call-site to avoid repeated allocations while remaining
+    /// functionally identical to a local instance in every call site.
     let decoder: JSONDecoder
 
     /// JSON encoder — stateless after `init`, safe for concurrent reads.
-    /// Same rationale as `decoder`; mirrors the former `private let sharedEncoder`.
+    /// Same rationale as `decoder`.
     let encoder: JSONEncoder
 
     /// Rate-limit actor used to arm/clear the global back-off window.
@@ -106,9 +79,8 @@ public struct GitHubTransport: GitHubTransportProtocol {
 
     /// Creates a `GitHubTransport` with the given dependencies.
     ///
-    /// All parameters have defaults that reproduce the previous module-global
-    /// behaviour, so `GitHubTransport()` is a drop-in replacement for the
-    /// former free functions without any configuration.
+    /// All parameters have defaults that reproduce the production behaviour,
+    /// so `GitHubTransport()` is ready to use without any configuration.
     ///
     /// - Parameters:
     ///   - decoder: JSON decoder instance. Defaults to a fresh `JSONDecoder()`.
@@ -454,7 +426,7 @@ extension GitHubTransport {
             let labels: [Label]
         }
         guard let resp = try? decoder.decode(LabelsResponse.self, from: outData) else {
-            let raw = String( outData, encoding: .utf8) ?? ""
+            let raw = String(data: outData, encoding: .utf8) ?? ""
             log("patchRunnerLabels › decode failed raw=\(raw.prefix(200))")
             return nil
         }
@@ -542,7 +514,7 @@ extension GitHubTransport {
 /// shims below forward to real network behaviour with zero configuration.
 /// Tests that need a fake transport should construct a `GitHubTransport` directly
 /// (or provide a mock conformer to `GitHubTransportProtocol`) and NOT use this global.
-internal let sharedGitHubTransport = GitHubTransport()
+public let sharedGitHubTransport = GitHubTransport()
 
 // MARK: - Backward-compatibility shims
 //
