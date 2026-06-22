@@ -22,13 +22,21 @@ extension AppDelegate {
     func applicationDidFinishLaunching(_ _: Notification) {
         log("AppDelegate › applicationDidFinishLaunching — START")
         configureGHToken { githubToken() }
-        configureGHAPI { endpoint in await ghAPI(endpoint) }
-        configureGHRaw { endpoint in await urlSessionRaw(endpoint) }
+        // Wire all three shim transports directly to sharedGitHubTransport,
+        // eliminating the intermediate hop through module-level free-function shims.
+        // The token is resolved per-call via sharedGitHubTransport's default
+        // tokenProvider (githubTokenCore()), which reads the box configured above.
+        configureGHAPI { endpoint in
+            await sharedGitHubTransport.apiAsync(endpoint)
+        }
+        configureGHRaw { endpoint in
+            await sharedGitHubTransport.raw(endpoint)
+        }
         // Both `endpoint` and `timeout` must be forwarded so callers that pass
         // a custom timeout via ghAPIPaginated(endpoint, timeout:) are not silently
-        // overridden by urlSessionAPIPaginated’s 60s default.
+        // overridden by apiPaginated’s 60-second default.
         configureGHAPIPaginated { endpoint, timeout in
-            await urlSessionAPIPaginated(endpoint, timeout: timeout)
+            await sharedGitHubTransport.apiPaginated(endpoint, timeout: timeout)
         }
         setupStatusItem()
         setupPanel()
