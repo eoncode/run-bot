@@ -155,7 +155,7 @@ public struct WorkflowActionGroupFetcher: Sendable {
     ///   to `withTaskGroup` and already run on the task's executor, so they don't
     ///   need the annotation. See also: SE-0420 (``@_unsupportedInheritActorContext``).
     @concurrent
-    public func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
+    public func fetch(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
         guard scope.contains("/") else {
             log("fetchActionGroups -- skipping org scope \(scope)")
             return []

@@ -27,7 +27,7 @@ import Foundation
 /// ## Test double
 /// ```swift
 /// struct StubActionGroupFetcher: WorkflowActionGroupFetcherProtocol {
-///     func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup] { [] }
+///     func fetch(for scope: String, cache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup] { [] }
 /// }
 /// ```
 public protocol WorkflowActionGroupFetcherProtocol: Sendable {
@@ -39,7 +39,7 @@ public protocol WorkflowActionGroupFetcherProtocol: Sendable {
     ///   - scope: A repo scope string in the form `"owner/repo"`. Org scopes (no `/`) return empty.
     ///   - cache: An optional SHA-keyed cache of previously-fetched groups to avoid redundant API calls.
     /// - Returns: An array of `WorkflowActionGroup` values, one per unique `head_sha`.
-    func fetchActionGroups(for scope: String, cache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup]
+    func fetch(for scope: String, cache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup]
 }
 
 // MARK: - Default parameter conformance
@@ -47,7 +47,7 @@ public protocol WorkflowActionGroupFetcherProtocol: Sendable {
 /// Default `cache` parameter for callers that don't provide one.
 extension WorkflowActionGroupFetcherProtocol {
     /// Fetches action groups without a cache.
-    func fetchActionGroups(for scope: String) async -> [WorkflowActionGroup] {
-        await fetchActionGroups(for: scope, cache: [:])
+    func fetch(for scope: String) async -> [WorkflowActionGroup] {
+        await fetch(for: scope, cache: [:])
     }
 }

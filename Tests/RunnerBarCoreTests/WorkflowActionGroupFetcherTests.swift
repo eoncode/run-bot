@@ -92,7 +92,7 @@ struct WorkflowActionGroupFetcherTests {
     @Test func fetchActionGroups_orgScope_returnsEmpty() async {
         let s = StubTransport()
         let f = WorkflowActionGroupFetcher(transport: s)
-        let r = await f.fetchActionGroups(for: "myorg")
+        let r = await f.fetch(for: "myorg")
         #expect(r.isEmpty)
         #expect(s.callCount == 0)
     }
@@ -107,12 +107,12 @@ struct WorkflowActionGroupFetcherTests {
             "repos/owner/repo/actions/runs?status=completed": e,
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
-        #expect(await f.fetchActionGroups(for: "owner/repo").isEmpty)
+        #expect(await f.fetch(for: "owner/repo").isEmpty)
     }
 
     @Test func fetchActionGroups_nilResponses_returnsEmpty() async {
         let f = WorkflowActionGroupFetcher(transport: StubTransport())
-        #expect(await f.fetchActionGroups(for: "owner/repo").isEmpty)
+        #expect(await f.fetch(for: "owner/repo").isEmpty)
     }
 
     // MARK: - Grouping by head_sha
@@ -133,7 +133,7 @@ struct WorkflowActionGroupFetcherTests {
             "repos/owner/repo/actions/runs/2/jobs": j,
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetchActionGroups(for: "owner/repo")
+        let r = await f.fetch(for: "owner/repo")
         #expect(r.count == 1)
         #expect(r.first?.headSha == sha)
         #expect(r.first?.runs.count == 2)
@@ -153,7 +153,7 @@ struct WorkflowActionGroupFetcherTests {
             "repos/owner/repo/actions/runs/2/jobs": jobsEnvelope([]),
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetchActionGroups(for: "owner/repo")
+        let r = await f.fetch(for: "owner/repo")
         #expect(r.count == 2)
         #expect(Set(r.map { $0.headSha }) == ["aaa111", "bbb222"])
     }
@@ -175,7 +175,7 @@ struct WorkflowActionGroupFetcherTests {
             "repos/owner/repo/actions/runs/2/jobs": j,
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetchActionGroups(for: "owner/repo")
+        let r = await f.fetch(for: "owner/repo")
         #expect(r.count == 2)
         #expect(r.first?.headSha == "aaainprogress")
         #expect(r.last?.headSha == "bbbcompleted")
@@ -210,7 +210,7 @@ struct WorkflowActionGroupFetcherTests {
             "repos/owner/repo/actions/runs?status=completed": e,
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetchActionGroups(for: "owner/repo", cache: [sha: cached])
+        let r = await f.fetch(for: "owner/repo", cache: [sha: cached])
         #expect(r.count == 1)
         #expect(r.first?.jobs.first?.id == 999)
         #expect(t.callCount == 3)
@@ -245,7 +245,7 @@ struct WorkflowActionGroupFetcherTests {
         }
         let t = StubTransport(responses: responses)
         let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetchActionGroups(for: "owner/repo")
+        let r = await f.fetch(for: "owner/repo")
         #expect(r.count == 1)
         #expect(r.first?.jobs.count == 4)
         // 3 status calls + 1 jobs-list call + 3 refresh calls = 7 (not 8)
@@ -264,7 +264,7 @@ struct WorkflowActionGroupFetcherTests {
             "repos/owner/repo/actions/runs/1/jobs": jobsEnvelope([]),
         ])
         let f = WorkflowActionGroupFetcher(transport: t)
-        let r = await f.fetchActionGroups(for: "owner/repo")
+        let r = await f.fetch(for: "owner/repo")
         #expect(r.first?.repo == "owner/repo")
     }
 }
