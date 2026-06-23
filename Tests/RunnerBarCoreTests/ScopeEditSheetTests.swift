@@ -2,6 +2,7 @@
 // RunnerBarCoreTests
 // Tests for the atomic-save contract introduced by the ScopeEditSheet DI rewrite — refs #1540.
 import Foundation
+import RunnerBarCore
 import Testing
 
 // MARK: - Fake store

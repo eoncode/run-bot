@@ -114,6 +114,48 @@ final class OAuthService {
         return stream
     }
 
+    // MARK: - Sign-in multicast
+    //
+    // Mirrors the sign-out multicast pattern above.
+    // Each caller receives its own dedicated AsyncStream<Bool> via makeSignInStream().
+    // fireSignIn(_:) yields the success value to every registered continuation,
+    // replacing the single-subscriber `onCompletion` closure (P9 fix).
+    // AsyncStream is single-consumer — each call site must request its own stream.
+
+    /// Registered continuations keyed by UUID — one per active sign-in consumer.
+    /// Entries are removed automatically via `onTermination` when the consumer's
+    /// Task is cancelled (e.g. SettingsView.onDisappear), preventing unbounded growth.
+    private var signInContinuations: [UUID: AsyncStream<Bool>.Continuation] = [:]
+
+    /// Returns a new `AsyncStream<Bool>` that fires once per completed sign-in attempt.
+    /// `true` = success, `false` = failure. Each call site must request its own stream.
+    /// The continuation is removed from the registry when the consumer's Task
+    /// is cancelled or the stream is otherwise terminated.
+    /// Observe via:
+    /// ```swift
+    /// Task { for await success in OAuthService.shared.makeSignInStream() { … } }
+    /// ```
+    func makeSignInStream() -> AsyncStream<Bool> {
+        let id = UUID()
+        let (stream, cont) = AsyncStream<Bool>.makeStream()
+        signInContinuations[id] = cont
+        cont.onTermination = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.signInContinuations.removeValue(forKey: id)
+            }
+        }
+        return stream
+    }
+
+    /// Yields `success` to every registered sign-in continuation and also calls
+    /// the legacy `onCompletion` closure for any remaining call sites that have
+    /// not yet migrated to `makeSignInStream()`.
+    private func fireSignIn(_ success: Bool) {
+        log("OAuthService › fireSignIn — success=\(success), consumers=\(signInContinuations.count)")
+        signInContinuations.values.forEach { $0.yield(success) }
+        onCompletion?(success)
+    }
+
     // MARK: Sign In
 
     /// Opens the GitHub OAuth authorization page in the default browser to begin sign-in.
@@ -124,7 +166,7 @@ final class OAuthService {
         guard var comps = URLComponents(string: authorizeURL) else {
             log("OAuthService › signIn: malformed authorizeURL — aborting")
             pendingState = nil
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         comps.queryItems = [
@@ -136,7 +178,7 @@ final class OAuthService {
         guard let url = comps.url else {
             log("OAuthService › signIn: failed to build authorization URL — aborting")
             pendingState = nil
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         // NOTE: pendingState is left set if the browser open fails silently.
@@ -178,21 +220,21 @@ final class OAuthService {
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
         else {
-            log("OAuthService › handleCallback — missing code param, calling onCompletion(false)")
-            onCompletion?(false)
+            log("OAuthService › handleCallback — missing code param, calling fireSignIn(false)")
+            fireSignIn(false)
             return
         }
         // CSRF guard: verify the state param matches what we sent in signIn().
         guard let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value else {
             log("OAuthService › handleCallback: no state param in redirect URL")
             pendingState = nil
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         guard returnedState == pendingState else {
             log("OAuthService › handleCallback: state mismatch — possible CSRF attempt, rejecting")
             pendingState = nil
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         log("OAuthService › handleCallback — state OK, exchanging code")
@@ -222,26 +264,26 @@ final class OAuthService {
             req.httpBody = try encoder.encode(body)
         } catch {
             log("OAuthService › exchangeCode: failed to encode request body — \(error)")
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         guard let (data, _) = try? await URLSession.shared.data(for: req),
               let response = try? decoder.decode(OAuthTokenResponse.self, from: data)
         else {
-            log("OAuthService › exchangeCode — network/parse failure, calling onCompletion(false)")
-            onCompletion?(false)
+            log("OAuthService › exchangeCode — network/parse failure, calling fireSignIn(false)")
+            fireSignIn(false)
             return
         }
         // GitHub returns 200 even on failure; check for an error field before accessToken.
         if let errorCode = response.error {
             let desc = response.errorDescription ?? ""
             log("OAuthService › exchangeCode: GitHub error=\(errorCode) \(desc)")
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         guard let token = response.accessToken, !token.isEmpty else {
             log("OAuthService › exchangeCode: no access_token in response — keys=\(response.debugKeys)")
-            onCompletion?(false)
+            fireSignIn(false)
             return
         }
         // Gate success on whether the token was actually persisted to Keychain.
@@ -249,9 +291,9 @@ final class OAuthService {
         // while Keychain.token remains nil and subsequent API calls lack auth.
         log("OAuthService › exchangeCode — got access_token (len=\(token.count)), saving to Keychain")
         let saved = Keychain.save(token)
-        log("OAuthService › exchangeCode — Keychain.save result=\(saved), calling onCompletion(\(saved))")
+        log("OAuthService › exchangeCode — Keychain.save result=\(saved), calling fireSignIn(\(saved))")
         if !saved { log("OAuthService › exchangeCode: Keychain.save failed") }
-        onCompletion?(saved)
+        fireSignIn(saved)
     }
 }
 
