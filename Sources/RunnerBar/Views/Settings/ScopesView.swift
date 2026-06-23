@@ -225,10 +225,16 @@ struct ScopesView: View {
                     .font(.caption2)
                     .foregroundColor(Color.rbTextTertiary)
                 Button {
-                    Task { await ScopePreferencesStore.shared.cleanUp(scope: entry.scope) }
-                    scopeStore.remove(id: entry.id)
-                    // ScopeStore.remove mutates activeScopes, firing withObservationTracking
-                    // in startObservingScopes and restarting the poll loop automatically.
+                    // cleanUp MUST complete before remove so that the poll loop
+                    // restart triggered by ScopeStore.remove cannot race a
+                    // not-yet-cleaned preferences blob on the next tick. (#1538)
+                    Task {
+                        await ScopePreferencesStore.shared.cleanUp(scope: entry.scope)
+                        scopeStore.remove(id: entry.id)
+                        // ScopeStore.remove mutates activeScopes, firing
+                        // withObservationTracking in startObservingScopes and
+                        // restarting the poll loop automatically.
+                    }
                 } label: {
                     Image(systemName: "minus.circle")
                         .font(.caption2)
