@@ -29,14 +29,7 @@ import Foundation
 
 /// Manages OAuthService state and behaviour.
 @MainActor
-final class OAuthService {
-    /// The shared singleton instance.
-    static let shared = OAuthService()
-    /// Private initialiser — use `shared`.
-    private init() {
-        // Singleton — intentionally empty; all state is lazily initialised on first access.
-    }
-
+final class OAuthService: OAuthServiceProtocol {
     /// Shared `JSONDecoder` — reused across token-exchange decode calls instead of per-call instantiation.
     private let decoder = JSONDecoder()
     /// Shared `JSONEncoder` — reused across token-exchange encode calls instead of per-call instantiation.
@@ -100,7 +93,7 @@ final class OAuthService {
     /// is cancelled or the stream is otherwise terminated.
     /// Observe via:
     /// ```swift
-    /// Task { for await _ in OAuthService.shared.makeSignOutStream() { … } }
+    /// Task { for await _ in oauthService.makeSignOutStream() { … } }
     /// ```
     func makeSignOutStream() -> AsyncStream<Void> {
         let id = UUID()
