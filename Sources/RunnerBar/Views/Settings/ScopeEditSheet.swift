@@ -175,6 +175,14 @@ extension ScopeEditSheet {
     ///
     /// `hookCommand` is trimmed of leading/trailing whitespace before the
     /// empty-check, matching the behaviour of the pre-#1540 static write path.
+    ///
+    /// - TODO: `initialPrefs` is a snapshot taken at sheet-open time. If an
+    ///   external writer (e.g. a future `FailureHookRunnerUseCase` path that
+    ///   writes via `ScopePreferencesStoreProtocol`) modifies the same scope
+    ///   while the sheet is open, the passthrough fields (alias, pollingInterval,
+    ///   notifyOnSuccess, notifyOnFailure) carried forward here will be stale,
+    ///   silently overwriting the newer values on Save. Safe today because no
+    ///   concurrent writer exists for these fields, but revisit if that changes.
     @MainActor private func confirmSave() {
         let trimmedCommand = hookCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         let updated = ScopePreferences(

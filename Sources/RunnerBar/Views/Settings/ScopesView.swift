@@ -237,7 +237,7 @@ struct ScopesView: View {
                     // layer contains zero direct ScopePreferencesStore static calls.
                     scopePrefs.removePreferences(for: entry.scope)
                     scopeStore.remove(id: entry.id)
-                    // ScokeStore.remove mutates activeScopes, firing withObservationTracking
+                    // ScopeStore.remove mutates activeScopes, firing withObservationTracking
                     // in startObservingScopes and restarting the poll loop automatically.
                 } label: {
                     Image(systemName: "minus.circle")
