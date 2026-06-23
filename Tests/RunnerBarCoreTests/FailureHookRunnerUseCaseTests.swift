@@ -12,7 +12,7 @@ struct FailureHookRunnerUseCaseTests {
     // MARK: - fireIfNeeded — gate checks
 
     /// Hook disabled → terminal must not open regardless of group conclusion.
-    @Test func fireIfNeeded_hookDisabled_doesNotOpenTerminal() async {
+    @Test func fireIfNeededHookDisabledDoesNotOpenTerminal() async {
         let spy = SpyTerminalLauncher()
         let sut = FailureHookRunnerUseCase(
             preferencesStore: MockScopePreferencesStore(hookEnabled: false),
@@ -23,7 +23,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// Hook enabled but group did not fail → terminal must not open.
-    @Test func fireIfNeeded_hookEnabled_groupNotFailed_doesNotOpenTerminal() async {
+    @Test func fireIfNeededHookEnabledGroupNotFailedDoesNotOpenTerminal() async {
         let spy = SpyTerminalLauncher()
         let sut = FailureHookRunnerUseCase(
             preferencesStore: MockScopePreferencesStore(hookEnabled: true),
@@ -34,7 +34,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// Branch filter set, group branch does not match → terminal must not open.
-    @Test func fireIfNeeded_branchFilterMismatch_doesNotOpenTerminal() async {
+    @Test func fireIfNeededBranchFilterMismatchDoesNotOpenTerminal() async {
         let spy = SpyTerminalLauncher()
         let sut = FailureHookRunnerUseCase(
             preferencesStore: MockScopePreferencesStore(hookEnabled: true, branch: "main"),
@@ -50,7 +50,7 @@ struct FailureHookRunnerUseCaseTests {
     /// All gates pass (hook enabled, group failed, branch matches) → terminal opens exactly once.
     /// `fetchFailedJobs` calls `ghAPI` which returns nil in CI (no token); jobs comes back empty.
     /// Terminal still opens once because all guards cleared before the network call.
-    @Test func fireIfNeeded_allGatesPass_opensTerminalOnce() async {
+    @Test func fireIfNeededAllGatesPassOpensTerminalOnce() async {
         let spy = SpyTerminalLauncher()
         let sut = FailureHookRunnerUseCase(
             preferencesStore: MockScopePreferencesStore(hookEnabled: true, branch: "main"),
@@ -66,7 +66,7 @@ struct FailureHookRunnerUseCaseTests {
     // MARK: - resolveTokens — pure, no network
 
     /// `$LOCAL_PATH` is replaced with the supplied path.
-    @Test func resolveTokens_substitutesLocalPath() {
+    @Test func resolveTokensSubstitutesLocalPath() {
         let cmd = FailureHookRunnerUseCase.resolveTokens(
             "cd '$LOCAL_PATH'",
             group: .fixture(),
@@ -78,7 +78,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// A single-quote inside a path value is escaped as `'\''`.
-    @Test func resolveTokens_singleQuoteInPath_isEscaped() {
+    @Test func resolveTokensSingleQuoteInPathIsEscaped() {
         let cmd = FailureHookRunnerUseCase.resolveTokens(
             "cd '$LOCAL_PATH'",
             group: .fixture(),
@@ -90,7 +90,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// A single-quote inside `$WORKFLOW_NAME` is correctly escaped.
-    @Test func resolveTokens_singleQuoteInWorkflowName_isEscaped() {
+    @Test func resolveTokensSingleQuoteInWorkflowNameIsEscaped() {
         let cmd = FailureHookRunnerUseCase.resolveTokens(
             "echo '$WORKFLOW_NAME'",
             group: .fixture(workflowName: "CI: O'Brien's job"),
@@ -101,7 +101,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// Single-quote content inside `$FAILURE_LOG` is correctly escaped end-to-end.
-    @Test func resolveTokens_singleQuoteInFailureLog_isEscaped() {
+    @Test func resolveTokensSingleQuoteInFailureLogIsEscaped() {
         let cmd = FailureHookRunnerUseCase.resolveTokens(
             "gemini -p '$FAILURE_LOG'",
             group: .fixture(conclusion: .failure, workflowName: "O'Brien CI"),
@@ -113,7 +113,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// After resolution, none of the 11 placeholder tokens remain in the output.
-    @Test func resolveTokens_allTokensPresent_noLiteralsRemain() {
+    @Test func resolveTokensAllTokensPresentNoLiteralsRemain() {
         let template = "$LOCAL_PATH $SCOPE $BRANCH $COMMIT_SHA $RUN_ID $WORKFLOW_NAME $RUN_LINK $COMMIT_LINK $BRANCH_LINK $REPO_LINK $FAILURE_LOG"
         let result = FailureHookRunnerUseCase.resolveTokens(
             template,
@@ -138,7 +138,7 @@ struct FailureHookRunnerUseCaseTests {
     // MARK: - buildLogContent
 
     /// When no jobs are supplied the fallback contains a FAILED run summary line.
-    @Test func buildLogContent_noJobs_returnsFallbackSummary() {
+    @Test func buildLogContentNoJobsReturnsFallbackSummary() {
         let result = FailureHookRunnerUseCase.buildLogContent(
             group: .fixture(conclusion: .failure),
             scope: "owner/repo",
@@ -148,7 +148,7 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// When all runs have a non-hook conclusion the fallback is empty.
-    @Test func buildLogContent_noFailedRuns_returnsEmpty() {
+    @Test func buildLogContentNoFailedRunsReturnsEmpty() {
         let result = FailureHookRunnerUseCase.buildLogContent(
             group: .fixture(conclusion: .success),
             scope: "owner/repo",
