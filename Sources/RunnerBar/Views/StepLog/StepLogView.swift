@@ -244,9 +244,10 @@ struct StepLogView: View {
         }()
         // ✅ Plain Task inherits @MainActor context from the view.
         // ✅ Handle stored so onDisappear can cancel on fast back-navigation (P9).
-        loadTask = Task(name: "StepLogView.loadLog", priority: .userInitiated) {
+        // ❌ Task(name:priority:) does NOT exist in Swift Concurrency — use Task(priority:).
+        loadTask = Task(priority: .userInitiated) {
             let text = await fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
-            // Guard state writes only — network cost is already paid (see loadLog() doc above).
+            // Guards @State writes only — network cost already paid (see doc above).
             guard !Task.isCancelled else { return }
             logText = text ?? ""
             isLoading = false
@@ -282,23 +283,41 @@ extension StepLogView {
     }
 
     /// Step conclusion label with icon, or live/queued status.
+    ///
+    /// Exhaustively matches all `JobConclusion` cases so that terminal outcomes like
+    /// `.timedOut`, `.actionRequired`, `.neutral`, `.stale`, and `.startupFailure`
+    /// are never mislabelled as running or queued.
     var stepStatusLabel: String {
         switch step.conclusion {
-        case "success": return "✓ success"
-        case "failure": return "✗ failure"
-        case "skipped": return "⊘ skipped"
-        case "cancelled": return "⊘ cancelled"
-        default: return step.status == "in_progress" ? "▶ running" : "· queued"
+        case .success:                  return "✓ success"
+        case .failure:                  return "✗ failure"
+        case .skipped:                  return "⊘ skipped"
+        case .cancelled:                return "⊘ cancelled"
+        case .timedOut:                 return "⧖ timed out"
+        case .actionRequired:           return "⚠️ action required"
+        case .neutral:                  return "· neutral"
+        case .stale:                    return "· stale"
+        case .startupFailure:           return "✗ startup failure"
+        case .unknown(let raw):         return "· \(raw)"
+        case nil:
+            return step.status == .inProgress ? "▶ running" : "· queued"
         }
     }
 
     /// Colour used to render `stepStatusLabel` based on conclusion or live status.
+    ///
+    /// Uses `JobConclusion.isFailure` semantics: `.failure`, `.timedOut`,
+    /// `.startupFailure`, and `.actionRequired` render as danger; everything else
+    /// uses secondary text or warning colours.
     var stepStatusColor: Color {
         switch step.conclusion {
-        case "success": return Color.rbSuccess
-        case "failure": return Color.rbDanger
-        case "skipped", "cancelled": return Color.rbTextSecondary
-        default: return step.status == "in_progress" ? Color.rbWarning : Color.rbTextSecondary
+        case .success:                                      return Color.rbSuccess
+        case .failure, .timedOut, .startupFailure,
+             .actionRequired:                              return Color.rbDanger
+        case .skipped, .cancelled, .neutral, .stale,
+             .unknown:                                     return Color.rbTextSecondary
+        case nil:
+            return step.status == .inProgress ? Color.rbWarning : Color.rbTextSecondary
         }
     }
 
@@ -311,7 +330,7 @@ extension StepLogView {
     /// Formatted end time, or `"—"` if unavailable.
     var endLabel: String {
         guard let dateValue = step.completedAt else {
-            return step.status == "in_progress" ? "running…" : "—"
+            return step.status == .inProgress ? "running…" : "—"
         }
         return Self.timeFmt.string(from: dateValue)
     }
