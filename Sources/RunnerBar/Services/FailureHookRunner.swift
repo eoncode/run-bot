@@ -8,7 +8,7 @@ import RunnerBarCore
 /// Production shim for `FailureHookRunnerUseCase`.
 ///
 /// Creates the use-case with the concrete production adapters
-/// (`ScopePreferencesStore.Live.shared`, `DefaultTerminalLauncher`) and
+/// (`DefaultScopePreferencesStore`, `DefaultTerminalLauncher`) and
 /// delegates `fireIfNeeded` to it. All business logic lives in
 /// `FailureHookRunnerUseCase`; this type exists only to maintain the
 /// existing call-site API (`FailureHookRunner.fireIfNeeded(group:scope:callsite:)`).
@@ -27,17 +27,20 @@ enum FailureHookRunner {
     static let defaultCommand = FailureHookRunnerUseCase.defaultCommand
 
     /// Forwards to `FailureHookRunnerUseCase` wired with production dependencies.
-    /// `@MainActor` because `ScopePreferencesStore.Live.shared` is a `@MainActor`-isolated
-    /// property — accessing it requires being on the main actor.
-    /// Callers are responsible for providing a Task scope (see `RunnerStore+PollBridge`).
-    @MainActor
+    /// `async` because `fireIfNeeded` is now a structured async call — callers
+    /// must provide a Task scope (see `RunnerStore+PollBridge`).
+    /// `sending` removed: no `Task.detached` boundary crossing, `WorkflowActionGroup`
+    /// is `Sendable` so `MainActor.run` hops inside the use-case are safe without it.
     static func fireIfNeeded(
         group: WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
     ) async {
         let useCase = FailureHookRunnerUseCase(
-            preferencesStore: ScopePreferencesStore.Live.shared,
+            // DefaultScopePreferencesStore is now a typealias for ScopePreferencesStore.
+            // We pass the shared singleton directly — it satisfies
+            // `any ScopePreferencesStoreProtocol` because the actor conforms. (#1538)
+            preferencesStore: ScopePreferencesStore.shared,
             terminalLauncher: DefaultTerminalLauncher()
         )
         await useCase.fireIfNeeded(group: group, scope: scope, callsite: callsite)

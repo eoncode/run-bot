@@ -6,41 +6,48 @@ import Foundation
 
 /// Typed, `Codable` snapshot of all per-scope user preferences.
 ///
-/// Replaces the raw `UserDefaults` string-key API on `ScopePreferencesStore`
-/// as the unit of read and write. A full snapshot is always read or written
-/// atomically — no partial-save window between individual field writes.
+/// Serialised as a single JSON blob under the key `scope.<scope>.preferences`
+/// in `UserDefaults`. Using one blob per scope means `cleanUp(scope:)` is a
+/// single `removeObject(forKey:)` call — no hardcoded field list to keep in sync.
 ///
-/// `nil` fields mean "use the global setting" (same semantics as before).
-public struct ScopePreferences: Codable, Sendable, Equatable {
+/// All fields are optional (or have safe defaults) so that a missing key in the
+/// stored JSON decodes cleanly with no migration needed for future additions.
+/// `failureHookEnabled` defaults to `false`, matching the legacy
+/// `UserDefaults.standard.bool(forKey:)` default for a missing key.
+public struct ScopePreferences: Codable, Equatable, Sendable {
 
     // MARK: - Fields
 
     /// Human-readable alias for the scope. `nil` = display raw scope string.
     public var alias: String?
 
-    /// Per-scope polling interval in seconds. `nil` = use global.
+    /// Per-scope polling interval override in seconds. `nil` = use global setting.
     public var pollingInterval: Int?
 
-    /// Per-scope notify-on-success override. `nil` = use global.
+    /// Per-scope notify-on-success override. `nil` = use global setting.
     public var notifyOnSuccess: Bool?
 
-    /// Per-scope notify-on-failure override. `nil` = use global.
+    /// Per-scope notify-on-failure override. `nil` = use global setting.
     public var notifyOnFailure: Bool?
 
     /// Whether the failure hook is enabled for this scope.
     public var failureHookEnabled: Bool
 
-    /// Shell command to run on failure. `nil` = no command set.
+    /// The shell command to run on failure. `nil` = use the default command.
     public var failureHookCommand: String?
 
-    /// Local filesystem path to the repo for this scope. `nil` = not set.
+    /// Local filesystem path to the repository for this scope. `nil` = not set.
     public var localRepoPath: String?
 
-    /// Branch filter for the failure hook. `nil` = fire for all branches.
+    /// Branch to restrict the failure hook to. `nil` = fire for all branches.
     public var failureHookBranch: String?
 
     // MARK: - Init
 
+    /// Creates a `ScopePreferences` value.
+    ///
+    /// All parameters are optional with safe defaults so callers can construct
+    /// a value specifying only the fields they care about.
     public init(
         alias: String? = nil,
         pollingInterval: Int? = nil,
@@ -60,9 +67,4 @@ public struct ScopePreferences: Codable, Sendable, Equatable {
         self.localRepoPath = localRepoPath
         self.failureHookBranch = failureHookBranch
     }
-
-    // MARK: - Default
-
-    /// All-`nil` / `false` sentinel used when no preferences have been persisted for a scope.
-    public static let `default` = ScopePreferences()
 }
