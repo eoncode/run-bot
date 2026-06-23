@@ -47,6 +47,27 @@ struct FailureHookRunnerUseCaseTests {
         await MainActor.run { #expect(spy.openCallCount == 0) }
     }
 
+    /// All gates pass (hook enabled, group failed, branch matches) → terminal opens exactly once.
+    ///
+    /// `fetchFailedJobs` makes a real `ghAPI` network call inside this test. In CI there
+    /// is no token, so `ghAPI` returns `nil` and `jobs` comes back empty — the test still
+    /// passes because `fireIfNeeded` always opens the terminal once all guards clear,
+    /// regardless of whether jobs were fetched. This is acceptable for an integration-style
+    /// assertion on the success path. A fully pure variant would require extracting
+    /// `fetchFailedJobs` behind an injectable protocol (tracked for a future issue).
+    @Test func fireIfNeeded_allGatesPass_opensTerminalOnce() async { // NOSONAR — intentional network-dependent happy-path test; see doc comment
+        let spy = SpyTerminalLauncher()
+        let sut = FailureHookRunnerUseCase(
+            preferencesStore: MockScopePreferencesStore(hookEnabled: true, branch: "main"),
+            terminalLauncher: spy
+        )
+        await sut.fireIfNeeded(
+            group: .fixture(conclusion: .failure, branch: "main"),
+            scope: "owner/repo"
+        )
+        await MainActor.run { #expect(spy.openCallCount == 1) }
+    }
+
     // MARK: - resolveTokens — pure, no network
 
     /// `$LOCAL_PATH` is replaced with the supplied path.
