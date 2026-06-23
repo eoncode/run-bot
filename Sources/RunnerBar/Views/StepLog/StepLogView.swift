@@ -23,7 +23,7 @@ import SwiftUI
 // ║ ❌ NEVER omit idealWidth: 480 from the root frame                         ║
 // ║ ❌ NEVER add .frame(height:) here                                         ║
 // ║ ❌ NEVER add .fixedSize() here                                            ║
-// ║ ✔ ScrollView MUST have .frame(maxHeight: visibleFrame * 0.75) cap         ║
+// ✔ ScrollView MUST have .frame(maxHeight: visibleFrame * 0.75) cap         ║
 // ║   Without it, with sizingOptions=.preferredContentSize, SwiftUI           ║
 // ║   reports the full log text height as preferredContentSize.height on      ║
 // ║   navigate → panel grows off-screen. (ref #370)                           ║
@@ -53,6 +53,9 @@ struct StepLogView: View {
     /// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
     /// is major major major.
     var onLogLoaded: (() -> Void)?
+    /// Injected scope store — avoids `ScopeStore.shared` singleton access inside `loadLog`.
+    /// Defaults to the live singleton so all existing call sites require no changes.
+    var scopeStore: any ScopeStoreProtocol = ScopeStore.shared
     /// `nil` = not yet fetched; `""` = fetch returned empty; non-empty = log text.
     @State private var logText: String?
     /// `true` while the background fetch is in-flight.
@@ -150,13 +153,13 @@ struct StepLogView: View {
                 Image(systemName: "clock").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(startLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("\u{2192}").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
+                Text("→").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(endLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("\u{00B7}").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
+                Text("·").font(.system(size: 10)).foregroundColor(Color.rbTextSecondary)
                 Text(step.elapsed)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
-                Text("\u{00B7}").font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary)
+                Text("·").font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary)
                 Text(dateLabel)
                     .font(.system(size: 10, design: .monospaced)).foregroundColor(Color.rbTextSecondary).fixedSize()
                 Spacer()
@@ -239,9 +242,9 @@ extension StepLogView {
     /// Repo slug derived from `job.htmlUrl`, e.g. `"owner/repo"`.
     var repoSlug: String {
         let parts = (job.htmlUrl ?? "").components(separatedBy: "/")
-        guard parts.count >= 5 else { return "\u{2014}" }
+        guard parts.count >= 5 else { return "—" }
         let owner = parts[3]; let repo = parts[4]
-        return (owner.isEmpty || repo.isEmpty) ? "\u{2014}" : "\(owner)/\(repo)"
+        return (owner.isEmpty || repo.isEmpty) ? "—" : "\(owner)/\(repo)"
     }
 
     /// Repo scope string (`owner/repo`) derived from `job.htmlUrl` for use in API fetch calls.
@@ -255,11 +258,11 @@ extension StepLogView {
     /// Step conclusion label with icon, or live/queued status.
     var stepStatusLabel: String {
         switch step.conclusion {
-        case "success": return "\u{2713} success"
-        case "failure": return "\u{2717} failure"
-        case "skipped": return "\u{2298} skipped"
-        case "cancelled": return "\u{2298} cancelled"
-        default: return step.status == "in_progress" ? "\u{25B6} running" : "\u{00B7} queued"
+        case "success": return "✓ success"
+        case "failure": return "✗ failure"
+        case "skipped": return "⊘ skipped"
+        case "cancelled": return "⊘ cancelled"
+        default: return step.status == "in_progress" ? "▶ running" : "· queued"
         }
     }
 
@@ -273,23 +276,23 @@ extension StepLogView {
         }
     }
 
-    /// Formatted start time, or `"\u{2014}"` if unavailable.
+    /// Formatted start time, or `"—"` if unavailable.
     var startLabel: String {
-        guard let dateValue = step.startedAt else { return "\u{2014}" }
+        guard let dateValue = step.startedAt else { return "—" }
         return Self.timeFmt.string(from: dateValue)
     }
 
-    /// Formatted end time, or `"\u{2014}"` if unavailable.
+    /// Formatted end time, or `"—"` if unavailable.
     var endLabel: String {
         guard let dateValue = step.completedAt else {
-            return step.status == "in_progress" ? "running\u{2026}" : "\u{2014}"
+            return step.status == "in_progress" ? "running…" : "—"
         }
         return Self.timeFmt.string(from: dateValue)
     }
 
     /// Date string (`yyyy-MM-dd`) for context when the step ran.
     var dateLabel: String {
-        guard let dateValue = step.startedAt ?? step.completedAt else { return "\u{2014}" }
+        guard let dateValue = step.startedAt ?? step.completedAt else { return "—" }
         return Self.dateFmt.string(from: dateValue)
     }
 }
