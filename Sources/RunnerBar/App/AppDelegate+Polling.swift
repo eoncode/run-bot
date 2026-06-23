@@ -27,6 +27,13 @@ extension AppDelegate {
     func setupSignOutSubscription() {
         signOutTask?.cancel()
         signOutTask = Task { [weak self] in
+            // `guard let self` before the loop promotes the weak capture to a strong
+            // reference for the entire Task lifetime. AppDelegate is the app-process
+            // singleton and is never deallocated while the app is running, so this
+            // guard will never actually fire — but it is required to satisfy the
+            // compiler's weak-capture rules and makes the nil path explicit.
+            // An inner `guard let self` inside the loop body is therefore unnecessary:
+            // `self` cannot become nil again once the outer guard has passed.
             guard let self else { return }
             for await _ in oauthService.makeSignOutStream() {
                 log("AppDelegate › didSignOut — restarting poll loop for env-token fallback")
