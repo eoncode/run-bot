@@ -172,7 +172,19 @@ extension AppDelegate: NSPopoverDelegate {
     // MARK: Async subscriptions
 
     /// Wires all long-lived async subscriptions (sign-out listener, startup sequence).
+    ///
+    /// Idempotent: if `runnerStore` is already set a second call is a no-op.
+    /// This makes it structurally impossible to orphan a `RunnerStore` actor and
+    /// its live Task tree by calling this method more than once (P4, P16).
     private func setupSubscriptions() {
+        // Idempotency guard — must only run once.
+        // A second call would orphan the existing RunnerStore actor and its
+        // observation Task tree (two Tasks per instance via PollLoopCoordinator).
+        // AppDelegate is @MainActor-isolated so this nil-check is safe and synchronous.
+        guard runnerStore == nil else {
+            log("AppDelegate › setupSubscriptions — already configured, skipping (guard against double-init)")
+            return
+        }
         log("AppDelegate › setupSubscriptions — begin")
 
         // local runner list changes are now pushed directly from LocalRunnerStore
@@ -232,13 +244,32 @@ extension AppDelegate: NSPopoverDelegate {
         // refreshAsync() suspends until disk hydration + launchctl + GitHub enrichment
         // completes, then start() fires. Cycle 1 always has a populated installPathMap
         // so runner rows appear with CPU/MEM already set.
+        //
+        // Task name (Reach Goal 6): surfaces this structurally significant startup
+        // sequence by name in Instruments and crash logs.
+        // Priority .userInitiated: this is a direct response to app launch — the user
+        // is actively waiting for runners to appear.
         log("AppDelegate › setupSubscriptions — scheduling async startup sequence")
-        Task { [weak self] in
+        Task(name: "AppDelegate.startup: localRunnerStore.refreshAsync → runnerStore.start",
+             priority: .userInitiated) { [weak self] in
             guard let self else { return }
             log("AppDelegate › startup — awaiting localRunnerStore.refreshAsync()")
             await self.localRunnerStore.refreshAsync()
             log("AppDelegate › startup — refreshAsync() complete, starting runnerStore poll loop")
-            await self.runnerStore.start()
+            // `runnerStore` is `RunnerStore?`.
+            // This guard is structurally unreachable in normal execution: runnerStore is
+            // assigned unconditionally just before this Task is spawned, and nothing
+            // currently nils it out. It exists to make the condition observable if that
+            // ever changes — the app would otherwise appear to start but silently never
+            // poll. The assertionFailure in DEBUG makes the severity match the consequence.
+            guard let store = self.runnerStore else {
+                log("AppDelegate › startup — ⚠️ runnerStore is nil after refreshAsync(); poll loop NOT started")
+                #if DEBUG
+                assertionFailure("AppDelegate.startup: runnerStore is nil after refreshAsync() — this is structurally unreachable; a future change must have introduced an unintended nil path")
+                #endif
+                return
+            }
+            await store.start()
             log("AppDelegate › startup — runnerStore poll loop started")
         }
 

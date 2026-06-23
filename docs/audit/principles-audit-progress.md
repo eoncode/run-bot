@@ -118,7 +118,7 @@
 - [x] TerminalLauncher.swift — ✅ clean
 
 ### Sources/RunnerBar/UseCases/
-- [x] FailureHookRunnerUseCase.swift — ⚠️ FINDING #5: `Task.detached` fire-and-forget (documented intent)
+- [x] FailureHookRunnerUseCase.swift — ✅ FIXED #5: `Task.detached` replaced with structured `async fireIfNeeded` + `Task(name:priority:utility)` in RunnerStore (PR #1532)
 
 ### Sources/RunnerBar/Utilities/
 - [x] WindowGrabber.swift — ✅ clean
@@ -150,7 +150,7 @@ All findings ranked in [#1505](https://github.com/eoncode/runner-bar/issues/1505
 | 2 | `AppPreferencesStore.swift` | P3 | Raw `UserDefaults` string keys instead of `Codable` | High |
 | 3 | `ScopePreferencesStore.swift` | P7 + P16 | Static methods only, no actor isolation | High |
 | 4 | `ProcessRunner.swift` | P2 + P9 | Last `DispatchQueue.sync` in production path (documented sign-off) | Medium |
-| 5 | `FailureHookRunnerUseCase.swift` | P9 | `Task.detached` fire-and-forget (documented intent) | Medium |
+| 5 | `FailureHookRunnerUseCase.swift` | P9 | ✅ FIXED (PR #1532): `Task.detached` replaced with structured `async fireIfNeeded` + `Task(name:priority:utility)` in RunnerStore | Medium |
 | 6 | `WorkflowActionGroupFetch.swift` | P4 + P17 | File-scoped shared `JSONDecoder` across concurrent calls | Medium |
 | 7 | `AppDelegate.swift` | P8 | Business logic in app layer | High |
 | 8 | `Logger.swift` | P15 + P16 | Single `"general"` log category across all subsystems | Low |

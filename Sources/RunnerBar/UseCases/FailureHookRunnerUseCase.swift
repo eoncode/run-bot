@@ -24,9 +24,10 @@ import RunnerBarCore
 /// branch names, etc. would break shell parsing.
 ///
 /// ## Thread safety
-/// `FailureHookRunnerUseCase` is `Sendable`. `fireIfNeeded` is nonisolated and
-/// spawns a `Task.detached` for network work, then hops to `@MainActor` for
-/// `TerminalLauncherProtocol.open(command:)` — matching the pre-refactor behaviour.
+/// `FailureHookRunnerUseCase` is `Sendable`. `fireIfNeeded` is `async` and
+/// `nonisolated` — it runs on the cooperative thread pool. Callers are responsible
+/// for providing a structured Task scope (see `RunnerStore+PollBridge`).
+/// `TerminalLauncherProtocol.open(command:)` is dispatched via `MainActor.run`.
 struct FailureHookRunnerUseCase: Sendable {
 
     /// Default failure-hook command used when the user has not configured a
@@ -44,20 +45,22 @@ struct FailureHookRunnerUseCase: Sendable {
     // MARK: - Public API
 
     /// Call this whenever a group transitions to done with a failure conclusion.
-    /// Spawns a detached background Task, fetches failed job/step details, then fires.
+    /// Fetches failed job/step details on the cooperative thread pool, resolves
+    /// tokens, then fires the Terminal command on `@MainActor`.
     ///
-    /// `group` is annotated `sending` because it crosses from the caller's isolation
-    /// domain into the `Task.detached` closure (the closure captures `group` and
-    /// uses it across the actor boundary). The caller should not read `group` after
-    /// the call — consistent with SE-0430 ownership-transfer intent. Because
-    /// `WorkflowActionGroup` is currently `Sendable`, the compiler does not enforce
-    /// this restriction today; it becomes load-bearing if the type drops `Sendable`
-    /// conformance.
+    /// `group` is not annotated `sending` because it no longer crosses a `Task.detached`
+    /// boundary — `fireIfNeeded` is `async` and called inline by `PollResultBuilder`.
+    /// `WorkflowActionGroup` is `Sendable`, so `MainActor.run` hops inside this method
+    /// are safe without `sending`.
+    ///
+    /// - Important: If `WorkflowActionGroup` ever drops its `Sendable` conformance,
+    ///   restore `sending` on `group` here and in `FailureHookRunner.fireIfNeeded` to
+    ///   re-establish the ownership-transfer contract across the async boundary.
     func fireIfNeeded(
-        group: sending WorkflowActionGroup,
+        group: WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
-    ) {
+    ) async {
         // swiftlint:disable:next line_length
         log("FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
         let hookEnabled = preferencesStore.failureHookEnabled(for: scope)
@@ -87,27 +90,19 @@ struct FailureHookRunnerUseCase: Sendable {
             log("FailureHookRunnerUseCase SKIP -- group is not a failure, groupID=\(group.id)")
             return
         }
-        log("FailureHookRunnerUseCase ALL CHECKS PASSED -- dispatching background Task for scope=\(scope) groupID=\(group.id)")
-        // Task.detached is required here — do NOT simplify to Task { }.
-        // fireIfNeeded is called from @MainActor context (via PollResultBuilder -> RunnerStore).
-        // A plain Task { } would inherit @MainActor isolation, serialising the log fetch
-        // and TerminalLauncher call through the main actor. Task.detached breaks that
-        // inheritance so the work runs on the cooperative pool at .utility priority (#1152).
-        let launcher = terminalLauncher
-        let store = preferencesStore
-        Task.detached(priority: .utility) {
-            log("FailureHookRunnerUseCase Task START -- fetching failed jobs for groupID=\(group.id)")
-            let jobs = await Self.fetchFailedJobs(group: group, scope: scope)
-            log("FailureHookRunnerUseCase Task -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
-            let localPath = store.localRepoPath(for: scope) ?? ""
-            let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
-            log("FailureHookRunnerUseCase Task -- resolved command (first 300): \(resolved.prefix(300))")
-            log("FailureHookRunnerUseCase Task -- calling terminalLauncher.open for groupID=\(group.id)")
-            // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
-            await MainActor.run {
-                launcher.open(command: resolved)
-                log("FailureHookRunnerUseCase main actor -- terminalLauncher.open returned for groupID=\(group.id)")
-            }
+        log("FailureHookRunnerUseCase ALL CHECKS PASSED -- fetching failed jobs for scope=\(scope) groupID=\(group.id)")
+        let jobs = await Self.fetchFailedJobs(group: group, scope: scope)
+        log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
+        let localPath = preferencesStore.localRepoPath(for: scope) ?? ""
+        let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
+        log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))")
+        log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)")
+        // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
+        // log() is backed by os.Logger which is nonisolated and thread-safe; safe to
+        // call from inside MainActor.run without any isolation concerns.
+        await MainActor.run {
+            terminalLauncher.open(command: resolved)
+            log("FailureHookRunnerUseCase main actor -- terminalLauncher.open returned for groupID=\(group.id)")
         }
     }
 
@@ -235,6 +230,17 @@ struct FailureHookRunnerUseCase: Sendable {
     }
 
     /// Fetches the failed jobs (and their log tails) for every failure-triggering run in `group`.
+    ///
+    /// Runs are fetched sequentially (one `ghAPI` call per failed run, one `fetchJobLog`
+    /// per failed job). This is intentional — the hook fires rarely (only on new failures)
+    /// and the GitHub API is rate-limited, so parallelising the fetches would not meaningfully
+    /// reduce latency in practice while adding complexity.
+    ///
+    /// - Note: Because `fireIfNeeded` is now called inline by `PollResultBuilder` (no longer
+    ///   fire-and-forget), this sequential fetch does block forward progress of the current
+    ///   poll cycle. This is an accepted trade-off per #1519. If hook latency becomes
+    ///   observable in practice, parallelise with `withTaskGroup` over `group.runs` here.
+    ///
     /// - Returns: One `FailedJobResult` per unique failed job, deduped by job ID.
     private static func fetchFailedJobs(
         group: WorkflowActionGroup,

@@ -204,13 +204,25 @@ actor RunnerStore {
         self.scopeStore = scopeStore
         self.onStatusUpdate = onStatusUpdate
         self.actionGroupFetcher = actionGroupFetcher
-        Task { await self.startObservingPreferences() }
-        Task { await self.startObservingScopes() }
+        // Task names (Reach Goal 6): surface these long-lived observation loops by name
+        // in Instruments and crash logs so they are identifiable without a stack trace.
+        Task(name: "RunnerStore.init: startObservingPreferences") { await self.startObservingPreferences() }
+        Task(name: "RunnerStore.init: startObservingScopes") { await self.startObservingScopes() }
     }
 
     // MARK: - Deinit
 
-    deinit {
+    /// Cancels all running Tasks owned by this actor before it is freed.
+    ///
+    /// `isolated deinit` runs on the actor's own executor (Reach Goal 5), which means:
+    /// - `pollLoop` is accessed on the correct isolation domain — no data-race risk.
+    /// - The poll task, interval-observation task, and scope-observation task are all
+    ///   cancelled atomically from the actor's perspective before any memory is freed.
+    ///
+    /// A plain `deinit` would run off-actor (on whatever thread released the last
+    /// reference), making the `pollLoop` access technically a data race under Swift 6
+    /// strict concurrency. `isolated deinit` eliminates that risk.
+    isolated deinit {
         pollLoop.cancelAll()
     }
 
