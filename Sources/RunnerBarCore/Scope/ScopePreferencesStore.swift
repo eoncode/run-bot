@@ -40,6 +40,7 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: - Private state
 
+    /// The underlying `UserDefaults` instance used for all read/write operations.
     private let store: UserDefaults
 
     /// Reused decoder. `nonisolated` because `JSONDecoder` is immutable post-init (P17).
@@ -58,6 +59,7 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: - Key helpers
 
+    /// Returns the `UserDefaults` key for the JSON blob of the given scope.
     private func blobKey(for scope: String) -> String {
         "scope.\(scope).preferences"
     }
@@ -101,10 +103,12 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: - ScopePreferencesStoreProtocol — alias
 
+    /// Returns the stored alias for `scope`, or `nil` if unset or empty.
     public func alias(for scope: String) -> String? {
         read(scope: scope).alias.flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// Persists a trimmed alias for `scope`; passes `nil` or empty string to clear.
     public func setAlias(_ alias: String?, for scope: String) {
         var prefs = read(scope: scope)
         let trimmed = alias?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -113,16 +117,19 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
         log("ScopePreferencesStore › alias for \(scope) = \(prefs.alias ?? "nil (cleared)")")
     }
 
+    /// Returns the alias for `scope` if set, otherwise the raw scope string.
     public func displayName(for scope: String) -> String {
         alias(for: scope) ?? scope
     }
 
     // MARK: - ScopePreferencesStoreProtocol — polling interval
 
+    /// Returns the per-scope polling interval override, or `nil` to use the global default.
     public func pollingInterval(for scope: String) -> Int? {
         read(scope: scope).pollingInterval
     }
 
+    /// Stores a per-scope polling interval override for `scope`; pass `nil` to revert to the global default.
     public func setPollingInterval(_ interval: Int?, for scope: String) {
         var prefs = read(scope: scope)
         prefs.pollingInterval = interval
@@ -132,10 +139,12 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: - ScopePreferencesStoreProtocol — notification overrides
 
+    /// Returns the per-scope success-notification override, or `nil` to use the global setting.
     public func notifyOnSuccess(for scope: String) -> Bool? {
         read(scope: scope).notifyOnSuccess
     }
 
+    /// Stores a per-scope success-notification override; pass `nil` to revert to the global setting.
     public func setNotifyOnSuccess(_ value: Bool?, for scope: String) {
         var prefs = read(scope: scope)
         prefs.notifyOnSuccess = value
@@ -143,10 +152,12 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
         log("ScopePreferencesStore › notifyOnSuccess for \(scope) = \(value.map(String.init) ?? "nil (use global)")")
     }
 
+    /// Returns the per-scope failure-notification override, or `nil` to use the global setting.
     public func notifyOnFailure(for scope: String) -> Bool? {
         read(scope: scope).notifyOnFailure
     }
 
+    /// Stores a per-scope failure-notification override; pass `nil` to revert to the global setting.
     public func setNotifyOnFailure(_ value: Bool?, for scope: String) {
         var prefs = read(scope: scope)
         prefs.notifyOnFailure = value
@@ -156,10 +167,12 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: - ScopePreferencesStoreProtocol — failure hook
 
+    /// Returns whether the failure hook script is enabled for `scope`.
     public func failureHookEnabled(for scope: String) -> Bool {
         read(scope: scope).failureHookEnabled
     }
 
+    /// Enables or disables the failure hook script for `scope`.
     public func setFailureHookEnabled(_ enabled: Bool, for scope: String) {
         var prefs = read(scope: scope)
         prefs.failureHookEnabled = enabled
@@ -167,10 +180,12 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
         log("ScopePreferencesStore › failureHookEnabled for \(scope) = \(enabled)")
     }
 
+    /// Returns the shell command to run on failure for `scope`, or `nil` if unset.
     public func failureHookCommand(for scope: String) -> String? {
         read(scope: scope).failureHookCommand.flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// Stores the failure hook shell command for `scope`; pass `nil` or empty string to clear.
     public func setFailureHookCommand(_ command: String?, for scope: String) {
         var prefs = read(scope: scope)
         let trimmed = command?.trimmingCharacters(in: .whitespacesAndNewlines)
