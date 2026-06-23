@@ -31,7 +31,8 @@ struct LocalRunnersView: View {
 
     /// Runner lifecycle service. Injected from `SettingsView` (which receives it from `AppDelegate`).
     /// Typed to protocol so tests can supply a stub without spawning real `svc.sh` processes (P7).
-    var lifecycleService: any RunnerLifecycleServiceProtocol = RunnerLifecycleService()
+    /// No default — callers must supply the `AppDelegate`-owned instance explicitly.
+    var lifecycleService: any RunnerLifecycleServiceProtocol
 
     // MARK: - Local UI state
 
@@ -76,10 +77,6 @@ struct LocalRunnersView: View {
         .onChange(of: store.isLocalScanning) { _, newVal in if !newVal { hasLoadedOnce = true } }
         .sheet(isPresented: $showAddRunnerSheet, content: addRunnerSheet)
         .modifier(removalAlertModifier)
-        // #1262: Use .sheet(item:) instead of .popover(item:) so AppKit attaches
-        // RunnerDetailSheet as a child sheet of NSPopoverWindowFrame directly.
-        // SwiftUI's .popover is constrained by the parent view bounds; .sheet escapes
-        // that constraint and is automatically guarded by hasActiveSheet in AppDelegate.
         .sheet(item: $editingRunner) { runner in runnerEditingSheet(runner: runner) }
     }
 
