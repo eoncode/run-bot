@@ -22,6 +22,9 @@ import SwiftUI
 //       NSOpenPanel runs without closing the panel — the NSPanel is non-activating
 //       so it does not obscure the picker.
 // #1263: Removed ScrollView so sheet height is intrinsic (same fix as #1262).
+// #1538: init now receives a pre-fetched ScopePreferences snapshot so seeds are
+//        synchronous. confirmSave() is async — called via plain Task{} to keep
+//        @MainActor isolation after the actor awaits (P9).
 /// Modal sheet for editing settings of a single scope (org or repo).
 /// Presented when the user taps a scope row in `ScopesView`.
 ///
@@ -64,22 +67,28 @@ struct ScopeEditSheet: View {
     /// it is reliably available when openFolderPicker() is called. (#1195)
     @State private var hostWindow: NSWindow?
 
-    /// Creates the view, seeding `@State` values from `ScopePreferencesStore`
-    /// so they reflect persisted user preferences on first render.
+    /// Creates the view, seeding `@State` draft values from a pre-fetched
+    /// `ScopePreferences` snapshot.
+    ///
+    /// The caller (ScopesView) fetches preferences asynchronously before
+    /// presenting the sheet and passes the result here, so this `init` remains
+    /// synchronous and the seeds always reflect persisted preferences. (#1538)
+    ///
     /// - Parameters:
     ///   - scopeEntry: The scope whose settings this view manages.
+    ///   - preferences: Pre-fetched preferences snapshot for this scope.
     ///   - isPresented: Binding that controls sheet visibility.
-    init(scopeEntry: ScopeEntry, isPresented: Binding<Bool>) {
+    init(scopeEntry: ScopeEntry, preferences: ScopePreferences, isPresented: Binding<Bool>) {
         self.scopeEntry = scopeEntry
         self._isPresented = isPresented
-        _hookEnabled = State(initialValue: ScopePreferencesStore.failureHookEnabled(for: scopeEntry.scope))
-        _hookBranch = State(initialValue: ScopePreferencesStore.failureHookBranch(for: scopeEntry.scope))
+        _hookEnabled = State(initialValue: preferences.failureHookEnabled)
+        _hookBranch = State(initialValue: preferences.failureHookBranch)
         // Seed with the persisted value or empty string — never the default command.
         // FailureHookRunner falls back to its own default at runtime when the stored
         // value is nil, so seeding with the default here would silently persist it
         // on the first Save even when the user never opened FailureHookCommandSheet.
-        _hookCommand = State(initialValue: ScopePreferencesStore.failureHookCommand(for: scopeEntry.scope) ?? "")
-        _localRepoPath = State(initialValue: ScopePreferencesStore.localRepoPath(for: scopeEntry.scope) ?? "")
+        _hookCommand = State(initialValue: preferences.failureHookCommand ?? "")
+        _localRepoPath = State(initialValue: preferences.localRepoPath ?? "")
     }
 
     /// The up-to-date entry from `ScopeStore`, or `nil` if the scope has been
@@ -155,7 +164,10 @@ extension ScopeEditSheet {
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Capsule().fill(Color.rbSurfaceElevated))
                     .overlay(Capsule().strokeBorder(Color.rbBorderSubtle, lineWidth: 0.5))
-                Text(ScopePreferencesStore.displayName(for: scope))
+                // Display name is derived from the draft hookBranch / alias seeded in init.
+                // For the header label we fall back to the raw scope string — the alias
+                // field is not editable inside this sheet (it lives in a future alias row).
+                Text(scope)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
             }
@@ -171,7 +183,12 @@ extension ScopeEditSheet {
             Spacer()
             Button("Cancel") { isPresented = false }
                 .keyboardShortcut(.escape, modifiers: [])
-            Button(action: confirmSave) {
+            // confirmSave() is async (actor writes). Plain Task{} inherits @MainActor
+            // from the SwiftUI context so `isPresented = false` after the awaits
+            // still runs on @MainActor — no isolation gap. (P9)
+            Button {
+                Task { await confirmSave() }
+            } label: {
                 Text("Save")
                     .font(.system(size: 13, weight: .medium))
             }
@@ -445,15 +462,22 @@ extension ScopeEditSheet {
         hookBranch = nil
     }
 
-    /// Single commit point: writes all three draft fields to `ScopePreferencesStore`,
+    /// Single commit point: writes all draft fields to `ScopePreferencesStore`,
     /// then dismisses the sheet. Nothing is persisted before this runs.
-    @MainActor func confirmSave() {
-        ScopePreferencesStore.setFailureHookEnabled(hookEnabled, for: scope)
-        ScopePreferencesStore.setFailureHookBranch(hookBranch, for: scope)
+    ///
+    /// Marked `async` because `ScopePreferencesStore` is now an actor (P16).
+    /// Called via `Task { await confirmSave() }` in `buttonFooter` — a plain
+    /// (non-detached) Task that inherits `@MainActor` from the SwiftUI button
+    /// context, so `isPresented = false` after the awaits still runs on
+    /// `@MainActor` with no isolation gap. (P9)
+    @MainActor func confirmSave() async {
+        let store = ScopePreferencesStore.shared
+        await store.setFailureHookEnabled(hookEnabled, for: scope)
+        await store.setFailureHookBranch(hookBranch, for: scope)
         let command = hookCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        ScopePreferencesStore.setFailureHookCommand(command.isEmpty ? nil : command, for: scope)
+        await store.setFailureHookCommand(command.isEmpty ? nil : command, for: scope)
         let path = localRepoPath.isEmpty ? nil : localRepoPath
-        ScopePreferencesStore.setLocalRepoPath(path, for: scope)
+        await store.setLocalRepoPath(path, for: scope)
         isPresented = false
     }
 
