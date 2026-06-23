@@ -6,6 +6,17 @@ import Foundation
 
 /// Abstracts the subset of `ScopePreferencesStore` that `FailureHookRunnerUseCase` needs,
 /// so the use-case can be tested without hitting `UserDefaults` on disk.
+///
+/// **Intentionally decoupled from `ScopePreferencesStoreProtocol`** (the view-layer protocol
+/// introduced in #1540). The two protocols share overlapping method names by design — each
+/// serves a different isolation domain:
+/// - `ScopePreferencesStoreProtocol` is `@MainActor + AnyObject`, scoped to SwiftUI views.
+/// - `FailureHookScopePreferencesProtocol` is `Sendable` and value-type-friendly, so it can
+///   be satisfied by actors and background-safe types used in use-case / runner layers.
+///
+/// A single conformer satisfying **both** protocols must bridge `@MainActor` and `Sendable`
+/// explicitly — e.g. by annotating the type `@MainActor` and marking it `Sendable` (which is
+/// safe on a main-actor-isolated type). Avoid `@unchecked Sendable` as a shortcut here.
 public protocol FailureHookScopePreferencesProtocol: Sendable {
     /// Returns `true` if the failure hook is enabled for the given scope.
     func failureHookEnabled(for scope: String) -> Bool

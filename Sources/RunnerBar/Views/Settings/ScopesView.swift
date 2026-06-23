@@ -86,9 +86,14 @@ struct ScopesView: View {
                     scopePrefs: scopePrefs
                 )
             } else {
-                // selectedInitialPrefs should always be set by openEditSheet before
-                // SwiftUI presents this sheet. A nil value here indicates a programmer
-                // error — fail fast in debug builds so the bug is caught immediately.
+                // `selectedInitialPrefs` should always be populated by `openEditSheet`
+                // before SwiftUI presents this sheet. A nil value here is a programmer
+                // error — fail fast in debug builds so the bug surfaces immediately.
+                //
+                // `let _ =` is required because `assertionFailure()` returns Void, not
+                // a View, and @ViewBuilder does not accept bare Void expressions.
+                // Do NOT "clean up" this pattern — removing it silently suppresses the
+                // fail-fast behaviour and leaves the user with a blank sheet.
                 let _ = assertionFailure("ScopesView: sheet presented with nil selectedInitialPrefs for scope \(entry.scope) — openEditSheet must set both selectedInitialPrefs and selectedScopeEntry before SwiftUI reads $selectedScopeEntry.")
                 EmptyView()
             }
@@ -170,6 +175,14 @@ struct ScopesView: View {
     /// main actor before SwiftUI reads `$selectedScopeEntry` ensures the sheet
     /// always receives a non-nil `initialPrefs` snapshot on first render.
     private func openEditSheet(for entry: ScopeEntry) {
+        // SAFETY: Both assignments happen synchronously on @MainActor before the run
+        // loop yields, so SwiftUI cannot observe `selectedScopeEntry != nil` while
+        // `selectedInitialPrefs` is still nil — the assertionFailure branch in the
+        // sheet guard is unreachable under normal execution today.
+        //
+        // If `preferences(for:)` ever gains an async read path, this function must
+        // become `async` and both assignments must follow a single `await` so the
+        // invariant is preserved at the type level rather than by convention.
         let prefs = scopePrefs.preferences(for: entry.scope)
         selectedInitialPrefs = prefs
         selectedScopeEntry = entry

@@ -87,12 +87,14 @@ struct ScopeEditSheetTests {
     @Test("confirmSave persists all fields in a single write")
     func confirmSavePersistsAllFields() {
         let fake = FakeScopePreferencesStore()
+        // Argument order matches ScopePreferences struct definition order:
+        // alias, failureHookEnabled, failureHookCommand, localRepoPath, failureHookBranch
         let prefs = ScopePreferences(
             alias: "CI Org",
             failureHookEnabled: true,
             failureHookCommand: "./notify.sh",
-            failureHookBranch: "main",
-            localRepoPath: "/Users/dev/ci"
+            localRepoPath: "/Users/dev/ci",
+            failureHookBranch: "main"
         )
         confirmSave(scope: "acme", updated: prefs, into: fake)
         let written = fake.writeLog[0].prefs
