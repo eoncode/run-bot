@@ -22,19 +22,23 @@ final class FakeScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: ScopePreferencesStoreProtocol
 
+    /// Returns the stored preferences for `scope`, or a default snapshot if none exists.
     func preferences(for scope: String) -> ScopePreferences {
         store[scope] ?? ScopePreferences()
     }
 
+    /// Records the write and updates the in-memory store.
     func setPreferences(_ prefs: ScopePreferences, for scope: String) {
         store[scope] = prefs
         writeLog.append((scope: scope, prefs: prefs))
     }
 
+    /// Returns the alias stored for `scope`, or the raw scope string if none exists.
     func displayName(for scope: String) -> String {
         store[scope]?.alias ?? scope
     }
 
+    /// Removes the stored preferences for `scope`.
     func removePreferences(for scope: String) {
         store.removeValue(forKey: scope)
     }
@@ -87,8 +91,6 @@ struct ScopeEditSheetTests {
     @Test("confirmSave persists all fields in a single write")
     func confirmSavePersistsAllFields() {
         let fake = FakeScopePreferencesStore()
-        // Argument order matches ScopePreferences struct definition order:
-        // alias, failureHookEnabled, failureHookCommand, localRepoPath, failureHookBranch
         let prefs = ScopePreferences(
             alias: "CI Org",
             failureHookEnabled: true,

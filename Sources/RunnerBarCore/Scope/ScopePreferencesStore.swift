@@ -195,19 +195,21 @@ extension ScopePreferencesStore {
     @MainActor
     public final class Live: ScopePreferencesStoreProtocol {
 
+        /// The module-wide shared instance.
         public static let shared = Live()
         private init() {}
 
+        /// Returns a full `ScopePreferences` snapshot for the given scope.
         public func preferences(for scope: String) -> ScopePreferences {
             ScopePreferences(
-                alias:              ScopePreferencesStore.alias(for: scope),
-                pollingInterval:    ScopePreferencesStore.pollingInterval(for: scope),
-                notifyOnSuccess:    ScopePreferencesStore.notifyOnSuccess(for: scope),
-                notifyOnFailure:    ScopePreferencesStore.notifyOnFailure(for: scope),
+                alias: ScopePreferencesStore.alias(for: scope),
+                pollingInterval: ScopePreferencesStore.pollingInterval(for: scope),
+                notifyOnSuccess: ScopePreferencesStore.notifyOnSuccess(for: scope),
+                notifyOnFailure: ScopePreferencesStore.notifyOnFailure(for: scope),
                 failureHookEnabled: ScopePreferencesStore.failureHookEnabled(for: scope),
                 failureHookCommand: ScopePreferencesStore.failureHookCommand(for: scope),
-                localRepoPath:      ScopePreferencesStore.localRepoPath(for: scope),
-                failureHookBranch:  ScopePreferencesStore.failureHookBranch(for: scope)
+                localRepoPath: ScopePreferencesStore.localRepoPath(for: scope),
+                failureHookBranch: ScopePreferencesStore.failureHookBranch(for: scope)
             )
         }
 
@@ -226,10 +228,12 @@ extension ScopePreferencesStore {
             ScopePreferencesStore.setFailureHookBranch(prefs.failureHookBranch, for: scope)
         }
 
+        /// Returns the display name (alias if set, otherwise the raw scope string).
         public func displayName(for scope: String) -> String {
             ScopePreferencesStore.displayName(for: scope)
         }
 
+        /// Removes all persisted preference keys for the given scope.
         public func removePreferences(for scope: String) {
             ScopePreferencesStore.cleanUp(scope: scope)
         }

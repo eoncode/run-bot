@@ -27,10 +27,10 @@ enum FailureHookRunner {
     static let defaultCommand = FailureHookRunnerUseCase.defaultCommand
 
     /// Forwards to `FailureHookRunnerUseCase` wired with production dependencies.
-    /// `async` because `fireIfNeeded` is now a structured async call — callers
-    /// must provide a Task scope (see `RunnerStore+PollBridge`).
-    /// `sending` removed: no `Task.detached` boundary crossing, `WorkflowActionGroup`
-    /// is `Sendable` so `MainActor.run` hops inside the use-case are safe without it.
+    /// `@MainActor` because `ScopePreferencesStore.Live.shared` is a `@MainActor`-isolated
+    /// property — accessing it requires being on the main actor.
+    /// Callers are responsible for providing a Task scope (see `RunnerStore+PollBridge`).
+    @MainActor
     static func fireIfNeeded(
         group: WorkflowActionGroup,
         scope: String,
