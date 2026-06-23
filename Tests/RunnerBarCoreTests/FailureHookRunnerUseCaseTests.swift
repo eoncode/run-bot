@@ -94,6 +94,22 @@ struct FailureHookRunnerUseCaseTests {
         #expect(cmd == "cd '/Users/o'\\''brien/code'")
     }
 
+    /// A single-quote inside `$WORKFLOW_NAME` is correctly escaped.
+    ///
+    /// Workflow names are user-controlled on GitHub and represent the highest-risk
+    /// shell-injection surface among the resolved tokens. This test pins the escaping
+    /// contract: a name like `"CI: O'Brien's job"` must produce `O'\''Brien'\''s job`
+    /// so it is safe to embed between single quotes in the command template.
+    @Test func resolveTokens_singleQuoteInWorkflowName_isEscaped() {
+        let cmd = FailureHookRunnerUseCase.resolveTokens(
+            "echo '$WORKFLOW_NAME'",
+            group: .fixture(workflowName: "CI: O'Brien's job"),
+            scope: "owner/repo",
+            jobs: []
+        )
+        #expect(cmd == "echo 'CI: O'\\''Brien'\\''s job'")
+    }
+
     /// After resolution, none of the 11 placeholder tokens remain in the output.
     ///
     /// Covers both shell-escaped tokens ($LOCAL_PATH, $SCOPE, $BRANCH, $COMMIT_SHA,
