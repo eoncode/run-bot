@@ -43,6 +43,9 @@ struct SettingsView: View {
     /// OAuth service injected from `AppDelegate`.
     /// Typed to protocol so tests can supply a stub without the live singleton.
     var oauthService: any OAuthServiceProtocol
+    /// Runner lifecycle service injected from `AppDelegate` and forwarded into `LocalRunnersView`.
+    /// Typed to protocol so tests can supply a stub without spawning real `svc.sh` processes (P7).
+    var lifecycleService: any RunnerLifecycleServiceProtocol = RunnerLifecycleService()
 
     // MARK: - Observed stores
     // These singleton preference stores are `@Observable` types. The view keeps
@@ -100,7 +103,8 @@ struct SettingsView: View {
                     onBack: { showLocalRunners = false },
                     isAuthenticated: isOAuthAuthenticated || isCLIAuthenticated,
                     store: store,
-                    localRunnerStore: localRunnerStore
+                    localRunnerStore: localRunnerStore,
+                    lifecycleService: lifecycleService
                 )
             } else if showScopes {
                 ScopesView(onBack: { showScopes = false })
