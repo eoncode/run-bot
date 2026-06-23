@@ -64,7 +64,11 @@ extension RunnerStore {
                 self.scopeFromActionGroup(group)
             },
             fireFailureHook: { group, scope in
-                FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
+                // PollResultBuilder.buildGroupState (and freezeVanishedGroups) already
+                // `await` this closure directly — no Task wrapper needed or correct here.
+                // The hook runs inline on the cooperative thread pool as part of the
+                // structured async chain that buildGroupState owns.
+                await FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
             },
             enrichJobs: { jobs in
                 self.enrichGroupJobs(jobs, jobCache: jobCache)
