@@ -29,7 +29,24 @@ extension AppDelegate {
         signOutTask = Task { [weak self] in
             for await _ in OAuthService.shared.makeSignOutStream() {
                 log("AppDelegate › didSignOut — restarting poll loop for env-token fallback")
-                await self?.runnerStore.start()
+                // Two explicit bindings keep nil-self and nil-store distinguishable in
+                // logs, and ensure `self` is retained for the full loop iteration.
+                // `self?.runnerStore` would conflate both nil paths into one log line
+                // and leave `self` unbound for any future code added after `await store.start()`.
+                //
+                // `return` vs `continue` is deliberate:
+                // - `return` for nil self: AppDelegate is gone, the entire Task is meaningless.
+                // - `continue` for nil store: AppDelegate is alive; a future sign-out may find
+                //   runnerStore set. Keep the stream open and try again on the next event.
+                guard let self else {
+                    log("AppDelegate › didSignOut — ⚠️ AppDelegate deallocated; skipping poll loop restart")
+                    return
+                }
+                guard let store = self.runnerStore else {
+                    log("AppDelegate › didSignOut — ⚠️ runnerStore is nil at sign-out time; skipping start()")
+                    continue
+                }
+                await store.start()
             }
         }
     }
