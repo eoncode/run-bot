@@ -88,7 +88,7 @@ actor RunnerProxyStore: RunnerProxyStoreProtocol {
 /// Non-throwing: missing files are the normal case and return empty strings.
 /// Non-ENOENT read errors are logged and also produce empty fields — callers
 /// cannot distinguish a read failure from a missing file, which is intentional
-/// for `load`: an unreadable proxy config is treated as “no proxy”.
+/// for `load`: an unreadable proxy config is treated as "no proxy".
 @concurrent
 private func loadProxyFiles(proxyURL: URL, credURL: URL) async -> RunnerProxyConfig {
     let url: String
@@ -103,17 +103,17 @@ private func loadProxyFiles(proxyURL: URL, credURL: URL) async -> RunnerProxyCon
     }
 
     var user = ""
-    var password = ""
+    var credential = ""
     do {
         let credContent = try String(contentsOf: credURL, encoding: .utf8)
-        (user, password) = parseCredentialLines(credContent)
+        (user, credential) = parseCredentialLines(credContent)
     } catch let err as NSError where err.code == NSFileNoSuchFileError {
         // Missing credentials file is expected — most runners have no proxy.
     } catch {
         log("RunnerProxyStore › .proxycredentials read error (using empty): \(error)")
     }
 
-    return RunnerProxyConfig(url: url, user: user, password: password)
+    return RunnerProxyConfig(url: url, user: user, password: credential)
 }
 
 /// Writes (or removes) `.proxy` and `.proxycredentials` to disk.
