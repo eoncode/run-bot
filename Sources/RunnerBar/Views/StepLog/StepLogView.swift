@@ -226,13 +226,24 @@ struct StepLogView: View {
     /// `htmlUrl` is absent or malformed — preserving the #1106 spec intent so single-repo
     /// setups continue to work even if the job URL is temporarily unavailable.
     ///
-    /// - Note: `guard !Task.isCancelled` below guards the `@State` writes only. It does
-    ///   not cancel the underlying network I/O inside `fetchStepLog` — that function does
-    ///   not yet cooperate with structured cancellation internally. The full network cost
-    ///   is therefore still paid on fast back-navigation; the guard merely prevents stale
-    ///   state from being committed. TODO: make `fetchStepLog` cancellation-cooperative.
+    /// ## Known cancellation limitation
+    ///
+    /// `loadTask?.cancel()` signals cooperative cancellation but does NOT abort the
+    /// underlying network I/O inside `fetchStepLog`. Because `fetchStepLog` does not
+    /// itself check `Task.isCancelled` at suspension points, the network call runs to
+    /// completion regardless. The `guard !Task.isCancelled` below therefore does NOT
+    /// prevent a previous task’s result from being committed if the task was cancelled
+    /// and then re-checked before Swift’s cooperative cancellation machinery fires —
+    /// it merely reduces the window, not closes it.
+    ///
+    /// Concretely: on fast back → forward navigation, `loadLog()` cancels the old handle
+    /// and stores a new one, but the old `Task` is still alive. Its `Task.isCancelled`
+    /// may still be `false` at the `guard` site, so it can write stale log content.
+    ///
+    /// TODO: make `fetchStepLog` cancellation-cooperative (check `Task.isCancelled` after
+    /// each URLSession suspension point) to fully close this race.
     private func loadLog() {
-        loadTask?.cancel() // Cancel any previous in-flight fetch before re-spawning.
+        loadTask?.cancel() // Signals cancellation; does NOT abort in-flight network I/O.
         isLoading = true
         let jobID = job.id
         let stepNum = step.id
@@ -243,11 +254,12 @@ struct StepLogView: View {
             return scopeStore.activeScopes.first(where: { $0.contains("/") }) ?? ""
         }()
         // ✅ Plain Task inherits @MainActor context from the view.
-        // ✅ Handle stored so onDisappear can cancel on fast back-navigation (P9).
-        // ❌ Task(name:priority:) does NOT exist in Swift Concurrency — use Task(priority:).
+        // ✅ Handle stored so onDisappear can signal cancellation (P9).
+        // ⚠️ See doc above: guard !Task.isCancelled reduces but does NOT close the
+        //   stale-write race — fetchStepLog must cooperate with cancellation to fully fix.
         loadTask = Task(priority: .userInitiated) {
             let text = await fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
-            // Guards @State writes only — network cost already paid (see doc above).
+            // Reduces (but does not close) the stale-write window — see loadLog() doc.
             guard !Task.isCancelled else { return }
             logText = text ?? ""
             isLoading = false
