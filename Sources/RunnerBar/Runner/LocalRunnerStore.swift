@@ -233,6 +233,13 @@ actor LocalRunnerStore {
     // MARK: - Refresh
 
     /// Fire-and-forget refresh. Spawns a Task and returns immediately.
+    ///
+    /// Use this from views and on-demand callers (e.g. SettingsView lifecycle actions)
+    /// that do not need to wait for completion.
+    ///
+    /// At app startup, prefer `refreshAsync()` so that `RunnerStore.start()` is only
+    /// called after `runners` is fully populated — ensuring cycle-1 `installPathMap`
+    /// is never empty and metrics appear on first runner appearance.
     func refresh() {
         log("LocalRunnerStore › refresh() — fire-and-forget wrapper")
         refreshTask?.cancel()
@@ -243,11 +250,18 @@ actor LocalRunnerStore {
 
     /// Awaitable refresh. Suspends until disk hydration + launchctl + GitHub enrichment
     /// completes, then returns.
+    ///
+    /// Use ONLY at app startup in `AppDelegate+PanelSetup` so that `RunnerStore.start()`
+    /// is guaranteed to have a populated `runners` array before its first `fetch()` fires.
     func refreshAsync() async {
         await performRefresh()
     }
 
     /// Shared body for both `refresh()` and `refreshAsync()`.
+    /// Hydrates runners from disk, marks live launchctl services, then enriches via GitHub API.
+    ///
+    /// IMPORTANT: This is the ONLY way `runners` gets populated.
+    /// `init()` only loads `runnerIndex` (name→path). `runners` stays `[]` until this runs.
     private func performRefresh() async {
         log("LocalRunnerStore › performRefresh() — isScanning=\(isScanning) runnerIndex.count=\(index.runnerIndex.count) runners.count=\(runners.count)")
         guard !isScanning else {
@@ -259,6 +273,7 @@ actor LocalRunnerStore {
         let currentIndex = index.runnerIndex
         log("LocalRunnerStore › performRefresh() — starting with index=\(currentIndex.keys.sorted())")
 
+        // 1. Hydrate from installPath/.runner JSON
         var hydrated: [RunnerModel] = currentIndex.compactMap { runnerModelFromIndex(name: $0.key, installPath: $0.value) }
         log("LocalRunnerStore › performRefresh() hydrated \(hydrated.count) runner(s) from disk (index had \(currentIndex.count) entries)")
         if hydrated.count != currentIndex.count {
@@ -267,6 +282,7 @@ actor LocalRunnerStore {
             log("LocalRunnerStore › ⚠️ performRefresh() — \(currentIndex.count - hydrated.count) runner(s) failed to hydrate (missing .runner JSON): \(missing)")
         }
 
+        // 2. Mark live services via launchctl.
         let liveLabels = await scanLiveServices()
         log("LocalRunnerStore › performRefresh() — launchctl liveLabels.count=\(liveLabels.count): \(liveLabels)")
         hydrated = hydrated.map { runner in
@@ -277,6 +293,9 @@ actor LocalRunnerStore {
             return runner.copying(isRunning: live)
         }
 
+        // 3. Enrich via GitHub API (concurrent scope fetches).
+        // Uses the injected enricher — pass RunnerStatusEnricher() in production,
+        // or a StubEnricher in unit tests (Phase 6b, #1326).
         log("LocalRunnerStore › performRefresh() — starting GitHub enrichment for \(hydrated.count) runner(s)")
         let enriched = await enricher.enrich(runners: hydrated)
         log("LocalRunnerStore › performRefresh() — GitHub enrichment complete, \(enriched.count) runner(s) enriched")
@@ -288,6 +307,15 @@ actor LocalRunnerStore {
     }
 
     /// Applies enriched runner data, preserves in-flight metrics, pushes to viewModel.
+    ///
+    /// Metrics preservation priority (fixes org-runner metrics #1209 / #1192):
+    ///   1. runner.apiId  match (org runners: GitHub REST API id ≠ local agentId)
+    ///   2. runner.agentId match (repo runners)
+    ///   3. runner.runnerName match (last resort)
+    ///
+    /// `isLocalScanning` is reset to `false` via `await MainActor.run { }` directly
+    /// (not via a fire-and-forget Task) so that a concurrent scan cannot set it back
+    /// to `true` between `isScanning = false` and the main-actor push.
     private func applyRefreshResults(_ enriched: [RunnerModel]) async {
         log("LocalRunnerStore › applyRefreshResults — enriched.count=\(enriched.count), current runners.count=\(runners.count)")
 
@@ -296,9 +324,9 @@ actor LocalRunnerStore {
         var metricsByName: [String: RunnerMetrics] = [:]
         for runner in runners {
             guard runner.isBusy, let preservedMetrics = runner.metrics else { continue }
-            if let id = runner.apiId { metricsByApiId[id] = preservedMetrics }
-            if let id = runner.agentId { metricsByAgentId[id] = preservedMetrics }
-            metricsByName[runner.runnerName] = preservedMetrics
+            if let id = runner.apiId { metricsByApiId[id] = preservedMetrics }  // Priority 1: GitHub REST API id
+            if let id = runner.agentId { metricsByAgentId[id] = preservedMetrics }  // Priority 2: local AgentId
+            metricsByName[runner.runnerName] = preservedMetrics  // Priority 3: name (last resort)
         }
         #if DEBUG
         log("LocalRunnerStore › applyRefreshResults — preserved metrics: byApiId=\(metricsByApiId.keys.sorted()) byAgentId=\(metricsByAgentId.keys.sorted()) byName=\(metricsByName.keys.sorted())")
@@ -331,6 +359,8 @@ actor LocalRunnerStore {
         runners = preserved.sorted { $0.runnerName < $1.runnerName }
         isScanning = false
         log("LocalRunnerStore › applyRefreshResults — DONE. runners.count=\(runners.count) isScanning=false")
+        // Await directly — not fire-and-forget — so isLocalScanning cannot be
+        // reset to false by a stale Task after a second scan has already started.
         let snapshot = runners
         await MainActor.run { [viewModel] in
             viewModel.localRunners = snapshot
@@ -340,7 +370,13 @@ actor LocalRunnerStore {
 
     // MARK: - Push helpers
 
-    /// Pushes the current `runners` snapshot to the view model on the main actor.
+    /// Pushes the current `runners` snapshot to `viewModel.localRunners` on the main actor.
+    /// Called after every optimistic mutation so views update immediately.
+    ///
+    /// `async` + direct `await MainActor.run` (not a fire-and-forget Task) guarantees
+    /// that two rapid mutations deliver their snapshots in actor-serialised order.
+    /// A detached Task would allow a later mutation's push to arrive before an earlier
+    /// one, silently reverting the UI (e.g. Stop → Remove race).
     private func pushRunners() async {
         let snapshot = runners
         await MainActor.run { [viewModel] in viewModel.localRunners = snapshot }
