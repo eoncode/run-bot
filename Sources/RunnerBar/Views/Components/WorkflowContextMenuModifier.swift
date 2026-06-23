@@ -98,15 +98,30 @@ private struct WorkflowContextMenuModifier: ViewModifier {
 
 // MARK: - JobContextMenuModifier
 /// `ViewModifier` that attaches a job-level right-click context menu to a `JobRowCard`.
+///
+/// All mutations are routed through `WorkflowActionsUseCase` and launched as
+/// plain structured `Task { }` values (never `Task.detached`) so they inherit
+/// the `@MainActor` context of the SwiftUI button closure, surface errors
+/// correctly, and are cancellable on view dismissal via `.onDisappear` (P9).
 private struct JobContextMenuModifier: ViewModifier {
     /// The job this menu acts on.
     let job: ActiveJob
     /// The parent workflow action group, used for run-level re-run and cancel actions.
     let group: WorkflowActionGroup
 
-    /// Wraps `content` with a right-click context menu containing job-level actions.
+    /// Use-case that owns all transport mutations (P7, P8).
+    private let actions = WorkflowActionsUseCase()
+
+    /// Tracks the most recently launched mutation task so it can be cancelled
+    /// when the view disappears (P9 — structured lifetime).
+    @State private var currentTask: Task<Void, Never>?
+
+    /// Wraps `content` with a right-click context menu and cancels any
+    /// in-flight mutation task when the view disappears.
     func body(content: Content) -> some View {
-        content.contextMenu { menuItems }
+        content
+            .contextMenu { menuItems }
+            .onDisappear { currentTask?.cancel() }
     }
 
     /// Context menu items: re-run job, cancel, copy log, open on GitHub.
@@ -114,38 +129,37 @@ private struct JobContextMenuModifier: ViewModifier {
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
         let isLive = job.status == "in_progress"
+        let scope = group.repo
 
         // Re-run job
         Button {
-            let scope = group.repo
             let jobID = job.id
-            Task.detached(priority: .userInitiated) {
-                await ghPost("repos/\(scope)/actions/jobs/\(jobID)/rerun")
-            }
+            currentTask = Task { await actions.rerunJob(jobID: jobID, scope: scope) }
         } label: { Label("Re-run Job", systemImage: "arrow.counterclockwise") }
         .disabled(!isConcluded)
 
         // Cancel
         Button {
-            let scope = group.repo
             let runIDs = group.runs.map { $0.id }
-            Task.detached(priority: .userInitiated) {
-                await withTaskGroup(of: Void.self) { taskGroup in
-                    for id in runIDs { taskGroup.addTask { await cancelRun(runID: id, scope: scope) } }
-                }
-            }
+            currentTask = Task { await actions.cancel(runIDs: runIDs, scope: scope) }
         } label: { Label("Cancel", systemImage: "xmark.circle") }
         .disabled(!isLive)
+
         Divider()
+
+        // Copy log
         Button {
             let capturedJob = job
-            let scope = group.repo
-            Task.detached(priority: .userInitiated) {
-                guard let text = await LogFetcher().fetchJobLog(jobID: capturedJob.id, scope: scope), !text.isEmpty else { return }
+            currentTask = Task {
+                guard let text = await LogFetcher().fetchJobLog(jobID: capturedJob.id, scope: scope),
+                      !text.isEmpty else { return }
                 await copyToPasteboard(text)
             }
         } label: { Label("Copy Log", systemImage: "doc.on.doc") }
+
         Divider()
+
+        // Open on GitHub — synchronous, no Task needed
         Button {
             guard let htmlUrl = job.htmlUrl, let url = URL(string: htmlUrl) else { return }
             NSWorkspace.shared.open(url)
