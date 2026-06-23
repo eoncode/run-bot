@@ -48,7 +48,8 @@ struct FailureHookRunnerUseCaseTests {
     }
 
     /// All gates pass (hook enabled, group failed, branch matches) → terminal opens exactly once.
-    /// `jobFetcher` is the default no-op stub — no network calls are made in this test.
+    /// `fetchFailedJobs` calls `ghAPI` which returns nil in CI (no token); jobs comes back empty.
+    /// Terminal still opens once because all guards cleared before the network call.
     @Test func fireIfNeeded_allGatesPass_opensTerminalOnce() async {
         let spy = SpyTerminalLauncher()
         let sut = FailureHookRunnerUseCase(

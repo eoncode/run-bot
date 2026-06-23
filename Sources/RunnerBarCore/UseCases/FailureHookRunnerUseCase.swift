@@ -8,15 +8,13 @@ import Foundation
 ///
 /// Fires the per-scope failure-hook terminal command when a `WorkflowActionGroup`
 /// transitions to failure. All external dependencies (`ScopePreferencesStore`,
-/// `TerminalLauncher`, and the network-layer `fetchFailedJobs`) are injected via
-/// protocols/closures so the entire use-case can be unit-tested without hitting
-/// `UserDefaults`, spawning Terminal.app, or making real network calls.
+/// `TerminalLauncher`) are injected via protocols so the entire use-case can be
+/// unit-tested without hitting `UserDefaults` or spawning Terminal.app.
 ///
 /// ## Migration from `FailureHookRunner`
 /// `FailureHookRunner` is now a thin shim that creates this struct with the
-/// production adapters (`DefaultScopePreferencesStore`, `DefaultTerminalLauncher`,
-/// and the concrete `fetchFailedJobs` implementation from `RunnerBar`) and
-/// delegates to `fireIfNeeded`. All business logic lives here.
+/// production adapters (`DefaultScopePreferencesStore`, `DefaultTerminalLauncher`)
+/// and delegates to `fireIfNeeded`. All business logic lives here.
 ///
 /// ## Token resolution contract
 /// ALL tokens are resolved in Swift before the command string is passed to
@@ -41,26 +39,14 @@ public struct FailureHookRunnerUseCase: Sendable {
     public let preferencesStore: any ScopePreferencesStoreProtocol
     /// Opens Terminal.app with the resolved command. Must run on `@MainActor`.
     public let terminalLauncher: any TerminalLauncherProtocol
-    /// Fetches failed job results for a group+scope. Injected so RunnerBarCore
-    /// has no direct dependency on `ghAPI`, `LogFetcher`, or `log` (all in RunnerBar).
-    /// Production wiring supplies the real network implementation; tests use a stub.
-    public let jobFetcher: @Sendable (WorkflowActionGroup, String) async -> [FailedJobResult]
 
     /// Creates a use-case wired with the given dependencies.
-    /// - Parameters:
-    ///   - preferencesStore: Reads per-scope hook preferences.
-    ///   - terminalLauncher: Opens Terminal.app with the resolved command.
-    ///   - jobFetcher: Async closure that fetches `FailedJobResult`s for a group/scope.
-    ///     Defaults to a no-op that returns `[]` so callers that don't care about
-    ///     `$FAILURE_LOG` content can omit the parameter.
     public init(
         preferencesStore: any ScopePreferencesStoreProtocol,
-        terminalLauncher: any TerminalLauncherProtocol,
-        jobFetcher: @escaping @Sendable (WorkflowActionGroup, String) async -> [FailedJobResult] = { _, _ in [] }
+        terminalLauncher: any TerminalLauncherProtocol
     ) {
         self.preferencesStore = preferencesStore
         self.terminalLauncher = terminalLauncher
-        self.jobFetcher = jobFetcher
     }
 
     // MARK: - Public API
@@ -70,30 +56,64 @@ public struct FailureHookRunnerUseCase: Sendable {
     /// tokens, then fires the Terminal command on `@MainActor`.
     ///
     /// Annotated `@concurrent` per R8/R12: runs on the cooperative thread pool,
-    /// independent of the caller's isolation domain.
+    /// independent of the caller's isolation domain. This replaces the prior
+    /// implicit `nonisolated` behaviour and makes the intent explicit at the
+    /// declaration site.
+    ///
+    /// `group` is not annotated `sending` because it no longer crosses a `Task.detached`
+    /// boundary — `fireIfNeeded` is `async` and called inline by `PollResultBuilder`.
+    /// `WorkflowActionGroup` is `Sendable`, so `MainActor.run` hops inside this method
+    /// are safe without `sending`.
+    ///
+    /// - Important: If `WorkflowActionGroup` ever drops its `Sendable` conformance,
+    ///   restore `sending` on `group` here and in `FailureHookRunner.fireIfNeeded` to
+    ///   re-establish the ownership-transfer contract across the async boundary.
     @concurrent
     public func fireIfNeeded(
         group: WorkflowActionGroup,
         scope: String,
         callsite: String = "unknown"
     ) async {
+        // swiftlint:disable:next line_length
+        log("FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
         let hookEnabled = preferencesStore.failureHookEnabled(for: scope)
-        guard hookEnabled else { return }
+        log("FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(hookEnabled)")
+        guard hookEnabled else {
+            log("FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)")
+            return
+        }
         // Branch filter — skip if a branch filter is set and doesn't match.
         let filterBranch = preferencesStore.failureHookBranch(for: scope)
         if let filter = filterBranch {
             let groupBranch = group.headBranch ?? ""
-            guard groupBranch == filter else { return }
+            guard groupBranch == filter else {
+                log("FailureHookRunnerUseCase SKIP -- branch filter '\(filter)' != group branch '\(groupBranch)'")
+                return
+            }
+            log("FailureHookRunnerUseCase branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
         }
         let storedCommand = preferencesStore.failureHookCommand(for: scope)
+        log("FailureHookRunnerUseCase storedCommand for scope=\(scope) -> \(storedCommand ?? "<nil -- will use defaultCommand>")")
         let command = storedCommand ?? FailureHookRunnerUseCase.defaultCommand
+        log("FailureHookRunnerUseCase resolved command (first 200): \(command.prefix(200))")
         let failure = Self.isFailure(group: group)
-        guard failure else { return }
-        let jobs = await jobFetcher(group, scope)
+        let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(separator: ", ")
+        log("FailureHookRunnerUseCase isFailure=\(failure) for groupID=\(group.id) runs=\(runSummary)")
+        guard failure else {
+            log("FailureHookRunnerUseCase SKIP -- group is not a failure, groupID=\(group.id)")
+            return
+        }
+        log("FailureHookRunnerUseCase ALL CHECKS PASSED -- fetching failed jobs for scope=\(scope) groupID=\(group.id)")
+        let jobs = await Self.fetchFailedJobs(group: group, scope: scope)
+        log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
         let localPath = preferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
+        log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))")
+        log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)")
+        // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
         await MainActor.run {
             terminalLauncher.open(command: resolved)
+            log("FailureHookRunnerUseCase main actor -- terminalLauncher.open returned for groupID=\(group.id)")
         }
     }
 
@@ -113,6 +133,9 @@ public struct FailureHookRunnerUseCase: Sendable {
     /// - `$BRANCH_LINK`    — deep link to the branch on GitHub (percent-encoded)
     /// - `$REPO_LINK`      — deep link to the repository root on GitHub
     /// - `$FAILURE_LOG`    — raw log tail (last 150 lines) of the first failed job
+    ///
+    /// `localRepoPath` is read from the injected `preferencesStore` at call time
+    /// (not stored on the struct) so test overrides always take effect.
     internal static func resolveTokens(
         _ command: String,
         group: WorkflowActionGroup,
@@ -124,6 +147,9 @@ public struct FailureHookRunnerUseCase: Sendable {
         let sha = group.headSha
         let baseURL = "https://github.com/\(scope)"
         let failedRun = group.runs.first(where: { $0.conclusion?.isHookConclusion == true })
+        // `failedRun.id` is an `Int` from the GitHub API — always a pure decimal string.
+        // The `group.id` fallback is also numeric: it is `String(runs.map { $0.id }.max() ?? 0)`
+        // (see `WorkflowActionGroup.id`), so the fallback path is equally shell-safe.
         let failedRunID = failedRun.map { String($0.id) } ?? group.id
         let runLink = failedRun?.htmlUrl ?? "\(baseURL)/actions/runs/\(failedRunID)"
         let workflowName = failedRun?.name ?? group.runs.first?.name ?? ""
@@ -133,6 +159,8 @@ public struct FailureHookRunnerUseCase: Sendable {
         let repoLink = baseURL
         let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
         let escapedLog = singleQuoteEscape(logContent)
+        // swiftlint:disable:next line_length
+        log("FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)")
         return command
             .replacingOccurrences(of: "$LOCAL_PATH", with: singleQuoteEscape(localRepoPath))
             .replacingOccurrences(of: "$SCOPE", with: singleQuoteEscape(scope))
@@ -189,27 +217,14 @@ public struct FailureHookRunnerUseCase: Sendable {
         return parts.joined(separator: "\n\n")
     }
 
-    // MARK: - Public types
+    // MARK: - Internal types
 
     /// The result of fetching a single failed job, including its raw log tail.
-    ///
-    /// Returned by the `jobFetcher` closure injected into `FailureHookRunnerUseCase`.
-    /// The production implementation in `FailureHookRunner` fetches data from the
-    /// GitHub Actions API; test doubles return synthesised values.
-    public struct FailedJobResult {
+    internal struct FailedJobResult {
         /// The failed job payload returned by the GitHub Actions jobs API.
-        public let job: JobPayload
+        let job: JobPayload
         /// The last 150 lines of the job log, or `nil` if the log was unavailable.
-        public let logTail: String?
-
-        /// Creates a `FailedJobResult` with the given job payload and optional log tail.
-        /// - Parameters:
-        ///   - job: The failed `JobPayload` from the GitHub Actions jobs API.
-        ///   - logTail: The last 150 lines of the job log, or `nil` if unavailable.
-        public init(job: JobPayload, logTail: String?) {
-            self.job = job
-            self.logTail = logTail
-        }
+        let logTail: String?
     }
 
     // MARK: - Private helpers
@@ -217,6 +232,51 @@ public struct FailureHookRunnerUseCase: Sendable {
     /// Returns `true` if any run in `group` has a hook-triggering failure conclusion.
     private static func isFailure(group: WorkflowActionGroup) -> Bool {
         group.runs.contains { $0.conclusion?.isHookConclusion == true }
+    }
+
+    /// Fetches the failed jobs (and their log tails) for every failure-triggering run in `group`.
+    private static func fetchFailedJobs(
+        group: WorkflowActionGroup,
+        scope: String
+    ) async -> [FailedJobResult] {
+        var result: [FailedJobResult] = []
+        var seenIDs = Set<Int>()
+        for run in group.runs {
+            guard run.conclusion?.isHookConclusion == true else {
+                log("FailureHookRunnerUseCase fetchFailedJobs -- run \(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
+                continue
+            }
+            log("FailureHookRunnerUseCase fetchFailedJobs -- fetching jobs for failed run=\(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil")")
+            guard let data = await ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=\(GitHubConstants.maxPageSize)") else {
+                log("FailureHookRunnerUseCase fetchFailedJobs -- ghAPI returned nil for run=\(run.id)")
+                continue
+            }
+            guard let resp = try? JSONDecoder().decode(JobsResponse.self, from: data) else {
+                log("FailureHookRunnerUseCase fetchFailedJobs -- JSON decode failed for run=\(run.id) dataBytes=\(data.count)")
+                continue
+            }
+            log("FailureHookRunnerUseCase fetchFailedJobs -- run=\(run.id) decoded \(resp.jobs.count) jobs")
+            for job in resp.jobs where seenIDs.insert(job.id).inserted {
+                guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else {
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
+                    continue
+                }
+                log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)")
+                let tail: String?
+                if let fullLog = await LogFetcher().fetchJobLog(jobID: job.id, scope: scope) {
+                    let lines = fullLog.components(separatedBy: "\n")
+                    let kept = lines.suffix(150).joined(separator: "\n")
+                    tail = kept
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) log lines=\(lines.count) kept last 150")
+                } else {
+                    tail = nil
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) fetchJobLog returned nil")
+                }
+                result.append(FailedJobResult(job: job, logTail: tail))
+            }
+        }
+        log("FailureHookRunnerUseCase fetchFailedJobs -- total \(result.count) unique failed jobs returned")
+        return result
     }
 
     /// Escapes `str` so it is safe to embed between single-quotes in a shell command.
