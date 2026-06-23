@@ -28,8 +28,8 @@ import RunnerBarCore
 /// `nonisolated` — it runs on the cooperative thread pool. Callers are responsible
 /// for providing a structured Task scope (see `RunnerStore+PollBridge`).
 /// `TerminalLauncherProtocol.open(command:)` is dispatched via `MainActor.run`.
-/// `preferencesStore` is `@MainActor`-isolated; reads are also dispatched via
-/// `MainActor.run` inside `fireIfNeeded`.
+/// `preferencesStore` conforms to `FailureHookScopePreferencesProtocol`, which is
+/// `Sendable`, so its methods are safe to call from any isolation context.
 struct FailureHookRunnerUseCase: Sendable {
 
     /// Default failure-hook command used when the user has not configured a
@@ -40,10 +40,10 @@ struct FailureHookRunnerUseCase: Sendable {
     // MARK: Dependencies
 
     /// Reads per-scope failure-hook preferences from storage.
-    /// `nonisolated(unsafe)` because `ScopePreferencesStoreProtocol` is `@MainActor`-isolated
-    /// and therefore not `Sendable`; all reads are performed inside `MainActor.run` blocks,
-    /// so the value is never accessed off the main actor.
-    nonisolated(unsafe) let preferencesStore: any ScopePreferencesStoreProtocol
+    /// Typed as `FailureHookScopePreferencesProtocol` (not `ScopePreferencesStoreProtocol`)
+    /// because this layer only needs the four hook-related reads, and
+    /// `FailureHookScopePreferencesProtocol` is `Sendable` — no actor hop required.
+    let preferencesStore: any FailureHookScopePreferencesProtocol
     /// Opens Terminal.app with the resolved command. Must run on `@MainActor`.
     let terminalLauncher: any TerminalLauncherProtocol
 
@@ -68,16 +68,14 @@ struct FailureHookRunnerUseCase: Sendable {
     ) async {
         // swiftlint:disable:next line_length
         log("FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
-        // Read the full preferences snapshot on the main actor once, then access
-        // individual fields from the Sendable `ScopePreferences` value type.
-        let prefs = await MainActor.run { preferencesStore.preferences(for: scope) }
-        log("FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(prefs.failureHookEnabled)")
-        guard prefs.failureHookEnabled else {
+        let hookEnabled = preferencesStore.failureHookEnabled(for: scope)
+        log("FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(hookEnabled)")
+        guard hookEnabled else {
             log("FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)")
             return
         }
         // Branch filter — skip if a branch filter is set and doesn't match.
-        if let filter = prefs.failureHookBranch {
+        if let filter = preferencesStore.failureHookBranch(for: scope) {
             let groupBranch = group.headBranch ?? ""
             guard groupBranch == filter else {
                 log("FailureHookRunnerUseCase SKIP -- branch filter '\(filter)' != group branch '\(groupBranch)'")
@@ -85,7 +83,7 @@ struct FailureHookRunnerUseCase: Sendable {
             }
             log("FailureHookRunnerUseCase branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
         }
-        let storedCommand = prefs.failureHookCommand
+        let storedCommand = preferencesStore.failureHookCommand(for: scope)
         log("FailureHookRunnerUseCase storedCommand for scope=\(scope) -> \(storedCommand ?? "<nil -- will use defaultCommand>")")
         let command = storedCommand ?? FailureHookRunnerUseCase.defaultCommand
         log("FailureHookRunnerUseCase resolved command (first 200): \(command.prefix(200))")
@@ -99,7 +97,7 @@ struct FailureHookRunnerUseCase: Sendable {
         log("FailureHookRunnerUseCase ALL CHECKS PASSED -- fetching failed jobs for scope=\(scope) groupID=\(group.id)")
         let jobs = await Self.fetchFailedJobs(group: group, scope: scope)
         log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
-        let localPath = prefs.localRepoPath ?? ""
+        let localPath = preferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
         log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))")
         log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)")
@@ -129,8 +127,8 @@ struct FailureHookRunnerUseCase: Sendable {
     /// - `$REPO_LINK`      — deep link to the repository root on GitHub
     /// - `$FAILURE_LOG`    — raw log tail (last 150 lines) of the first failed job
     ///
-    /// `localRepoPath` is passed in from the `ScopePreferences` snapshot read by
-    /// `fireIfNeeded` so test overrides always take effect.
+    /// `localRepoPath` is read from the injected `preferencesStore` at call time
+    /// (not stored on the struct) so test overrides always take effect.
     internal static func resolveTokens(
         _ command: String,
         group: WorkflowActionGroup,
