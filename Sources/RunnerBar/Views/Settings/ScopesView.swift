@@ -21,6 +21,9 @@ struct ScopesView: View {
 
     /// Callback invoked when the user taps the back button.
     let onBack: () -> Void
+    /// Injected preferences store. Defaults to the shared live instance in
+    /// production; swap for a fake in tests.
+    private let scopePrefs: any ScopePreferencesStoreProtocol
 
     // MARK: - Observed stores
 
@@ -33,6 +36,19 @@ struct ScopesView: View {
     @State private var showAddScopeSheet = false
     /// Non-nil while `ScopeEditSheet` is presented for this scope entry.
     @State private var selectedScopeEntry: ScopeEntry?
+    /// Pre-fetched preferences snapshot for `selectedScopeEntry`.
+    /// Populated just before the sheet opens; cleared on dismiss.
+    @State private var selectedInitialPrefs: ScopePreferences?
+
+    // MARK: - Init
+
+    init(
+        onBack: @escaping () -> Void,
+        scopePrefs: any ScopePreferencesStoreProtocol = ScopePreferencesStore.Live.shared
+    ) {
+        self.onBack = onBack
+        self.scopePrefs = scopePrefs
+    }
 
     // MARK: - Body
 
@@ -51,15 +67,25 @@ struct ScopesView: View {
         .sheet(isPresented: $showAddScopeSheet) {
             AddScopeSheet(isPresented: $showAddScopeSheet)
         }
+        // Sheet is driven by selectedScopeEntry; only opens when initialPrefs is
+        // also available (both are set atomically in openEditSheet).
         .sheet(item: $selectedScopeEntry) { entry in
-            // #992: ScopeEditSheet replaces the old nav drill-down.
-            ScopeEditSheet(
-                scopeEntry: entry,
-                isPresented: Binding(
-                    get: { selectedScopeEntry != nil },
-                    set: { if !$0 { selectedScopeEntry = nil } }
+            if let initialPrefs = selectedInitialPrefs {
+                // #992: ScopeEditSheet replaces the old nav drill-down.
+                // #1540: Pass pre-fetched initialPrefs + injected scopePrefs.
+                ScopeEditSheet(
+                    scopeEntry: entry,
+                    initialPrefs: initialPrefs,
+                    isPresented: Binding(
+                        get: { selectedScopeEntry != nil },
+                        set: { if !$0 {
+                            selectedScopeEntry = nil
+                            selectedInitialPrefs = nil
+                        }}
+                    ),
+                    scopePrefs: scopePrefs
                 )
-            )
+            }
         }
     }
 
@@ -130,14 +156,27 @@ struct ScopesView: View {
         }
     }
 
+    // MARK: - Actions
+
+    /// Pre-fetches `ScopePreferences` for `entry`, then opens `ScopeEditSheet`.
+    ///
+    /// Assigning both `selectedInitialPrefs` and `selectedScopeEntry` on the
+    /// main actor before SwiftUI reads `$selectedScopeEntry` ensures the sheet
+    /// always receives a non-nil `initialPrefs` snapshot on first render.
+    private func openEditSheet(for entry: ScopeEntry) {
+        let prefs = scopePrefs.preferences(for: entry.scope)
+        selectedInitialPrefs = prefs
+        selectedScopeEntry = entry
+    }
+
     // MARK: - Scope rows
 
     /// Row view for a single remote scope entry.
     private func scopeRow(_ entry: ScopeEntry) -> some View {
         let isRepo = entry.scope.contains("/")
-        let displayName = ScopePreferencesStore.displayName(for: entry.scope)
+        let displayName = scopePrefs.displayName(for: entry.scope)
         return Button {
-            selectedScopeEntry = entry
+            openEditSheet(for: entry)
         } label: {
             HStack(spacing: 8) {
                 Text(isRepo ? "Repo" : "Org")
@@ -152,7 +191,8 @@ struct ScopesView: View {
                         .font(.system(size: 12))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if ScopePreferencesStore.alias(for: entry.scope) != nil {
+                    // Show the raw scope as a subtitle only when the display name differs.
+                    if displayName != entry.scope {
                         Text(entry.scope)
                             .font(.caption2)
                             .foregroundColor(Color.rbTextTertiary)
