@@ -19,6 +19,17 @@ import SwiftUI
 // RULE 7: RunnerStore self-schedules via its own adaptive timer.
 // RULE 9: displayTick fires every 1 second ALWAYS (no open-state gate).
 //
+// ── TIMER CALLBACK — NO Task { @MainActor in } ──────────────────────────────
+//
+// Timer callbacks fire on the main run loop (scheduledTimer guarantees this)
+// but are NOT automatically bridged into Swift's actor system. Under Swift 6
+// strict concurrency, `Task { @MainActor in }` inside a Timer callback
+// introduces an @isolated(any) overload-resolution ambiguity that causes a
+// build error. We use DispatchQueue.main.async instead — semantically identical
+// (main thread, next run loop), zero concurrency-checker friction.
+//
+// ❌ NEVER revert to Task { @MainActor in } inside Timer callbacks in this file.
+//
 // NSPopover provides its own glass chrome automatically.
 // Do NOT add .background() or NSVisualEffectView at this level.
 /// Root panel view rendered inside the NSPopover.
@@ -158,10 +169,15 @@ struct PanelMainView: View {
     }
 
     /// Starts the 1-second repeating `displayTick` timer. Stops any existing timer first.
+    ///
+    /// Uses DispatchQueue.main.async rather than Task { @MainActor in } to avoid
+    /// Swift 6 strict-concurrency @isolated(any) overload-resolution ambiguity.
     private func startDisplayTickTimer() {
         stopDisplayTickTimer()
-        displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            Task { @MainActor in self.displayTick &+= 1 }
+        displayTickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [self] _ in
+            DispatchQueue.main.async {
+                self.displayTick &+= 1
+            }
         }
     }
 
