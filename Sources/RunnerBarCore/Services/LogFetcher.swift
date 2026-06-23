@@ -18,8 +18,8 @@ private let unzipBinaryPath = "/usr/bin/unzip" // NOSONAR — fixed OS path
 ///
 /// ## Concurrency
 ///
-/// `LogFetcher` is a `Sendable` struct — it holds a transport existential and
-/// an optional `JSONDecoder` (both safe for concurrent use). The public entry
+/// `LogFetcher` is a `Sendable` struct — it holds a transport existential
+/// that is safe for concurrent use. The public entry
 /// points are `async` but do not carry `@concurrent` since they are called from
 /// `Task.detached` contexts (not actor-isolated code paths).
 public struct LogFetcher: Sendable {
