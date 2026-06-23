@@ -34,22 +34,8 @@ final class FakeScopePreferencesStore: ScopePreferencesStoreProtocol, @unchecked
         store[scope]?.alias ?? scope
     }
 
-    // MARK: FailureHookRunnerDependencies conformance
-
-    func failureHookEnabled(for scope: String) -> Bool {
-        store[scope]?.failureHookEnabled ?? false
-    }
-
-    func failureHookCommand(for scope: String) -> String? {
-        store[scope]?.failureHookCommand
-    }
-
-    func failureHookBranch(for scope: String) -> String? {
-        store[scope]?.failureHookBranch
-    }
-
-    func localRepoPath(for scope: String) -> String? {
-        store[scope]?.localRepoPath
+    func removePreferences(for scope: String) {
+        store.removeValue(forKey: scope)
     }
 
     // MARK: Convenience
@@ -82,7 +68,7 @@ struct ScopeEditSheetTests {
     @Test("confirmSave writes exactly once")
     func confirmSaveWritesExactlyOnce() {
         let fake = FakeScopePreferencesStore()
-        let prefs = ScopePreferences(displayName: "My Org", failureHookEnabled: true)
+        let prefs = ScopePreferences(alias: "My Org", failureHookEnabled: true)
         confirmSave(scope: "eoncode", updated: prefs, into: fake)
         #expect(fake.writeLog.count == 1)
     }
@@ -90,7 +76,7 @@ struct ScopeEditSheetTests {
     @Test("confirmSave targets the correct scope")
     func confirmSaveTargetsCorrectScope() {
         let fake = FakeScopePreferencesStore()
-        let prefs = ScopePreferences(displayName: "My Repo")
+        let prefs = ScopePreferences(alias: "My Repo")
         confirmSave(scope: "eoncode/runner-bar", updated: prefs, into: fake)
         #expect(fake.writeLog.first?.scope == "eoncode/runner-bar")
     }
@@ -99,7 +85,7 @@ struct ScopeEditSheetTests {
     func confirmSavePersistsAllFields() {
         let fake = FakeScopePreferencesStore()
         let prefs = ScopePreferences(
-            displayName: "CI Org",
+            alias: "CI Org",
             failureHookEnabled: true,
             failureHookCommand: "./notify.sh",
             failureHookBranch: "main",
@@ -107,7 +93,7 @@ struct ScopeEditSheetTests {
         )
         confirmSave(scope: "acme", updated: prefs, into: fake)
         let written = fake.writeLog[0].prefs
-        #expect(written.displayName == "CI Org")
+        #expect(written.alias == "CI Org")
         #expect(written.failureHookEnabled == true)
         #expect(written.failureHookCommand == "./notify.sh")
         #expect(written.failureHookBranch == "main")
@@ -119,7 +105,7 @@ struct ScopeEditSheetTests {
     @Test("reading preferences does not produce a write")
     func readingDoesNotWrite() {
         let fake = FakeScopePreferencesStore()
-        fake.seed(ScopePreferences(displayName: "Seeded"), for: "acme")
+        fake.seed(ScopePreferences(alias: "Seeded"), for: "acme")
         _ = fake.preferences(for: "acme")
         #expect(fake.writeLog.isEmpty)
     }
@@ -127,10 +113,10 @@ struct ScopeEditSheetTests {
     @Test("confirmSave for one scope does not touch another scope")
     func saveDoesNotCrossContaminateScopes() {
         let fake = FakeScopePreferencesStore()
-        fake.seed(ScopePreferences(displayName: "Original"), for: "other-scope")
-        confirmSave(scope: "my-scope", updated: ScopePreferences(displayName: "New"), into: fake)
+        fake.seed(ScopePreferences(alias: "Original"), for: "other-scope")
+        confirmSave(scope: "my-scope", updated: ScopePreferences(alias: "New"), into: fake)
         let untouched = fake.preferences(for: "other-scope")
-        #expect(untouched.displayName == "Original")
+        #expect(untouched.alias == "Original")
     }
 
     // MARK: Round-trip
@@ -138,19 +124,19 @@ struct ScopeEditSheetTests {
     @Test("preferences(for:) returns the value written by confirmSave")
     func roundTrip() {
         let fake = FakeScopePreferencesStore()
-        let prefs = ScopePreferences(displayName: "Round Trip", failureHookEnabled: false)
+        let prefs = ScopePreferences(alias: "Round Trip", failureHookEnabled: false)
         confirmSave(scope: "rt-scope", updated: prefs, into: fake)
         let readBack = fake.preferences(for: "rt-scope")
-        #expect(readBack.displayName == "Round Trip")
+        #expect(readBack.alias == "Round Trip")
         #expect(readBack.failureHookEnabled == false)
     }
 
     @Test("second confirmSave overwrites the first")
     func secondSaveOverwritesFirst() {
         let fake = FakeScopePreferencesStore()
-        confirmSave(scope: "s", updated: ScopePreferences(displayName: "v1"), into: fake)
-        confirmSave(scope: "s", updated: ScopePreferences(displayName: "v2"), into: fake)
+        confirmSave(scope: "s", updated: ScopePreferences(alias: "v1"), into: fake)
+        confirmSave(scope: "s", updated: ScopePreferences(alias: "v2"), into: fake)
         #expect(fake.writeLog.count == 2)
-        #expect(fake.preferences(for: "s").displayName == "v2")
+        #expect(fake.preferences(for: "s").alias == "v2")
     }
 }

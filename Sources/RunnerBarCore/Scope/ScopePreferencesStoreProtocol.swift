@@ -1,28 +1,30 @@
 // ScopePreferencesStoreProtocol.swift
 // RunnerBarCore
+import Foundation
 
 // MARK: - ScopePreferencesStoreProtocol
 
-/// Abstraction over per-scope preferences persistence.
-///
-/// Marked `@MainActor` because all current consumers (`ScopeEditSheet`,
-/// `SettingsView`, `ScopesView`) are `@MainActor`-bound SwiftUI views.
-/// This makes the isolation contract explicit and compiler-enforced (P4)
-/// rather than relying on call-site discipline.
-///
-/// The protocol surface is intentionally minimal: read a full `ScopePreferences`
-/// snapshot, write a full snapshot, and resolve a display name. This replaces
-/// the previous 10-method static API on `ScopePreferencesStore` with a typed,
-/// atomic read/write contract (P3).
+/// Abstracts per-scope preference reads, writes, and removal so views
+/// and use-cases can be tested without hitting `UserDefaults` on disk.
 @MainActor
 public protocol ScopePreferencesStoreProtocol: AnyObject {
 
-    /// Returns the current preferences snapshot for a scope.
+    /// Returns the full preferences snapshot for `scope`.
+    /// Always returns a value — missing keys are represented as `nil` fields
+    /// inside `ScopePreferences`, never as a missing record.
     func preferences(for scope: String) -> ScopePreferences
 
-    /// Atomically persists a full preferences snapshot for a scope.
+    /// Atomically persists all fields in `prefs` for `scope`.
+    /// Replaces the previous per-field write pattern with a single call.
     func setPreferences(_ prefs: ScopePreferences, for scope: String)
 
-    /// Display name: alias if set, otherwise the raw scope string.
+    /// Human-readable display name for `scope`.
+    /// Returns the stored alias if one exists, otherwise the raw scope string.
+    /// Never returns `nil` — callers can use the result directly in UI without
+    /// unwrapping.
     func displayName(for scope: String) -> String
+
+    /// Removes all persisted preference keys for `scope`.
+    /// Call when a scope is deleted so orphaned `UserDefaults` keys do not accumulate.
+    func removePreferences(for scope: String)
 }

@@ -85,6 +85,12 @@ struct ScopesView: View {
                     ),
                     scopePrefs: scopePrefs
                 )
+            } else {
+                // selectedInitialPrefs should always be set by openEditSheet before
+                // SwiftUI presents this sheet. A nil value here indicates a programmer
+                // error — fail fast in debug builds so the bug is caught immediately.
+                let _ = assertionFailure("ScopesView: sheet presented with nil selectedInitialPrefs for scope \(entry.scope) — openEditSheet must set both selectedInitialPrefs and selectedScopeEntry before SwiftUI reads $selectedScopeEntry.")
+                EmptyView()
             }
         }
     }

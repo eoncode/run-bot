@@ -225,5 +225,9 @@ extension ScopePreferencesStore {
         public func displayName(for scope: String) -> String {
             ScopePreferencesStore.displayName(for: scope)
         }
+
+        public func removePreferences(for scope: String) {
+            ScopePreferencesStore.cleanUp(scope: scope)
+        }
     }
 }
