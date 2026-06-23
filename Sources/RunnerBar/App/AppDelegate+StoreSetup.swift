@@ -17,9 +17,21 @@ extension AppDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Entry point after launch. Configures the GitHub API clients, builds the
-    /// status-bar item, constructs the NSPopover panel, and migrates per-scope
-    /// preferences from the legacy flat-key format to the single-blob actor (#1538).
+    /// Entry point after launch. Configures the GitHub API clients, migrates
+    /// per-scope preferences from the legacy flat-key format to the single-blob
+    /// actor, then builds the status-bar item and NSPopover panel. (#1538)
+    ///
+    /// ## Startup ordering
+    /// Migration MUST complete before `setupPanel()` so that `RunnerStore`
+    /// observers spawned inside `setupPanel → setupSubscriptions` never read
+    /// `ScopePreferencesStore` before the v2 blobs exist. The sequence is:
+    ///
+    ///  1. Configure transports (synchronous, no actor reads).
+    ///  2. Await `migrateIfNeeded` — writes v2 blobs, removes legacy flat keys.
+    ///  3. Await `refreshDisplayNames` — hydrates `ScopeEntry.displayName` cache.
+    ///  4. `setupStatusItem` / `setupPanel` / `setupSignOutSubscription` — UI and
+    ///     observers start only after migration is complete.
+    ///
     /// - Parameter _: The notification (unused).
     func applicationDidFinishLaunching(_ _: Notification) {
         log("AppDelegate › applicationDidFinishLaunching — START")
@@ -40,21 +52,23 @@ extension AppDelegate {
         configureGHAPIPaginated { endpoint, timeout in
             await sharedGitHubTransport.apiPaginated(endpoint, timeout: timeout)
         }
-        setupStatusItem()
-        setupPanel()
-        setupSignOutSubscription()
-        // Migrate legacy flat UserDefaults keys → single JSON blob per scope.
-        // Must run after ScopeStore is set up (setupPanel → setupSubscriptions
-        // initialises ScopeStore.shared), before any ScopePreferencesStore reads.
-        // Plain Task{} — inherits @MainActor from AppDelegate, so knownScopes is
-        // read on main and the await crosses to the actor safely. (#1538)
+        // Read knownScopes synchronously before the Task — ScopeStore.shared is
+        // @MainActor and we are already on @MainActor here. (#1538)
         let knownScopes = ScopeStore.shared.entries.map(\.scope)
+        log("AppDelegate › applicationDidFinishLaunching — migration task starting for \(knownScopes.count) scopes")
+        // Migrate, hydrate display names, THEN start UI and observers.
+        // Plain Task{} inherits @MainActor from AppDelegate; all three setup
+        // calls below run on the main actor after the two awaits resolve. (#1538)
         Task {
+            // Step 2: migrate legacy flat keys → v2 blobs.
             await ScopePreferencesStore.shared.migrateIfNeeded(knownScopes: knownScopes)
-            // Re-hydrate cached display names after migration so ScopesView shows
-            // aliases immediately on first launch. (#1538)
+            // Step 3: hydrate ScopeEntry.displayName from freshly-migrated blobs.
             await ScopeStore.shared.refreshDisplayNames()
+            // Step 4: start UI and observers — guaranteed to see migrated prefs.
+            setupStatusItem()
+            setupPanel()
+            setupSignOutSubscription()
+            log("AppDelegate › applicationDidFinishLaunching — DONE")
         }
-        log("AppDelegate › applicationDidFinishLaunching — migration task enqueued for \(knownScopes.count) scopes")
     }
 }

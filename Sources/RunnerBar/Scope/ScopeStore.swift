@@ -128,14 +128,35 @@ final class ScopeStore {
     /// `ScopeEditSheet` saves new preferences, so `ScopesView` reflects alias changes
     /// without requiring a full restart. Runs on `@MainActor`; the actor hop to
     /// `ScopePreferencesStore` is handled by `preferences(for:)`.
+    ///
+    /// ## Concurrency safety
+    /// Rather than capturing a pre-`await` snapshot of `entries` and writing it back
+    /// wholesale (which would clobber concurrent `add`/`remove`/`setEnabled` mutations
+    /// that occurred during the loop's `await` points), this method collects aliases
+    /// into a `[UUID: String?]` map and merges them into the *current* `entries` array
+    /// after all awaits complete. Entries added or removed during the loop are
+    /// unaffected; only their `displayName` field is updated when found by ID.
     func refreshDisplayNames() async {
-        var updated = entries
-        for idx in updated.indices {
-            let prefs = await ScopePreferencesStore.shared.preferences(for: updated[idx].scope)
-            let alias = prefs.alias.flatMap { $0.isEmpty ? nil : $0 }
-            updated[idx] = updated[idx].copying(displayName: alias)
+        // Iterate the snapshot to know which scopes to fetch — but do NOT write
+        // this snapshot back to `entries` after the awaits.
+        let snapshot = entries
+        var aliasByID: [UUID: String?] = [:]
+        for entry in snapshot {
+            let prefs = await ScopePreferencesStore.shared.preferences(for: entry.scope)
+            let alias = prefs.alias.flatMap {
+                let t = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+            aliasByID[entry.id] = alias
         }
-        entries = updated
+        // Merge into the *current* entries (not the pre-await snapshot) so that
+        // any add/remove/setEnabled mutations that occurred during the awaits above
+        // are preserved. Entries not present in aliasByID (added after the snapshot
+        // was taken) are left unchanged.
+        entries = entries.map { entry in
+            guard let alias = aliasByID[entry.id] else { return entry }
+            return entry.copying(displayName: alias)
+        }
         log("ScopeStore › refreshed display names for \(entries.count) scope(s)")
     }
 }
