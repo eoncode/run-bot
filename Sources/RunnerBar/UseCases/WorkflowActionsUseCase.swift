@@ -35,6 +35,11 @@ struct WorkflowActionsUseCase: Sendable {
     // MARK: - Workflow mutations
 
     /// Re-runs only the failed jobs for each run ID in `scope` in parallel.
+    ///
+    /// All tasks are always allowed to complete before the return value is
+    /// evaluated. Using `allSatisfy` directly on a `TaskGroup` would
+    /// short-circuit on the first `false`, implicitly cancelling the group
+    /// and dropping remaining in-flight requests.
     @discardableResult
     func rerunFailed(runIDs: [Int], scope: String) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
@@ -47,11 +52,18 @@ struct WorkflowActionsUseCase: Sendable {
                     ) != nil
                 }
             }
-            return await group.allSatisfy { $0 }
+            var results: [Bool] = []
+            for await result in group { results.append(result) }
+            return results.allSatisfy { $0 }
         }
     }
 
     /// Re-runs all jobs for each run ID in `scope` in parallel.
+    ///
+    /// All tasks are always allowed to complete before the return value is
+    /// evaluated. Using `allSatisfy` directly on a `TaskGroup` would
+    /// short-circuit on the first `false`, implicitly cancelling the group
+    /// and dropping remaining in-flight requests.
     @discardableResult
     func rerunAll(runIDs: [Int], scope: String) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
@@ -64,11 +76,18 @@ struct WorkflowActionsUseCase: Sendable {
                     ) != nil
                 }
             }
-            return await group.allSatisfy { $0 }
+            var results: [Bool] = []
+            for await result in group { results.append(result) }
+            return results.allSatisfy { $0 }
         }
     }
 
     /// Cancels each run ID in `scope` in parallel.
+    ///
+    /// All tasks are always allowed to complete before the return value is
+    /// evaluated. Using `allSatisfy` directly on a `TaskGroup` would
+    /// short-circuit on the first `false`, implicitly cancelling the group
+    /// and dropping remaining in-flight requests.
     @discardableResult
     func cancel(runIDs: [Int], scope: String) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
@@ -77,7 +96,9 @@ struct WorkflowActionsUseCase: Sendable {
                     await transport.cancelRun(runID: id, scope: scope)
                 }
             }
-            return await group.allSatisfy { $0 }
+            var results: [Bool] = []
+            for await result in group { results.append(result) }
+            return results.allSatisfy { $0 }
         }
     }
 
