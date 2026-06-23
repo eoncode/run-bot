@@ -24,11 +24,17 @@ struct StubTransport: GitHubTransportProtocol {
     /// Ordered prefix → data pairs. Longest-prefix match wins.
     private let responses: [(prefix: String, data: Data)]
 
-    /// Thread-safe call counter.
-    private let callCountLock = OSAllocatedUnfairLock<Int>(initialState: 0)
+    /// Thread-safe call counter for `apiAsync` calls.
+    private let apiCallCountLock = OSAllocatedUnfairLock<Int>(initialState: 0)
+    /// Thread-safe call counter for `raw` calls.
+    private let rawCallCountLock = OSAllocatedUnfairLock<Int>(initialState: 0)
 
     /// The number of times `apiAsync` has been called. Thread-safe.
-    var callCount: Int { callCountLock.withLock { $0 } }
+    var apiCallCount: Int { apiCallCountLock.withLock { $0 } }
+    /// The number of times `raw` has been called. Thread-safe.
+    var rawCallCount: Int { rawCallCountLock.withLock { $0 } }
+    /// Total number of transport calls. Thread-safe.
+    var callCount: Int { apiCallCount + rawCallCount }
 
     /// Creates a stub with the given endpoint-prefix → Data map.
     init(responses: [String: Data] = [:]) {
@@ -48,13 +54,13 @@ struct StubTransport: GitHubTransportProtocol {
     }
 
     func apiAsync(_ endpoint: String, timeout _: TimeInterval) async -> Data? {
-        callCountLock.withLock { $0 += 1 }
+        apiCallCountLock.withLock { $0 += 1 }
         return responses.first(where: { endpoint.hasPrefix($0.prefix) })?.data
     }
 
     func apiPaginated(_: String, timeout _: TimeInterval) async -> Data? { nil }
     func raw(_ endpoint: String, timeout _: TimeInterval) async -> Data? {
-        callCountLock.withLock { $0 += 1 }
+        rawCallCountLock.withLock { $0 += 1 }
         return responses.first(where: { endpoint.hasPrefix($0.prefix) })?.data
     }
     func post(_: String, body _: Data?, timeout _: TimeInterval) async -> Data? { nil }
