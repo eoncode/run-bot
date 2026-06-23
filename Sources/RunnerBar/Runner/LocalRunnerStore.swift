@@ -340,6 +340,7 @@ actor LocalRunnerStore {
 
     // MARK: - Push helpers
 
+    /// Pushes the current `runners` snapshot to the view model on the main actor.
     private func pushRunners() async {
         let snapshot = runners
         await MainActor.run { [viewModel] in viewModel.localRunners = snapshot }
@@ -347,8 +348,10 @@ actor LocalRunnerStore {
 
     // MARK: - launchctl scan
 
+    /// Path to `launchctl`, used to list live runner services.
     private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR
 
+    /// Runs `launchctl list` and returns lines that contain `actions.runner`.
     private func scanLiveServices() async -> [String] {
         log("LocalRunnerStore › scanLiveServices — running launchctl list")
         let result = await ProcessRunner.runAsync(
