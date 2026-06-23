@@ -257,7 +257,10 @@ public struct FailureHookRunnerUseCase: Sendable {
     ///   poll cycle. This is an accepted trade-off per #1519. If hook latency becomes
     ///   observable in practice, parallelise with `withTaskGroup` over `group.runs` here.
     ///
-    /// - Returns: One `FailedJobResult` per unique failed job, deduped by job ID.
+    /// - Returns: One `FailedJobResult` per unique **failed** job, deduped by job ID.
+    ///   Only jobs whose `conclusion.isHookConclusion == true` are included — passing,
+    ///   skipped, and cancelled jobs are filtered out so `$FAILURE_LOG` contains only
+    ///   signal, not noise.
     private static func fetchFailedJobs(
         group: WorkflowActionGroup,
         scope: String
@@ -280,25 +283,29 @@ public struct FailureHookRunnerUseCase: Sendable {
             }
             log("FailureHookRunnerUseCase fetchFailedJobs -- run=\(run.id) decoded \(resp.jobs.count) jobs")
             for job in resp.jobs where seenIDs.insert(job.id).inserted {
+                // Only include jobs with a hook-triggering conclusion in the result.
+                // Passing, skipped, and cancelled jobs are excluded so $FAILURE_LOG
+                // contains only the failing signal and not misleading "no failed steps"
+                // noise from successful sibling jobs in the same run.
+                guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else {
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
+                    continue
+                }
+                log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)")
                 let tail: String?
-                if let jobConclusion = job.conclusion, jobConclusion.isHookConclusion {
-                    log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)")
-                    if let fullLog = await LogFetcher().fetchJobLog(jobID: job.id, scope: scope) {
-                        let lines = fullLog.components(separatedBy: "\n")
-                        let kept = lines.suffix(150).joined(separator: "\n")
-                        tail = kept
-                        log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) log lines=\(lines.count) kept last 150")
-                    } else {
-                        tail = nil
-                        log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) fetchJobLog returned nil")
-                    }
+                if let fullLog = await LogFetcher().fetchJobLog(jobID: job.id, scope: scope) {
+                    let lines = fullLog.components(separatedBy: "\n")
+                    let kept = lines.suffix(150).joined(separator: "\n")
+                    tail = kept
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) log lines=\(lines.count) kept last 150")
                 } else {
                     tail = nil
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) fetchJobLog returned nil")
                 }
                 result.append(FailedJobResult(job: job, logTail: tail))
             }
         }
-        log("FailureHookRunnerUseCase fetchFailedJobs -- total \(result.count) unique jobs returned")
+        log("FailureHookRunnerUseCase fetchFailedJobs -- total \(result.count) unique failed jobs returned")
         return result
     }
 
