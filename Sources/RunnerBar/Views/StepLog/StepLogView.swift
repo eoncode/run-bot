@@ -210,7 +210,7 @@ struct StepLogView: View {
     /// Kicks off a background fetch of the step log and publishes the result to `logText`.
     ///
     /// Uses `repoScopeForFetch` (derived from `job.htmlUrl`) as the primary scope.
-    /// Falls back to the first `owner/repo`-style entry in `ScopeStore.shared.scopes` when
+    /// Falls back to the first `owner/repo`-style entry in `ScopeStore.shared.activeScopes` when
     /// `htmlUrl` is absent or malformed — preserving the #1106 spec intent so single-repo
     /// setups continue to work even if the job URL is temporarily unavailable.
     private func loadLog() {
@@ -220,7 +220,7 @@ struct StepLogView: View {
         let scope: String = {
             let primary = repoScopeForFetch
             if !primary.isEmpty { return primary }
-            return ScopeStore.shared.scopes.first(where: { $0.contains("/") }) ?? ""
+            return ScopeStore.shared.activeScopes.first(where: { $0.contains("/") }) ?? ""
         }()
         Task.detached(priority: .userInitiated) {
             let text = await fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
