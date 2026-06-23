@@ -219,7 +219,9 @@ struct ScopesView: View {
                     .font(.caption2)
                     .foregroundColor(Color.rbTextTertiary)
                 Button {
-                    ScopePreferencesStore.cleanUp(scope: entry.scope)
+                    // #1540: route cleanUp through the injected store so the view
+                    // layer contains zero direct ScopePreferencesStore static calls.
+                    scopePrefs.removePreferences(for: entry.scope)
                     scopeStore.remove(id: entry.id)
                     // ScopeStore.remove mutates activeScopes, firing withObservationTracking
                     // in startObservingScopes and restarting the poll loop automatically.
