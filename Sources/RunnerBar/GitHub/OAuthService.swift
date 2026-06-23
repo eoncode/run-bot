@@ -7,9 +7,9 @@ import Foundation
 //
 // Implements the GitHub OAuth Authorization Code flow.
 //
-// @MainActor ensures all access to `pendingState`, `onCompletion`, and
-// `didSignOut` is serialised on the main thread. This matches how AppKit
-// delivers application(_:open:) callbacks and how SwiftUI reads `isSignedIn`.
+// @MainActor ensures all access to `pendingState` and continuation registries
+// is serialised on the main thread. This matches how AppKit delivers
+// application(_:open:) callbacks and how SwiftUI reads `isSignedIn`.
 // It also silences the -strict-concurrency warning about non-Sendable
 // captures of `self` in DispatchQueue.main.async closures.
 //
@@ -22,7 +22,7 @@ import Foundation
 // 5. handleCallback verifies the state param matches pendingState (CSRF guard),
 //    then exchanges the code for an access token via POST to GitHub.
 // 6. Token is saved to Keychain (which also invalidates the token cache).
-//    onCompletion is called on the main thread with the actual save result.
+//    fireSignIn(_:) yields the result to all registered makeSignInStream() consumers.
 //
 // Client credentials are in OAuthSecrets.swift — see that file for why they are
 // intentionally committed (open-source native app industry standard).
@@ -77,10 +77,6 @@ final class OAuthService {
     /// Cleared after use or on sign-out.
     private var pendingState: String?
 
-    /// Called on main thread after sign-in completes. `true` = success.
-    /// Register once in SettingsView.onAppearAction — do NOT re-assign in signIn().
-    var onCompletion: ((Bool) -> Void)?
-
     // MARK: - Sign-out multicast
     //
     // Each caller receives its own dedicated AsyncStream via makeSignOutStream().
@@ -116,10 +112,8 @@ final class OAuthService {
 
     // MARK: - Sign-in multicast
     //
-    // Mirrors the sign-out multicast pattern above.
     // Each caller receives its own dedicated AsyncStream<Bool> via makeSignInStream().
-    // fireSignIn(_:) yields the success value to every registered continuation,
-    // replacing the single-subscriber `onCompletion` closure (P9 fix).
+    // fireSignIn(_:) yields the success value to every registered continuation.
     // AsyncStream is single-consumer — each call site must request its own stream.
 
     /// Registered continuations keyed by UUID — one per active sign-in consumer.
@@ -147,13 +141,10 @@ final class OAuthService {
         return stream
     }
 
-    /// Yields `success` to every registered sign-in continuation and also calls
-    /// the legacy `onCompletion` closure for any remaining call sites that have
-    /// not yet migrated to `makeSignInStream()`.
+    /// Yields `success` to every registered sign-in continuation.
     private func fireSignIn(_ success: Bool) {
         log("OAuthService › fireSignIn — success=\(success), consumers=\(signInContinuations.count)")
         signInContinuations.values.forEach { $0.yield(success) }
-        onCompletion?(success)
     }
 
     // MARK: Sign In
@@ -197,7 +188,7 @@ final class OAuthService {
     /// Gating `didSignOut` on `deleted == true` prevents a "ghost sign-in" state
     /// where the UI shows signed-out while the old token remains in Keychain and
     /// subsequent API calls succeed as if the user were still authenticated.
-    /// Mirrors the same pattern used in `exchangeCode()` where `onCompletion` is
+    /// Mirrors the same pattern used in `exchangeCode()` where the stream is
     /// gated on the actual Keychain save result.
     func signOut() {
         log("OAuthService › signOut — called, pendingState=\(pendingState != nil ? "set" : "nil")")

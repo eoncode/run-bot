@@ -95,7 +95,7 @@ struct ScopesView: View {
                 let msg = "ScopesView: sheet presented with nil selectedInitialPrefs "
                     + "for scope \(entry.scope) — openEditSheet must set both "
                     + "selectedInitialPrefs and selectedScopeEntry atomically."
-                _ = assertionFailure(msg)
+                assertionFailure(msg)
                 EmptyView()
             }
         }
@@ -237,7 +237,7 @@ struct ScopesView: View {
                     // layer contains zero direct ScopePreferencesStore static calls.
                     scopePrefs.removePreferences(for: entry.scope)
                     scopeStore.remove(id: entry.id)
-                    // ScopeStore.remove mutates activeScopes, firing withObservationTracking
+                    // ScokeStore.remove mutates activeScopes, firing withObservationTracking
                     // in startObservingScopes and restarting the poll loop automatically.
                 } label: {
                     Image(systemName: "minus.circle")

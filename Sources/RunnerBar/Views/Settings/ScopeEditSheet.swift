@@ -175,7 +175,7 @@ extension ScopeEditSheet {
     ///
     /// `hookCommand` is trimmed of leading/trailing whitespace before the
     /// empty-check, matching the behaviour of the pre-#1540 static write path.
-    func confirmSave() {
+    @MainActor private func confirmSave() {
         let trimmedCommand = hookCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         let updated = ScopePreferences(
             alias:              initialPrefs.alias,
