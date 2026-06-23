@@ -172,14 +172,18 @@ extension ScopeEditSheet {
     /// notifyOnSuccess, notifyOnFailure) are carried forward unchanged from
     /// `initialPrefs` so that `setPreferences` — which replaces all fields
     /// atomically — does not zero them out.
+    ///
+    /// `hookCommand` is trimmed of leading/trailing whitespace before the
+    /// empty-check, matching the behaviour of the pre-#1540 static write path.
     func confirmSave() {
+        let trimmedCommand = hookCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         let updated = ScopePreferences(
             alias:              initialPrefs.alias,
             pollingInterval:    initialPrefs.pollingInterval,
             notifyOnSuccess:    initialPrefs.notifyOnSuccess,
             notifyOnFailure:    initialPrefs.notifyOnFailure,
             failureHookEnabled: hookEnabled,
-            failureHookCommand: hookCommand.isEmpty ? nil : hookCommand,
+            failureHookCommand: trimmedCommand.isEmpty ? nil : trimmedCommand,
             localRepoPath:      localRepoPath.isEmpty ? nil : localRepoPath,
             failureHookBranch:  hookBranch
         )

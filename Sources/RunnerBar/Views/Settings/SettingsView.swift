@@ -124,14 +124,12 @@ struct SettingsView: View {
         }
         .onAppear(perform: onAppearAction)
         .onDisappear {
-            // Always cancel the sign-in task to release the stream reference.
-            // If a sign-in flow is actively in progress we skip setting the slot
-            // to nil so the in-flight Task can still write back its result; the
-            // slot will be replaced on the next onAppear regardless.
+            // Cancel and unconditionally nil the sign-in task — the for-await loop
+            // exits promptly on cancellation (AsyncStream respects task cancellation)
+            // so isSigningIn will never flip back via the stream after this point.
+            // Nilling here ensures a re-opened panel never shows a stale spinner.
             signInTask?.cancel()
-            if !isSigningIn {
-                signInTask = nil
-            }
+            signInTask = nil
             signOutTask?.cancel()
             signOutTask = nil
         }
