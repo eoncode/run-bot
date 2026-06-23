@@ -7,30 +7,15 @@ import RunnerBarCore
 
 /// Production shim for `FailureHookRunnerUseCase`.
 ///
-/// Creates the use-case with the concrete production adapters
-/// (`DefaultScopePreferencesStore`, `DefaultTerminalLauncher`) and
-/// delegates `fireIfNeeded` to it. All business logic lives in
-/// `FailureHookRunnerUseCase`; this type exists only to maintain the
-/// existing call-site API (`FailureHookRunner.fireIfNeeded(group:scope:callsite:)`).
-///
-/// - Note: The full token resolution table, shell-quoting contract, and
-///   thread-safety notes are documented in `FailureHookRunnerUseCase`.
-///
-/// Thinned to a production shim as part of #1363 (P7/P8 audit); all business logic
-/// now lives in `FailureHookRunnerUseCase`.
+/// Creates the use-case with the concrete production adapters and delegates
+/// `fireIfNeeded` to it. All business logic lives in `FailureHookRunnerUseCase`;
+/// this type exists only to maintain the existing call-site API.
 enum FailureHookRunner {
 
-    /// Default command used when no command has been explicitly saved for the scope.
-    /// Shared with `FailureHookCommandSheet` for pre-population and referenced by
-    /// `FailureHookRunnerUseCase` as the fallback command.
-    /// Forwards to `FailureHookRunnerUseCase.defaultCommand` — canonical definition lives there.
+    /// Default command forwarded from `FailureHookRunnerUseCase.defaultCommand`.
     static let defaultCommand = FailureHookRunnerUseCase.defaultCommand
 
     /// Forwards to `FailureHookRunnerUseCase` wired with production dependencies.
-    /// `async` because `fireIfNeeded` is now a structured async call — callers
-    /// must provide a Task scope (see `RunnerStore+PollBridge`).
-    /// `sending` removed: no `Task.detached` boundary crossing, `WorkflowActionGroup`
-    /// is `Sendable` so `MainActor.run` hops inside the use-case are safe without it.
     static func fireIfNeeded(
         group: WorkflowActionGroup,
         scope: String,
@@ -38,8 +23,39 @@ enum FailureHookRunner {
     ) async {
         let useCase = FailureHookRunnerUseCase(
             preferencesStore: DefaultScopePreferencesStore(),
-            terminalLauncher: DefaultTerminalLauncher()
+            terminalLauncher: DefaultTerminalLauncher(),
+            jobFetcher: { grp, scp in
+                await Self.fetchFailedJobs(group: grp, scope: scp)
+            }
         )
         await useCase.fireIfNeeded(group: group, scope: scope, callsite: callsite)
+    }
+
+    // MARK: - Network implementation (lives in RunnerBar where ghAPI/LogFetcher are defined)
+
+    /// Fetches the failed jobs (and their log tails) for every failure-triggering run in `group`.
+    private static func fetchFailedJobs(
+        group: WorkflowActionGroup,
+        scope: String
+    ) async -> [FailureHookRunnerUseCase.FailedJobResult] {
+        var result: [FailureHookRunnerUseCase.FailedJobResult] = []
+        var seenIDs = Set<Int>()
+        for run in group.runs {
+            guard run.conclusion?.isHookConclusion == true else { continue }
+            guard let data = await ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=\(GitHubConstants.maxPageSize)") else { continue }
+            guard let resp = try? JSONDecoder().decode(JobsResponse.self, from: data) else { continue }
+            for job in resp.jobs where seenIDs.insert(job.id).inserted {
+                guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else { continue }
+                let tail: String?
+                if let fullLog = await LogFetcher().fetchJobLog(jobID: job.id, scope: scope) {
+                    let lines = fullLog.components(separatedBy: "\n")
+                    tail = lines.suffix(150).joined(separator: "\n")
+                } else {
+                    tail = nil
+                }
+                result.append(FailureHookRunnerUseCase.FailedJobResult(job: job, logTail: tail))
+            }
+        }
+        return result
     }
 }
