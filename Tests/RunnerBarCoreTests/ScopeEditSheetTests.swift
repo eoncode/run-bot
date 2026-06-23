@@ -30,8 +30,8 @@ final class FakeScopePreferencesStore: ScopePreferencesStoreProtocol, @unchecked
         writeLog.append((scope: scope, prefs: prefs))
     }
 
-    func displayName(for scope: String) -> String? {
-        store[scope]?.displayName
+    func displayName(for scope: String) -> String {
+        store[scope]?.alias ?? scope
     }
 
     // MARK: FailureHookRunnerDependencies conformance
