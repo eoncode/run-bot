@@ -40,6 +40,9 @@ struct SettingsView: View {
     /// The local runner actor forwarded into `LocalRunnersView`.
     /// Defaults to `LocalRunnerStore.shared` so call sites that don't own the actor still compile.
     var localRunnerStore: LocalRunnerStore = .shared
+    /// OAuth service injected from `AppDelegate`.
+    /// Typed to protocol so tests can supply a stub without the live singleton.
+    var oauthService: any OAuthServiceProtocol
 
     // MARK: - Observed stores
     // These singleton preference stores are `@Observable` types. The view keeps
@@ -110,7 +113,7 @@ struct SettingsView: View {
             // Clear the singleton closure so a future SettingsView instance can claim it.
             // Without this, the last-opened instance permanently owns onCompletion.
             // Guard: do not clear while an OAuth flow is in progress — the callback must land.
-            if !isSigningIn { OAuthService.shared.onCompletion = nil }
+            if !isSigningIn { oauthService.onCompletion = nil }
             // Cancel the sign-out listener — a new Task is started on next onAppear.
             signOutTask?.cancel()
             signOutTask = nil
@@ -172,7 +175,7 @@ struct SettingsView: View {
         // swiftlint:disable:next line_length
         log("SettingsView › onAppear — Keychain.token=\(keychainToken.map { "present(len=\($0.count))" } ?? "nil") githubToken=\(envToken.map { "present(len=\($0.count))" } ?? "nil") isOAuthAuthenticated=\(isOAuthAuthenticated) isCLIAuthenticated=\(isCLIAuthenticated)")
         #endif
-        OAuthService.shared.onCompletion = { success in
+        oauthService.onCompletion = { success in
             log("SettingsView › onCompletion — success=\(success), updating auth state")
             isOAuthAuthenticated = success
             isCLIAuthenticated = !success && githubToken() != nil
@@ -180,7 +183,7 @@ struct SettingsView: View {
             isSigningIn = false
         }
         signOutTask = Task { @MainActor in
-            for await _ in OAuthService.shared.makeSignOutStream() {
+            for await _ in oauthService.makeSignOutStream() {
                 let postToken = githubToken()
                 log("SettingsView › didSignOut — githubToken post-signout=\(postToken != nil ? "present(len=\(postToken!.count))" : "nil")")
                 isOAuthAuthenticated = false
@@ -216,12 +219,12 @@ struct SettingsView: View {
     func signInWithGitHub() {
         log("SettingsView › signInWithGitHub — isSigningIn=true")
         isSigningIn = true
-        OAuthService.shared.signIn()
+        oauthService.signIn()
     }
 
     /// Signs out of GitHub and clears all stored tokens.
     func signOutOfGitHub() {
-        log("SettingsView › signOutOfGitHub — calling OAuthService.shared.signOut()")
-        OAuthService.shared.signOut()
+        log("SettingsView › signOutOfGitHub — calling oauthService.signOut()")
+        oauthService.signOut()
     }
 }
