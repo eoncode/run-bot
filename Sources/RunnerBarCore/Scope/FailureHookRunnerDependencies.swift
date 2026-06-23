@@ -4,17 +4,65 @@ import Foundation
 
 // MARK: - ScopePreferencesStoreProtocol
 
-/// Abstracts the subset of `ScopePreferencesStore` that `FailureHookRunnerUseCase` needs,
-/// so the use-case can be tested without hitting `UserDefaults` on disk.
-public protocol ScopePreferencesStoreProtocol: Sendable {
+/// Full read/write interface for per-scope `UserDefaults` preferences.
+///
+/// Constrained to `Actor` (which implies `Sendable`) so every call site is
+/// visibly `async` — making actor crossings explicit and compiler-enforced (P4).
+/// The 4 read methods retained from the original narrow protocol are unchanged
+/// in signature so `FailureHookRunnerUseCase` call sites only need `await` added.
+public protocol ScopePreferencesStoreProtocol: Actor {
+
+    // MARK: - Alias
+
+    /// Human-readable alias for the scope. `nil` = display raw scope string.
+    func alias(for scope: String) -> String?
+    /// Sets (or clears) the human-readable alias for the scope.
+    func setAlias(_ alias: String?, for scope: String)
+    /// Display name: alias if set, otherwise the raw scope string.
+    func displayName(for scope: String) -> String
+
+    // MARK: - Polling interval
+
+    /// Per-scope polling interval override in seconds. `nil` = use global setting.
+    func pollingInterval(for scope: String) -> Int?
+    /// Sets (or clears) the per-scope polling interval override.
+    func setPollingInterval(_ interval: Int?, for scope: String)
+
+    // MARK: - Notification overrides
+
+    /// Per-scope notify-on-success override. `nil` = use global.
+    func notifyOnSuccess(for scope: String) -> Bool?
+    /// Sets (or clears) the per-scope notify-on-success override.
+    func setNotifyOnSuccess(_ value: Bool?, for scope: String)
+    /// Per-scope notify-on-failure override. `nil` = use global.
+    func notifyOnFailure(for scope: String) -> Bool?
+    /// Sets (or clears) the per-scope notify-on-failure override.
+    func setNotifyOnFailure(_ value: Bool?, for scope: String)
+
+    // MARK: - Failure hook
+
     /// Returns `true` if the failure hook is enabled for the given scope.
     func failureHookEnabled(for scope: String) -> Bool
-    /// Returns the custom failure-hook command stored for the given scope, or `nil` if none is set.
+    /// Persists whether the failure hook is enabled for the scope.
+    func setFailureHookEnabled(_ enabled: Bool, for scope: String)
+    /// Returns the custom failure-hook command for the scope, or `nil` if none is set.
     func failureHookCommand(for scope: String) -> String?
+    /// Sets (or clears) the failure-hook shell command for the scope.
+    func setFailureHookCommand(_ command: String?, for scope: String)
+    /// Returns the local repository path for the scope, or `nil` if not set.
+    func localRepoPath(for scope: String) -> String?
+    /// Sets (or clears) the local repository path for the scope.
+    func setLocalRepoPath(_ path: String?, for scope: String)
     /// Returns the branch filter for the failure hook, or `nil` if all branches should trigger.
     func failureHookBranch(for scope: String) -> String?
-    /// Returns the local repository path configured for the given scope, or `nil` if not set.
-    func localRepoPath(for scope: String) -> String?
+    /// Sets (or clears) the branch filter for the failure hook.
+    func setFailureHookBranch(_ branch: String?, for scope: String)
+
+    // MARK: - Cleanup
+
+    /// Removes all persisted preferences for the scope.
+    /// Call from `ScopeStore.remove(id:)` to avoid orphaned data accumulating.
+    func cleanUp(scope: String)
 }
 
 // MARK: - TerminalLauncherProtocol
