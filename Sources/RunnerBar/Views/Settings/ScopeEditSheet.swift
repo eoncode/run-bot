@@ -46,6 +46,12 @@ struct ScopeEditSheet: View {
     /// production; swap for a fake in tests.
     private let scopePrefs: any ScopePreferencesStoreProtocol
 
+    /// Snapshot of the preferences at sheet-open time.
+    /// Retained so `confirmSave()` can carry forward fields that this sheet
+    /// does not display (alias, pollingInterval, notifyOnSuccess, notifyOnFailure)
+    /// — preventing `setPreferences` from zeroing them on every Save.
+    private let initialPrefs: ScopePreferences
+
     /// Shared store providing the full list of scope entries.
     @State private var scopeStore = ScopeStore.shared
     /// Controls visibility of the failure-hook configuration sheet.
@@ -76,7 +82,8 @@ struct ScopeEditSheet: View {
     ///
     /// - Parameters:
     ///   - scopeEntry: The scope whose settings this view manages.
-    ///   - initialPrefs: Pre-fetched preferences snapshot used to seed draft state.
+    ///   - initialPrefs: Pre-fetched preferences snapshot used to seed draft state
+    ///     and to carry non-draft fields forward on Save.
     ///   - isPresented: Binding that controls sheet visibility.
     ///   - scopePrefs: The preferences store to write back to on Save.
     init(
@@ -88,6 +95,7 @@ struct ScopeEditSheet: View {
         self.scopeEntry = scopeEntry
         self._isPresented = isPresented
         self.scopePrefs = scopePrefs
+        self.initialPrefs = initialPrefs
         _hookEnabled   = State(initialValue: initialPrefs.failureHookEnabled)
         _hookBranch    = State(initialValue: initialPrefs.failureHookBranch)
         // Seed with the persisted value or empty string — never the default command.
@@ -152,6 +160,31 @@ struct ScopeEditSheet: View {
                 }
             )
         }
+    }
+}
+
+// MARK: - Save
+extension ScopeEditSheet {
+    /// Builds an updated `ScopePreferences` from the current draft state and
+    /// persists it via the injected store.
+    ///
+    /// Fields this sheet does **not** display (alias, pollingInterval,
+    /// notifyOnSuccess, notifyOnFailure) are carried forward unchanged from
+    /// `initialPrefs` so that `setPreferences` — which replaces all fields
+    /// atomically — does not zero them out.
+    func confirmSave() {
+        let updated = ScopePreferences(
+            alias:              initialPrefs.alias,
+            pollingInterval:    initialPrefs.pollingInterval,
+            notifyOnSuccess:    initialPrefs.notifyOnSuccess,
+            notifyOnFailure:    initialPrefs.notifyOnFailure,
+            failureHookEnabled: hookEnabled,
+            failureHookCommand: hookCommand.isEmpty ? nil : hookCommand,
+            localRepoPath:      localRepoPath.isEmpty ? nil : localRepoPath,
+            failureHookBranch:  hookBranch
+        )
+        scopePrefs.setPreferences(updated, for: scope)
+        isPresented = false
     }
 }
 
@@ -435,150 +468,5 @@ extension ScopeEditSheet {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Actions
-/// User-initiated actions: path editing, save, and cancel.
-extension ScopeEditSheet {
-    /// Enters inline editing mode for the local-path field, pre-filling `~/`
-    /// if the path is currently empty.
-    func startEditingPath() {
-        if localRepoPath.isEmpty { localRepoPath = "~/" }
-        isEditingPath = true
-    }
-
-    /// Normalises the draft local path: trims whitespace and clears the `~/` placeholder.
-    /// Does NOT write to the preferences store — that happens in `confirmSave()`.
-    func commitLocalPath() {
-        isEditingPath = false
-        let trimmed = localRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        localRepoPath = (trimmed == "~/") ? "" : trimmed
-    }
-
-    /// Clears the draft branch filter. Does NOT write to the preferences store.
-    func clearBranchFilter() {
-        hookBranch = nil
-    }
-
-    /// Single atomic commit point: builds a `ScopePreferences` snapshot from all
-    /// draft fields and writes it via `scopePrefs`, then dismisses the sheet.
-    /// Nothing is persisted before this runs.
-    @MainActor func confirmSave() {
-        let command = hookCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        let path    = localRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let updated = ScopePreferences(
-            failureHookEnabled: hookEnabled,
-            failureHookCommand: command.isEmpty ? nil : command,
-            localRepoPath:      path.isEmpty   ? nil : path,
-            failureHookBranch:  hookBranch
-        )
-        scopePrefs.setPreferences(updated, for: scope)
-        isPresented = false
-    }
-
-    /// Presents an `NSOpenPanel` as a sheet attached to the popover's own window.
-    ///
-    /// Uses `beginSheetModal(for:)` so the panel attaches as a child sheet.
-    /// AppKit never considers clicks inside the sheet as "outside clicks",
-    /// so the popover is never dismissed during the picker session. (#1195)
-    ///
-    /// The host window reference is captured early by `WindowGrabber` (attached in
-    /// `body`) so there is no key-window race at call time.
-    func openFolderPicker() {
-        let delegate = NSApp.delegate as? AppDelegate
-        log("[PICKER] openFolderPicker — ENTER hostWindow=\(String(describing: hostWindow)) panelIsOpen=\(delegate?.panelIsOpen ?? false)")
-
-        guard let window = hostWindow else {
-            log("[PICKER] openFolderPicker — ERROR: hostWindow is nil — picker will NOT open. popoverWindow=\(String(describing: delegate?.popover?.contentViewController?.view.window))")
-            return
-        }
-
-        log("[PICKER] openFolderPicker — window OK: \(window) isKey=\(window.isKeyWindow) isVisible=\(window.isVisible) sheets=\(window.sheets.count)")
-
-        let picker = NSOpenPanel()
-        picker.canChooseFiles = false
-        picker.canChooseDirectories = true
-        picker.allowsMultipleSelection = false
-        picker.prompt = "Select"
-        picker.message = "Choose the local folder for \(scope)"
-        if !localRepoPath.isEmpty {
-            let expanded = NSString(string: localRepoPath).expandingTildeInPath
-            picker.directoryURL = URL(fileURLWithPath: expanded)
-        } else {
-            picker.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-        }
-
-        log("[PICKER] openFolderPicker — calling beginSheetModal on window")
-        picker.beginSheetModal(for: window) { response in
-            log("[PICKER] openFolderPicker — completion: response=\(response.rawValue) panelIsOpen=\(delegate?.panelIsOpen ?? false)")
-            if response == .OK, let url = picker.url {
-                let home = FileManager.default.homeDirectoryForCurrentUser.path
-                let abs = url.path
-                let tilde: String
-                if abs == home {
-                    tilde = "~/"
-                } else if abs.hasPrefix(home + "/") {
-                    tilde = "~/" + abs.dropFirst(home.count + 1)
-                } else {
-                    tilde = abs
-                }
-                log("[PICKER] openFolderPicker — user picked path=\(tilde)")
-                localRepoPath = tilde
-            } else {
-                log("[PICKER] openFolderPicker — user cancelled or no URL")
-            }
-        }
-    }
-}
-
-// MARK: - Sub-view helpers
-/// Reusable sub-view factory methods shared across section extensions.
-extension ScopeEditSheet {
-    /// Renders a styled section-header label.
-    /// - Parameter title: The display text for the section heading.
-    func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(RBFont.sectionHeader).foregroundColor(Color.rbTextSecondary)
-            .padding(.horizontal, RBSpacing.md).padding(.top, 12).padding(.bottom, 4)
-    }
-
-    /// Wraps `content` in the standard rounded-card background used across all
-    /// settings sections.
-    /// - Parameter content: The view builder producing the card's contents.
-    func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            content()
-        }
-        .glassCard(cornerRadius: RBRadius.small)
-        .padding(.horizontal, RBSpacing.md)
-        .padding(.bottom, 8)
-    }
-
-    /// Renders a label–value row inside an info card.
-    /// - Parameters:
-    ///   - label: The left-aligned field name (fixed 100 pt width).
-    ///   - value: The monospaced value string displayed to the right.
-    ///   - copyable: When `true`, a copy-to-clipboard button is appended.
-    func infoRow(label: String, value: String, copyable: Bool = false) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(label)
-                .font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
-                .frame(width: 100, alignment: .leading).fixedSize()
-            Text(value)
-                .font(.system(size: 12, design: .monospaced)).foregroundColor(Color.rbTextPrimary)
-                .lineLimit(2).truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if copyable {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(value, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc").font(.system(size: 10)).foregroundColor(Color.rbTextTertiary)
-                }
-                .buttonStyle(.plain).help("Copy to clipboard")
-            }
-        }
-        .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 }

@@ -213,10 +213,14 @@ extension ScopePreferencesStore {
             )
         }
 
-        /// Persists all fields in a single call, replacing the previous per-field
-        /// write pattern. All eight `UserDefaults` writes happen sequentially on
-        /// the main actor — no partial-save window between them from any other
-        /// main-actor caller.
+        /// Sequentially persists all eight fields for the given scope on the main actor.
+        ///
+        /// Because `Live` is `@MainActor`, no concurrent main-actor caller can interleave
+        /// a read between these writes. However, `UserDefaults` does not provide
+        /// transactional semantics — a process crash mid-write could leave the store in a
+        /// partially-updated state. For the preferences this type manages, that risk is
+        /// acceptable; if stronger guarantees are needed in future, consider writing a
+        /// `Codable` snapshot to a single key instead.
         public func setPreferences(_ prefs: ScopePreferences, for scope: String) {
             ScopePreferencesStore.setAlias(prefs.alias, for: scope)
             ScopePreferencesStore.setPollingInterval(prefs.pollingInterval, for: scope)
