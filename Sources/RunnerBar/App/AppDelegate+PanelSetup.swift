@@ -244,8 +244,14 @@ extension AppDelegate: NSPopoverDelegate {
         // refreshAsync() suspends until disk hydration + launchctl + GitHub enrichment
         // completes, then start() fires. Cycle 1 always has a populated installPathMap
         // so runner rows appear with CPU/MEM already set.
+        //
+        // Task name (Reach Goal 6): surfaces this structurally significant startup
+        // sequence by name in Instruments and crash logs.
+        // Priority .userInitiated: this is a direct response to app launch — the user
+        // is actively waiting for runners to appear.
         log("AppDelegate › setupSubscriptions — scheduling async startup sequence")
-        Task { [weak self] in
+        Task(name: "AppDelegate.startup: localRunnerStore.refreshAsync → runnerStore.start",
+             priority: .userInitiated) { [weak self] in
             guard let self else { return }
             log("AppDelegate › startup — awaiting localRunnerStore.refreshAsync()")
             await self.localRunnerStore.refreshAsync()
