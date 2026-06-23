@@ -230,6 +230,17 @@ struct FailureHookRunnerUseCase: Sendable {
     }
 
     /// Fetches the failed jobs (and their log tails) for every failure-triggering run in `group`.
+    ///
+    /// Runs are fetched sequentially (one `ghAPI` call per failed run, one `fetchJobLog`
+    /// per failed job). This is intentional — the hook fires rarely (only on new failures)
+    /// and the GitHub API is rate-limited, so parallelising the fetches would not meaningfully
+    /// reduce latency in practice while adding complexity.
+    ///
+    /// - Note: Because `fireIfNeeded` is now called inline by `PollResultBuilder` (no longer
+    ///   fire-and-forget), this sequential fetch does block forward progress of the current
+    ///   poll cycle. This is an accepted trade-off per #1519. If hook latency becomes
+    ///   observable in practice, parallelise with `withTaskGroup` over `group.runs` here.
+    ///
     /// - Returns: One `FailedJobResult` per unique failed job, deduped by job ID.
     private static func fetchFailedJobs(
         group: WorkflowActionGroup,
