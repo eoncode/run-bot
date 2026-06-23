@@ -20,11 +20,12 @@ import Foundation
 /// before any reads occur. It reads the legacy flat keys, writes the blob, removes
 /// the flat keys, and sets a `scope.__migrated_v2` guard flag. Safe to call multiple times.
 ///
-/// ## Encoder/decoder reuse (P17)
-/// `decoder` and `encoder` are `nonisolated` — `JSONDecoder`/`JSONEncoder` have no
-/// mutable state after initialisation and are safe to access from `nonisolated` contexts.
-/// `UserDefaults` operations are fast, in-process, and synchronous, so `@concurrent`
-/// is not needed here (unlike `RunnerConfigStore` which does blocking disk I/O).
+/// ## Encoder/decoder (P17)
+/// `decoder` and `encoder` are plain `private let` stored properties — not `nonisolated`.
+/// They are only ever called from actor-isolated `read` and `write`, which are serialised
+/// by the actor's executor, so there is no concurrent access. Dropping `nonisolated`
+/// removes any theoretical exposure to non-isolated call sites and avoids relying on
+/// the undocumented thread-safety of `JSONDecoder`/`JSONEncoder`.
 ///
 /// ## P21 note
 /// `JSONEncoder.outputFormatting` is intentionally NOT set to `.prettyPrinted`/`.sortedKeys`
@@ -42,15 +43,12 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     private let store: UserDefaults
 
-    /// Reused decoder. `nonisolated` because `JSONDecoder` is immutable post-init (P17).
-    /// Safety note: both `decoder` and `encoder` are only ever called from within
-    /// actor-isolated methods (`read` and `write`), which are serialised by the actor's
-    /// executor. The `nonisolated` keyword enables accessing them without a suspension
-    /// point; the actor's serial executor guarantees no concurrent use.
-    nonisolated private let decoder = JSONDecoder()
-    /// Reused encoder. `nonisolated` because `JSONEncoder` is immutable post-init (P17).
-    /// See `decoder` note above.
-    nonisolated private let encoder = JSONEncoder()
+    /// Reused decoder. Private (not nonisolated) — only called from actor-isolated
+    /// `read(_:)`, so the actor's serial executor prevents concurrent access. (P17)
+    private let decoder = JSONDecoder()
+    /// Reused encoder. Private (not nonisolated) — only called from actor-isolated
+    /// `write(_:for:)`, so the actor's serial executor prevents concurrent access. (P17)
+    private let encoder = JSONEncoder()
 
     // MARK: - Legacy flat-key field list
 
