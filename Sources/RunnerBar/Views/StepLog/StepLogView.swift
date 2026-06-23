@@ -23,7 +23,7 @@ import SwiftUI
 // ║ ❌ NEVER omit idealWidth: 480 from the root frame                         ║
 // ║ ❌ NEVER add .frame(height:) here                                         ║
 // ║ ❌ NEVER add .fixedSize() here                                            ║
-// ✔ ScrollView MUST have .frame(maxHeight: visibleFrame * 0.75) cap         ║
+// ║ ✔ ScrollView MUST have .frame(maxHeight: visibleFrame * 0.75) cap        ║
 // ║   Without it, with sizingOptions=.preferredContentSize, SwiftUI           ║
 // ║   reports the full log text height as preferredContentSize.height on      ║
 // ║   navigate → panel grows off-screen. (ref #370)                           ║
@@ -38,7 +38,8 @@ import SwiftUI
 /// Shows the raw log text for a single `JobStep`.
 ///
 /// Placed by `AppDelegate.navigate()` (rootView swap). Fits the fixed popover frame;
-/// `ScrollView` absorbs overflow. Fetches log on `onAppear` via a background task.
+/// `ScrollView` absorbs overflow. Fetches log on `onAppear` via a background task;
+/// cancelled automatically on `onDisappear` to avoid wasted work on fast back-navigation.
 struct StepLogView: View {
     /// The job that owns this step.
     let job: ActiveJob
@@ -60,6 +61,8 @@ struct StepLogView: View {
     @State private var logText: String?
     /// `true` while the background fetch is in-flight.
     @State private var isLoading = true
+    /// Handle for the in-flight log fetch task; cancelled in `onDisappear`.
+    @State private var loadTask: Task<Void, Never>?
 
     // MARK: - Formatters (static to avoid re-allocation per render)
     /// `HH:mm:ss` formatter used for start/end time labels in the meta row.
@@ -207,10 +210,14 @@ struct StepLogView: View {
         // ════════════════════════════════════════════════════════════════════════
         .frame(idealWidth: 480, maxWidth: .infinity, alignment: .top)
         .onAppear { loadLog() }
+        .onDisappear { loadTask?.cancel() }
     }
 
     // MARK: - Log loading
     /// Kicks off a background fetch of the step log and publishes the result to `logText`.
+    ///
+    /// Stores the task handle in `loadTask` so `onDisappear` can cancel it if the user
+    /// navigates away before the fetch completes, avoiding wasted network work.
     ///
     /// Uses `repoScopeForFetch` (derived from `job.htmlUrl`) as the primary scope.
     /// Falls back to the first `owner/repo`-style entry in `scopeStore.activeScopes` when
@@ -227,9 +234,10 @@ struct StepLogView: View {
             return scopeStore.activeScopes.first(where: { $0.contains("/") }) ?? ""
         }()
         // ✅ Plain Task inherits @MainActor context from the view.
-        // @State writes are already on the main actor — no MainActor.run wrapper needed.
-        Task(name: "StepLogView.loadLog", priority: .userInitiated) {
+        // ✅ Handle stored so onDisappear can cancel on fast back-navigation (P9).
+        loadTask = Task(name: "StepLogView.loadLog", priority: .userInitiated) {
             let text = await fetchStepLog(jobID: jobID, stepNumber: stepNum, scope: scope)
+            guard !Task.isCancelled else { return }
             logText = text ?? ""
             isLoading = false
             onLogLoaded?()
