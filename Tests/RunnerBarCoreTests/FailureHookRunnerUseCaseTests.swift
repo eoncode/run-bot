@@ -65,6 +65,9 @@ struct FailureHookRunnerUseCaseTests {
             group: .fixture(conclusion: .failure, branch: "main"),
             scope: "owner/repo"
         )
+        // `fetchFailedJobs` makes a real ghAPI call; in CI (no token) it returns [].
+        // Terminal is still opened once because all guards cleared — network result
+        // does not affect whether the hook fires, only what $FAILURE_LOG contains.
         await MainActor.run { #expect(spy.openCallCount == 1) }
     }
 
