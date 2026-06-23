@@ -36,6 +36,9 @@ struct ScopesView: View {
     /// Pre-fetched preferences snapshot for `selectedScopeEntry`.
     /// Fetched asynchronously on row tap before the sheet is presented,
     /// so `ScopeEditSheet.init` remains synchronous. (#1538)
+    /// Cleared automatically whenever `selectedScopeEntry` becomes nil via
+    /// the `onChange` modifier below, keeping the two pieces of state in sync
+    /// regardless of how the sheet is dismissed. (#1538)
     @State private var selectedScopePreferences: ScopePreferences?
 
     // MARK: - Body
@@ -76,6 +79,13 @@ struct ScopesView: View {
                 // a blank/crashed view in the theoretical race described above.
                 EmptyView()
             }
+        }
+        // Self-enforcing invariant: whenever selectedScopeEntry is cleared from *any*
+        // code path (sheet dismiss via binding, external nil-out, future refactors),
+        // selectedScopePreferences is cleared with it. Prevents a stale snapshot from
+        // a previously selected scope persisting in memory. (#1538)
+        .onChange(of: selectedScopeEntry) { _, newEntry in
+            if newEntry == nil { selectedScopePreferences = nil }
         }
     }
 
@@ -161,6 +171,11 @@ struct ScopesView: View {
         let displayName = entry.displayName ?? entry.scope
         let hasAlias = entry.displayName != nil
         return Button {
+            // Guard against double-taps: if a sheet is already being prepared or presented,
+            // ignore the second tap entirely. Without this, two simultaneous Tasks could
+            // complete out-of-order and pair selectedScopePreferences from scope A with
+            // selectedScopeEntry for scope B. (#1538)
+            guard selectedScopeEntry == nil else { return }
             // Fetch preferences from the actor before presenting the sheet.
             // Plain Task{} — inherits @MainActor, sheet presentation happens
             // on main actor after the await. (P9)

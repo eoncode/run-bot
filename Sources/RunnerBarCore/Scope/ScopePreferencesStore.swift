@@ -11,8 +11,8 @@ import Foundation
 /// scheme (`scope.<scope>.<field>`) used by the caseless-enum predecessor.
 ///
 /// ## Why one blob per scope?
-/// A single JSON blob means `cleanUp(scope:)` is one `removeObject(forKey:)` call
-/// with no hardcoded field list to maintain. Adding a new field to `ScopePreferences`
+/// A single JSON blob means `cleanUp(scope:)` removes the blob key *and* any
+/// surviving legacy flat keys in one call. Adding a new field to `ScopePreferences`
 /// automatically includes it in cleanup without touching this file.
 ///
 /// ## Migration
@@ -20,11 +20,12 @@ import Foundation
 /// before any reads occur. It reads the legacy flat keys, writes the blob, removes
 /// the flat keys, and sets a `scope.__migrated_v2` guard flag. Safe to call multiple times.
 ///
-/// ## Encoder/decoder reuse (P17)
-/// `decoder` and `encoder` are `nonisolated` — `JSONDecoder`/`JSONEncoder` have no
-/// mutable state after initialisation and are safe to access from `nonisolated` contexts.
-/// `UserDefaults` operations are fast, in-process, and synchronous, so `@concurrent`
-/// is not needed here (unlike `RunnerConfigStore` which does blocking disk I/O).
+/// ## Encoder/decoder (P17)
+/// `decoder` and `encoder` are plain `private let` stored properties — not `nonisolated`.
+/// They are only ever called from actor-isolated `read` and `write`, which are serialised
+/// by the actor's executor, so there is no concurrent access. Dropping `nonisolated`
+/// removes any theoretical exposure to non-isolated call sites and avoids relying on
+/// the undocumented thread-safety of `JSONDecoder`/`JSONEncoder`.
 ///
 /// ## P21 note
 /// `JSONEncoder.outputFormatting` is intentionally NOT set to `.prettyPrinted`/`.sortedKeys`
@@ -43,10 +44,24 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
     /// The underlying `UserDefaults` instance used for all read/write operations.
     private let store: UserDefaults
 
-    /// Reused decoder. `nonisolated` because `JSONDecoder` is immutable post-init (P17).
-    nonisolated private let decoder = JSONDecoder()
-    /// Reused encoder. `nonisolated` because `JSONEncoder` is immutable post-init (P17).
-    nonisolated private let encoder = JSONEncoder()
+    /// Reused decoder. Private (not nonisolated) — only called from actor-isolated
+    /// `read(_:)`, so the actor's serial executor prevents concurrent access. (P17)
+    private let decoder = JSONDecoder()
+    /// Reused encoder. Private (not nonisolated) — only called from actor-isolated
+    /// `write(_:for:)`, so the actor's serial executor prevents concurrent access. (P17)
+    private let encoder = JSONEncoder()
+
+    // MARK: - Legacy flat-key field list
+
+    /// The complete set of flat-key suffixes used by the pre-migration scheme.
+    ///
+    /// Kept as a single source of truth so both `migrateIfNeeded` and `cleanUp`
+    /// use the same list. If a new field is ever added here it will automatically
+    /// be cleaned up by both call sites.
+    private static let legacyFields = [
+        "alias", "pollingInterval", "notifyOnSuccess", "notifyOnFailure",
+        "failureHookEnabled", "failureHookCommand", "localRepoPath", "failureHookBranch"
+    ]
 
     // MARK: - Init
 
@@ -91,7 +106,7 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
         log("ScopePreferencesStore › saved preferences for \(scope)")
     }
 
-    // MARK: - ScopePreferencesStoreProtocol — bulk snapshot
+    // MARK: - ScopePreferencesStoreProtocol — bulk snapshot / write
 
     /// Returns the full `ScopePreferences` snapshot for `scope` in a single actor hop.
     ///
@@ -99,6 +114,15 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
     /// (e.g. seeding `ScopeEditSheet` draft state). One `await` instead of N.
     public func preferences(for scope: String) -> ScopePreferences {
         read(scope: scope)
+    }
+
+    /// Writes a complete `ScopePreferences` snapshot for `scope` in a single actor hop.
+    ///
+    /// This is the preferred write path when multiple fields need to be committed
+    /// atomically (e.g. `ScopeEditSheet.confirmSave()`). One `await` and one
+    /// encode/write instead of N sequential read-modify-write cycles.
+    public func setPreferences(_ prefs: ScopePreferences, for scope: String) {
+        write(prefs, for: scope)
     }
 
     // MARK: - ScopePreferencesStoreProtocol — alias
@@ -219,8 +243,18 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
     // MARK: - ScopePreferencesStoreProtocol — cleanup
 
+    /// Removes all persisted data for `scope`: the blob key and any surviving
+    /// legacy flat keys.
+    ///
+    /// The legacy flat-key removal handles the edge case where a scope existed in the
+    /// old flat-key format but was removed from `ScopeStore` before `migrateIfNeeded`
+    /// ran — those keys would otherwise be orphaned indefinitely in `UserDefaults`.
+    /// For post-migration scopes the flat-key removals are no-ops.
     public func cleanUp(scope: String) {
         store.removeObject(forKey: blobKey(for: scope))
+        for field in Self.legacyFields {
+            store.removeObject(forKey: "scope.\(scope).\(field)")
+        }
         log("ScopePreferencesStore › cleaned up all keys for scope: \(scope)")
     }
 
@@ -238,11 +272,17 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
     /// `AppDelegate+StoreSetup`) before any other reads occur. (Step 7)
     ///
     /// - Parameter knownScopes: The list of scope strings currently in `ScopeStore`.
-    ///   Only scopes in this list are migrated — scopes removed before migration
-    ///   will have their legacy keys cleaned up on the next `cleanUp(scope:)` call
-    ///   (which also removes the blob key, a no-op for unmigrated scopes).
+    ///   Only scopes in this list are migrated. Scopes added after this flag is set
+    ///   start clean (no legacy flat keys), so skipping them in future calls is
+    ///   intentional. Scopes removed before migration ran will have their legacy keys
+    ///   cleaned up by `cleanUp(scope:)` if they are ever explicitly removed, or they
+    ///   will remain as inert orphan keys — this is an accepted low-severity trade-off.
     public func migrateIfNeeded(knownScopes: [String]) {
-        guard !store.bool(forKey: Self.migrationKey) else { return }
+        guard !store.bool(forKey: Self.migrationKey) else {
+            // Migration already ran. Scopes added after this point start clean
+            // (no legacy flat keys) so skipping them here is intentional.
+            return
+        }
         for scope in knownScopes {
             var prefs = ScopePreferences()
             if let v = store.string(forKey: "scope.\(scope).alias"), !v.isEmpty {
@@ -268,8 +308,7 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
                 prefs.failureHookBranch = v
             }
             write(prefs, for: scope)
-            for field in ["alias", "pollingInterval", "notifyOnSuccess", "notifyOnFailure",
-                          "failureHookEnabled", "failureHookCommand", "localRepoPath", "failureHookBranch"] {
+            for field in Self.legacyFields {
                 store.removeObject(forKey: "scope.\(scope).\(field)")
             }
         }
