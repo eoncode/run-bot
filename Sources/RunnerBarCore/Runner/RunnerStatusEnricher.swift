@@ -109,13 +109,18 @@ private struct RunnerListEnvelope: Decodable, Sendable {
 /// Conforms to `RunnerStatusEnricherProtocol` so it can be injected into
 /// `LocalRunnerStore` (Phase 6b, #1326).
 ///
+/// The `shared` singleton has been intentionally removed (#1539 item 22).
+/// Callers must construct an instance explicitly:
+/// ```swift
+/// LocalRunnerStore(viewModel: vm, enricher: RunnerStatusEnricher())
+/// ```
+/// This makes the dependency visible at the injection site and allows unit
+/// tests to substitute a stub without patching a global.
+///
 /// - Important: All methods are async. Always call from an async context —
 ///   never block the main actor waiting for enrichment.
 /// - SeeAlso: `RunnerModel`, `RunnerStatus`, `LocalRunnerStore`
 public struct RunnerStatusEnricher: RunnerStatusEnricherProtocol, Sendable {
-    // MARK: - Shared singleton
-    /// The shared `RunnerStatusEnricher` instance used throughout the app.
-    public static let shared = RunnerStatusEnricher()
 
     /// Creates a new `RunnerStatusEnricher` instance.
     public init() { /* No setup required; all enrichment work is stateless. */ }

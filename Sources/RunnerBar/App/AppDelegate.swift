@@ -104,6 +104,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The owned observable view-model passed into every SwiftUI view via the environment.
     /// `RunnerStore` and `LocalRunnerStore` push updates into this instance via `await MainActor.run { }`.
     let observable = RunnerViewModel()
+    /// Owned OAuth service instance. Typed to protocol so tests can supply a stub
+    /// without going through the live singleton (P7).
+    ///
+    /// Constructed once here — injected into `AppDelegate+OAuthCallback`, `AppDelegate+Polling`,
+    /// and `SettingsView` rather than accessed via a global `.shared`.
+    let oauthService: any OAuthServiceProtocol = OAuthService()
+    /// Owned lifecycle service instance. Typed to protocol so tests can supply a stub
+    /// without spawning real `svc.sh` processes (P7).
+    ///
+    /// Constructed once here — injected into `SettingsView` → `LocalRunnersView`
+    /// rather than accessed via a global `.shared`.
+    let lifecycleService: any RunnerLifecycleServiceProtocol = RunnerLifecycleService()
     /// Owned `LocalRunnerStore` actor — injected with `observable` so all state
     /// pushes land in the view model that SwiftUI actually observes.
     ///

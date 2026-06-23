@@ -97,11 +97,12 @@ actor LocalRunnerStore {
     /// - Parameters:
     ///   - viewModel: The view model this actor pushes UI state into.
     ///   - enricher: Provides GitHub API enrichment for locally-discovered runners.
-    ///     Pass `RunnerStatusEnricher.shared` in production; inject a test double in
-    ///     unit tests.
+    ///     Pass `RunnerStatusEnricher()` in production; inject a test double in unit tests.
+    ///     The `shared` singleton has been removed (#1539 item 22) — callers must
+    ///     construct an explicit instance.
     init(
         viewModel: RunnerViewModel,
-        enricher: any RunnerStatusEnricherProtocol = RunnerStatusEnricher.shared
+        enricher: any RunnerStatusEnricherProtocol = RunnerStatusEnricher()
     ) {
         self.viewModel = viewModel
         self.enricher = enricher
@@ -206,15 +207,15 @@ actor LocalRunnerStore {
         #endif
 
         guard let idx = runners.firstIndex(where: { runner in
-            if let rid = runnerId, let aid = runner.apiId, aid == rid {  // Priority 1: GitHub REST API id
+            if let rid = runnerId, let aid = runner.apiId, aid == rid {
                 log("LocalRunnerStore › applyMetrics — MATCH via apiId=\(aid) for '\(runner.runnerName)'")
                 return true
             }
-            if let rid = runnerId, let aid = runner.agentId, aid == rid {  // Priority 2: local AgentId
+            if let rid = runnerId, let aid = runner.agentId, aid == rid {
                 log("LocalRunnerStore › applyMetrics — MATCH via agentId=\(aid) for '\(runner.runnerName)'")
                 return true
             }
-            if runner.runnerName == name {  // Priority 3: name (last resort)
+            if runner.runnerName == name {
                 log("LocalRunnerStore › applyMetrics — MATCH via name='\(name)' for '\(runner.runnerName)'")
                 return true
             }
@@ -293,7 +294,7 @@ actor LocalRunnerStore {
         }
 
         // 3. Enrich via GitHub API (concurrent scope fetches).
-        // Uses the injected enricher — pass RunnerStatusEnricher.shared in production,
+        // Uses the injected enricher — pass RunnerStatusEnricher() in production,
         // or a StubEnricher in unit tests (Phase 6b, #1326).
         log("LocalRunnerStore › performRefresh() — starting GitHub enrichment for \(hydrated.count) runner(s)")
         let enriched = await enricher.enrich(runners: hydrated)
@@ -383,10 +384,10 @@ actor LocalRunnerStore {
 
     // MARK: - launchctl scan
 
-    /// Path to the `launchctl` binary used to enumerate live runner services.
+    /// Path to `launchctl`, used to list live runner services.
     private static let launchctlURL = URL(fileURLWithPath: "/bin/launchctl") // NOSONAR
 
-    /// Runs `launchctl list` and returns lines containing `actions.runner`.
+    /// Runs `launchctl list` and returns lines that contain `actions.runner`.
     private func scanLiveServices() async -> [String] {
         log("LocalRunnerStore › scanLiveServices — running launchctl list")
         let result = await ProcessRunner.runAsync(

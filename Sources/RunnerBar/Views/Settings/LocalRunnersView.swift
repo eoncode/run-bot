@@ -29,6 +29,11 @@ struct LocalRunnersView: View {
     /// Injected by the caller; defaults to `LocalRunnerStore.shared` at the `SettingsView` boundary.
     var localRunnerStore: LocalRunnerStore = .shared
 
+    /// Runner lifecycle service. Injected from `SettingsView` (which receives it from `AppDelegate`).
+    /// Typed to protocol so tests can supply a stub without spawning real `svc.sh` processes (P7).
+    /// No default — callers must supply the `AppDelegate`-owned instance explicitly.
+    var lifecycleService: any RunnerLifecycleServiceProtocol
+
     // MARK: - Local UI state
 
     /// `true` once the initial local runner scan has completed.
@@ -221,7 +226,7 @@ struct LocalRunnersView: View {
 
     // MARK: - Lifecycle actions
 
-    /// Optimistically marks the runner as running then delegates to `RunnerLifecycleService`.
+    /// Optimistically marks the runner as running then delegates to `lifecycleService`.
     ///
     /// The optimistic update is awaited inline before the lifecycle service is called so the
     /// runner row updates on the very next main-actor frame after the toggle fires. Previously
@@ -232,7 +237,7 @@ struct LocalRunnersView: View {
         Task(priority: .userInitiated) {
             // Await the optimistic update first — row reflects new state immediately.
             await localRunnerStore.optimisticallySetRunning(runner.runnerName, isRunning: true)
-            let result = await RunnerLifecycleService.shared.start(runner: runner)
+            let result = await lifecycleService.start(runner: runner)
             switch result {
             case .success: break
             case .corruptInstall:
@@ -248,7 +253,7 @@ struct LocalRunnersView: View {
         }
     }
 
-    /// Optimistically marks the runner as stopped then delegates to `RunnerLifecycleService`.
+    /// Optimistically marks the runner as stopped then delegates to `lifecycleService`.
     ///
     /// The optimistic update is awaited inline before the lifecycle service is called so the
     /// runner row updates on the very next main-actor frame after the toggle fires. Previously
@@ -259,7 +264,7 @@ struct LocalRunnersView: View {
         Task(priority: .userInitiated) {
             // Await the optimistic update first — row reflects new state immediately.
             await localRunnerStore.optimisticallySetRunning(runner.runnerName, isRunning: false)
-            let result = await RunnerLifecycleService.shared.stop(runner: runner)
+            let result = await lifecycleService.stop(runner: runner)
             switch result {
             case .success: break
             case .corruptInstall:
@@ -274,7 +279,7 @@ struct LocalRunnersView: View {
         }
     }
 
-    /// Optimistically removes the runner then delegates to `RunnerLifecycleService`. Rolls back on failure.
+    /// Optimistically removes the runner then delegates to `lifecycleService`. Rolls back on failure.
     @MainActor private func performRemoval() {
         guard let runner = runnerPendingRemoval else { return }
         runnerPendingRemoval = nil
@@ -285,7 +290,7 @@ struct LocalRunnersView: View {
         // before optimisticallyRemove, leaving the row permanently deleted on failure.
         Task(priority: .userInitiated) {
             await localRunnerStore.optimisticallyRemove(runner.runnerName)
-            let ok = await RunnerLifecycleService.shared.remove(runner: runner)
+            let ok = await lifecycleService.remove(runner: runner)
             if !ok {
                 await localRunnerStore.optimisticallyRestore(runner)
                 removeErrorMessage = "Failed to remove \"\(runner.runnerName)\". Check logs."

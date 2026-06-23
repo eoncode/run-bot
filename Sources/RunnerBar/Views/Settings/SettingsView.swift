@@ -40,11 +40,15 @@ struct SettingsView: View {
     /// The local runner actor forwarded into `LocalRunnersView`.
     /// Defaults to `LocalRunnerStore.shared` so call sites that don't own the actor still compile.
     var localRunnerStore: LocalRunnerStore = .shared
+    /// OAuth service injected from `AppDelegate`.
+    /// Typed to protocol so tests can supply a stub without the live singleton.
+    var oauthService: any OAuthServiceProtocol
+    /// Runner lifecycle service injected from `AppDelegate` and forwarded into `LocalRunnersView`.
+    /// Typed to protocol so tests can supply a stub without spawning real `svc.sh` processes.
+    /// No default -- callers must supply the `AppDelegate`-owned instance explicitly.
+    var lifecycleService: any RunnerLifecycleServiceProtocol
 
     // MARK: - Injected services
-    /// OAuth service used for sign-in / sign-out flows.
-    /// Defaults to the shared live instance; swap for a fake in tests.
-    let oauthService: OAuthService
     /// App-wide preference store (notifications, update channel, etc.).
     /// Injected as a concrete reference; `@Observable` types don't need `@State` wrapping.
     let settings: AppPreferencesStore
@@ -78,9 +82,10 @@ struct SettingsView: View {
         onBack: @escaping () -> Void,
         store: RunnerViewModel,
         localRunnerStore: LocalRunnerStore = .shared,
-        oauthService: OAuthService = .shared,
+        oauthService: any OAuthServiceProtocol = OAuthService.shared,
         settings: AppPreferencesStore = .shared,
-        notifications: NotificationPreferences = .shared
+        notifications: NotificationPreferences = .shared,
+        lifecycleService: any RunnerLifecycleServiceProtocol
     ) {
         self.onBack = onBack
         self.store = store
@@ -88,6 +93,7 @@ struct SettingsView: View {
         self.oauthService = oauthService
         self.settings = settings
         self.notifications = notifications
+        self.lifecycleService = lifecycleService
     }
 
     // MARK: - Computed properties
@@ -114,7 +120,8 @@ struct SettingsView: View {
                     onBack: { showLocalRunners = false },
                     isAuthenticated: isOAuthAuthenticated || isCLIAuthenticated,
                     store: store,
-                    localRunnerStore: localRunnerStore
+                    localRunnerStore: localRunnerStore,
+                    lifecycleService: lifecycleService
                 )
             } else if showScopes {
                 ScopesView(onBack: { showScopes = false })
