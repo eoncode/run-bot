@@ -12,14 +12,14 @@ import SwiftUI
 // ScrollView uses maxHeight: .infinity to fill all remaining panel space.
 // AppDelegate.resizeAndRepositionPanel() clamps the panel at 85% visibleFrame.
 // No extra cap needed here — the panel cap IS the scroll boundary.
-// ❌ NEVER move headerBar inside the ScrollView.
-// ❌ NEVER replace .infinity with a fixed number.
-// ❌ NEVER use GeometryReader for the height.
-// ❌ NEVER add idealHeight to the root frame.
+// NEVER move headerBar inside the ScrollView.
+// NEVER replace .infinity with a fixed number.
+// NEVER use GeometryReader for the height.
+// NEVER add idealHeight to the root frame.
 //
 // WIDTH CONTRACT:
 // .frame(idealWidth: 480) — only idealWidth needed. NSPanel handles bounds.
-// ❌ NEVER remove idealWidth: 480.
+// NEVER remove idealWidth: 480.
 //
 // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
 // UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
@@ -109,8 +109,8 @@ struct SettingsView: View {
     /// The main settings layout (header + sections scroll).
     ///
     /// HEIGHT CONTRACT: headerBar is OUTSIDE the ScrollView — back button always visible.
-    /// ❌ NEVER move headerBar inside the ScrollView.
-    /// ❌ NEVER replace .infinity with a fixed number.
+    /// NEVER move headerBar inside the ScrollView.
+    /// NEVER replace .infinity with a fixed number.
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE. The regression we get when this comment is removed
     /// is major major major.
@@ -123,7 +123,7 @@ struct SettingsView: View {
             }
             // maxHeight: .infinity — fills all space the panel gives us.
             // AppDelegate caps the panel at 85% visibleFrame. That IS the limit.
-            // ❌ NEVER replace .infinity with a fixed number — the panel cap is the boundary.
+            // NEVER replace .infinity with a fixed number — the panel cap is the boundary.
             .frame(maxHeight: .infinity)
         }
         .frame(idealWidth: 480, maxWidth: .infinity)
