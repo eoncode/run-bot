@@ -65,6 +65,17 @@ import SwiftUI
 // consistently regardless of which condition fails. The else branch is where
 // isTransientHide is checked before any state mutation.
 //
+// ── TIMER CALLBACK — NO Task { @MainActor in } ──────────────────────────────
+//
+// Timer callbacks fire on the main run loop (scheduledTimer guarantees this)
+// but are NOT automatically bridged into Swift's actor system. Under Swift 6
+// strict concurrency, `Task { @MainActor in }` inside a Timer callback
+// introduces an @isolated(any) overload-resolution ambiguity that causes a
+// build error. We use DispatchQueue.main.async instead — semantically identical
+// (main thread, next run loop), zero concurrency-checker friction.
+//
+// ❌ NEVER revert to Task { @MainActor in } inside Timer callbacks in this file.
+//
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Wraps popover content and dims it when a SwiftUI sheet is active.
@@ -165,6 +176,11 @@ struct PanelContainerView<Content: View>: View {
     // there is no KVO-observable property without subclassing NSWindow.
     //
     // Timer interval 100ms: fast enough to feel instant, cheap enough at 10Hz.
+    //
+    // The callback uses DispatchQueue.main.async rather than Task { @MainActor in }
+    // to avoid Swift 6 strict-concurrency @isolated(any) overload ambiguity.
+    // Timer.scheduledTimer already fires on the main run loop; the async hop
+    // simply defers state mutation to the next run-loop iteration as before.
 
     /// Starts (or restarts) the repeating sheet-detection timer.
     ///
@@ -172,8 +188,8 @@ struct PanelContainerView<Content: View>: View {
     /// Safe to call multiple times — will not create duplicate timers.
     private func startPolling() {
         stopPolling()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            Task { @MainActor in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [self] _ in
+            DispatchQueue.main.async {
                 // Single atomic guard — do NOT split into two separate guards.
                 // See "TIMER GUARD SPLIT" comment at the top of this file for why.
                 //
@@ -185,8 +201,8 @@ struct PanelContainerView<Content: View>: View {
                 // In all these cases we fall into the else branch to decide whether
                 // to clear isSheetActive. We only clear it on a genuine close, not
                 // during a transient hide where the sheet window is still alive.
-                guard panelVisibilityState.isOpen,
-                      let window = hostWindow,
+                guard self.panelVisibilityState.isOpen,
+                      let window = self.hostWindow,
                       window.isVisible
                 else {
                     // isTransientHide = true means hidePanel() caused this guard
@@ -195,8 +211,8 @@ struct PanelContainerView<Content: View>: View {
                     //
                     // isTransientHide = false means closePanel() or the window
                     // genuinely disappeared — safe to clear.
-                    if !panelVisibilityState.isTransientHide, isSheetActive {
-                        isSheetActive = false
+                    if !self.panelVisibilityState.isTransientHide, self.isSheetActive {
+                        self.isSheetActive = false
                     }
                     return
                 }
@@ -204,7 +220,7 @@ struct PanelContainerView<Content: View>: View {
                 // Window is visible and panel is open — ground truth read.
                 let hasVisibleSheet = window.sheets.contains { $0.isVisible }
                 // Guard against redundant SwiftUI state updates (no-op if unchanged).
-                if hasVisibleSheet != isSheetActive { isSheetActive = hasVisibleSheet }
+                if hasVisibleSheet != self.isSheetActive { self.isSheetActive = hasVisibleSheet }
             }
         }
     }
