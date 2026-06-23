@@ -261,7 +261,7 @@ struct FailureHookRunnerUseCase: Sendable {
                 let tail: String?
                 if let jobConclusion = job.conclusion, jobConclusion.isHookConclusion {
                     log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)")
-                    if let fullLog = await fetchJobLog(jobID: job.id, scope: scope) {
+                    if let fullLog = await LogFetcher().fetchJobLog(jobID: job.id, scope: scope) {
                         let lines = fullLog.components(separatedBy: "\n")
                         let kept = lines.suffix(150).joined(separator: "\n")
                         tail = kept
