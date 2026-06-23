@@ -623,3 +623,5 @@ extension ScopeEditSheet {
         .padding(.horizontal, RBSpacing.md).padding(.vertical, 7)
     }
 }
+
+// swiftlint:disable:this file_length

@@ -204,7 +204,14 @@ actor MockScopePreferencesStore: ScopePreferencesStoreProtocol {
     var hookEnabled: Bool    = false
     var command:     String? = nil
     var branch:      String? = nil
-    var localPath:   String? = nil
+    var localRepoPath:   String? = nil
+
+    func setProperties(hookEnabled: Bool, command: String?, branch: String?, localRepoPath: String?) {
+        self.hookEnabled = hookEnabled
+        self.command = command
+        self.branch = branch
+        self.localRepoPath = localRepoPath
+    }
 
     // Scoped to failure-hook only — unused properties return defaults.
     func preferences(for _: String) -> ScopePreferences { ScopePreferences() }
@@ -223,11 +230,15 @@ actor MockScopePreferencesStore: ScopePreferencesStoreProtocol {
     func setLocalRepoPath(_: String?, for _: String) {}
     func setFailureHookBranch(_: String?, for _: String) {}
     func cleanUp(scope _: String) {}
+    func modifyPreferences(for _: String, with mutation: @Sendable (inout ScopePreferences) -> Void) {
+        var prefs = ScopePreferences()
+        mutation(&prefs)
+    }
 
     func failureHookEnabled(for _: String) -> Bool    { hookEnabled }
     func failureHookCommand(for _: String) -> String? { command }
     func failureHookBranch(for _:  String) -> String? { branch }
-    func localRepoPath(for _:      String) -> String? { localPath }
+    func localRepoPath(for _:      String) -> String? { localRepoPath }
 }
 
 // MARK: - SpyTerminalLauncher
@@ -241,7 +252,7 @@ final class SpyTerminalLauncher: TerminalLauncherProtocol, @unchecked Sendable {
     private(set) var openCallCount = 0
     private(set) var lastCommand: String?
 
-    @MainActor func open(command: String) {
+    @MainActor func open(_ command: String) {
         openCallCount += 1
         lastCommand = command
     }

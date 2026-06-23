@@ -17,13 +17,10 @@ struct FailureHookRunnerUseCaseTests {
         hookEnabled: Bool = true,
         branch: String? = nil,
         localPath: String = ""
-    ) -> (sut: FailureHookRunnerUseCase, spy: SpyTerminalLauncher) {
+    ) async -> (sut: FailureHookRunnerUseCase, spy: SpyTerminalLauncher) {
         let spy = SpyTerminalLauncher()
-        let store = MockScopePreferencesStore(
-            hookEnabled: hookEnabled,
-            branch: branch,
-            localRepoPath: localPath
-        )
+        let store = MockScopePreferencesStore()
+        await store.setProperties(hookEnabled: hookEnabled, command: nil, branch: branch, localRepoPath: localPath)
         let sut = FailureHookRunnerUseCase(preferencesStore: store, terminalLauncher: spy)
         return (sut, spy)
     }
@@ -60,21 +57,21 @@ struct FailureHookRunnerUseCaseTests {
 
     /// Hook disabled → terminal must not open regardless of group conclusion.
     @Test func fireIfNeededHookDisabledDoesNotOpenTerminal() async {
-        let (sut, spy) = makeSUT(hookEnabled: false)
+        let (sut, spy) = await makeSUT(hookEnabled: false)
         await sut.fireIfNeeded(group: .fixture(conclusion: .failure), scope: "owner/repo")
         await MainActor.run { #expect(spy.openCallCount == 0) }
     }
 
     /// Hook enabled but group did not fail → terminal must not open.
     @Test func fireIfNeededHookEnabledGroupNotFailedDoesNotOpenTerminal() async {
-        let (sut, spy) = makeSUT()
+        let (sut, spy) = await makeSUT()
         await sut.fireIfNeeded(group: .fixture(conclusion: .success), scope: "owner/repo")
         await MainActor.run { #expect(spy.openCallCount == 0) }
     }
 
     /// Branch filter set, group branch does not match → terminal must not open.
     @Test func fireIfNeededBranchFilterMismatchDoesNotOpenTerminal() async {
-        let (sut, spy) = makeSUT(branch: "main")
+        let (sut, spy) = await makeSUT(branch: "main")
         await sut.fireIfNeeded(
             group: .fixture(conclusion: .failure, branch: "feature/x"),
             scope: "owner/repo"
@@ -86,7 +83,7 @@ struct FailureHookRunnerUseCaseTests {
     /// `fetchFailedJobs` calls `ghAPI` which returns nil in CI (no token); jobs comes back empty.
     /// Terminal still opens once because all guards cleared before the network call.
     @Test func fireIfNeededAllGatesPassOpensTerminalOnce() async {
-        let (sut, spy) = makeSUT(branch: "main")
+        let (sut, spy) = await makeSUT(branch: "main")
         await sut.fireIfNeeded(
             group: .fixture(conclusion: .failure, branch: "main"),
             scope: "owner/repo"

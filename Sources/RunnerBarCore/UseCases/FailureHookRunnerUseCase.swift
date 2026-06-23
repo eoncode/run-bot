@@ -76,14 +76,14 @@ public struct FailureHookRunnerUseCase: Sendable {
     ) async {
         // swiftlint:disable:next line_length
         log("FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
-        let hookEnabled = preferencesStore.failureHookEnabled(for: scope)
+        let hookEnabled = await preferencesStore.failureHookEnabled(for: scope)
         log("FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(hookEnabled)")
         guard hookEnabled else {
             log("FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)")
             return
         }
         // Branch filter — skip if a branch filter is set and doesn't match.
-        let filterBranch = preferencesStore.failureHookBranch(for: scope)
+        let filterBranch = await preferencesStore.failureHookBranch(for: scope)
         if let filter = filterBranch {
             let groupBranch = group.headBranch ?? ""
             guard groupBranch == filter else {
@@ -92,7 +92,7 @@ public struct FailureHookRunnerUseCase: Sendable {
             }
             log("FailureHookRunnerUseCase branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
         }
-        let storedCommand = preferencesStore.failureHookCommand(for: scope)
+        let storedCommand = await preferencesStore.failureHookCommand(for: scope)
         log("FailureHookRunnerUseCase storedCommand for scope=\(scope) -> \(storedCommand ?? "<nil -- will use defaultCommand>")")
         let command = storedCommand ?? FailureHookRunnerUseCase.defaultCommand
         log("FailureHookRunnerUseCase resolved command (first 200): \(command.prefix(200))")
@@ -106,13 +106,13 @@ public struct FailureHookRunnerUseCase: Sendable {
         log("FailureHookRunnerUseCase ALL CHECKS PASSED -- fetching failed jobs for scope=\(scope) groupID=\(group.id)")
         let jobs = await Self.fetchFailedJobs(group: group, scope: scope)
         log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
-        let localPath = preferencesStore.localRepoPath(for: scope) ?? ""
+        let localPath = await preferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
         log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))")
         log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)")
         // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
         await MainActor.run {
-            terminalLauncher.open(command: resolved)
+            terminalLauncher.open(resolved)
             log("FailureHookRunnerUseCase main actor -- terminalLauncher.open returned for groupID=\(group.id)")
         }
     }
@@ -285,4 +285,3 @@ public struct FailureHookRunnerUseCase: Sendable {
         str.replacingOccurrences(of: "'", with: "'\\''")
     }
 }
-// swiftlint:disable:this file_length

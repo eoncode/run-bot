@@ -44,7 +44,7 @@ public protocol ScopePreferencesStoreProtocol: Actor {
     ///   - mutation: A closure that receives the current `ScopePreferences` as
     ///     an `inout` value and applies all desired changes before returning.
     ///     The closure runs synchronously inside the actor.
-    func modifyPreferences(for scope: String, with mutation: (inout ScopePreferences) -> Void)
+    func modifyPreferences(for scope: String, with mutation: @Sendable (inout ScopePreferences) -> Void)
 
     // MARK: - Alias
 
@@ -107,7 +107,7 @@ public extension ScopePreferencesStoreProtocol {
     /// the actor so the full RMW is a single hop. Concrete conformers can override
     /// this if they have a specialised storage model, but the default is correct
     /// for any conformer that implements `preferences(for:)` and `setPreferences(_:for:)`.
-    func modifyPreferences(for scope: String, with mutation: (inout ScopePreferences) -> Void) {
+    func modifyPreferences(for scope: String, with mutation: @Sendable (inout ScopePreferences) -> Void) {
         var prefs = preferences(for: scope)
         mutation(&prefs)
         setPreferences(prefs, for: scope)

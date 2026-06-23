@@ -313,14 +313,10 @@ private struct OAuthTokenResponse: Decodable {
     }
 }
 
-/// Typed request body for the GitHub OAuth token-exchange POST.
-///
-/// Replaces the `[String: String]` dictionary literal previously used in
-/// `exchangeCode(_:)`. Using a concrete `Encodable` struct:
-/// - Makes the three required fields explicit and compiler-checked.
-/// - Eliminates stringly-typed key spellings (`"client_id"` etc.) at the call site.
-/// - Documents the contract of the GitHub OAuth token endpoint inline.
-// periphery:ignore:all
+// MARK: - OAuthTokenRequest
+
+// periphery:ignore
+/// OAuth token-exchange request body for the GitHub API.
 private struct OAuthTokenRequest: Encodable {
     /// The GitHub OAuth app client ID.
     let clientID: String

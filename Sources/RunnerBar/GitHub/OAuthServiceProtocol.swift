@@ -35,11 +35,6 @@ import Foundation
 /// ```
 @MainActor
 protocol OAuthServiceProtocol: AnyObject {
-    /// Called on the main thread after sign-in completes. `true` = success.
-    /// Register once in `SettingsView.onAppearAction` — do NOT re-assign in `signIn()`.
-    /// The closure itself is `@MainActor`-isolated — conformers must invoke it on the main actor.
-    var onCompletion: (@MainActor (Bool) -> Void)? { get set }
-
     /// Opens the GitHub OAuth authorization page in the default browser to begin sign-in.
     func signIn()
 
@@ -49,6 +44,10 @@ protocol OAuthServiceProtocol: AnyObject {
     /// Handles the OAuth redirect URL from the OS, verifying the CSRF state nonce
     /// and exchanging the authorization code for an access token.
     func handleCallback(_ url: URL)
+
+    /// Returns a new `AsyncStream<Bool>` that fires once per sign-in attempt.
+    /// `true` = success, `false` = failure.
+    func makeSignInStream() -> AsyncStream<Bool>
 
     /// Returns a new `AsyncStream<Void>` that fires once per `signOut()` call.
     /// Each call site must request its own stream; events are multicasted across all active streams.

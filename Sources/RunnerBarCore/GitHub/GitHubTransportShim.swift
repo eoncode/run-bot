@@ -134,6 +134,14 @@ func ghAPI(_ endpoint: String) async -> Data? {
     return result
 }
 
+// periphery:ignore
+/// Calls the configured raw-bytes transport for log endpoints.
+/// Returns `nil` on failure or when no transport is configured.
+func ghRaw(_ endpoint: String) async -> Data? {
+    let transport = rawTransportBox.read()
+    return await transport(endpoint)
+}
+
 /// Calls the configured paginated JSON transport.
 ///
 /// Increments `apiCallCounter` once per invocation via a direct `await` when

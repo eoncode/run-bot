@@ -82,7 +82,7 @@ struct SettingsView: View {
         onBack: @escaping () -> Void,
         store: RunnerViewModel,
         localRunnerStore: LocalRunnerStore = .shared,
-        oauthService: any OAuthServiceProtocol = OAuthService.shared,
+        oauthService: any OAuthServiceProtocol,
         settings: AppPreferencesStore = .shared,
         notifications: NotificationPreferences = .shared,
         lifecycleService: any RunnerLifecycleServiceProtocol

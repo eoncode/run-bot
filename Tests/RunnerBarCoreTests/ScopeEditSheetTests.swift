@@ -107,6 +107,28 @@ actor FakeScopePreferencesStore: ScopePreferencesStoreProtocol {
         writeLog.removeAll()
     }
 
+    func modifyPreferences(for scope: String, with mutation: @Sendable (inout ScopePreferences) -> Void) {
+        var prefs = store[scope] ?? ScopePreferences()
+        mutation(&prefs)
+        store[scope] = prefs
+    }
+
+    func failureHookEnabled(for scope: String) -> Bool {
+        store[scope]?.failureHookEnabled ?? false
+    }
+
+    func failureHookCommand(for scope: String) -> String? {
+        store[scope]?.failureHookCommand
+    }
+
+    func failureHookBranch(for scope: String) -> String? {
+        store[scope]?.failureHookBranch
+    }
+
+    func localRepoPath(for scope: String) -> String? {
+        store[scope]?.localRepoPath
+    }
+
     // MARK: Convenience
 
     /// Seeds the store with a known value so tests can control the initial state.
