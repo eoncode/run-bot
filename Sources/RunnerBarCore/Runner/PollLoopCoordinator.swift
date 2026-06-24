@@ -63,7 +63,7 @@ import Foundation
 ///   against a newer generation.
 /// - 🔵 `#1256` tracking issue: confirmed closed 2026-06-09; `RunnerStore+PollLoop`
 ///   comment updated to note supersession by this PR.
-public final class PollLoopCoordinator: @unchecked Sendable {
+final class PollLoopCoordinator: @unchecked Sendable {
 
     // MARK: - Stored task handles
     // These are intentionally private (not private(set)) — no external caller
@@ -80,7 +80,7 @@ public final class PollLoopCoordinator: @unchecked Sendable {
     // MARK: - Init
 
     /// Creates a new coordinator with all task handles set to `nil`.
-    public init() {}
+    init() {}
 
     deinit { cancelAll() }
 
@@ -88,21 +88,21 @@ public final class PollLoopCoordinator: @unchecked Sendable {
 
     /// Cancels the existing poll task (if any) and replaces it with `task`.
     /// Passing `nil` cancels without installing a replacement.
-    public func setPollTask(_ task: Task<Void, Never>?) {
+    func setPollTask(_ task: Task<Void, Never>?) {
         pollTask?.cancel()
         pollTask = task
     }
 
     /// Cancels the existing interval-observation task (if any) and replaces it with `task`.
     /// Passing `nil` cancels without installing a replacement.
-    public func setIntervalObservationTask(_ task: Task<Void, Never>?) {
+    func setIntervalObservationTask(_ task: Task<Void, Never>?) {
         intervalObservationTask?.cancel()
         intervalObservationTask = task
     }
 
     /// Cancels the existing scope-observation task (if any) and replaces it with `task`.
     /// Passing `nil` cancels without installing a replacement.
-    public func setScopeObservationTask(_ task: Task<Void, Never>?) {
+    func setScopeObservationTask(_ task: Task<Void, Never>?) {
         scopeObservationTask?.cancel()
         scopeObservationTask = task
     }
@@ -113,7 +113,7 @@ public final class PollLoopCoordinator: @unchecked Sendable {
     /// (`setPollTask(nil)` also nils) and releases the `Task` references immediately,
     /// leaving the coordinator in a clean, fully-reset state.
     /// Called from `RunnerPoller.deinit` and this type's own `deinit`.
-    public func cancelAll() {
+    func cancelAll() {
         pollTask?.cancel()
         pollTask = nil
         intervalObservationTask?.cancel()

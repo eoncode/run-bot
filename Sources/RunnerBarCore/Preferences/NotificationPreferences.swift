@@ -57,6 +57,9 @@ public final class NotificationPreferences {
     ///   Pass `.standard` in production (via the `shared` singleton) or an
     ///   ephemeral suite (`UserDefaults(suiteName:)`) in unit tests to avoid
     ///   polluting the real preferences database. (P7)
+    ///
+    /// Calls `register(into: store)` automatically — no need to call it
+    /// separately in production code.
     public init(store: UserDefaults) {
         self.defaults = store
         NotificationPreferences.register(into: store)
@@ -69,8 +72,10 @@ public final class NotificationPreferences {
     /// Registers factory defaults so that `bool(forKey:)` returns the intended
     /// value on first launch without requiring an `object(forKey:) == nil` guard.
     ///
-    /// Call once at app startup (e.g. from `applicationDidFinishLaunching`) and
-    /// again in unit tests before exercising notification logic.
+    /// `init(store:)` calls this automatically in production. This method is
+    /// `public` for test setup only — call it when you need defaults registered
+    /// before `init` runs (e.g. testing code that reads from `UserDefaults`
+    /// directly before constructing a `NotificationPreferences` instance).
     ///
     /// - Parameter store: The `UserDefaults` instance to register defaults into.
     ///   Pass `.standard` for production; pass a suite instance in tests.
