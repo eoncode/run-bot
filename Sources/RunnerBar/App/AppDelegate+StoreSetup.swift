@@ -68,20 +68,21 @@ extension AppDelegate {
             setupStatusItem()
             setupPanel()
             setupSignOutSubscription()
-            // Step 13: wire ObservationLoop instances so AppDelegate reacts to
-            // RunnerState changes without a callback from RunnerPoller.
+            // Step 13: wire ObservationLoop so AppDelegate reacts to RunnerState
+            // changes without a callback from RunnerPoller.
+            //
+            // ⚠️ Only `statusIconLoop` is wired here. Failure hooks are NOT
+            // observed via ObservationLoop — they are fired exclusively by
+            // `RunnerPoller.buildGroupState` via the injected `fireFailureHook`
+            // closure, which is correctly deduplicated by `seenGroupIDs` inside
+            // `PollResultBuilder`. Adding a second observer here would fire hooks
+            // for groups already handled by `buildGroupState`, bypassing
+            // `seenGroupIDs` and causing duplicate hook executions.
             statusIconLoop = ObservationLoop { [weak self] in
                 guard let self else { return }
                 _ = runnerState.aggregateStatus
             } onChange: { [weak self] in
                 self?.updateStatusIcon()
-            }
-            failureHookLoop = ObservationLoop { [weak self] in
-                guard let self else { return }
-                _ = runnerState.actions
-            } onChange: { [weak self] in
-                guard let self else { return }
-                FailureHookRunner.evaluate(runnerState.actions)
             }
             log("AppDelegate › applicationDidFinishLaunching — DONE")
         }
