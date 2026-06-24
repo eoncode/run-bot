@@ -9,6 +9,22 @@
 import Foundation
 import os
 
+// MARK: - IndexedScopedRunner
+
+/// Carries a scope-fetched `Runner` alongside its source-scope string and
+/// sort-order index. Used internally by `fetchAndEnrichRunners` to pass data
+/// through two concurrent `withTaskGroup` phases without a 3-member tuple
+/// (which would trigger the `large_tuple` SwiftLint rule).
+private struct IndexedScopedRunner {
+    /// The position of the owning scope in the `scopes` array — used to
+    /// preserve deterministic ordering of runners across concurrent fetches.
+    var idx: Int
+    /// The GitHub scope URL string (repo or org) this runner belongs to.
+    var scope: String
+    /// The enriched `Runner` value. Mutated in-place during Phase 2 to add metrics.
+    var runner: Runner
+}
+
 // MARK: - RunnerPoller
 
 /// Swift 6 actor that owns the GitHub poll loop and all derived runner/job/action state.
@@ -320,7 +336,7 @@ public actor RunnerPoller {
         // Phase 1 — Fetch raw runners for all scopes in parallel.
         // Each element retains its source scope so Phase 2 can form the
         // "<scope>/<runnerName>" composite key for the byFullKey fallback.
-        var indexed: [(idx: Int, scope: String, runner: Runner)] = []
+        var indexed: [IndexedScopedRunner] = []
         await withTaskGroup(of: (Int, String, [Runner]).self) { group in
             for (i, scope) in scopes.enumerated() {
                 group.addTask {
@@ -329,7 +345,7 @@ public actor RunnerPoller {
                 }
             }
             for await (i, scope, fetched) in group {
-                indexed.append(contentsOf: fetched.map { (i, scope, $0) })
+                indexed.append(contentsOf: fetched.map { IndexedScopedRunner(idx: i, scope: scope, runner: $0) })
             }
         }
 
