@@ -1,10 +1,16 @@
-// RunnerStore+PollBridge.swift
+// RunnerPoller+PollBridge.swift
 // RunnerBar
+//
+// Step 9: All bridge methods are `public`. `FailureHookRunner` is decoupled —
+// the `fireFailureHook` closure parameter in `buildGroupState` is the only
+// call-site; `FailureHookRunner` itself stays in the app target and never
+// touches Core. In Step 10 this file moves to RunnerBarCore as
+// `extension RunnerPoller` once the actor is renamed.
 import Foundation
 import os
 import RunnerBarCore
 
-// MARK: - RunnerStore thin wrappers
+// MARK: - RunnerStore PollBridge
 
 // These extensions delegate to PollResultBuilder so RunnerStore.fetch() call
 // sites are unchanged while the logic lives in the independently testable builder.
@@ -17,11 +23,16 @@ import RunnerBarCore
 /// `await MainActor.run { }` replaces the old `DispatchQueue.main.sync` pattern;
 /// unlike `main.sync`, `MainActor.run` is re-entrant-safe and will not deadlock
 /// when called from the main actor itself.
+///
+/// `FailureHookRunner` is intentionally **not** referenced here — the
+/// `fireFailureHook` closure passed into `PollResultBuilder.buildGroupState`
+/// is the sole integration point, keeping `FailureHookRunner` in the app
+/// target and out of `RunnerBarCore`.
 extension RunnerStore {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
-    func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) async -> JobPollResult {
+    public func buildJobState(snapPrev: [Int: ActiveJob], snapCache: [Int: ActiveJob]) async -> JobPollResult {
         await PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
             snapCache: snapCache,
@@ -42,7 +53,7 @@ extension RunnerStore {
     /// Builds a `GroupPollResult` by fetching live workflow action groups for all monitored scopes,
     /// firing failure hooks for newly-failed groups, enriching jobs from the job cache,
     /// and diffing against `snapPrevGroups`.
-    func buildGroupState(
+    public func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: Set<String>,
@@ -82,7 +93,7 @@ extension RunnerStore {
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
     /// Uses `decoder` — a stored instance property on `RunnerStore` — which is serialised
     /// by the actor's own executor, ensuring no concurrent access.
-    func backfillSteps(into cache: inout [Int: ActiveJob]) async {
+    public func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil,
@@ -103,7 +114,7 @@ extension RunnerStore {
     /// `nonisolated`: reads only `group` (a `Sendable` value type passed as a parameter)
     /// and calls `scopeFromHtmlUrl` (a pure free function). No main-actor state is accessed,
     /// so the `@MainActor` hop at every call site in `buildGroupState` is unnecessary.
-    nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
+    public nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")
@@ -127,7 +138,7 @@ extension RunnerStore {
     /// Marking it `nonisolated` removes the implicit `@MainActor` hop that was serialising
     /// every `withTaskGroup` child task in `PollResultBuilder.buildGroupState` through
     /// the main actor, negating the intended parallelism (#1153).
-    nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
+    public nonisolated func enrichGroupJobs(_ jobs: [ActiveJob], jobCache: [Int: ActiveJob]) -> [ActiveJob] {
         jobs.map { job in
             guard let cached = jobCache[job.id] else { return job }
             // cacheHasConclusion: the cache settled a conclusion the live API hasn't returned
