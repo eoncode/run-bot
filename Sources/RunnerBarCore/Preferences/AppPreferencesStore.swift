@@ -113,7 +113,11 @@ public final class AppPreferencesStore {
 
 // MARK: - Comparable+clamped
 
-extension Comparable {
+/// Constrains a `Comparable` value to a closed range.
+///
+/// Declared as an extension on `Comparable` so it is available to all numeric
+/// types across `RunnerBarCore` without repetition.
+public extension Comparable {
     /// Returns the value clamped to `range`, i.e. `max(lowerBound, min(self, upperBound))`.
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
