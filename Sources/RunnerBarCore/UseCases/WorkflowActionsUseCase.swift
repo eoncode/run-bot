@@ -1,6 +1,5 @@
 // WorkflowActionsUseCase.swift
-// RunnerBar
-import RunnerBarCore
+// RunnerBarCore
 
 // MARK: - WorkflowActionsUseCase
 
@@ -15,7 +14,7 @@ import RunnerBarCore
 /// `WorkflowActionsUseCase` is a non-actor `Sendable` struct, all methods
 /// are already non-isolated and run on the cooperative thread pool when
 /// called with `await` from inside a `Task { }` (P18).
-struct WorkflowActionsUseCase: Sendable {
+public struct WorkflowActionsUseCase: Sendable {
 
     // MARK: - Dependencies
 
@@ -28,7 +27,7 @@ struct WorkflowActionsUseCase: Sendable {
     /// Creates a use case with an optional custom transport.
     /// - Parameter transport: The GitHub transport to use for all mutations.
     ///   Defaults to `sharedGitHubTransport`.
-    init(transport: any GitHubTransportProtocol = sharedGitHubTransport) {
+    public init(transport: any GitHubTransportProtocol = sharedGitHubTransport) {
         self.transport = transport
     }
 
@@ -41,7 +40,7 @@ struct WorkflowActionsUseCase: Sendable {
     /// short-circuit on the first `false`, implicitly cancelling the group
     /// and dropping remaining in-flight requests.
     @discardableResult
-    func rerunFailed(runIDs: [Int], scope: String) async -> Bool {
+    public func rerunFailed(runIDs: [Int], scope: String) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             for id in runIDs {
                 group.addTask {
@@ -65,7 +64,7 @@ struct WorkflowActionsUseCase: Sendable {
     /// short-circuit on the first `false`, implicitly cancelling the group
     /// and dropping remaining in-flight requests.
     @discardableResult
-    func rerunAll(runIDs: [Int], scope: String) async -> Bool {
+    public func rerunAll(runIDs: [Int], scope: String) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             for id in runIDs {
                 group.addTask {
@@ -89,7 +88,7 @@ struct WorkflowActionsUseCase: Sendable {
     /// short-circuit on the first `false`, implicitly cancelling the group
     /// and dropping remaining in-flight requests.
     @discardableResult
-    func cancel(runIDs: [Int], scope: String) async -> Bool {
+    public func cancel(runIDs: [Int], scope: String) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             for id in runIDs {
                 group.addTask {
@@ -106,7 +105,7 @@ struct WorkflowActionsUseCase: Sendable {
 
     /// Re-runs a single job by ID.
     @discardableResult
-    func rerunJob(jobID: Int, scope: String) async -> Bool {
+    public func rerunJob(jobID: Int, scope: String) async -> Bool {
         await transport.post(
             "repos/\(scope)/actions/jobs/\(jobID)/rerun",
             body: nil,
