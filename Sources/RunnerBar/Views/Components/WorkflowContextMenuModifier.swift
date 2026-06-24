@@ -141,7 +141,7 @@ private struct JobContextMenuModifier: ViewModifier {
     @ViewBuilder
     private var menuItems: some View {
         let isConcluded = job.conclusion != nil
-        let isLive = job.status == "in_progress"
+        let isLive = job.status == .inProgress
         let scope = group.repo
 
         // Re-run job

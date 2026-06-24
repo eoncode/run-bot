@@ -194,11 +194,12 @@ to both bridge calls) is a valid follow-up but is out of scope for this structur
 a single poll cycle, but callers holding the concrete type can — bypassing the intended
 seam.
 
-**Reality:** This is intentional. `fetch()` is `public` specifically to support
-test-driving a single poll cycle without spinning up the full loop. `AppDelegate.runnerStore`
-is typed `(any RunnerPollerProtocol)?`, so production call sites cannot reach `fetch()`
-directly. Adding `fetch()` to the protocol is the right long-term call but requires
-`MockRunnerPoller` to also implement it — a broader change deferred to a follow-up.
+**Reality:** This is intentional. `fetch()` is accessible at `internal` scope
+specifically to support test-driving a single poll cycle without spinning up the full
+loop. `AppDelegate.runnerStore` is typed `(any RunnerPollerProtocol)?`, so production
+call sites cannot reach `fetch()` directly. Adding `fetch()` to the protocol is the
+right long-term call but requires `MockRunnerPoller` to also implement it — a broader
+change deferred to a follow-up.
 
 **Verify at:** `Sources/RunnerBarCore/Runner/RunnerPollerProtocol.swift` and
 `Sources/RunnerBarCore/Runner/RunnerPoller.swift` — `fetch()` declaration.
@@ -222,23 +223,21 @@ existing test cases cover fire, re-registration, and dealloc.
 
 ---
 
-## 13. `ActiveJob.status` compared to string literals — should use `JobStatus` enum cases
+## 13. `ActiveJob.status` compared to string literals — was a real bug, now fixed
 
-**Claim:** `nextPollInterval()` in `RunnerPoller.swift` compares `$0.status ==
-"in_progress"` and `$0.status == "queued"` against string literals. `ActiveJob.status`
-is typed `JobStatus` (a strongly-typed enum). These comparisons are inconsistent with
-`$0.groupStatus == .inProgress` two lines below and would silently break if raw values
-change.
+**Status: fixed** in this PR.
 
-**Reality:** `ActiveJob.status` is typed `String`, not `JobStatus`. The string-literal
-comparisons are correct and consistent with every call site in the codebase:
-`WorkflowContextMenuModifier` (`job.status == "in_progress"`),
-`RunnerStore.nextPollInterval` (the function this replaced), and the test fixtures
-(`status: "completed"`). `JobStatus` is used on `WorkflowActionGroup.groupStatus` and
-on `JobStep.status` — not on `ActiveJob.status`. The two enum-case comparisons a
-reviewer sees nearby (`$0.groupStatus == .inProgress`) are on a different type
-(`WorkflowActionGroup`).
+`ActiveJob.status` is typed `JobStatus` (a strongly-typed enum with a `String` raw
+value). The old `RunnerStore.nextPollInterval()` and `WorkflowContextMenuModifier`
+compared it against string literals (`"in_progress"`, `"queued"`) rather than enum
+cases. This compiled because `JobStatus: RawRepresentable<String>` allows
+`== rawValue` comparisons, but it was semantically wrong — a raw-value rename
+would silently break the cadence logic.
 
-**Verify at:** `Sources/RunnerBarCore/Runner/ActiveJob.swift` — `status` property
-declaration. Also `Tests/RunnerBarCoreTests/RunnerBarCoreTests.swift` — struct
-initialiser with `status: "completed"` (would not compile if `status` were `JobStatus`).
+Both sites have been updated to use typed enum cases (`== .inProgress`, `== .queued`),
+consistent with every other `JobStatus` comparison in the codebase
+(e.g. `PollResultBuilder`, `elapsed`, `conclusionIcon`).
+
+**Verify at:** `Sources/RunnerBarCore/Runner/RunnerPoller.swift` —
+`nextPollInterval()` and `Sources/RunnerBar/Views/Components/WorkflowContextMenuModifier.swift` —
+`JobContextMenuModifier.menuItems`.

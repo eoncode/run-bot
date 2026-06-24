@@ -252,6 +252,10 @@ public actor RunnerPoller {
     }
 
     /// Computes the delay before the next poll.
+    ///
+    /// Uses typed `JobStatus` enum cases rather than raw string literals so that
+    /// a raw-value rename is caught at compile time. `ActiveJob.status` and
+    /// `WorkflowActionGroup.groupStatus` are both `JobStatus`.
     private func nextPollInterval() async -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == .inProgress || $0.status == .queued }
         let hasActiveActions = actions.contains { $0.groupStatus == .inProgress || $0.groupStatus == .queued }
@@ -266,7 +270,7 @@ public actor RunnerPoller {
 
     /// Performs one full poll cycle.
     ///
-    /// `internal` — not on `RunnerPollerProtocol`. Use `start()` to drive the poll cadence.
+    /// Not on `RunnerPollerProtocol`. Use `start()` to drive the poll cadence.
     /// Accessible at `internal` scope so tests holding a concrete `RunnerPoller` can
     /// trigger a single cycle without going through the protocol seam.
     func fetch() async {
