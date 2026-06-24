@@ -76,6 +76,13 @@ private struct WorkflowRun: Codable {
 
 // MARK: - Runners
 
+// Step 16: delete this overload and update RunnerPoller.fetchAndEnrichRunners Phase 1
+// to call fetchRunners(for:decoder:) from RunnerBarCore/GitHub/GitHubRunnerFetchers.swift,
+// passing `self.decoder` — consistent with the fetchActiveJobs call in RunnerPoller+PollBridge.
+// This overload is retained because app-layer call sites outside RunnerPoller still use it.
+// Until then, Phase 1 silently allocates a fresh JSONDecoder per scope fetch instead of
+// reusing RunnerPoller.decoder.
+
 /// Fetches all registered runners for the given scope string.
 func fetchRunners(for scopeString: String) async -> [Runner] {
     guard let scope = Scope.parse(scopeString) else {

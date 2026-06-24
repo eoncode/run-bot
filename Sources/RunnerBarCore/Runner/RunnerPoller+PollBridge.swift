@@ -29,7 +29,7 @@ extension RunnerPoller {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
-    public func buildJobState(
+    func buildJobState(
         snapPrev: [Int: ActiveJob],
         snapCache: [Int: ActiveJob]
     ) async -> JobPollResult {
@@ -40,7 +40,7 @@ extension RunnerPoller {
                 let scopes = await MainActor.run { self.scopeStore.activeScopes }
                 var jobs: [ActiveJob] = []
                 for scope in scopes {
-                    jobs.append(contentsOf: await fetchActiveJobs(for: scope))
+                    jobs.append(contentsOf: await fetchActiveJobs(for: scope, decoder: self.decoder))
                 }
                 return jobs
             },
@@ -53,7 +53,7 @@ extension RunnerPoller {
     /// Builds a `GroupPollResult` by fetching live workflow action groups for all monitored scopes,
     /// firing failure hooks for newly-failed groups, enriching jobs from the job cache,
     /// and diffing against `snapPrevGroups`.
-    public func buildGroupState(
+    func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: Set<String>,
@@ -99,7 +99,7 @@ extension RunnerPoller {
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
     /// Uses `decoder` — a stored instance property on `RunnerPoller` — which is serialised
     /// by the actor's own executor, ensuring no concurrent access.
-    public func backfillSteps(into cache: inout [Int: ActiveJob]) async {
+    func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil,
@@ -140,7 +140,7 @@ extension RunnerPoller {
     /// Enriches a group's job list with step and conclusion data from the job cache.
     ///
     /// `nonisolated`: pure map over `jobCache` (a value-type snapshot captured at the
-    /// closure creation site) with no reads from `RunnerStore`'s actor-isolated state.
+    /// closure creation site) with no reads from `RunnerPoller`'s actor-isolated state.
     /// Marking it `nonisolated` removes the implicit `@MainActor` hop that was serialising
     /// every `withTaskGroup` child task in `PollResultBuilder.buildGroupState` through
     /// the main actor, negating the intended parallelism (#1153).

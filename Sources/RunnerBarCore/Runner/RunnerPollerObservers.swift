@@ -21,14 +21,25 @@ import Foundation
 @MainActor
 public final class PreferencesObserver {
     /// The continuation used to push new `pollingInterval` values into the `AsyncStream`.
-    /// `TimeInterval` matches `RunnerPoller.startObservingPreferences` which creates
-    /// `AsyncStream<TimeInterval>.makeStream()` so the interval can be used directly
-    /// as a `TimeInterval` in `nextPollInterval()` without a conversion.
+    ///
+    /// **Stream element type is `TimeInterval` (Double), not `Int`.**
+    /// `pollingInterval` is stored as `Int` (seconds) but is converted to `TimeInterval`
+    /// via `TimeInterval(store.pollingInterval)` before yielding (see `start()` below).
+    /// `RunnerPoller.startObservingPreferences` creates `AsyncStream<TimeInterval>.makeStream()`
+    /// and passes the resulting `AsyncStream<TimeInterval>.Continuation` here — the types
+    /// are consistent end-to-end. The old `RunnerStore` used `AsyncStream<Int>` throughout;
+    /// this was intentionally changed to `TimeInterval` so the yielded value can be used
+    /// directly in `nextPollInterval()` without a second conversion at the consumer.
     private let continuation: AsyncStream<TimeInterval>.Continuation
     /// The injected preferences store — avoids singleton access inside the observer.
     private let store: any AppPreferencesStoreProtocol
 
     /// Creates a new observer that writes changes into `continuation`.
+    ///
+    /// - Parameters:
+    ///   - continuation: Must be `AsyncStream<TimeInterval>.Continuation` — the observer
+    ///     converts `pollingInterval: Int` to `TimeInterval` before each `yield`.
+    ///   - store: The preferences store to observe.
     public init(continuation: AsyncStream<TimeInterval>.Continuation, store: any AppPreferencesStoreProtocol) {
         self.continuation = continuation
         self.store = store
@@ -42,6 +53,9 @@ public final class PreferencesObserver {
             } onChange: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    // Convert Int seconds → TimeInterval so the consumer
+                    // (RunnerPoller.startObservingPreferences for-await body)
+                    // can use the value directly without a second conversion.
                     self.continuation.yield(TimeInterval(self.store.pollingInterval))
                     self.start()
                 }

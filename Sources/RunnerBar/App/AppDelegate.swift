@@ -105,7 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// swapped on navigation; the controller itself is never recreated.
     var hostingController: NSHostingController<AnyView>?
     /// The owned observable view-model passed into every SwiftUI view via the environment.
-    /// `RunnerStore` and `LocalRunnerStore` push updates into this instance via `await MainActor.run { }`.
+    /// `LocalRunnerStore` pushes updates into this instance via `await MainActor.run { }`.
+    /// GitHub runner/job/action state is now written to `runnerState` by `RunnerPoller`.
     let observable = RunnerViewModel()
     /// Owned OAuth service instance. Typed to protocol so tests can supply a stub
     /// without going through the live singleton (P7).
@@ -147,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Created here (not inside `setupSubscriptions`) so it survives for the full
     /// app lifetime and can be injected into the SwiftUI environment in Step 12.
     /// `RunnerPoller.applyFetchResult` writes into this instance on the `@MainActor`
-    /// after every poll cycle; views will migrate to read from it in Step 12.
+    /// after every poll cycle; views read from it in Step 12 onwards.
     let runnerState = RunnerState()
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
@@ -160,23 +161,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and calls `updateStatusIcon()` whenever the runner fleet status changes.
     /// Must be stored as a property — deallocating it stops re-registration.
     var statusIconLoop: ObservationLoop?
-
-    // periphery:ignore - write-only by design; assignment keeps the loop alive
-    /// Retains the `ObservationLoop` that observes `runnerState.actions`.
-    ///
-    /// The loop's `onChange` is intentionally a no-op: failure hooks are fired
-    /// exclusively by the `fireFailureHook` closure injected into `RunnerPoller.init`
-    /// (callsite: `"pollResultBuilder"`), which is deduplicated by `seenGroupIDs`
-    /// inside the `RunnerPoller` actor. The loop is kept registered so the observation
-    /// remains alive and can be wired to UI badge updates or other consumers without
-    /// re-plumbing the `ObservationLoop` at that point.
-    ///
-    /// ⚠️ Do NOT assign a `FailureHookRunner.evaluate(_:)` call to this loop's
-    /// `onChange`. `runnerState.actions` is written on every `applyFetchResult` call,
-    /// so `onChange` fires every poll cycle — not only on new failures. Without access
-    /// to `RunnerPoller.seenGroupIDs`, every already-fired group would re-fire on
-    /// every subsequent tick, opening the terminal command repeatedly.
-    var failureHookLoop: ObservationLoop?
 
     // periphery:ignore - write-only by design; assignment keeps the Task alive
     /// Retained handle for the sign-out observation task started in
@@ -338,6 +322,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         panelSheetState.captureTransientHideState()
+        // ❌ Set isTransientHide = true BEFORE isOpen = false.
+        // PanelContainerView.onChange fires synchronously when isOpen changes.
+        // If isTransientHide is not already true at that point, onChange will
+        // incorrectly clear isSheetActive, causing the dim-overlay animation to
+        // replay on the next restore even though the sheet never closed.
+        // See PanelVisibilityState.isTransientHide for the full lifecycle.
         panelVisibilityState.isTransientHide = true
         if hidePopoverWindowsPreservingSheets() {
             tearDownOpenState()

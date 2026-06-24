@@ -11,9 +11,12 @@ import os
 
 /// Fetches all registered self-hosted runners for the given scope string.
 /// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) formats.
-/// - Parameter scopeString: A repo path (`owner/repo`) or org name.
+/// - Parameters:
+///   - scopeString: A repo path (`owner/repo`) or org name.
+///   - decoder: A shared `JSONDecoder` instance. Pass `RunnerPoller.decoder` so the
+///     actor's reusable instance is used instead of allocating a new one per call.
 /// - Returns: An array of `Runner` values, or empty on failure.
-func fetchRunners(for scopeString: String) async -> [Runner] {
+func fetchRunners(for scopeString: String, decoder: JSONDecoder) async -> [Runner] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchRunners › invalid scope: \(scopeString)")
         return []
@@ -24,7 +27,7 @@ func fetchRunners(for scopeString: String) async -> [Runner] {
         log("fetchRunners › no data for scope: \(scopeString)")
         return []
     }
-    guard let response = try? JSONDecoder().decode(RunnersResponse.self, from: data) else {
+    guard let response = try? decoder.decode(RunnersResponse.self, from: data) else {
         log("fetchRunners › decode failed for scope: \(scopeString)")
         return []
     }
@@ -43,9 +46,12 @@ private struct RunnersResponse: Codable {
 /// Fetches all active (in-progress and queued) jobs for a given scope.
 /// Supports both repo-scoped (`owner/repo`) and org-scoped (`org`) runners.
 /// Date parsing goes through `ISO8601DateParser.shared` — one actor, one formatter.
-/// - Parameter scopeString: A repo path (`owner/repo`) or org name.
+/// - Parameters:
+///   - scopeString: A repo path (`owner/repo`) or org name.
+///   - decoder: A shared `JSONDecoder` instance. Pass `RunnerPoller.decoder` so the
+///     actor's reusable instance is used instead of allocating a new one per call.
 /// - Returns: An array of `ActiveJob` values, or empty on failure.
-func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
+func fetchActiveJobs(for scopeString: String, decoder: JSONDecoder) async -> [ActiveJob] {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchActiveJobs › invalid scope: \(scopeString)")
         return []
@@ -59,7 +65,7 @@ func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
 
     for status in ["in_progress", "queued"] {
         guard let data = await ghAPI(runsEndpoint(status: status)),
-              let resp = try? JSONDecoder().decode(WorkflowRunsResponse.self, from: data)
+              let resp = try? decoder.decode(WorkflowRunsResponse.self, from: data)
         else { continue }
         // filter() cannot replace this loop: insert() mutates seenRunIDs as a side effect.
         // swiftlint:disable for_where
@@ -73,7 +79,7 @@ func fetchActiveJobs(for scopeString: String) async -> [ActiveJob] {
     var seenJobIDs = Set<Int>()
     for runID in runIDs {
         guard let data = await ghAPI("\(scope.apiPrefix)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
-              let resp = try? JSONDecoder().decode(JobsResponse.self, from: data)
+              let resp = try? decoder.decode(JobsResponse.self, from: data)
         else { continue }
         for payload in resp.jobs {
             guard seenJobIDs.insert(payload.id).inserted else { continue }
