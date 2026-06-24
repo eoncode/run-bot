@@ -232,8 +232,10 @@ extension AppDelegate: NSPopoverDelegate {
             preferencesStore: AppPreferencesStore.shared,
             scopeStore: ScopeStore.shared,
             localRunners: { [observable] in observable.localRunners },
-            applyMetrics: { metrics, id, name in
-                await LocalRunnerStore.shared.applyMetrics(metrics, forRunnerId: id, name: name)
+            // Capture the stored property rather than the .shared singleton so a test
+            // double wired via localRunnerStore is honoured here too.
+            applyMetrics: { [localRunnerStore] metrics, id, name in
+                await localRunnerStore.applyMetrics(metrics, forRunnerId: id, name: name)
             },
             fireFailureHook: { group, scope in
                 await FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
