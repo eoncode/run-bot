@@ -276,12 +276,40 @@ public actor RunnerPoller {
             log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
 #endif
         }
+
+        // Derive extra org scopes from local runner URLs *before* building the install-path
+        // map so that byFullKey covers runners fetched from those extra scopes.
+        // (Previously this derivation lived inside fetchAndEnrichRunners, meaning
+        // buildInstallPathMap was called with only the configured scopes and
+        // byFullKey would always miss for extra-org-scope runners.)
+        let configuredScopeSet = Set(scopesSnapshot)
+        var extraOrgScopes: [String] = []
+        for localRunner in localRunnersSnapshot {
+            guard let url = localRunner.gitHubUrl else { continue }
+            let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+            guard parts.count == 1 else { continue }
+            let orgScope = parts[0]
+            guard !configuredScopeSet.contains(orgScope),
+                  !extraOrgScopes.contains(orgScope)
+            else { continue }
+            extraOrgScopes.append(orgScope)
+            log("RunnerPoller › fetch — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'")
+        }
+        let allScopes = scopesSnapshot + extraOrgScopes
+        if !extraOrgScopes.isEmpty {
+            log("RunnerPoller › fetch — extra org scopes: \(extraOrgScopes)")
+        }
+
+        // Build the install-path map over the full scope list (configured + extra org).
+        // This ensures byFullKey["\(extraOrgScope)/\(runnerName)"] resolves correctly
+        // and same-name runners across different scopes don't collide on byName.
         let installPathMap = buildInstallPathMap(
-            scopes: scopesSnapshot,
+            scopes: allScopes,
             localRunners: localRunnersSnapshot
         )
         let enrichedRunners = await fetchAndEnrichRunners(
             scopes: scopesSnapshot,
+            extraOrgScopes: extraOrgScopes,
             localRunners: localRunnersSnapshot,
             installPathMap: installPathMap
         )
@@ -336,10 +364,10 @@ public actor RunnerPoller {
     /// `internal` — `fetch()` is the public entry point; this method is an implementation
     /// detail not intended for direct external calls.
     ///
-    /// **Phase 0** derives extra org scopes from local runners whose `gitHubUrl` points to a
-    /// single-path-component URL (org-only, not repo). This handles runners registered against
-    /// an org that the user hasn't explicitly added as a scope in ScopeStore — their org is
-    /// inferred from the local runner's URL so those runners continue to appear in the panel.
+    /// Phase 0 (extra org scope derivation) has been moved up into `fetch()` so that
+    /// `buildInstallPathMap` is called with the full scope list before this method runs.
+    /// `extraOrgScopes` is passed in explicitly so Phase 1 can still fetch from those
+    /// derived scopes without re-deriving them here.
     ///
     /// **Phase 1** fans out concurrent scope fetches via `withTaskGroup`. Task completion order
     /// is non-deterministic; views sort runners for display independently.
@@ -352,42 +380,26 @@ public actor RunnerPoller {
     /// a name across different scopes resolve to the correct install path.
     ///
     /// - Parameters:
-    ///   - scopes: The active scopes to fetch runners for.
-    ///   - localRunners: The current local-runner snapshot (used for org-scope derivation).
-    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`.
+    ///   - scopes: The configured (user-added) scopes.
+    ///   - extraOrgScopes: Extra org scopes derived from local runner URLs in `fetch()`.
+    ///   - localRunners: The current local-runner snapshot.
+    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`, covering
+    ///     both `scopes` and `extraOrgScopes`.
     internal func fetchAndEnrichRunners(
         scopes: [String],
+        extraOrgScopes: [String],
         localRunners: [RunnerModel],
         installPathMap: InstallPathMap
     ) async -> [Runner] {
-        log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
-
-        // Phase 0 — Derive extra org scopes from local runner URLs.
-        let configuredScopeSet = Set(scopes)
-        var extraOrgScopes: [String] = []
-        for localRunner in localRunners {
-            guard let url = localRunner.gitHubUrl else { continue }
-            let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
-            guard parts.count == 1 else { continue }
-            let orgScope = parts[0]
-            guard !configuredScopeSet.contains(orgScope),
-                  !extraOrgScopes.contains(orgScope)
-            else { continue }
-            extraOrgScopes.append(orgScope)
-            log("RunnerPoller › fetchAndEnrichRunners — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'")
-        }
-        if !extraOrgScopes.isEmpty {
-            log("RunnerPoller › fetchAndEnrichRunners — extra org scopes to fetch: \(extraOrgScopes)")
-        }
-
         let allScopes = scopes + extraOrgScopes
+        log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes) extraOrgScopes=\(extraOrgScopes)")
 
         // Phase 1 — Fetch raw runners for all scopes concurrently.
         var indexed: [IndexedScopedRunner] = []
         await withTaskGroup(of: (String, [Runner]).self) { group in
             for scope in allScopes {
                 group.addTask {
-                    let fetched = await fetchRunners(for: scope)
+                    let fetched = await fetchRunners(for: scope, decoder: self.decoder)
                     return (scope, fetched)
                 }
             }

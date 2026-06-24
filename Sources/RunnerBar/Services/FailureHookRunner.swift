@@ -53,6 +53,11 @@ enum FailureHookRunner {
     /// Runs the async `fireIfNeeded` calls inside a fire-and-forget `Task` so this
     /// method can be called synchronously from an `ObservationLoop` onChange closure.
     ///
+    /// Scope derivation mirrors `RunnerPoller.scopeFromActionGroup`:
+    /// `group.repo` is used when non-empty; otherwise the first run's `htmlUrl` is
+    /// parsed via `scopeFromHtmlUrl`. An empty string is passed only as a last resort
+    /// (no data available), which will cause `fireIfNeeded` to skip the hook silently.
+    ///
     /// ⚠️ **Wiring constraint — do NOT call from `failureHookLoop` or any observer
     /// that fires on every poll cycle.**
     ///
@@ -73,7 +78,20 @@ enum FailureHookRunner {
     static func evaluate(_ actions: [WorkflowActionGroup]) {
         Task {
             for group in actions {
-                await fireIfNeeded(group: group, scope: group.repo, callsite: "observationLoop")
+                // group.repo can be empty for org runners; mirror the fallback logic
+                // used in RunnerPoller.scopeFromActionGroup rather than passing repo
+                // directly, which would silently pass an empty scope to fireIfNeeded.
+                let scope: String
+                if !group.repo.isEmpty {
+                    scope = group.repo
+                } else if let firstRun = group.runs.first,
+                          let htmlUrl = firstRun.htmlUrl,
+                          let derived = scopeFromHtmlUrl(htmlUrl) {
+                    scope = derived
+                } else {
+                    scope = ""
+                }
+                await fireIfNeeded(group: group, scope: scope, callsite: "observationLoop")
             }
         }
     }
