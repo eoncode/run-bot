@@ -22,7 +22,7 @@ extension AppDelegate {
     /// actor, then builds the status-bar item and NSPopover panel. (#1538)
     ///
     /// ## Startup ordering
-    /// Migration MUST complete before `setupPanel()` so that `RunnerStore`
+    /// Migration MUST complete before `setupPanel()` so that `RunnerPoller`
     /// observers spawned inside `setupPanel → setupSubscriptions` never read
     /// `ScopePreferencesStore` before the v2 blobs exist. The sequence is:
     ///
@@ -59,7 +59,7 @@ extension AppDelegate {
         // Migrate, hydrate display names, THEN start UI and observers.
         // Plain Task{} inherits @MainActor from AppDelegate; all three setup
         // calls below run on the main actor after the two awaits resolve. (#1538)
-        Task {
+        Task<Void, Never> {
             // Step 2: migrate legacy flat keys → v2 blobs.
             await ScopePreferencesStore.shared.migrateIfNeeded(knownScopes: knownScopes)
             // Step 3: hydrate ScopeEntry.displayName from freshly-migrated blobs.
@@ -68,6 +68,22 @@ extension AppDelegate {
             setupStatusItem()
             setupPanel()
             setupSignOutSubscription()
+            // Step 13: wire ObservationLoop so AppDelegate reacts to RunnerState
+            // changes without a callback from RunnerPoller.
+            //
+            // ⚠️ Only `statusIconLoop` is wired here. Failure hooks are NOT
+            // observed via ObservationLoop — they are fired exclusively by
+            // `RunnerPoller.buildGroupState` via the injected `fireFailureHook`
+            // closure, which is correctly deduplicated by `seenGroupIDs` inside
+            // `PollResultBuilder`. Adding a second observer here would fire hooks
+            // for groups already handled by `buildGroupState`, bypassing
+            // `seenGroupIDs` and causing duplicate hook executions.
+            statusIconLoop = ObservationLoop { [weak self] in
+                guard let self else { return }
+                _ = runnerState.aggregateStatus
+            } onChange: { [weak self] in
+                self?.updateStatusIcon()
+            }
             log("AppDelegate › applicationDidFinishLaunching — DONE")
         }
     }

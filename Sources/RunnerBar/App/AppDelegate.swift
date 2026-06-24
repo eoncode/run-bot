@@ -2,6 +2,7 @@
 // RunnerBar
 
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - NSPopover architecture note
@@ -125,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// eagerly during `AppDelegate.init()` — before `configure()` runs —
     /// triggering the `fatalError` guard inside `LocalRunnerStore.shared`.
     lazy var localRunnerStore: LocalRunnerStore = .shared
-    /// Owned `RunnerStore` actor. `nil` until `setupSubscriptions()` runs.
+    /// Owned `RunnerPoller` actor. `nil` until `setupSubscriptions()` runs.
     ///
     /// Optional (not `!`) so the uninitialised state is representable at the
     /// type level and the compiler flags any force-unwrap at call sites (P4).
@@ -136,14 +137,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// ❌ NEVER add a `lazy var` default body here — doing so creates a dual-init
     /// path: if anything reads `runnerStore` before `setupSubscriptions()` runs,
-    /// a second `RunnerStore` instance with live observation tasks would be created
+    /// a second `RunnerPoller` instance with live observation tasks would be created
     /// and immediately replaced, producing competing poll loops.
-    var runnerStore: RunnerStore?
+    var runnerStore: (any RunnerPollerProtocol)?
+    /// The observable read model for Core-side runner/job/action/rate-limit state.
+    ///
+    /// Created here (not inside `setupSubscriptions`) so it survives for the full
+    /// app lifetime and can be injected into the SwiftUI environment in Step 12.
+    /// `RunnerPoller.applyFetchResult` writes into this instance on the `@MainActor`
+    /// after every poll cycle; views will migrate to read from it in Step 12.
+    let runnerState = RunnerState()
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?
     /// Sheet state that must survive transient popover hides.
     let panelSheetState = PanelSheetState()
+    // periphery:ignore - write-only by design; assignment keeps the loop alive
+    /// Retains the `ObservationLoop` that observes `runnerState.aggregateStatus`
+    /// and calls `updateStatusIcon()` whenever the runner fleet status changes.
+    /// Must be stored as a property — deallocating it stops re-registration.
+    ///
+    /// ⚠️ There is deliberately NO equivalent `failureHookLoop` here.
+    /// Failure hooks are fired exclusively by `RunnerPoller.buildGroupState` via
+    /// the injected `fireFailureHook` closure, which is deduplicated by
+    /// `seenGroupIDs` inside `PollResultBuilder`. A second ObservationLoop observer
+    /// on `runnerState.actions` would bypass `seenGroupIDs` and double-fire hooks.
+    var statusIconLoop: ObservationLoop?
     // periphery:ignore - write-only by design; assignment keeps the Task alive
     /// Retained handle for the sign-out observation task started in
     /// `setupSignOutSubscription()` (AppDelegate+Polling.swift).
@@ -197,7 +216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `PanelContainerView` and its dim overlay observe this object;
     /// removing it causes a runtime crash on sheet dismissal.
     func wrapEnv<V: View>(_ view: V) -> AnyView {
-        AnyView(view.environment(panelVisibilityState))
+        AnyView(view
+            .environment(panelVisibilityState)
+            .environment(runnerState)
+        )
     }
 
     // MARK: - Popover resize
