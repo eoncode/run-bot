@@ -106,6 +106,12 @@ extension AppDelegate {
             // The fireFailureHook closure injected into RunnerPoller.init
             // (callsite: "pollResultBuilder") is the canonical, deduplicated
             // firing path — it owns seenGroupIDs inside the RunnerPoller actor.
+            //
+            // REVIEW: failureHookLoop onChange is intentionally a no-op. It keeps
+            // runnerState.actions tracked so a future consumer can be wired without
+            // re-plumbing. Do NOT connect FailureHookRunner.evaluate here — that
+            // method is one-shot semantics only, not safe for continuous observation.
+            // Scope-fallback fix for evaluate() tracked in #1573.
             failureHookLoop = ObservationLoop { [weak self] in
                 guard let self else { return }
                 _ = runnerState.actions
