@@ -75,41 +75,14 @@ extension AppDelegate {
             setupPanel()
             setupSignOutSubscription()
 
-            // Step 13: wire ObservationLoop instances so AppDelegate reacts to
-            // RunnerState changes without a callback from RunnerPoller.
+            // Step 13: wire ObservationLoop so AppDelegate reacts to RunnerState
+            // changes without a callback from RunnerPoller.
             statusIconLoop = ObservationLoop { [weak self] in
                 guard let self else { return }
                 _ = runnerState.aggregateStatus
             } onChange: { [weak self] in
                 self?.updateStatusIcon()
             }
-
-            // REVIEW: failureHookLoop is intentionally a no-op onChange.
-            //
-            // Its observe closure reads runnerState.actions so that
-            // withObservationTracking stays armed and a future consumer can be
-            // wired here without re-plumbing the ObservationLoop. The onChange
-            // closure is deliberately empty — see the constraint below.
-            //
-            // ⚠️ WIRING CONSTRAINT — do NOT call FailureHookRunner.evaluate(_:)
-            // from the onChange closure.
-            //
-            // runnerState.actions is written by applyFetchResult on EVERY poll
-            // cycle, so onChange fires every cycle — not only when a new failure
-            // appears. FailureHookRunner.evaluate has no access to
-            // RunnerPoller.seenGroupIDs and therefore re-fires the hook for every
-            // group that remains in the actions list on every subsequent poll tick.
-            //
-            // Double-fire consequence: the terminal failure command opens twice
-            // (or more) per poll cycle for any group that stays in a failed state.
-            //
-            // The fireFailureHook closure injected into RunnerPoller.init
-            // (callsite: "pollResultBuilder") is the canonical, deduplicated
-            // firing path — it owns seenGroupIDs inside the RunnerPoller actor.
-            failureHookLoop = ObservationLoop { [weak self] in
-                guard let self else { return }
-                _ = runnerState.actions
-            } onChange: { /* no-op: failure-hook firing belongs to RunnerPoller.fireFailureHook */ }
 
             log("AppDelegate › applicationDidFinishLaunching — DONE")
         }

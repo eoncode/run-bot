@@ -162,23 +162,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Must be stored as a property — deallocating it stops re-registration.
     var statusIconLoop: ObservationLoop?
 
-    // periphery:ignore - write-only by design; assignment keeps the loop alive
-    /// Retains the `ObservationLoop` that observes `runnerState.actions`.
-    ///
-    /// The loop's `onChange` is intentionally a no-op: failure hooks are fired
-    /// exclusively by the `fireFailureHook` closure injected into `RunnerPoller.init`
-    /// (callsite: `"pollResultBuilder"`), which is deduplicated by `seenGroupIDs`
-    /// inside the `RunnerPoller` actor. The loop is kept registered so the observation
-    /// remains alive and can be wired to UI badge updates or other consumers without
-    /// re-plumbing the `ObservationLoop` at that point.
-    ///
-    /// ⚠️ Do NOT assign a `FailureHookRunner.evaluate(_:)` call to this loop's
-    /// `onChange`. `runnerState.actions` is written on every `applyFetchResult` call,
-    /// so `onChange` fires every poll cycle — not only on new failures. Without access
-    /// to `RunnerPoller.seenGroupIDs`, every already-fired group would re-fire on
-    /// every subsequent tick, opening the terminal command repeatedly.
-    var failureHookLoop: ObservationLoop?
-
     // periphery:ignore - write-only by design; assignment keeps the Task alive
     /// Retained handle for the sign-out observation task started in
     /// `setupSignOutSubscription()` (AppDelegate+Polling.swift).
