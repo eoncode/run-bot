@@ -22,7 +22,7 @@ extension AppDelegate {
     /// actor, then builds the status-bar item and NSPopover panel. (#1538)
     ///
     /// ## Startup ordering
-    /// Migration MUST complete before `setupPanel()` so that `RunnerStore`
+    /// Migration MUST complete before `setupPanel()` so that `RunnerPoller`
     /// observers spawned inside `setupPanel → setupSubscriptions` never read
     /// `ScopePreferencesStore` before the v2 blobs exist. The sequence is:
     ///

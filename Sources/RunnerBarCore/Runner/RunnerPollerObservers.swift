@@ -1,7 +1,9 @@
-// RunnerStore+Observers.swift
-// RunnerBar
+// RunnerPollerObservers.swift
+// RunnerBarCore
+//
+// Step 10: Moved from RunnerBar app target to RunnerBarCore.
+// Classes made `public` so RunnerPoller (in Core) can reference them.
 import Foundation
-import RunnerBarCore
 
 // MARK: - PreferencesObserver
 
@@ -17,14 +19,14 @@ import RunnerBarCore
 ///   outside the `RunnerBar` module. Do not narrow back to `private` — that will break
 ///   the cross-file reference in `RunnerStore.swift`.
 @MainActor
-final class PreferencesObserver {
+public final class PreferencesObserver {
     /// The continuation used to push new `pollingInterval` values into the `AsyncStream`.
     private let continuation: AsyncStream<Int>.Continuation
     /// The injected preferences store — avoids singleton access inside the observer.
     private let store: any AppPreferencesStoreProtocol
 
     /// Creates a new observer that writes changes into `continuation`.
-    init(continuation: AsyncStream<Int>.Continuation, store: any AppPreferencesStoreProtocol) {
+    public init(continuation: AsyncStream<Int>.Continuation, store: any AppPreferencesStoreProtocol) {
         self.continuation = continuation
         self.store = store
     }
@@ -54,14 +56,14 @@ final class PreferencesObserver {
 /// - Note: `internal` visibility is intentional — see `PreferencesObserver` doc-comment
 ///   for the full rationale. Do not narrow back to `private`.
 @MainActor
-final class ScopesObserver {
+public final class ScopesObserver {
     /// The continuation used to push new `activeScopes` values into the `AsyncStream`.
     private let continuation: AsyncStream<[String]>.Continuation
     /// The injected scope store — avoids singleton access inside the observer.
     private let store: any ScopeStoreProtocol
 
     /// Creates a new observer that writes changes into `continuation`.
-    init(continuation: AsyncStream<[String]>.Continuation, store: any ScopeStoreProtocol) {
+    public init(continuation: AsyncStream<[String]>.Continuation, store: any ScopeStoreProtocol) {
         self.continuation = continuation
         self.store = store
     }

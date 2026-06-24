@@ -57,7 +57,7 @@ extension AppDelegate {
     ///    a double-wrap here causes the gray/black flash regression.
     ///
     /// No `onRestartPolling` is passed — ScopeStore mutations are observed by
-    /// `RunnerStore.startObservingScopes` via `withObservationTracking`, which
+    /// `RunnerPoller.startObservingScopes` via `withObservationTracking`, which
     /// restarts the poll task automatically without an explicit callback.
     func settingsView() -> AnyView {
         let inner = SettingsView(
@@ -100,7 +100,7 @@ extension AppDelegate {
             // Preferred fix: let StepLogView render a loading/empty state and remove this guard.
             // Alternative: persist the last-seen job ID and validate against that.
             //
-            // RunnerStore is now a Swift actor; its `jobs` property cannot be read
+            // RunnerPoller is now a Swift actor; its `jobs` property cannot be read
             // synchronously from the main actor. We read from `observable` (AppDelegate's
             // injected RunnerViewModel instance) instead, which holds the last-pushed
             // snapshot and is already @MainActor-isolated.

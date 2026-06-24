@@ -1,21 +1,19 @@
 // RunnerPoller+PollBridge.swift
-// RunnerBar
+// RunnerBarCore
 //
-// Step 9: All bridge methods are `public`. `FailureHookRunner` is decoupled —
-// the `fireFailureHook` closure parameter in `buildGroupState` is the only
-// call-site; `FailureHookRunner` itself stays in the app target and never
-// touches Core. In Step 10 this file moves to RunnerBarCore as
-// `extension RunnerPoller` once the actor is renamed.
+// Step 10: Moved to RunnerBarCore as `extension RunnerPoller`.
+// `FailureHookRunner` is decoupled — the injected `fireFailureHook` closure
+// stored on `RunnerPoller` is the sole integration point, keeping
+// `FailureHookRunner` in the app target and out of `RunnerBarCore`.
 import Foundation
 import os
-import RunnerBarCore
 
-// MARK: - RunnerStore PollBridge
+// MARK: - RunnerPoller PollBridge
 
-// These extensions delegate to PollResultBuilder so RunnerStore.fetch() call
+// These extensions delegate to PollResultBuilder so RunnerPoller.fetch() call
 // sites are unchanged while the logic lives in the independently testable builder.
 
-/// `RunnerStore` extension that bridges `PollResultBuilder` for the `fetch()` call sites.
+/// `RunnerPoller` extension that bridges `PollResultBuilder` for the `fetch()` call sites.
 ///
 /// All methods are `async` and run off the main actor during `await` — the
 /// cooperative thread pool handles network work, and the continuation returns
@@ -25,10 +23,9 @@ import RunnerBarCore
 /// when called from the main actor itself.
 ///
 /// `FailureHookRunner` is intentionally **not** referenced here — the
-/// `fireFailureHook` closure passed into `PollResultBuilder.buildGroupState`
-/// is the sole integration point, keeping `FailureHookRunner` in the app
-/// target and out of `RunnerBarCore`.
-extension RunnerStore {
+/// injected `fireFailureHook` closure on `RunnerPoller` is the sole integration
+/// point, keeping `FailureHookRunner` in the app target and out of `RunnerBarCore`.
+extension RunnerPoller {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
@@ -79,7 +76,9 @@ extension RunnerStore {
                 // `await` this closure directly — no Task wrapper needed or correct here.
                 // The hook runs inline on the cooperative thread pool as part of the
                 // structured async chain that buildGroupState owns.
-                await FailureHookRunner.fireIfNeeded(group: group, scope: scope, callsite: "pollResultBuilder")
+                // `fireFailureHook` is injected at init by the app layer so Core never
+                // imports `FailureHookRunner`.
+                await self.fireFailureHook(group, scope)
             },
             enrichJobs: { jobs in
                 self.enrichGroupJobs(jobs, jobCache: jobCache)
@@ -91,7 +90,7 @@ extension RunnerStore {
     ///
     /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
-    /// Uses `decoder` — a stored instance property on `RunnerStore` — which is serialised
+    /// Uses `decoder` — a stored instance property on `RunnerPoller` — which is serialised
     /// by the actor's own executor, ensuring no concurrent access.
     public func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
@@ -115,19 +114,19 @@ extension RunnerStore {
     /// and calls `scopeFromHtmlUrl` (a pure free function). No main-actor state is accessed,
     /// so the `@MainActor` hop at every call site in `buildGroupState` is unnecessary.
     public nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
-        log("RunnerStore › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
+        log("RunnerPoller › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
-            log("RunnerStore › scopeFromActionGroup — using group.repo='\(group.repo)'")
+            log("RunnerPoller › scopeFromActionGroup — using group.repo='\(group.repo)'")
             return group.repo
         }
-        log("RunnerStore › scopeFromActionGroup — group.repo is empty, trying htmlUrl of first run")
+        log("RunnerPoller › scopeFromActionGroup — group.repo is empty, trying htmlUrl of first run")
         if let firstRun = group.runs.first,
            let url = firstRun.htmlUrl,
            let scope = scopeFromHtmlUrl(url) {
-            log("RunnerStore › scopeFromActionGroup — derived scope '\(scope)' from htmlUrl '\(url)'")
+            log("RunnerPoller › scopeFromActionGroup — derived scope '\(scope)' from htmlUrl '\(url)'")
             return scope
         }
-        log("RunnerStore › scopeFromActionGroup — ⚠️ could not derive scope for groupID=\(group.id)")
+        log("RunnerPoller › scopeFromActionGroup — ⚠️ could not derive scope for groupID=\(group.id)")
         return ""
     }
 

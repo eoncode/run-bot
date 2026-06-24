@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// eagerly during `AppDelegate.init()` — before `configure()` runs —
     /// triggering the `fatalError` guard inside `LocalRunnerStore.shared`.
     lazy var localRunnerStore: LocalRunnerStore = .shared
-    /// Owned `RunnerStore` actor. `nil` until `setupSubscriptions()` runs.
+    /// Owned `RunnerPoller` actor. `nil` until `setupSubscriptions()` runs.
     ///
     /// Optional (not `!`) so the uninitialised state is representable at the
     /// type level and the compiler flags any force-unwrap at call sites (P4).
@@ -137,9 +137,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// ❌ NEVER add a `lazy var` default body here — doing so creates a dual-init
     /// path: if anything reads `runnerStore` before `setupSubscriptions()` runs,
-    /// a second `RunnerStore` instance with live observation tasks would be created
+    /// a second `RunnerPoller` instance with live observation tasks would be created
     /// and immediately replaced, producing competing poll loops.
-    var runnerStore: RunnerStore?
+    var runnerStore: RunnerPoller?
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?
