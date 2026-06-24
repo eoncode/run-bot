@@ -36,10 +36,8 @@ extension AppDelegate {
     /// If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
     /// UNDER ANY CIRCUMSTANCE.
     func updateStatusIcon() {
-        // `RunnerPoller` is now an actor; reads of its state require `await`.
-        // `aggregateStatus` is derived from `observable.runners` which `RunnerPoller`
-        // pushes to `RunnerViewModel.shared` via `MainActor.run` after every fetch cycle,
-        // so we derive it here on the main actor from the already-pushed snapshot.
+        // `aggregateStatus` is derived from `runnerState.runners` which `RunnerPoller`
+        // pushes to `RunnerState` via `MainActor.run` after every fetch cycle.
         let status = AggregateStatus(runners: runnerState.runners)
         statusItem?.button?.image = menuBarImage(for: status)
     }

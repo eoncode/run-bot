@@ -2,9 +2,9 @@
 // RunnerBarCore
 //
 // Step 10: RunnerStore renamed to RunnerPoller and moved into RunnerBarCore.
-// App-layer dependencies (RunnerViewModelProtocol, LocalRunnerStore, onStatusUpdate)
-// replaced with protocol-typed injections and closures so Core has no import of
-// the RunnerBar app target.
+// Step 14: applyFetchResult writes only to RunnerState (no viewModel.* writes remain).
+// App-layer dependencies replaced with protocol-typed injections and closures
+// so Core has no import of the RunnerBar app target.
 import Foundation
 import os
 
