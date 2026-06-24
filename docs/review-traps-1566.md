@@ -81,15 +81,20 @@ but is not required for correctness or performance.
 
 ---
 
-## 5. `ObservationLoop.onChange` — mutating tracked properties inside `onChange`
+## 5. `fireFailureHook` should be `private`
 
-**Status: addressed.** This is a real footgun but not a bug in the current callers.
-The `onChange` parameter doc-comment in `ObservationLoop.init` now explicitly warns
-that callers must not mutate `@Observable` properties that `observe` also reads —
-because `onChange` fires before the next `register()` pass, such mutations occur before
-tracking re-arms and will not trigger a subsequent cycle.
+**Claim:** `fireFailureHook` is a stored closure on `RunnerPoller` that is only called
+once — it should be `private` to minimise the module surface and avoid Periphery warnings.
 
-Current callers (`updateStatusIcon`) are pure side-effect sinks and are unaffected.
+**Reality:** Swift's `private` modifier is **file-scoped**, not type-scoped.
+`fireFailureHook` is called as `self.fireFailureHook(group, scope)` inside
+`RunnerPoller+PollBridge.swift`, which is a separate file from `RunnerPoller.swift`.
+A `private` declaration in `RunnerPoller.swift` is invisible to extensions defined in
+other files, even within the same type. Making it `private` is a **compile error**.
+`internal` (no explicit modifier) is the correct and minimum viable access level here.
 
-**Verify at:** `Sources/RunnerBarCore/Utilities/ObservationLoop.swift` —
-`init(observe:onChange:)` `onChange` parameter doc-comment.
+This was briefly changed to `private` in commit `755d7ca` and immediately reverted.
+Do not re-introduce `private` on this property.
+
+**Verify at:** `Sources/RunnerBarCore/Runner/RunnerPoller+PollBridge.swift` —
+`buildGroupState`, the `fireFailureHook: { group, scope in … await self.fireFailureHook(group, scope) }` closure.
