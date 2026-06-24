@@ -147,12 +147,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `RunnerPoller.applyFetchResult` writes into this instance on the `@MainActor`
     /// after every poll cycle; views will migrate to read from it in Step 12.
     let runnerState = RunnerState()
-    /// Retained `ObservationLoop` that re-fires `updateStatusIcon()` whenever
-    /// `runnerState.aggregateStatus` changes. Must be stored to prevent deallocation.
-    var statusIconLoop: ObservationLoop?
-    /// Retained `ObservationLoop` that re-evaluates the failure hook whenever
-    /// `runnerState.actions` changes. Must be stored to prevent deallocation.
-    var failureHookLoop: ObservationLoop?
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?
