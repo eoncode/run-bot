@@ -1,6 +1,7 @@
 // AppDelegate+PanelSetup.swift
 // RunnerBar
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - AppDelegate + Panel Setup

@@ -1,6 +1,7 @@
 // RunnerStore+Observers.swift
 // RunnerBar
 import Foundation
+import RunnerBarCore
 
 // MARK: - PreferencesObserver
 

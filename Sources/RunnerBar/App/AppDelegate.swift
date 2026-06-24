@@ -2,6 +2,7 @@
 // RunnerBar
 
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - NSPopover architecture note
