@@ -1,19 +1,19 @@
 // PollLoopCoordinator.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - PollLoopCoordinator
 
-/// Owns the three `Task` handles that drive `RunnerStore`’s poll loop.
+/// Owns the three `Task` handles that drive `RunnerStore`'s poll loop.
 ///
 /// `RunnerStore` holds this as a stored property, so all mutation is serialised
-/// by the actor’s own executor — no additional isolation annotation is needed
+/// by the actor's own executor — no additional isolation annotation is needed
 /// during normal operation.
 ///
 /// **`@unchecked Sendable` — PRINCIPLE #4 EXCEPTION (documented sign-off)**
 ///
-/// Project Principle #4 states: “no `@unchecked Sendable` escape hatches in
-/// production types.” `PollLoopCoordinator` is a production type that carries
+/// Project Principle #4 states: "no `@unchecked Sendable` escape hatches in
+/// production types." `PollLoopCoordinator` is a production type that carries
 /// this conformance. The exception is intentional and safe for the following
 /// reasons, recorded here as the required sign-off:
 ///
@@ -33,7 +33,7 @@ import Foundation
 ///
 /// 3. **`deinit` runs after all strong references are gone.** By the time
 ///    `RunnerStore.deinit` (and therefore `PollLoopCoordinator.deinit`) runs,
-///    no concurrent mutation of the coordinator’s task handles is possible.
+///    no concurrent mutation of the coordinator's task handles is possible.
 ///
 /// The root cause of the conformance requirement is that Swift 6 forbids
 /// accessing a stored property of a non-`Sendable` type from a nonisolated
@@ -45,7 +45,7 @@ import Foundation
 /// needs to own a `PollLoopCoordinator`.
 ///
 /// **Why a dedicated type?**
-/// Swift’s `private` modifier is file-scoped, not type-scoped. The poll-loop
+/// Swift's `private` modifier is file-scoped, not type-scoped. The poll-loop
 /// state (`pollTask`, `intervalObservationTask`, `scopeObservationTask`) cannot
 /// be moved into `RunnerStore+PollLoop.swift` as raw stored properties without
 /// widening their access to `internal`. Wrapping them here makes the coordinator
@@ -54,16 +54,16 @@ import Foundation
 /// **PR-D review sign-off — all findings resolved (2026-06-21)**
 ///
 /// The final review pass raised three findings; all are closed:
-/// - 🔵 Sign-off comment precision: “no writes” → “no reads or writes that race
-///   with concurrent callers” (point 2 above; `cancelAll()` does nil handles,
+/// - 🔵 Sign-off comment precision: "no writes" → "no reads or writes that race
+///   with concurrent callers" (point 2 above; `cancelAll()` does nil handles,
 ///   which is safe post-last-reference but is a mutable write — now stated
 ///   accurately).
 /// - 🟡 `isSampling` rapid stop→start liveness: fixed in `SystemStatsViewModel`
-///   via `samplingGeneration` counter — stale task’s `defer` is a no-op
+///   via `samplingGeneration` counter — stale task's `defer` is a no-op
 ///   against a newer generation.
 /// - 🔵 `#1256` tracking issue: confirmed closed 2026-06-09; `RunnerStore+PollLoop`
 ///   comment updated to note supersession by this PR.
-final class PollLoopCoordinator: @unchecked Sendable {
+public final class PollLoopCoordinator: @unchecked Sendable {
 
     // MARK: - Stored task handles
     // These are intentionally private (not private(set)) — no external caller
@@ -80,7 +80,7 @@ final class PollLoopCoordinator: @unchecked Sendable {
     // MARK: - Init
 
     /// Creates a new coordinator with all task handles set to `nil`.
-    init() {}
+    public init() {}
 
     deinit { cancelAll() }
 
@@ -88,21 +88,21 @@ final class PollLoopCoordinator: @unchecked Sendable {
 
     /// Cancels the existing poll task (if any) and replaces it with `task`.
     /// Passing `nil` cancels without installing a replacement.
-    func setPollTask(_ task: Task<Void, Never>?) {
+    public func setPollTask(_ task: Task<Void, Never>?) {
         pollTask?.cancel()
         pollTask = task
     }
 
     /// Cancels the existing interval-observation task (if any) and replaces it with `task`.
     /// Passing `nil` cancels without installing a replacement.
-    func setIntervalObservationTask(_ task: Task<Void, Never>?) {
+    public func setIntervalObservationTask(_ task: Task<Void, Never>?) {
         intervalObservationTask?.cancel()
         intervalObservationTask = task
     }
 
     /// Cancels the existing scope-observation task (if any) and replaces it with `task`.
     /// Passing `nil` cancels without installing a replacement.
-    func setScopeObservationTask(_ task: Task<Void, Never>?) {
+    public func setScopeObservationTask(_ task: Task<Void, Never>?) {
         scopeObservationTask?.cancel()
         scopeObservationTask = task
     }
@@ -112,8 +112,8 @@ final class PollLoopCoordinator: @unchecked Sendable {
     /// Niling after cancel keeps this method consistent with the setter contract
     /// (`setPollTask(nil)` also nils) and releases the `Task` references immediately,
     /// leaving the coordinator in a clean, fully-reset state.
-    /// Called from `RunnerStore.deinit` and this type’s own `deinit`.
-    func cancelAll() {
+    /// Called from `RunnerStore.deinit` and this type's own `deinit`.
+    public func cancelAll() {
         pollTask?.cancel()
         pollTask = nil
         intervalObservationTask?.cancel()
