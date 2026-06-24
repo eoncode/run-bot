@@ -128,7 +128,7 @@ public actor RunnerPoller {
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
         pollLoop.setIntervalObservationTask(Task { [weak self] in
-            let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
+            let (stream, continuation) = AsyncStream<Int>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
                 let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
                 preferencesObserver.start()
@@ -346,10 +346,14 @@ public actor RunnerPoller {
                     //                   resolves ambiguity when two runners in different
                     //                   scopes share the same name and neither apiId nor
                     //                   agentId is resolvable from local runner metadata.
+                    //                   Runner has no scope property; scope comes from the
+                    //                   outer scopes parameter, so we use runner.name as
+                    //                   the key here (byName already covers this, but we
+                    //                   keep the chain intact for future scope enrichment).
                     let installPath = installPathMap.byApiId[runner.id]
                         ?? installPathMap.byAgentId[runner.id]
                         ?? installPathMap.byName[runner.name]
-                        ?? installPathMap.byFullKey[runner.scope.map { "\($0)/\(runner.name)" } ?? runner.name]
+                        ?? installPathMap.byFullKey[runner.name]
                     guard let path = installPath else {
                         log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id)")
                         continue
@@ -374,7 +378,7 @@ public actor RunnerPoller {
                 installPathMap.byApiId[$0.runner.id] != nil
                     || installPathMap.byAgentId[$0.runner.id] != nil
                     || installPathMap.byName[$0.runner.name] != nil
-                    || installPathMap.byFullKey[$0.runner.scope.map { "\($0)/\($0.runner.name)" } ?? $0.runner.name] != nil
+                    || installPathMap.byFullKey[$0.runner.name] != nil
             )
         }
         if !metricsUpdates.isEmpty {
