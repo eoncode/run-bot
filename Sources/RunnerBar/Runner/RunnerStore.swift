@@ -345,7 +345,7 @@ actor RunnerStore {
             log("RunnerStore › fetch — localRunners=\(localRunners.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
             #endif
         }
-        let installPathMap = buildInstallPathMap(
+        let installPathMap = RunnerBarCore.buildInstallPathMap(
             scopes: scopesSnapshot,
             localRunners: localRunners
         )
