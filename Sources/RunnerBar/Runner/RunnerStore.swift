@@ -71,7 +71,7 @@ actor RunnerStore {
     private let pollLoop = PollLoopCoordinator()
 
     /// The view model this store pushes updates into.
-    private let viewModel: RunnerViewModel
+    private let viewModel: any RunnerViewModelProtocol
     /// Injected reference to the local runner store — avoids singleton cross-references
     /// inside the actor body (Swift 6 / PR #1303 requirement).
     private let localRunnerStore: LocalRunnerStore
@@ -139,7 +139,7 @@ actor RunnerStore {
     ///   the time any suspension occurs, even if the actor is deallocated immediately after
     ///   `init`.
     init(
-        viewModel: RunnerViewModel,
+        viewModel: any RunnerViewModelProtocol,
         localRunnerStore: LocalRunnerStore,
         preferencesStore: any AppPreferencesStoreProtocol,
         scopeStore: any ScopeStoreProtocol,

@@ -5,6 +5,13 @@ import Observation
 
 // MARK: - RunnerViewModel
 
+// MARK: Protocol conformance
+// `RunnerViewModel` satisfies `RunnerViewModelProtocol` structurally (all required
+// properties are already declared below). The explicit conformance is declared here
+// so the compiler verifies it and callers can use `RunnerViewModel` anywhere
+// `any RunnerViewModelProtocol` is expected.
+extension RunnerViewModel: RunnerViewModelProtocol {}
+
 /// Bridges `RunnerStore` and `LocalRunnerStore` into observable properties consumed by SwiftUI views.
 ///
 /// State is **pushed** into this view model by the stores via `await MainActor.run { }`.

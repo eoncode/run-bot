@@ -82,7 +82,7 @@ actor LocalRunnerStore {
 
     // MARK: - Injected dependencies
     /// The view model this actor pushes UI state into.
-    private let viewModel: RunnerViewModel
+    private let viewModel: any RunnerViewModelProtocol
     /// Persistence layer for the runner name → install path mapping.
     private let index = LocalRunnerIndex()
     /// Enricher that applies GitHub API data (status, busy, labels, group) to
@@ -101,7 +101,7 @@ actor LocalRunnerStore {
     ///     The `shared` singleton has been removed (#1539 item 22) — callers must
     ///     construct an explicit instance.
     init(
-        viewModel: RunnerViewModel,
+        viewModel: any RunnerViewModelProtocol,
         enricher: any RunnerStatusEnricherProtocol = RunnerStatusEnricher()
     ) {
         self.viewModel = viewModel
