@@ -95,14 +95,6 @@ public actor RunnerPoller {
     /// Fetcher for workflow action groups.
     let actionGroupFetcher: any WorkflowActionGroupFetcherProtocol
 
-    // MARK: - Aggregate status
-
-    /// The combined health status across all runners, derived from the current `runners` array.
-    /// periphery:ignore
-    public var aggregateStatus: AggregateStatus {
-        AggregateStatus(runners: runners)
-    }
-
     // MARK: - Init
 
     /// Designated init for dependency injection.
@@ -340,6 +332,9 @@ public actor RunnerPoller {
 
     /// Fetches runners for the given scopes, resolves install paths, and enriches with metrics.
     ///
+    /// `internal` — `fetch()` is the public entry point; this method is an implementation
+    /// detail not intended for direct external calls.
+    ///
     /// **Phase 0** derives extra org scopes from local runners whose `gitHubUrl` points to a
     /// single-path-component URL (org-only, not repo). This handles runners registered against
     /// an org that the user hasn't explicitly added as a scope in ScopeStore — their org is
@@ -359,7 +354,7 @@ public actor RunnerPoller {
     ///   - scopes: The active scopes to fetch runners for.
     ///   - localRunners: The current local-runner snapshot (used for org-scope derivation).
     ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`.
-    func fetchAndEnrichRunners(
+    internal func fetchAndEnrichRunners(
         scopes: [String],
         localRunners: [RunnerModel],
         installPathMap: InstallPathMap

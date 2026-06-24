@@ -6,9 +6,9 @@ import Foundation
 
 /// Lookup maps built from the local runner list, used by `fetchAndEnrichRunners`.
 ///
-/// Lifted to a top-level public type in step 8 so `RunnerStore` (app layer) can
-/// reference it via `import RunnerBarCore` before the step-10 rename folds it
-/// into `extension RunnerPoller`.
+/// `public` so the app target can reference the type (e.g. in tests and in
+/// `AppDelegate+StoreSetup` for DI wiring). `buildInstallPathMap` is `internal`
+/// — it is only called from within `RunnerBarCore`.
 public struct InstallPathMap {
     /// Maps "scope/runnerName" to installPath (exact scope-prefixed match).
     public let byFullKey: [String: String]
@@ -48,10 +48,10 @@ public struct InstallPathMap {
 
 /// Builds four lookup maps from the local runner list.
 ///
-/// Free-standing in step 8 so both `RunnerStore` (app layer) and the future
-/// `RunnerPoller` (Core) can call it without a type dependency. In step 10
-/// this becomes `extension RunnerPoller { func buildInstallPathMap(...) }`.
-public func buildInstallPathMap(
+/// `internal` — called only by `RunnerPoller.fetch()` inside `RunnerBarCore`.
+/// Kept as a top-level free function (rather than `extension RunnerPoller`) so
+/// it can be tested without an actor instance.
+func buildInstallPathMap(
     scopes: [String],
     localRunners: [RunnerModel]
 ) -> InstallPathMap {
