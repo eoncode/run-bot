@@ -28,13 +28,12 @@ public final class RunnerState {
 
     // periphery:ignore - scaffolding; applyFetchResult does not write this yet.
     // TODO: wire applyFetchResult to set fetchError on network/decode failures.
-    // When this becomes live, prefer `(any Error & Sendable)?` so the type remains
-    // explicit about Swift 6 cross-actor safety if the value ever needs to cross
-    // isolation boundaries.
     /// The most recent fetch error, or `nil` if the last fetch succeeded.
+    /// Typed as `(any Error & Sendable)?` so the value is explicit about Swift 6
+    /// cross-actor safety when it eventually crosses isolation boundaries.
     /// `internal` until `applyFetchResult` is wired to write it; demoted from
     /// `public` to keep the `RunnerBarCore` API surface clean.
-    var fetchError: Error?
+    var fetchError: (any Error & Sendable)?
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
     /// Observed by `AppDelegate`'s `statusIconLoop` via `ObservationLoop`.

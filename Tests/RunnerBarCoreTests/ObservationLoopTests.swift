@@ -79,7 +79,12 @@ struct ObservationLoopTests {
             fired += 1
         }
 
-        loop = nil // deallocate
+        // `isolated deinit` on ObservationLoop guarantees isRunning = false is written
+        // on @MainActor — the same executor we're on now. The nil assignment therefore
+        // synchronously completes the deinit before the mutation below runs, making the
+        // guard in register()'s Task body fire before any onChange can be enqueued.
+        // This test is the canary that breaks if `isolated deinit` is accidentally removed.
+        loop = nil
         counter.count = 1
         try await Task.sleep(nanoseconds: 10_000_000)
 

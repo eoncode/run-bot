@@ -253,7 +253,7 @@ public actor RunnerPoller {
 
     /// Computes the delay before the next poll.
     private func nextPollInterval() async -> TimeInterval {
-        let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
+        let hasActiveJobs = jobs.contains { $0.status == .inProgress || $0.status == .queued }
         let hasActiveActions = actions.contains { $0.groupStatus == .inProgress || $0.groupStatus == .queued }
         let hasActive = hasActiveJobs || hasActiveActions
         let baseIdle = max(10, await MainActor.run { preferencesStore.pollingInterval })
