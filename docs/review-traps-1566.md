@@ -219,3 +219,26 @@ cleanup already tracked in #1570 — not a gap that should block this PR.
 
 **Verify at:** `Tests/RunnerBarCoreTests/ObservationLoopTests.swift` — the three
 existing test cases cover fire, re-registration, and dealloc.
+
+---
+
+## 13. `ActiveJob.status` compared to string literals — should use `JobStatus` enum cases
+
+**Claim:** `nextPollInterval()` in `RunnerPoller.swift` compares `$0.status ==
+"in_progress"` and `$0.status == "queued"` against string literals. `ActiveJob.status`
+is typed `JobStatus` (a strongly-typed enum). These comparisons are inconsistent with
+`$0.groupStatus == .inProgress` two lines below and would silently break if raw values
+change.
+
+**Reality:** `ActiveJob.status` is typed `String`, not `JobStatus`. The string-literal
+comparisons are correct and consistent with every call site in the codebase:
+`WorkflowContextMenuModifier` (`job.status == "in_progress"`),
+`RunnerStore.nextPollInterval` (the function this replaced), and the test fixtures
+(`status: "completed"`). `JobStatus` is used on `WorkflowActionGroup.groupStatus` and
+on `JobStep.status` — not on `ActiveJob.status`. The two enum-case comparisons a
+reviewer sees nearby (`$0.groupStatus == .inProgress`) are on a different type
+(`WorkflowActionGroup`).
+
+**Verify at:** `Sources/RunnerBarCore/Runner/ActiveJob.swift` — `status` property
+declaration. Also `Tests/RunnerBarCoreTests/RunnerBarCoreTests.swift` — struct
+initialiser with `status: "completed"` (would not compile if `status` were `JobStatus`).

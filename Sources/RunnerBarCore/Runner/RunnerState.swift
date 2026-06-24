@@ -29,8 +29,14 @@ public final class RunnerState {
     // periphery:ignore - scaffolding; applyFetchResult does not write this yet.
     // TODO: wire applyFetchResult to set fetchError on network/decode failures.
     /// The most recent fetch error, or `nil` if the last fetch succeeded.
-    /// Typed as `(any Error & Sendable)?` so the value is explicit about Swift 6
-    /// cross-actor safety when it eventually crosses isolation boundaries.
+    ///
+    /// Typed `(any Error & Sendable)?` rather than `Error?` so the value can
+    /// safely cross actor isolation boundaries when it is eventually read from
+    /// a non-`@MainActor` context (e.g. logging or telemetry in `RunnerPoller`).
+    /// Changing from `Error?` after write sites are wired would require updating
+    /// all those call sites, so the correct type is established here while the
+    /// property is still unwired.
+    ///
     /// `internal` until `applyFetchResult` is wired to write it; demoted from
     /// `public` to keep the `RunnerBarCore` API surface clean.
     var fetchError: (any Error & Sendable)?
