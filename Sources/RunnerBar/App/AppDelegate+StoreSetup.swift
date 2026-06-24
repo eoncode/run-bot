@@ -59,7 +59,7 @@ extension AppDelegate {
         // Migrate, hydrate display names, THEN start UI and observers.
         // Plain Task{} inherits @MainActor from AppDelegate; all three setup
         // calls below run on the main actor after the two awaits resolve. (#1538)
-        Task {
+        Task<Void, Never> {
             // Step 2: migrate legacy flat keys → v2 blobs.
             await ScopePreferencesStore.shared.migrateIfNeeded(knownScopes: knownScopes)
             // Step 3: hydrate ScopeEntry.displayName from freshly-migrated blobs.
