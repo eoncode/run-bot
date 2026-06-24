@@ -105,7 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// swapped on navigation; the controller itself is never recreated.
     var hostingController: NSHostingController<AnyView>?
     /// The owned observable view-model passed into every SwiftUI view via the environment.
-    /// `RunnerStore` and `LocalRunnerStore` push updates into this instance via `await MainActor.run { }`.
+    /// `LocalRunnerStore` pushes updates into this instance via `await MainActor.run { }`.
+    /// GitHub runner/job/action state is now written to `runnerState` by `RunnerPoller`.
     let observable = RunnerViewModel()
     /// Owned OAuth service instance. Typed to protocol so tests can supply a stub
     /// without going through the live singleton (P7).
@@ -147,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Created here (not inside `setupSubscriptions`) so it survives for the full
     /// app lifetime and can be injected into the SwiftUI environment in Step 12.
     /// `RunnerPoller.applyFetchResult` writes into this instance on the `@MainActor`
-    /// after every poll cycle; views will migrate to read from it in Step 12.
+    /// after every poll cycle; views read from it in Step 12 onwards.
     let runnerState = RunnerState()
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
