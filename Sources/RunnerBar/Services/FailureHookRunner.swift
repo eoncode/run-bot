@@ -47,13 +47,10 @@ enum FailureHookRunner {
         await useCase.fireIfNeeded(group: group, scope: scope, callsite: callsite)
     }
 
-    // TODO(#1573): Wire this method when the app-launch one-shot evaluation call site
-    // is added. Before wiring:
-    //   1. Replace `group.repo` with `scopeFromActionGroup(group)` for correct
-    //      empty-repo fallback (tracked in #1573).
-    //   2. Decide whether the fire-and-forget Task {} should be stored and
-    //      cancelled on app termination, or whether the cooperative-pool
-    //      cancellation on process exit is sufficient for a one-shot path.
+    // TODO(#1576): Wire this method when the app-launch one-shot evaluation call site
+    // is added. Decide whether the fire-and-forget Task {} should be stored and
+    // cancelled on app termination, or whether the cooperative-pool
+    // cancellation on process exit is sufficient for a one-shot path.
     // Do NOT suppress Periphery warnings on this site permanently — remove this
     // comment and the annotation once a real call site exists so dead-code
     // detection can resume protecting this method.
