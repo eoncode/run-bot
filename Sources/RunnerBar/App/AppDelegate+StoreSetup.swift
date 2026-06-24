@@ -32,6 +32,20 @@ extension AppDelegate {
     /// 4. `setupStatusItem` / `setupPanel` / `setupSignOutSubscription` — UI and
     ///    observers start only after migration is complete.
     ///
+    /// ## statusIconLoop ordering
+    /// `statusIconLoop` (Step 13) is assigned in this outer `Task {}` block,
+    /// synchronously *after* `setupPanel()` returns but *before* `RunnerPoller.start()`
+    /// has a chance to fire. Here is why that ordering is guaranteed:
+    ///
+    /// `setupPanel → setupSubscriptions` creates the `RunnerPoller` and then
+    /// spawns an *inner* `Task(name: “AppDelegate.startup: …”)` that suspends on
+    /// `await localRunnerStore.refreshAsync()` before calling `store.start()`.
+    /// Because `refreshAsync()` suspends, the inner Task yields back to the
+    /// `@MainActor` queue — this outer `Task {}` continues to the
+    /// `statusIconLoop = ObservationLoop { … }` line before `start()` is ever
+    /// called. There is no reachable path where `applyFetchResult` writes to
+    /// `runnerState` before `statusIconLoop` is registered.
+    ///
     /// - Parameter _: The notification (unused).
     func applicationDidFinishLaunching(_ _: Notification) {
         log("AppDelegate › applicationDidFinishLaunching — START")
@@ -77,6 +91,12 @@ extension AppDelegate {
 
             // Step 13: wire ObservationLoop so AppDelegate reacts to RunnerState
             // changes without a callback from RunnerPoller.
+            //
+            // Ordering safety: setupPanel → setupSubscriptions spawns an inner Task
+            // that suspends on `await localRunnerStore.refreshAsync()` before calling
+            // `store.start()`. The suspension yields control back here, so this
+            // assignment is always reached before the first `applyFetchResult` write.
+            // See `applicationDidFinishLaunching` doc-comment for the full explanation.
             statusIconLoop = ObservationLoop { [weak self] in
                 guard let self else { return }
                 _ = runnerState.aggregateStatus
