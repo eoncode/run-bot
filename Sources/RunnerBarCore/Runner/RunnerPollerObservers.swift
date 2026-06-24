@@ -13,11 +13,11 @@ import Foundation
 /// is required and no value crosses an isolation boundary.
 ///
 /// - Note: This class is `internal` (not `private`) intentionally. It was `private final class`
-///   in `RunnerStore.swift` before being extracted to this file. Swift `private` is file-scoped,
+///   in `RunnerPoller.swift` before being extracted to this file. Swift `private` is file-scoped,
 ///   so moving it to a separate file requires at least `internal` visibility for
-///   `RunnerStore.swift` to reference it across the file boundary. It remains invisible
-///   outside the `RunnerBar` module. Do not narrow back to `private` — that will break
-///   the cross-file reference in `RunnerStore.swift`.
+///   `RunnerPoller.swift` to reference it across the file boundary. It remains invisible
+///   outside the `RunnerBarCore` module. Do not narrow back to `private` — that will break
+///   the cross-file reference in `RunnerPoller.swift`.
 @MainActor
 public final class PreferencesObserver {
     /// The continuation used to push new `pollingInterval` values into the `AsyncStream`.

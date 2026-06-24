@@ -128,9 +128,7 @@ public actor RunnerPoller {
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
         pollLoop.setIntervalObservationTask(Task { [weak self] in
-            // AsyncStream<Int> matches PreferencesObserver.init(continuation: AsyncStream<Int>.Continuation)
-            // because AppPreferencesStoreProtocol.pollingInterval is Int, not TimeInterval.
-            let (stream, continuation) = AsyncStream<Int>.makeStream()
+            let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
                 let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
                 preferencesObserver.start()
@@ -250,7 +248,6 @@ public actor RunnerPoller {
         )
         let enrichedRunners = await fetchAndEnrichRunners(
             scopes: scopesSnapshot,
-            localRunners: localRunnersSnapshot,
             installPathMap: installPathMap
         )
         let jobResult = await buildJobState(snapPrev: snapPrev, snapCache: snapCache)
@@ -309,9 +306,13 @@ public actor RunnerPoller {
     ///
     /// The `scope` is preserved alongside each runner through both phases so that Phase 2
     /// can form the correct composite `"<scope>/<name>"` key for the `byFullKey` fallback.
+    ///
+    /// - Parameters:
+    ///   - scopes: The active scopes to fetch runners for.
+    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`; constructed
+    ///     in `fetch()` from the local-runner snapshot taken there.
     func fetchAndEnrichRunners(
         scopes: [String],
-        localRunners: [RunnerModel],
         installPathMap: InstallPathMap
     ) async -> [Runner] {
         log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
