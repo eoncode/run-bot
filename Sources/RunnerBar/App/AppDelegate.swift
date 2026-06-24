@@ -140,6 +140,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a second `RunnerPoller` instance with live observation tasks would be created
     /// and immediately replaced, producing competing poll loops.
     var runnerStore: RunnerPoller?
+    /// The observable read model for Core-side runner/job/action/rate-limit state.
+    ///
+    /// Created here (not inside `setupSubscriptions`) so it survives for the full
+    /// app lifetime and can be injected into the SwiftUI environment in Step 12.
+    /// `RunnerPoller.applyFetchResult` writes into this instance on the `@MainActor`
+    /// after every poll cycle; views will migrate to read from it in Step 12.
+    let runnerState = RunnerState()
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.
     var savedNavState: NavState?

@@ -214,15 +214,19 @@ extension AppDelegate: NSPopoverDelegate {
 
         // NOTE: The old `RunnerStore.didUpdate` Combine sink has been removed.
         // `RunnerPoller` is a Swift actor in RunnerBarCore that pushes state directly
-        // to the injected `RunnerState` (AppDelegate.runnerState) via `await MainActor.run { }`
-        // at the end of every fetch cycle. Views observe `RunnerState` directly via
-        // `@Observable`. Status-icon refresh is wired separately via ObservationLoop in Step 13.
+        // to `AppDelegate.runnerState` (a stored property) via `await MainActor.run { }`
+        // at the end of every fetch cycle.
+        //
+        // Step 11 (dual-write bridge): `runnerState` is now a stored AppDelegate property
+        // so it persists for the full app lifetime and is ready for environment injection
+        // in Step 12. `RunnerPoller.applyFetchResult` already writes both `state.*` and
+        // the actor-local mirrors. Views read from `RunnerViewModel` (`observable`) until
+        // Step 12 migrates them to `runnerState`.
         //
         // `RunnerPoller.init` does not accept @MainActor-isolated default values
         // (Swift 6: default values for parameters must not be @MainActor-isolated
         // in a nonisolated context). AppPreferencesStore.shared and ScopeStore.shared
         // are therefore passed explicitly here, where we are already on the @MainActor.
-        let runnerState = RunnerState()
         runnerStore = RunnerPoller(
             state: runnerState,
             preferencesStore: AppPreferencesStore.shared,
