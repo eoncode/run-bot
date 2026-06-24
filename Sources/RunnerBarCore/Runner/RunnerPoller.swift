@@ -81,7 +81,8 @@ public actor RunnerPoller {
     private let applyMetrics: @Sendable (_ metrics: RunnerMetrics?, _ runnerId: Int, _ name: String) async -> Void
     /// Fires a failure hook for a newly-failed workflow action group.
     /// Injected at init so Core never imports the app-layer `FailureHookRunner`.
-    let fireFailureHook: @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void
+    /// `private` — only called via `self.fireFailureHook(group, scope)` inside buildGroupState.
+    private let fireFailureHook: @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void
     /// Injected preferences store. Provides `pollingInterval`.
     private let preferencesStore: any AppPreferencesStoreProtocol
     /// Injected scope store. Provides `activeScopes`.
@@ -141,10 +142,13 @@ public actor RunnerPoller {
     // MARK: - Observation loops
 
     /// Starts (or restarts) the `pollingInterval` observation loop.
+    ///
+    /// Uses `AsyncStream<Int>` to match `PreferencesObserver.continuation` which is
+    /// typed `AsyncStream<Int>.Continuation` — pollingInterval is an `Int` (seconds).
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
         pollLoop.setIntervalObservationTask(Task { [weak self] in
-            let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
+            let (stream, continuation) = AsyncStream<Int>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
                 let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
                 preferencesObserver.start()
@@ -152,7 +156,7 @@ public actor RunnerPoller {
             }
             for await newInterval in stream {
                 guard !Task.isCancelled else { break }
-                log("RunnerPoller › pollingInterval changed to \(newInterval) — restarting poll loop")
+                log("RunnerPoller › pollingInterval changed to \(newInterval)s — restarting poll loop")
                 await self?.startObservingPreferences()
                 guard !Task.isCancelled else { break }
                 await self?.start()
@@ -264,6 +268,7 @@ public actor RunnerPoller {
         )
         let enrichedRunners = await fetchAndEnrichRunners(
             scopes: scopesSnapshot,
+            localRunners: localRunnersSnapshot,
             installPathMap: installPathMap
         )
         let jobResult = await buildJobState(snapPrev: snapPrev, snapCache: snapCache)
@@ -314,31 +319,53 @@ public actor RunnerPoller {
 
     /// Fetches runners for the given scopes, resolves install paths, and enriches with metrics.
     ///
-    /// Both phases run concurrently:
+    /// Phase 0 derives extra org scopes from local runners whose `gitHubUrl` points to a
+    /// single-path-component URL (org-only, not repo). This handles runners registered against
+    /// an org that the user hasn't explicitly added as a scope in ScopeStore — their org is
+    /// inferred from the local runner's URL so those runners continue to appear in the panel.
+    ///
+    /// Phase 1 and 2 run concurrently:
     /// 1. Scope fetches — one child task per scope via `withTaskGroup`.
     /// 2. Metrics enrichment — one child task per busy runner via a second `withTaskGroup`.
-    /// This restores the parallel behaviour from the original `RunnerStore` implementation;
-    /// a serial loop would add latency proportional to the number of concurrently-busy runners.
-    ///
-    /// The `scope` is preserved alongside each runner through both phases so that Phase 2
-    /// can form the correct composite `"<scope>/<name>"` key for the `byFullKey` fallback.
     ///
     /// - Parameters:
     ///   - scopes: The active scopes to fetch runners for.
-    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`; constructed
-    ///     in `fetch()` from the local-runner snapshot taken there.
+    ///   - localRunners: The current local-runner snapshot (used for org-scope derivation).
+    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`.
     func fetchAndEnrichRunners(
         scopes: [String],
+        localRunners: [RunnerModel],
         installPathMap: InstallPathMap
     ) async -> [Runner] {
         log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
 
+        // Phase 0 — Derive extra org scopes from local runner URLs.
+        // A runner whose gitHubUrl has a single non-empty path component is registered
+        // against an org (e.g. "https://github.com/myorg"). If that org isn't already
+        // in the configured activeScopes, add it so we still fetch runners for it.
+        let configuredScopeSet = Set(scopes)
+        var extraOrgScopes: [String] = []
+        for localRunner in localRunners {
+            guard let url = localRunner.gitHubUrl else { continue }
+            let parts = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+            guard parts.count == 1 else { continue }
+            let orgScope = parts[0]
+            guard !configuredScopeSet.contains(orgScope),
+                  !extraOrgScopes.contains(orgScope)
+            else { continue }
+            extraOrgScopes.append(orgScope)
+            log("RunnerPoller › fetchAndEnrichRunners — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'")
+        }
+        if !extraOrgScopes.isEmpty {
+            log("RunnerPoller › fetchAndEnrichRunners — extra org scopes to fetch: \(extraOrgScopes)")
+        }
+
+        let allScopes = scopes + extraOrgScopes
+
         // Phase 1 — Fetch raw runners for all scopes in parallel.
-        // Each element retains its source scope so Phase 2 can form the
-        // "<scope>/<runnerName>" composite key for the byFullKey fallback.
         var indexed: [IndexedScopedRunner] = []
         await withTaskGroup(of: (Int, String, [Runner]).self) { group in
-            for (i, scope) in scopes.enumerated() {
+            for (i, scope) in allScopes.enumerated() {
                 group.addTask {
                     let fetched = await fetchRunners(for: scope)
                     return (i, scope, fetched)
@@ -349,28 +376,15 @@ public actor RunnerPoller {
             }
         }
 
-        // Phase 2 — Enrich each busy runner with system metrics (CPU, memory) concurrently.
-        // Using a second withTaskGroup restores the parallel behaviour from RunnerStore;
-        // a serial loop would serialise all metricsForRunner() calls even when multiple
-        // runners are busy simultaneously.
+        // Phase 2 — Enrich each busy runner with system metrics concurrently.
         let busyIndices = indexed.indices.filter { indexed[$0].runner.busy }
         if !busyIndices.isEmpty {
-            // Collect (arrayIndex, metrics) pairs concurrently, then apply in order.
             let metricsResults: [(Int, RunnerMetrics?)] = await withTaskGroup(
                 of: (Int, RunnerMetrics?).self
             ) { group in
                 for i in busyIndices {
                     let runner = indexed[i].runner
                     let scope = indexed[i].scope
-                    // Resolve install path using all four available lookup keys, in order
-                    // of decreasing specificity:
-                    //   1. byApiId    — most precise; matches the GitHub REST runner ID.
-                    //   2. byAgentId  — matches the runner's self-reported agent ID.
-                    //   3. byName     — matches on runner name alone (scope-agnostic).
-                    //   4. byFullKey  — matches on "<scope>/<runnerName>" composite key;
-                    //                   resolves ambiguity when two runners in different
-                    //                   scopes share the same name and neither apiId nor
-                    //                   agentId is resolvable from local runner metadata.
                     let installPath = installPathMap.byApiId[runner.id]
                         ?? installPathMap.byAgentId[runner.id]
                         ?? installPathMap.byName[runner.name]

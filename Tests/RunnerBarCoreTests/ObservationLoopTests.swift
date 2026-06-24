@@ -33,8 +33,11 @@ struct ObservationLoopTests {
         }
 
         counter.count = 1
-        // Yield to allow the MainActor onChange handler to execute.
-        await Task.yield()
+        // 10 ms sleep gives the enqueued @MainActor task from ObservationLoop.register()
+        // time to drain. A single Task.yield() is not a guaranteed drain — the
+        // withObservationTracking onChange callback is enqueued as a new Task on the
+        // main actor executor and may not have run after a single yield point.
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         #expect(fired == 1)
         _ = loop // keep alive
@@ -52,9 +55,9 @@ struct ObservationLoopTests {
         }
 
         counter.count = 1
-        await Task.yield()
+        try await Task.sleep(nanoseconds: 10_000_000)
         counter.count = 2
-        await Task.yield()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         #expect(fired == 2)
         _ = loop
@@ -73,7 +76,7 @@ struct ObservationLoopTests {
 
         loop = nil // deallocate
         counter.count = 1
-        await Task.yield()
+        try await Task.sleep(nanoseconds: 10_000_000)
 
         #expect(fired == 0)
     }
