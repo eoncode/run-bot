@@ -5,6 +5,7 @@
 // Step 14: applyFetchResult writes only to RunnerState (no viewModel.* writes remain).
 // App-layer dependencies replaced with protocol-typed injections and closures
 // so Core has no import of the RunnerBar app target.
+
 import Foundation
 import os
 
@@ -33,7 +34,6 @@ public actor RunnerPoller {
     private(set) var jobs: [ActiveJob] = []
     /// Workflow action groups currently shown in the panel.
     private(set) var actions: [WorkflowActionGroup] = []
-
     /// Live-job snapshot from the previous poll, used to detect vanished jobs.
     private var prevLiveJobs: [Int: ActiveJob] = [:]
     /// Completed-job cache keyed by job ID; capped at `PollResultBuilder.jobCacheLimit`.
@@ -47,17 +47,14 @@ public actor RunnerPoller {
     /// Kept separate from `actionGroupCache` so that cache eviction does not re-arm
     /// the hook for old completed groups still present in GitHub's last-completed feed.
     private var seenGroupIDs: Set<String> = []
-
     /// Whether the GitHub API is currently rate-limiting this client.
     private(set) var isRateLimited = false
     /// The exact moment the current rate-limit window expires, or `nil` when no
     /// rate-limit is active or the reset time is unknown.
     /// Assigned in `applyFetchResult` and written to `state`. periphery:ignore
     private(set) var rateLimitResetDate: Date?
-
     /// Owns the three structured `Task` handles for the poll loop.
     private let pollLoop = PollLoopCoordinator()
-
     /// Observable read model — the source of truth for all views and AppDelegate observers.
     public let state: RunnerState
     /// Returns the current local-runner snapshot on the `@MainActor`.
@@ -69,16 +66,13 @@ public actor RunnerPoller {
     /// Fires a failure hook for a newly-failed workflow action group.
     /// Injected at init so Core never imports the app-layer `FailureHookRunner`.
     let fireFailureHook: @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void
-
     /// Injected preferences store. Provides `pollingInterval`.
     private let preferencesStore: any AppPreferencesStoreProtocol
     /// Injected scope store. Provides `activeScopes`.
     /// `internal` (not `private`) so that extension files can read this property.
     internal let scopeStore: any ScopeStoreProtocol
-
     /// Shared `JSONDecoder` — reused across all decode calls in the actor.
     let decoder = JSONDecoder()
-
     /// Fetcher for workflow action groups.
     let actionGroupFetcher: any WorkflowActionGroupFetcherProtocol
 
@@ -86,7 +80,9 @@ public actor RunnerPoller {
 
     /// The combined health status across all runners, derived from the current `runners` array.
     /// periphery:ignore
-    public var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
+    public var aggregateStatus: AggregateStatus {
+        AggregateStatus(runners: runners)
+    }
 
     // MARK: - Init
 
@@ -132,7 +128,7 @@ public actor RunnerPoller {
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
         pollLoop.setIntervalObservationTask(Task { [weak self] in
-            let (stream, continuation) = AsyncStream<Int>.makeStream()
+            let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
                 let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
                 preferencesObserver.start()
@@ -214,9 +210,7 @@ public actor RunnerPoller {
     /// Computes the delay before the next poll.
     private func nextPollInterval() async -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == "in_progress" || $0.status == "queued" }
-        let hasActiveActions = actions.contains {
-            $0.groupStatus == .inProgress || $0.groupStatus == .queued
-        }
+        let hasActiveActions = actions.contains { $0.groupStatus == .inProgress || $0.groupStatus == .queued }
         let hasActive = hasActiveJobs || hasActiveActions
         let baseIdle = max(10, await MainActor.run { preferencesStore.pollingInterval })
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
@@ -229,13 +223,11 @@ public actor RunnerPoller {
     /// Performs one full poll cycle.
     public func fetch() async {
         await clearGhRateLimit()
-
         let scopesSnapshot = await MainActor.run { scopeStore.activeScopes }
         log("RunnerPoller › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
         if scopesSnapshot.isEmpty {
             log("RunnerPoller › ⚠️ fetch — activeScopes snapshot is EMPTY")
         }
-
         let snapPrev = prevLiveJobs
         let snapCache = completedCache
         let snapPrevGroups = prevLiveGroups
@@ -246,15 +238,14 @@ public actor RunnerPoller {
         if localRunnersSnapshot.isEmpty {
             log("RunnerPoller › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty")
         } else {
-            #if DEBUG
+#if DEBUG
             log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
-            #endif
+#endif
         }
         let installPathMap = buildInstallPathMap(
             scopes: scopesSnapshot,
             localRunners: localRunnersSnapshot
         )
-
         let enrichedRunners = await fetchAndEnrichRunners(
             scopes: scopesSnapshot,
             localRunners: localRunnersSnapshot,
@@ -267,7 +258,6 @@ public actor RunnerPoller {
             snapSeenGroupIDs: snapSeenGroupIDs,
             jobCache: jobResult.newCache
         )
-
         await applyFetchResult(
             enrichedRunners: enrichedRunners,
             jobResult: jobResult,
@@ -294,10 +284,8 @@ public actor RunnerPoller {
         seenGroupIDs = groupResult.newSeenGroupIDs
         isRateLimited = rateLimitSnapshot.isLimited
         rateLimitResetDate = rateLimitSnapshot.resetDate
-
         // swiftlint:disable:next line_length
         log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))")
-
         await MainActor.run { [state] in
             state.runners = enrichedRunners
             state.jobs = jobResult.display
@@ -314,8 +302,8 @@ public actor RunnerPoller {
     /// Both phases run concurrently:
     /// 1. Scope fetches — one child task per scope via `withTaskGroup`.
     /// 2. Metrics enrichment — one child task per busy runner via a second `withTaskGroup`.
-    ///    This restores the parallel behaviour from the original `RunnerStore` implementation;
-    ///    a serial loop would add latency proportional to the number of concurrently-busy runners.
+    /// This restores the parallel behaviour from the original `RunnerStore` implementation;
+    /// a serial loop would add latency proportional to the number of concurrently-busy runners.
     func fetchAndEnrichRunners(
         scopes: [String],
         localRunners: [RunnerModel],
@@ -349,9 +337,19 @@ public actor RunnerPoller {
             ) { group in
                 for i in busyIndices {
                     let runner = indexed[i].runner
+                    // Resolve install path using all four available lookup keys, in order
+                    // of decreasing specificity:
+                    //   1. byApiId    — most precise; matches the GitHub REST runner ID.
+                    //   2. byAgentId  — matches the runner's self-reported agent ID.
+                    //   3. byName     — matches on runner name alone (scope-agnostic).
+                    //   4. byFullKey  — matches on "<scope>/<runnerName>" composite key;
+                    //                   resolves ambiguity when two runners in different
+                    //                   scopes share the same name and neither apiId nor
+                    //                   agentId is resolvable from local runner metadata.
                     let installPath = installPathMap.byApiId[runner.id]
                         ?? installPathMap.byAgentId[runner.id]
                         ?? installPathMap.byName[runner.name]
+                        ?? installPathMap.byFullKey[runner.scope.map { "\($0)/\(runner.name)" } ?? runner.name]
                     guard let path = installPath else {
                         log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id)")
                         continue
@@ -372,16 +370,18 @@ public actor RunnerPoller {
 
         // Write metrics back to the injected local runner store closure.
         let metricsUpdates = indexed.filter {
-            $0.runner.busy
-                && (installPathMap.byApiId[$0.runner.id] != nil
-                        || installPathMap.byAgentId[$0.runner.id] != nil
-                        || installPathMap.byName[$0.runner.name] != nil)
+            $0.runner.busy && (
+                installPathMap.byApiId[$0.runner.id] != nil
+                    || installPathMap.byAgentId[$0.runner.id] != nil
+                    || installPathMap.byName[$0.runner.name] != nil
+                    || installPathMap.byFullKey[$0.runner.scope.map { "\($0)/\($0.runner.name)" } ?? $0.runner.name] != nil
+            )
         }
         if !metricsUpdates.isEmpty {
             for (_, runner) in metricsUpdates {
-                #if DEBUG
+#if DEBUG
                 log("RunnerPoller › fetchAndEnrichRunners — applyMetrics: \(runner.name) id=\(runner.id) busy=\(runner.busy) metrics=\(String(describing: runner.metrics))")
-                #endif
+#endif
                 await applyMetrics(runner.metrics, runner.id, runner.name)
             }
         }

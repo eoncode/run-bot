@@ -10,32 +10,33 @@ import Observation
 ///
 /// All mutations happen on the `MainActor`. Views and `AppDelegate` observe this
 /// object directly via `withObservationTracking` or `ObservationLoop`.
-@Observable @MainActor
+@Observable
+@MainActor
 public final class RunnerState {
-
     /// The current list of GitHub self-hosted runners for all active scopes.
     public var runners: [Runner] = []
-
     /// Active and recently-completed jobs across all active scopes.
     public var jobs: [ActiveJob] = []
-
     /// Workflow action groups (runs) across all active scopes.
     public var actions: [WorkflowActionGroup] = []
-
     /// Whether the GitHub API rate limit has been hit.
     ///
     /// When `true`, polling is paused until `rateLimitResetDate`.
     public var isRateLimited = false
-
     /// The date at which the rate limit resets, if currently rate-limited.
     public var rateLimitResetDate: Date?
 
+    // periphery:ignore - scaffolding; applyFetchResult does not write this yet.
+    // TODO: wire applyFetchResult to set fetchError on network/decode failures
+    // so the panel can surface a connectivity error state to the user.
     /// The most recent fetch error, or `nil` if the last fetch succeeded.
     public var fetchError: Error?
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
     /// Observed by `AppDelegate`'s `statusIconLoop` via `ObservationLoop`.
-    public var aggregateStatus: AggregateStatus { AggregateStatus(runners: runners) }
+    public var aggregateStatus: AggregateStatus {
+        AggregateStatus(runners: runners)
+    }
 
     /// Creates an empty `RunnerState`.
     public init() {}

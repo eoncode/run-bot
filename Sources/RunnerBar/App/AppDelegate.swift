@@ -40,9 +40,9 @@ import SwiftUI
 // This is NOT App Store safe but RunnerBar is not App Store distributed.
 // The preference is stored in AppPreferencesStore.showPopoverArrow (default: true).
 // ⚠️ The arrow state is baked in at show() time — changing the pref takes
-//    effect on the NEXT open. Never call show() mid-session to apply it.
+// effect on the NEXT open. Never call show() mid-session to apply it.
 // ⚠️ The KVC call is guarded by responds(to:) so the app degrades silently
-//    (arrow stays visible) rather than crashing if Apple removes the key.
+// (arrow stays visible) rather than crashing if Apple removes the key.
 //
 // TEXT INPUT:
 // NSPopover windows are key-capable natively. NSApp.activate() is
@@ -85,8 +85,10 @@ import SwiftUI
 //    view with a new struct and resets all @State.
 
 // MARK: - AppDelegate
+
 // ⚠️ @MainActor isolation — see ARCHITECTURE.md §@MainActor isolation.
 // ❌ NEVER remove @MainActor from this class declaration.
+
 /// Manages AppDelegate state and behaviour.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -152,17 +154,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var savedNavState: NavState?
     /// Sheet state that must survive transient popover hides.
     let panelSheetState = PanelSheetState()
+
     // periphery:ignore - write-only by design; assignment keeps the loop alive
     /// Retains the `ObservationLoop` that observes `runnerState.aggregateStatus`
     /// and calls `updateStatusIcon()` whenever the runner fleet status changes.
     /// Must be stored as a property — deallocating it stops re-registration.
-    ///
-    /// ⚠️ There is deliberately NO `failureHookLoop` counterpart.
-    /// Failure hooks are fired exclusively by `RunnerPoller.buildGroupState` via
-    /// the injected `fireFailureHook` closure, which is deduplicated by
-    /// `seenGroupIDs` inside `PollResultBuilder`. A second ObservationLoop on
-    /// `runnerState.actions` would bypass `seenGroupIDs` and double-fire hooks.
     var statusIconLoop: ObservationLoop?
+
+    // periphery:ignore - write-only by design; assignment keeps the loop alive
+    /// Retains the `ObservationLoop` that observes `runnerState.actions`.
+    ///
+    /// The loop's `onChange` is intentionally a no-op: failure hooks are fired
+    /// exclusively by the `fireFailureHook` closure injected into `RunnerPoller.init`
+    /// (callsite: `"pollResultBuilder"`), which is deduplicated by `seenGroupIDs`
+    /// inside the `RunnerPoller` actor. The loop is kept registered so the observation
+    /// remains alive and can be wired to UI badge updates or other consumers without
+    /// re-plumbing the `ObservationLoop` at that point.
+    ///
+    /// ⚠️ Do NOT assign a `FailureHookRunner.evaluate(_:)` call to this loop's
+    /// `onChange`. `runnerState.actions` is written on every `applyFetchResult` call,
+    /// so `onChange` fires every poll cycle — not only on new failures. Without access
+    /// to `RunnerPoller.seenGroupIDs`, every already-fired group would re-fire on
+    /// every subsequent tick, opening the terminal command repeatedly.
+    var failureHookLoop: ObservationLoop?
+
     // periphery:ignore - write-only by design; assignment keeps the Task alive
     /// Retained handle for the sign-out observation task started in
     /// `setupSignOutSubscription()` (AppDelegate+Polling.swift).
@@ -180,7 +195,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Injected into every SwiftUI view via `wrapEnv(_:)`.
     /// ❌ NEVER remove. ❌ NEVER remove from wrapEnv().
     let panelVisibilityState = PanelVisibilityState()
-
     /// Minimum popover content width.
     static let minWidth: CGFloat = 280
     /// Forwarded from `lifecycleCoordinator` for read access across AppDelegate extensions.
@@ -189,7 +203,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Forwarded from `lifecycleCoordinator` for read access across AppDelegate extensions.
     /// Extensions read via this computed var; writes go via `lifecycleCoordinator.setPreservedSheetWindowHide(_:)`.
     var preservedSheetWindowHide: Bool { lifecycleCoordinator.preservedSheetWindowHide }
-
     /// Maximum popover content width (90% of screen).
     var maxWidth: CGFloat { min(900, statusItemScreen.visibleFrame.width * 0.9) }
     /// Maximum popover height (85% of visible screen).
@@ -265,18 +278,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Resets `panelIsOpen` and the visibility state flag.
     /// Internal (not private) — called cross-file from AppDelegate+PanelSetup.swift.
     /// ⚠️ Must be called on the main actor. AppDelegate is @MainActor;
-    ///    do not call from background threads or completion handlers.
+    /// do not call from background threads or completion handlers.
     /// Does NOT reset `savedNavState` — callers that want a full close (not a hide)
-    ///    must nil it out themselves (see `closePanel()`).
+    /// must nil it out themselves (see `closePanel()`).
     /// Does NOT reset `panelVisibilityState.isTransientHide` — that flag is cleared
-    ///    by `openPanel()` on re-open.
+    /// by `openPanel()` on re-open.
     /// Note: the `Thread.callStackSymbols` log line below is wrapped in `#if DEBUG`
-    ///       and compiles away completely in release builds.
+    /// and compiles away completely in release builds.
     @MainActor
     func tearDownOpenState() {
-        #if DEBUG
+#if DEBUG
         log("AppDelegate › tearDownOpenState — caller=\(Thread.callStackSymbols[1])")
-        #endif
+#endif
         lifecycleCoordinator.tearDown()
         panelVisibilityState.isOpen = false
     }
@@ -309,9 +322,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ❌ NEVER add dismissSheets() here.
     /// ❌ NEVER reset hostingController.rootView here.
     func hidePanel() {
-        #if DEBUG
+#if DEBUG
         log("AppDelegate › hidePanel — ENTER panelIsOpen=\(panelIsOpen) hasActiveSheet=\(hasActiveSheet) preservedSheetWindowHide=\(preservedSheetWindowHide) popoverBehavior=\(popover?.behavior.rawValue ?? -1) caller=\(Thread.callStackSymbols[1])")
-        #endif
+#endif
         guard panelIsOpen else {
             log("AppDelegate › hidePanel — guard exit: not open")
             return
