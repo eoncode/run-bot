@@ -2,7 +2,6 @@
 // RunnerBarCore
 //
 // Step 10: Moved from RunnerBar app target to RunnerBarCore.
-// Classes made `public` so RunnerPoller (in Core) can reference them.
 import Foundation
 
 // MARK: - PreferencesObserver
@@ -12,14 +11,15 @@ import Foundation
 /// `func observe()` inside `start()` is implicitly `@MainActor` — no `@Sendable` annotation
 /// is required and no value crosses an isolation boundary.
 ///
-/// - Note: This class is `internal` (not `private`) intentionally. It was `private final class`
-///   in `RunnerPoller.swift` before being extracted to this file. Swift `private` is file-scoped,
-///   so moving it to a separate file requires at least `internal` visibility for
-///   `RunnerPoller.swift` to reference it across the file boundary. It remains invisible
-///   outside the `RunnerBarCore` module. Do not narrow back to `private` — that will break
-///   the cross-file reference in `RunnerPoller.swift`.
+/// - Note: `internal` visibility is intentional. Swift `private` is file-scoped, so moving
+///   this class to a separate file from `RunnerPoller.swift` requires at least `internal`.
+///   Cross-file access within the same module does not require `public` — `internal` is
+///   sufficient and keeps this type invisible outside `RunnerBarCore`. Do not narrow to
+///   `private` (breaks the cross-file reference) and do not widen to `public` (unnecessarily
+///   expands the module API surface). `@testable import RunnerBarCore` exposes `internal`
+///   symbols to the test target.
 @MainActor
-public final class PreferencesObserver {
+final class PreferencesObserver {
     /// The continuation used to push new `pollingInterval` values into the `AsyncStream`.
     ///
     /// **Stream element type is `TimeInterval` (Double), not `Int`.**
@@ -27,9 +27,7 @@ public final class PreferencesObserver {
     /// via `TimeInterval(store.pollingInterval)` before yielding (see `start()` below).
     /// `RunnerPoller.startObservingPreferences` creates `AsyncStream<TimeInterval>.makeStream()`
     /// and passes the resulting `AsyncStream<TimeInterval>.Continuation` here — the types
-    /// are consistent end-to-end. The old `RunnerStore` used `AsyncStream<Int>` throughout;
-    /// this was intentionally changed to `TimeInterval` so the yielded value can be used
-    /// directly in `nextPollInterval()` without a second conversion at the consumer.
+    /// are consistent end-to-end.
     private let continuation: AsyncStream<TimeInterval>.Continuation
     /// The injected preferences store — avoids singleton access inside the observer.
     private let store: any AppPreferencesStoreProtocol
@@ -40,7 +38,7 @@ public final class PreferencesObserver {
     ///   - continuation: Must be `AsyncStream<TimeInterval>.Continuation` — the observer
     ///     converts `pollingInterval: Int` to `TimeInterval` before each `yield`.
     ///   - store: The preferences store to observe.
-    public init(continuation: AsyncStream<TimeInterval>.Continuation, store: any AppPreferencesStoreProtocol) {
+    init(continuation: AsyncStream<TimeInterval>.Continuation, store: any AppPreferencesStoreProtocol) {
         self.continuation = continuation
         self.store = store
     }
@@ -53,9 +51,6 @@ public final class PreferencesObserver {
             } onChange: { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    // Convert Int seconds → TimeInterval so the consumer
-                    // (RunnerPoller.startObservingPreferences for-await body)
-                    // can use the value directly without a second conversion.
                     self.continuation.yield(TimeInterval(self.store.pollingInterval))
                     self.start()
                 }
@@ -71,16 +66,16 @@ public final class PreferencesObserver {
 /// entirely on the `@MainActor`. Same isolation rationale as `PreferencesObserver`.
 ///
 /// - Note: `internal` visibility is intentional — see `PreferencesObserver` doc-comment
-///   for the full rationale. Do not narrow back to `private`.
+///   for the full rationale. Do not narrow to `private` or widen to `public`.
 @MainActor
-public final class ScopesObserver {
+final class ScopesObserver {
     /// The continuation used to push new `activeScopes` values into the `AsyncStream`.
     private let continuation: AsyncStream<[String]>.Continuation
     /// The injected scope store — avoids singleton access inside the observer.
     private let store: any ScopeStoreProtocol
 
     /// Creates a new observer that writes changes into `continuation`.
-    public init(continuation: AsyncStream<[String]>.Continuation, store: any ScopeStoreProtocol) {
+    init(continuation: AsyncStream<[String]>.Continuation, store: any ScopeStoreProtocol) {
         self.continuation = continuation
         self.store = store
     }

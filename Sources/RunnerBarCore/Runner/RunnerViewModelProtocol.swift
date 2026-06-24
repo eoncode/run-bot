@@ -12,7 +12,7 @@ import Foundation
 /// part of this protocol (removed in Step 15).
 ///
 /// Declaring the protocol in `RunnerBarCore` (rather than the app target) achieves two goals:
-/// 1. `RunnerStore` and `LocalRunnerStore` can reference it without importing AppKit or SwiftUI.
+/// 1. `RunnerPoller` and `LocalRunnerStore` can reference it without importing AppKit or SwiftUI.
 /// 2. Test doubles (`MockRunnerViewModel`) can be defined inside `RunnerBarCoreTests` and
 ///    passed into the actors without any app-target dependency.
 ///

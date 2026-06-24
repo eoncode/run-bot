@@ -120,7 +120,10 @@ extension RunnerPoller {
     /// `nonisolated`: reads only `group` (a `Sendable` value type passed as a parameter)
     /// and calls `scopeFromHtmlUrl` (a pure free function). No main-actor state is accessed,
     /// so the `@MainActor` hop at every call site in `buildGroupState` is unnecessary.
-    public nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
+    ///
+    /// `internal` (not `public`): called only via the `scopeFromGroup` closure passed to
+    /// `PollResultBuilder` — no external callers exist outside `RunnerBarCore`.
+    nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
         log("RunnerPoller › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
         if !group.repo.isEmpty {
             log("RunnerPoller › scopeFromActionGroup — using group.repo='\(group.repo)'")
@@ -144,7 +147,10 @@ extension RunnerPoller {
     /// Marking it `nonisolated` removes the implicit `@MainActor` hop that was serialising
     /// every `withTaskGroup` child task in `PollResultBuilder.buildGroupState` through
     /// the main actor, negating the intended parallelism (#1153).
-    public nonisolated func enrichGroupJobs(
+    ///
+    /// `internal` (not `public`): called only via the `enrichJobs` closure passed to
+    /// `PollResultBuilder` — no external callers exist outside `RunnerBarCore`.
+    nonisolated func enrichGroupJobs(
         _ jobs: [ActiveJob],
         jobCache: [Int: ActiveJob]
     ) -> [ActiveJob] {
