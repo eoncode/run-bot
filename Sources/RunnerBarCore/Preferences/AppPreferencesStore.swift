@@ -49,7 +49,7 @@ public final class AppPreferencesStore {
     /// `AppPreferencesStore` is `@MainActor`-isolated (all mutations are serialised
     /// on the main queue, so the recursive assignment cannot interleave).
     ///
-    /// `RunnerStore` observes this `@Observable` property via
+    /// `RunnerPoller` observes this `@Observable` property via
     /// `withObservationTracking`/`AsyncStream` and restarts its poll loop on change —
     /// no Combine subject bridge is required.
     public var pollingInterval: Int {
@@ -115,10 +115,15 @@ public final class AppPreferencesStore {
 
 /// Constrains a `Comparable` value to a closed range.
 ///
-/// Scoped to `internal` — consumers of `RunnerBarCore` as a library should not
-/// receive a `clamped(to:)` injection on every `Comparable` type (String, Date, etc.).
-/// All internal callers (`AppPreferencesStore.pollingInterval`, `RunnerPoller`) can
-/// access this without it being part of the public API surface.
+/// REVIEW: This extension is scoped `internal` deliberately — it must not be
+/// `public` so consumers of `RunnerBarCore` as a library do not receive a
+/// `clamped(to:)` injection on every `Comparable` type they use.
+///
+/// Trade-off acknowledged: `internal` still injects `clamped(to:)` on every
+/// `Comparable` type inside `RunnerBarCore` (String, Date, Double, …). This is
+/// acceptable while there is only one call site (`pollingInterval` clamping in
+/// `AppPreferencesStore`). If a second call site never materialises, narrow this
+/// to `fileprivate` or replace with a `static` helper inside `AppPreferencesStore`.
 extension Comparable {
     /// Returns the value clamped to `range`, i.e. `max(lowerBound, min(self, upperBound))`.
     func clamped(to range: ClosedRange<Self>) -> Self {

@@ -84,8 +84,15 @@ extension AppDelegate {
                 self?.updateStatusIcon()
             }
 
+            // REVIEW: failureHookLoop is intentionally a no-op onChange.
+            //
+            // Its observe closure reads runnerState.actions so that
+            // withObservationTracking stays armed and a future consumer can be
+            // wired here without re-plumbing the ObservationLoop. The onChange
+            // closure is deliberately empty — see the constraint below.
+            //
             // ⚠️ WIRING CONSTRAINT — do NOT call FailureHookRunner.evaluate(_:)
-            // from this onChange closure.
+            // from the onChange closure.
             //
             // runnerState.actions is written by applyFetchResult on EVERY poll
             // cycle, so onChange fires every cycle — not only when a new failure
@@ -99,9 +106,6 @@ extension AppDelegate {
             // The fireFailureHook closure injected into RunnerPoller.init
             // (callsite: "pollResultBuilder") is the canonical, deduplicated
             // firing path — it owns seenGroupIDs inside the RunnerPoller actor.
-            // Keep this loop registered so the observation stays alive for future
-            // use (e.g. UI badge updates), but leave onChange as a no-op for
-            // anything hook-related.
             failureHookLoop = ObservationLoop { [weak self] in
                 guard let self else { return }
                 _ = runnerState.actions
