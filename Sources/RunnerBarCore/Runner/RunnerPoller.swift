@@ -152,9 +152,16 @@ public actor RunnerPoller {
     /// continuation type exactly — `pollingInterval` is an `Int` (seconds) but the observer
     /// converts it to `TimeInterval` before yielding so the value can be used directly in
     /// `nextPollInterval()` without a second conversion.
+    ///
+    /// **Self-cancellation avoidance**
+    /// `setIntervalObservationTask(newTask)` cancels the *previous* interval-observation
+    /// task and installs `newTask` as the new one. When called recursively from inside the
+    /// for-await body, the calling task must therefore create the new `Task` *before* passing
+    /// it to `setIntervalObservationTask` — otherwise the setter would cancel the caller
+    /// itself and the subsequent `start()` call would never execute.
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
-        pollLoop.setIntervalObservationTask(Task { [weak self] in
+        let newTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
                 let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
@@ -170,13 +177,19 @@ public actor RunnerPoller {
                 break
             }
             _ = observer
-        })
+        }
+        pollLoop.setIntervalObservationTask(newTask)
     }
 
     /// Starts (or restarts) the `activeScopes` observation loop.
+    ///
+    /// **Self-cancellation avoidance**
+    /// Same pattern as `startObservingPreferences`: the new `Task` is created first,
+    /// then handed to `setScopeObservationTask` so the setter cancels the *previous*
+    /// task rather than the one currently executing.
     private func startObservingScopes() {
         let injectedStore = scopeStore
-        pollLoop.setScopeObservationTask(Task { [weak self] in
+        let newTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<[String]>.makeStream()
             let observer: ScopesObserver = await MainActor.run {
                 let scopesObserver = ScopesObserver(continuation: continuation, store: injectedStore)
@@ -192,7 +205,8 @@ public actor RunnerPoller {
                 break
             }
             _ = observer
-        })
+        }
+        pollLoop.setScopeObservationTask(newTask)
     }
 
     // MARK: - Poll loop
@@ -353,9 +367,6 @@ public actor RunnerPoller {
         log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
 
         // Phase 0 — Derive extra org scopes from local runner URLs.
-        // A runner whose gitHubUrl has a single non-empty path component is registered
-        // against an org (e.g. "https://github.com/myorg"). If that org isn't already
-        // in the configured activeScopes, add it so we still fetch runners for it.
         let configuredScopeSet = Set(scopes)
         var extraOrgScopes: [String] = []
         for localRunner in localRunners {
@@ -376,7 +387,6 @@ public actor RunnerPoller {
         let allScopes = scopes + extraOrgScopes
 
         // Phase 1 — Fetch raw runners for all scopes concurrently.
-        // Completion order is non-deterministic; views sort for display.
         var indexed: [IndexedScopedRunner] = []
         await withTaskGroup(of: (String, [Runner]).self) { group in
             for scope in allScopes {
@@ -392,8 +402,6 @@ public actor RunnerPoller {
 
         // Phase 2 — Enrich each busy runner with system metrics concurrently.
         // Lookup priority: byApiId ?? byAgentId ?? byFullKey ?? byName
-        // byFullKey ("scope/name" composite) intentionally ranks above byName to
-        // correctly disambiguate runners that share a name across different scopes.
         let busyIndices = indexed.indices.filter { indexed[$0].runner.busy }
         if !busyIndices.isEmpty {
             let metricsResults: [(Int, RunnerMetrics?)] = await withTaskGroup(
@@ -424,8 +432,8 @@ public actor RunnerPoller {
             }
         }
 
-        // Write metrics back to the injected local runner store closure.
-        // Lookup priority matches Phase 2 above: byApiId ?? byAgentId ?? byFullKey ?? byName.
+        // Write metrics back to injected local runner store.
+        // Lookup priority matches Phase 2: byApiId ?? byAgentId ?? byFullKey ?? byName.
         let metricsUpdates = indexed.filter { entry in
             entry.runner.busy && (
                 installPathMap.byApiId[entry.runner.id] != nil
