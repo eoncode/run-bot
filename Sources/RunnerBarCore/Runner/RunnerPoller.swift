@@ -83,8 +83,8 @@ public actor RunnerPoller {
     private let applyMetrics: @Sendable (_ metrics: RunnerMetrics?, _ runnerId: Int, _ name: String) async -> Void
     /// Fires a failure hook for a newly-failed workflow action group.
     /// Injected at init so Core never imports the app-layer `FailureHookRunner`.
-    /// `private` — only called via `self.fireFailureHook(group, scope)` inside buildGroupState.
-    private let fireFailureHook: @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void
+    /// `internal` so that extension files (e.g. `RunnerPoller+PollBridge`) can call it.
+    let fireFailureHook: @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void
     /// Injected preferences store. Provides `pollingInterval`.
     private let preferencesStore: any AppPreferencesStoreProtocol
     /// Injected scope store. Provides `activeScopes`.
@@ -113,7 +113,8 @@ public actor RunnerPoller {
         scopeStore: any ScopeStoreProtocol,
         localRunners: @escaping @MainActor @Sendable () -> [RunnerModel],
         applyMetrics: @escaping @Sendable (_ metrics: RunnerMetrics?, _ runnerId: Int, _ name: String) async -> Void,
-        fireFailureHook: @escaping @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void = { _, _ in },
+        fireFailureHook: @escaping @Sendable
+            (_ group: WorkflowActionGroup, _ scope: String) async -> Void = { _, _ in },
         actionGroupFetcher: any WorkflowActionGroupFetcherProtocol = WorkflowActionGroupFetcher()
     ) {
         self.state = state
