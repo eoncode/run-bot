@@ -17,11 +17,10 @@ extension RunnerViewModel: RunnerViewModelProtocol {}
 /// Bridges `LocalRunnerStore` into observable properties consumed by SwiftUI views.
 ///
 /// State is **pushed** into this view model by `LocalRunnerStore` via `await MainActor.run { }`.
+/// GitHub runner/job/action state now lives in `RunnerState` and is written directly
+/// by `RunnerPoller.applyFetchResult` — it no longer flows through this class.
 /// No pull / Combine sinks required. The entire class is `@MainActor` because all
 /// property mutations and reads must happen on the main thread for SwiftUI rendering.
-///
-/// GitHub runner/job/action state is no longer pushed here — it lives in `RunnerState`,
-/// written by `RunnerPoller` and injected into the SwiftUI environment via `AppDelegate.wrapEnv`.
 @MainActor
 @Observable
 final class RunnerViewModel {

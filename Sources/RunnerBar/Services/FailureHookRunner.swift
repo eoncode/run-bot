@@ -29,7 +29,7 @@ enum FailureHookRunner {
 
     /// Forwards to `FailureHookRunnerUseCase` wired with production dependencies.
     /// `async` because `fireIfNeeded` is now a structured async call — callers
-    /// must provide a Task scope (see `RunnerPoller+PollBridge`).
+    /// must provide a Task scope (see `RunnerStore+PollBridge`).
     /// `sending` removed: no `Task.detached` boundary crossing, `WorkflowActionGroup`
     /// is `Sendable` so `MainActor.run` hops inside the use-case are safe without it.
     static func fireIfNeeded(
@@ -92,6 +92,10 @@ enum FailureHookRunner {
                 } else {
                     scope = ""
                 }
+                // "evaluateOneShot" identifies this as a one-shot evaluation path
+                // (e.g. app launch), not a continuous loop. Distinct from
+                // "pollResultBuilder" (the deduplicated in-actor path) so log readers
+                // can tell the two call sites apart.
                 await fireIfNeeded(group: group, scope: scope, callsite: "evaluateOneShot")
             }
         }
