@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// path: if anything reads `runnerStore` before `setupSubscriptions()` runs,
     /// a second `RunnerPoller` instance with live observation tasks would be created
     /// and immediately replaced, producing competing poll loops.
-    var runnerStore: RunnerPoller?
+    var runnerStore: (any RunnerPollerProtocol)?
     /// The observable read model for Core-side runner/job/action/rate-limit state.
     ///
     /// Created here (not inside `setupSubscriptions`) so it survives for the full

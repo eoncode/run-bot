@@ -264,7 +264,7 @@ extension AppDelegate: NSPopoverDelegate {
             log("AppDelegate › startup — awaiting localRunnerStore.refreshAsync()")
             await self.localRunnerStore.refreshAsync()
             log("AppDelegate › startup — refreshAsync() complete, starting runnerStore poll loop")
-            // `runnerStore` is `RunnerPoller?`.
+            // `runnerStore` is `(any RunnerPollerProtocol)?`.
             // This guard is structurally unreachable in normal execution: runnerStore is
             // assigned unconditionally just before this Task is spawned, and nothing
             // currently nils it out. It exists to make the condition observable if that
