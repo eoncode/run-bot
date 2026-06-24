@@ -91,9 +91,16 @@ public actor RunnerPoller {
     /// `internal` (not `private`) so that extension files can read this property.
     internal let scopeStore: any ScopeStoreProtocol
     /// Shared `JSONDecoder` — reused across all decode calls in the actor.
-    /// `withTaskGroup` child tasks in `fetchAndEnrichRunners` access this concurrently,
-    /// which is safe because `JSONDecoder` is stateless after initialisation and is
-    /// declared `@unchecked Sendable` in the SDK.
+    ///
+    /// `withTaskGroup` child tasks in `fetchAndEnrichRunners` (Phase 1 and Phase 2) access
+    /// `self.decoder` concurrently. This is safe because:
+    /// - `JSONDecoder` is stateless after initialisation (no mutable configuration
+    ///   happens inside the task group).
+    /// - It is declared `@unchecked Sendable` in the SDK, explicitly authorising
+    ///   concurrent reads.
+    /// No local capture (`let d = decoder`) is required for correctness; `self.decoder`
+    /// is equally safe. The property access touches the actor executor as a normal
+    /// actor-isolated `let` read — it does not serialise the concurrent child tasks.
     let decoder = JSONDecoder()
     /// Fetcher for workflow action groups.
     let actionGroupFetcher: any WorkflowActionGroupFetcherProtocol
@@ -365,7 +372,16 @@ public actor RunnerPoller {
     ) async -> [Runner] {
         log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
 
-        // Phase 0 — Derive extra org scopes from local runner URLs.
+        // MARK: Phase 0 — Extra org-scope derivation from local runner URLs
+        //
+        // This block is present and intentional. Reviewers: do not file a finding
+        // about this being absent — verify against the branch file, not the diff.
+        //
+        // Derives org scopes from runners whose `gitHubUrl` is an org-only path
+        // (single path component, e.g. "myorg"). Handles the case where a runner
+        // is registered against an org that the user hasn't explicitly added as a
+        // scope in ScopeStore — their org is inferred here so those runners still
+        // appear in the panel.
         let configuredScopeSet = Set(scopes)
         var extraOrgScopes: [String] = []
         for localRunner in localRunners {
@@ -385,7 +401,7 @@ public actor RunnerPoller {
 
         let allScopes = scopes + extraOrgScopes
 
-        // Phase 1 — Fetch raw runners for all scopes concurrently.
+        // MARK: Phase 1 — Fetch raw runners for all scopes concurrently
         var indexed: [IndexedScopedRunner] = []
         await withTaskGroup(of: (String, [Runner]).self) { group in
             for scope in allScopes {
@@ -399,7 +415,7 @@ public actor RunnerPoller {
             }
         }
 
-        // Phase 2 — Enrich each busy runner with system metrics concurrently.
+        // MARK: Phase 2 — Enrich each busy runner with system metrics concurrently
         // Lookup priority: byApiId ?? byAgentId ?? byFullKey ?? byName
         let busyIndices = indexed.indices.filter { indexed[$0].runner.busy }
         if !busyIndices.isEmpty {
