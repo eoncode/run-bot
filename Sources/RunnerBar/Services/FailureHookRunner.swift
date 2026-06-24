@@ -47,7 +47,10 @@ enum FailureHookRunner {
         await useCase.fireIfNeeded(group: group, scope: scope, callsite: callsite)
     }
 
-    // periphery:ignore - intentionally retained for future one-shot evaluation entry points.
+    // TODO: wire this at app launch before the poll loop starts (one-shot evaluation).
+    // Track in a dedicated issue before activating. Do NOT wire to failureHookLoop or
+    // any continuous ObservationLoop — see doc-comment below for the full constraint.
+    // Periphery will flag this as unused until a call site is added; that is intentional.
     /// Evaluates all action groups and fires the failure hook for any that qualify.
     ///
     /// Each group is evaluated independently; groups that do not qualify are silently skipped.
