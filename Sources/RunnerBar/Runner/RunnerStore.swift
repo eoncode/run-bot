@@ -3,66 +3,11 @@
 import Foundation
 import RunnerBarCore
 
-// MARK: - Protocols
-
-/// Protocol that abstracts the polling-interval preference, allowing test doubles
-/// to be injected into `RunnerStore` without going through the live singleton.
-///
-/// `Sendable` conformance is required so the existential can be captured by the
-/// actor and read inside `await MainActor.run { }` closures without triggering
-/// Swift 6's non-Sendable-type-exits-actor-isolated-context error.
-///
-/// - Note: Test doubles that implement this protocol with mutable state (e.g.
-///   `var pollingInterval: Int`) must declare `@unchecked Sendable` to satisfy
-///   the compiler under `-strict-concurrency=complete`. The `@MainActor`
-///   isolation on the protocol guarantees all access happens on the main actor,
-///   making `@unchecked` safe in practice for simple fake classes.
-///
-/// - Important: Conforming types **must** be `@Observable`. `RunnerStore` wires
-///   change notifications via `withObservationTracking`, which only fires its
-///   `onChange` callback for properties accessed on concrete `@Observable` types.
-///   A plain class conformance compiles correctly but the `onChange` closure will
-///   never fire, so the poll loop will silently not restart when `pollingInterval`
-///   changes. Annotate all test doubles with `@Observable` to preserve production
-///   behaviour.
-@MainActor
-protocol AppPreferencesStoreProtocol: AnyObject, Sendable {
-    /// The current polling interval, in seconds, as configured by the user.
-    var pollingInterval: Int { get }
-}
+// MARK: - Conformances
 
 /// Conforms `AppPreferencesStore` to `AppPreferencesStoreProtocol` so the live
 /// singleton can be injected at the production call site without any wrapper.
 extension AppPreferencesStore: AppPreferencesStoreProtocol {}
-
-/// Protocol that abstracts the active-scopes store, allowing test doubles
-/// to be injected into `RunnerStore` without going through the live singleton.
-///
-/// `Sendable` conformance is required so the existential can be captured by the
-/// actor and read inside `await MainActor.run { }` closures without triggering
-/// Swift 6's non-Sendable-type-exits-actor-isolated-context error.
-///
-/// - Note: Test doubles that implement this protocol with mutable state (e.g.
-///   `var activeScopes: [String]`) must declare `@unchecked Sendable` to satisfy
-///   the compiler under `-strict-concurrency=complete`. The `@MainActor`
-///   isolation on the protocol guarantees all access happens on the main actor,
-///   making `@unchecked` safe in practice for simple fake classes.
-///
-/// - Important: Conforming types **must** be `@Observable`. `RunnerStore` wires
-///   change notifications via `withObservationTracking`, which only fires its
-///   `onChange` callback for properties accessed on concrete `@Observable` types.
-///   A plain class conformance compiles correctly but the `onChange` closure will
-///   never fire, so the poll loop will silently not restart when `activeScopes`
-///   changes. Annotate all test doubles with `@Observable` to preserve production
-///   behaviour.
-@MainActor
-protocol ScopeStoreProtocol: AnyObject, Sendable {
-    /// The list of scope identifiers (org or repo slugs) currently active.
-    var activeScopes: [String] { get }
-    /// All scope entries (including disabled) — needed for views that display
-    /// or search the full list regardless of enabled state.
-    var entries: [ScopeEntry] { get }
-}
 
 /// Conforms `ScopeStore` to `ScopeStoreProtocol` so the live singleton can be
 /// injected at the production call site without any wrapper.
