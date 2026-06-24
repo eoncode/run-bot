@@ -65,6 +65,14 @@ struct PanelMainView: View {
     }
 
     /// Local runners currently executing a job inside an in-progress workflow group.
+    ///
+    /// Reads GitHub-side state (`actions`, `jobs`, `runners`) from `runnerState` (injected
+    /// via the SwiftUI environment from `AppDelegate.wrapEnv`).
+    ///
+    /// `store.localRunners` is intentionally still read from `RunnerViewModel` here —
+    /// `LocalRunnerStore` pushes `localRunners` to `observable` (not to `RunnerState`)
+    /// because the LocalRunnerStore migration is deferred to a follow-up issue.
+    /// TODO: migrate store.localRunners to RunnerState once LocalRunnerStore is moved to Core.
     private var activeLocalRunners: [RunnerModel] {
         guard runnerState.actions.contains(where: { $0.groupStatus == .inProgress }) else { return [] }
         let activeNamesFromJobs = Set(
@@ -73,6 +81,7 @@ struct PanelMainView: View {
         let busyRunners = runnerState.runners.filter { $0.busy }
         let busyIds = Set(busyRunners.compactMap { $0.id })
         let busyNames = Set(busyRunners.map { $0.name })
+        // TODO: migrate store.localRunners → RunnerState once LocalRunnerStore is moved to Core.
         return store.localRunners.filter { local in
             if activeNamesFromJobs.contains(local.runnerName) { return true }
             if let aid = local.agentId, busyIds.contains(aid) { return true }

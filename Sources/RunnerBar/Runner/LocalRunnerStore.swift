@@ -73,8 +73,12 @@ actor LocalRunnerStore {
     }
 
     // MARK: - Internal actor state
+
     /// The current list of locally-installed runners, sorted by name.
-    var runners: [RunnerModel] = []
+    /// Private: all external reads go through `viewModel.localRunners` (pushed via MainActor.run).
+    /// Widening to internal is unnecessary — the `localRunners` closure in AppDelegate+PanelSetup
+    /// reads `observable.localRunners`, not this property directly.
+    private var runners: [RunnerModel] = []
     /// `true` while a refresh cycle is in flight; prevents concurrent refreshes.
     private var isScanning: Bool = false
     /// Task driving the fire-and-forget refresh loop; cancelled by `shutdown()`.

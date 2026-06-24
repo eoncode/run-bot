@@ -115,9 +115,11 @@ public final class AppPreferencesStore {
 
 /// Constrains a `Comparable` value to a closed range.
 ///
-/// Declared as an extension on `Comparable` so it is available to all numeric
-/// types across `RunnerBarCore` without repetition.
-public extension Comparable {
+/// Scoped to `internal` — consumers of `RunnerBarCore` as a library should not
+/// receive a `clamped(to:)` injection on every `Comparable` type (String, Date, etc.).
+/// All internal callers (`AppPreferencesStore.pollingInterval`, `RunnerPoller`) can
+/// access this without it being part of the public API surface.
+extension Comparable {
     /// Returns the value clamped to `range`, i.e. `max(lowerBound, min(self, upperBound))`.
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)

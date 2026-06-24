@@ -310,6 +310,12 @@ public actor RunnerPoller {
     // MARK: - fetchAndEnrichRunners
 
     /// Fetches runners for the given scopes, resolves install paths, and enriches with metrics.
+    ///
+    /// Both phases run concurrently:
+    /// 1. Scope fetches — one child task per scope via `withTaskGroup`.
+    /// 2. Metrics enrichment — one child task per busy runner via a second `withTaskGroup`.
+    ///    This restores the parallel behaviour from the original `RunnerStore` implementation;
+    ///    a serial loop would add latency proportional to the number of concurrently-busy runners.
     func fetchAndEnrichRunners(
         scopes: [String],
         localRunners: [RunnerModel],
@@ -317,7 +323,7 @@ public actor RunnerPoller {
     ) async -> [Runner] {
         log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
 
-        // Fetch raw runners for all scopes in parallel.
+        // Phase 1 — Fetch raw runners for all scopes in parallel.
         var indexed: [(idx: Int, runner: Runner)] = []
         await withTaskGroup(of: (Int, [Runner]).self) { group in
             for (i, scope) in scopes.enumerated() {
@@ -331,19 +337,37 @@ public actor RunnerPoller {
             }
         }
 
-        // Enrich each runner with system metrics (CPU, memory) from the local runner agent.
-        for i in 0 ..< indexed.count {
-            let runner = indexed[i].runner
-            guard runner.busy else { continue }
-            let installPath = installPathMap.byApiId[runner.id]
-                ?? installPathMap.byAgentId[runner.id]
-                ?? installPathMap.byName[runner.name]
-            guard let path = installPath else {
-                log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id)")
-                continue
+        // Phase 2 — Enrich each busy runner with system metrics (CPU, memory) concurrently.
+        // Using a second withTaskGroup restores the parallel behaviour from RunnerStore;
+        // a serial loop would serialise all metricsForRunner() calls even when multiple
+        // runners are busy simultaneously.
+        let busyIndices = indexed.indices.filter { indexed[$0].runner.busy }
+        if !busyIndices.isEmpty {
+            // Collect (arrayIndex, metrics) pairs concurrently, then apply in order.
+            let metricsResults: [(Int, RunnerMetrics?)] = await withTaskGroup(
+                of: (Int, RunnerMetrics?).self
+            ) { group in
+                for i in busyIndices {
+                    let runner = indexed[i].runner
+                    let installPath = installPathMap.byApiId[runner.id]
+                        ?? installPathMap.byAgentId[runner.id]
+                        ?? installPathMap.byName[runner.name]
+                    guard let path = installPath else {
+                        log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id)")
+                        continue
+                    }
+                    group.addTask {
+                        let metrics = await metricsForRunner(installPath: path)
+                        return (i, metrics)
+                    }
+                }
+                var results: [(Int, RunnerMetrics?)] = []
+                for await pair in group { results.append(pair) }
+                return results
             }
-            let metrics = await metricsForRunner(installPath: path)
-            indexed[i].runner = indexed[i].runner.copying(metrics: metrics)
+            for (i, metrics) in metricsResults {
+                indexed[i].runner = indexed[i].runner.copying(metrics: metrics)
+            }
         }
 
         // Write metrics back to the injected local runner store closure.
