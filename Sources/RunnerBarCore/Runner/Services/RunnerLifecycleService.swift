@@ -121,9 +121,11 @@ public struct RunnerLifecycleService: RunnerLifecycleServiceProtocol {
     /// `config.sh remove` (falling back to the API DELETE endpoint if the script fails),
     /// deletes the install directory, and removes the LaunchAgent plist.
     ///
-    /// Returns `.success` if the runner was fully deregistered from GitHub (either via
-    /// `config.sh` or the API fallback). Returns `.failed` if deregistration failed.
-    /// Returns `.corruptInstall` if the install was detected as broken during the API fallback path.
+    /// Returns `.corruptInstall` if the install was detected as broken during the API fallback
+    /// path — even when deregistration via the API DELETE fallback succeeded. The corrupt-install
+    /// signal takes priority so the caller can surface it to the user.
+    /// Returns `.success` only when `config.sh` itself succeeded (no corrupt-install signal).
+    /// Returns `.failed` if deregistration failed entirely.
     ///
     /// - Note: Local file cleanup (install directory + LaunchAgent plist) is performed only
     ///   when deregistration succeeds. If both `config.sh` and the API fallback fail,
@@ -193,10 +195,12 @@ public struct RunnerLifecycleService: RunnerLifecycleServiceProtocol {
         } else {
             logStep("REMOVE", "step4: skipping local cleanup — deregistration failed for \(runner.runnerName)")
         }
-        logStep("REMOVE", "done: svcOk=\(svcOk) cfgOk=\(cfgOk) removeOk=\(removeOk) for \(runner.runnerName)")
+        logStep("REMOVE", "done: svcOk=\(svcOk) cfgOk=\(cfgOk) removeOk=\(removeOk) isCorrupt=\(isCorrupt) for \(runner.runnerName)")
 
-        if removeOk { return .success }
+        // isCorrupt takes priority: surface the broken-install signal to the caller even when the
+        // API DELETE fallback succeeded. A corrupt local install still needs user attention.
         if isCorrupt { return .corruptInstall }
+        if removeOk  { return .success }
         return .failed("Failed to deregister runner \(runner.runnerName)")
     }
 
