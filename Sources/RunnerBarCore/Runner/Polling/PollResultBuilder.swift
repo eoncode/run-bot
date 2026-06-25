@@ -102,7 +102,7 @@ public struct PollResultBuilder {
     public static func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
-        snapSeenGroupIDs: OrderedSet<String> = [],
+        snapSeenGroupIDs: OrderedSet<String> = OrderedSet<String>(),
         fetchGroups: @Sendable ([String: WorkflowActionGroup]) async -> [WorkflowActionGroup],
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void,
@@ -301,7 +301,7 @@ public struct PollResultBuilder {
         liveIDs: Set<String>,
         now: Date,
         into cache: inout [String: WorkflowActionGroup],
-        seenGroupIDs: OrderedSet<String> = [],
+        seenGroupIDs: OrderedSet<String> = OrderedSet<String>(),
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void
     ) async {
@@ -388,6 +388,9 @@ public struct PollResultBuilder {
 
 // MARK: - Array fill helper
 
+/// Array extension providing a bounded fill method used by the display-list builders.
+/// Appends elements from a source sequence up to a specified limit, with an optional
+/// filter predicate.
 private extension Array {
     /// Appends elements from `source` to `self` up to `limit` total elements,
     /// optionally filtered by `shouldAppend`.
