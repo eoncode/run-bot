@@ -43,22 +43,17 @@ public final class RunnerState {
     /// Locally-installed runner agents discovered on this Mac.
     ///
     /// Pushed by `LocalRunnerStore` via `await MainActor.run { }` after every refresh cycle.
-    /// Write access is module-internal — only `LocalRunnerStore` (in `RunnerBarCore`) pushes here.
-    ///
-    /// ## Why `public internal(set)` satisfies `RunnerViewModelProtocol { get set }`
-    /// `RunnerViewModelProtocol` requires `{ get set }` so that `LocalRunnerStore` can write
-    /// through the `any RunnerViewModelProtocol` existential. Swift resolves this at the
-    /// module boundary: `internal(set)` is visible inside `RunnerBarCore`, so the requirement
-    /// is satisfied for the conformance declared in this module. External callers in the
-    /// `RunnerBar` app layer only see `get` — the setter is not exported. This is intentional.
-    public internal(set) var localRunners: [RunnerModel] = []
+    /// Declared `public var` (not `public internal(set)`) to satisfy the `{ get set }`
+    /// requirement in `RunnerViewModelProtocol` — Swift requires the setter to be public
+    /// when the conformance is public. Write discipline is enforced by convention:
+    /// only `LocalRunnerStore` (inside `RunnerBarCore`, same `@MainActor` context) pushes here.
+    public var localRunners: [RunnerModel] = []
 
     /// `true` while `LocalRunnerStore` is running a refresh cycle.
     ///
     /// Pushed by `LocalRunnerStore` alongside `localRunners`.
-    /// Write access is module-internal — only `LocalRunnerStore` (in `RunnerBarCore`) pushes here.
-    /// See `localRunners` doc for the `public internal(set)` / `{ get set }` compatibility note.
-    public internal(set) var isLocalScanning: Bool = false
+    /// See `localRunners` doc for why `public var` is required here.
+    public var isLocalScanning: Bool = false
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
     /// Observed by `AppDelegate`'s `statusIconLoop` via `ObservationLoop`.
