@@ -1,7 +1,6 @@
 // PollResultBuilder.swift
 // RunnerBarCore
 import Collections
-import OrderedCollections
 import Foundation
 
 // MARK: - GroupStateDeps
@@ -171,7 +170,7 @@ public struct PollResultBuilder {
     public static func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
-        snapSeenGroupIDs: OrderedSet<String> = [],
+        snapSeenGroupIDs: OrderedSet<String>,
         deps: GroupStateDeps
     ) async -> GroupPollResult {
         log("PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count) snapSeenGroupIDs=\(snapSeenGroupIDs.count)")
@@ -359,10 +358,11 @@ public struct PollResultBuilder {
     ///
     /// - Important: `buildGroupState` guarantees that `doneGroups` populates
     ///   `seenGroupIDs` **before** this function is called, so any group already in
-    ///   `cache` was also already appended to `seenGroupIDs`. The append below is
-    ///   therefore gated only on `!seenGroupIDs.contains` — independent of cache state.
-    ///   Hook-fire suppression (`cache[groupID] == nil`) is a separate concern and must
-    ///   not gate the ID registration.
+    ///   `cache` was also already appended to `seenGroupIDs`. ID registration
+    ///   (`seenGroupIDs.append`) happens before any early-exit `continue` so the
+    ///   invariant “register unconditionally when unseen” holds even for groups that
+    ///   hit the “already cached+dimmed” fast path. Hook-fire suppression
+    ///   (`cache[groupID] == nil`) is a separate concern and must not gate the registration.
     ///
     /// - Parameters:
     ///   - config: Snapshot, live-IDs, and timestamp bundled into a `FreezeVanishedConfig`.
@@ -380,28 +380,25 @@ public struct PollResultBuilder {
         log("PollResultBuilder › freezeVanishedGroups — snapPrev=\(config.snapPrev.count) liveIDs=\(config.liveIDs)")
         for (groupID, group) in config.snapPrev where !config.liveIDs.contains(groupID) {
             log("PollResultBuilder › freezeVanishedGroups — vanished groupID=\(group.id) inCache=\(cache[groupID] != nil)")
+            // Register the ID before any early-exit so the invariant holds unconditionally:
+            // a group that hits the cached+dimmed fast path must still be marked seen,
+            // otherwise a re-run (which resets jobs.count) could re-arm the hook.
+            // OrderedSet.append is a no-op for duplicates, so this is always safe.
+            let isUnseen = !seenGroupIDs.contains(groupID)
+            if isUnseen { seenGroupIDs.append(groupID) }
             if let existing = cache[groupID], existing.isDimmed, existing.jobs.count >= group.jobs.count {
                 log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping")
                 continue
             }
-            if !seenGroupIDs.contains(groupID) {
-                // Register the ID unconditionally — idempotent membership, independent of
-                // whether the hook fires. Must not be gated on cache[groupID] == nil.
-                seenGroupIDs.append(groupID)
-                // Fire the hook only when this group was not already written to cache by
-                // the doneGroups loop in buildGroupState. A cache entry means the group
-                // was already processed (and the hook already fired or it succeeded) via
-                // the doneGroups path; no second fire is needed.
-                if cache[groupID] == nil {
-                    let scope = scopeFromGroup(group)
-                    // Fire for any hook-triggering conclusion — failures and cancellations.
-                    // Do not fire for successful groups that vanished from the live feed normally.
-                    // See JobConclusion.isHookConclusion for full rationale.
-                    let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
-                    if shouldFire {
-                        log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)")
-                        await fireFailureHook(group, scope)
-                    }
+            if isUnseen && cache[groupID] == nil {
+                let scope = scopeFromGroup(group)
+                // Fire for any hook-triggering conclusion — failures and cancellations.
+                // Do not fire for successful groups that vanished from the live feed normally.
+                // See JobConclusion.isHookConclusion for full rationale.
+                let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
+                if shouldFire {
+                    log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)")
+                    await fireFailureHook(group, scope)
                 }
             }
             if group.lastJobCompletedAt == nil {
