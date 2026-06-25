@@ -14,6 +14,11 @@
 // protects against URLs constructed programmatically (e.g. via URLComponents
 // with an empty path segment), not string-parsed ones. Tests below verify the
 // observable contract using portable well-formed inputs.
+//
+// Platform note 2: Foundation on both macOS and Linux accepts bare word strings
+// (even with spaces) as relative URLs, so there is no portable string input to
+// URL(string:) that reliably returns nil. The nil/invalid input path is instead
+// covered by bareHostString_returnsNil and noPathComponentsURL_returnsNil.
 
 import Foundation
 import Testing
@@ -58,6 +63,13 @@ struct ScopeFromUrlTests {
         #expect(scopeFromUrl(url) == nil)
     }
 
+    /// A URL whose only pathComponent is "/" (e.g. file:// root) returns nil.
+    /// This is a portable way to exercise the no-meaningful-components branch.
+    @Test func noPathComponentsURL_returnsNil() {
+        let url = URL(string: "file:///")!
+        #expect(scopeFromUrl(url) == nil)
+    }
+
     // MARK: Empty path component guard (programmatic URL construction)
 
     /// Verifies that the !$0.isEmpty guard strips empty segments introduced by
@@ -68,8 +80,6 @@ struct ScopeFromUrlTests {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "github.com"
-        // Manually build a path with an empty first segment to simulate the
-        // double-slash case at the URL struct level rather than string parsing.
         components.path = "//acme"
         guard let url = components.url else { return }
         #expect(scopeFromUrl(url) == "acme")
@@ -79,8 +89,6 @@ struct ScopeFromUrlTests {
 
     /// URLs with more than two path segments return only the first two.
     /// This is intentional: GitHub runner URLs are always owner/repo or org.
-    /// Deeper paths (e.g. https://github.com/owner/repo/tree/main) are not
-    /// valid runner registration URLs; truncation is documented behaviour.
     @Test func threeSegments_returnsFirstTwo() {
         let url = URL(string: "https://github.com/owner/repo/tree")!
         #expect(scopeFromUrl(url) == "owner/repo")
@@ -122,28 +130,26 @@ struct ScopeFromHtmlUrlTests {
         #expect(scopeFromHtmlUrl("https://github.com/acme") == "acme")
     }
 
-    // MARK: Nil / invalid input
+    // MARK: Nil / no-scope input
 
     /// nil input returns nil.
     @Test func nilInput_returnsNil() {
         #expect(scopeFromHtmlUrl(nil) == nil)
     }
 
-    /// Empty string — URL(string:"") returns nil on all platforms; result is nil.
+    /// Empty string — URL(string: "") returns nil on all platforms.
     @Test func emptyString_returnsNil() {
         #expect(scopeFromHtmlUrl("") == nil)
-    }
-
-    /// A string with a space is rejected by URL(string:) on all platforms,
-    /// so scopeFromHtmlUrl returns nil. (Bare word strings without spaces are
-    /// treated as relative URLs by Foundation on Linux and must not be used here.)
-    @Test func invalidUrlString_returnsNil() {
-        #expect(scopeFromHtmlUrl("not a valid url") == nil)
     }
 
     /// A bare host string with no path returns nil.
     @Test func bareHostString_returnsNil() {
         #expect(scopeFromHtmlUrl("https://github.com") == nil)
+    }
+
+    /// A file-root URL string has no meaningful path components; returns nil.
+    @Test func fileRootString_returnsNil() {
+        #expect(scopeFromHtmlUrl("file:///") == nil)
     }
 
     // MARK: Consistency with scopeFromUrl
