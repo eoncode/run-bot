@@ -1,5 +1,5 @@
 // TerminalLauncher.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 /// Opens a Terminal.app window and runs a shell command via AppleScript (`do script`).

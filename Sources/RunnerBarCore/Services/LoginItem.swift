@@ -1,5 +1,5 @@
 // LoginItem.swift
-// RunnerBar
+// RunnerBarCore
 import ServiceManagement
 
 /// Manages the app's launch-at-login registration via `SMAppService`.

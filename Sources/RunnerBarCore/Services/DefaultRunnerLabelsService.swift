@@ -1,5 +1,5 @@
 // DefaultRunnerLabelsService.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - DefaultRunnerLabelsService

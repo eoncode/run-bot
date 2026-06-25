@@ -1,5 +1,5 @@
 // RunnerStatus.swift
-// RunnerBar
+// RunnerBarCore
 //
 // Typed representation of the GitHub API runner status field.
 // Replaces the raw String used in Runner and RunnerModel.

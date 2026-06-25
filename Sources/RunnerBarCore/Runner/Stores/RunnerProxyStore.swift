@@ -1,5 +1,5 @@
 // RunnerProxyStore.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - RunnerProxyStore

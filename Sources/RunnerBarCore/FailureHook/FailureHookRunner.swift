@@ -1,5 +1,5 @@
 // FailureHookRunner.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - FailureHookRunner

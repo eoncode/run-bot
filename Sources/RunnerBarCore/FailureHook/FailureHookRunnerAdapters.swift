@@ -1,5 +1,5 @@
 // FailureHookRunnerAdapters.swift
-// RunnerBar
+// RunnerBarCore
 //
 // Production adapters that bridge dependencies to the protocols expected by
 // `FailureHookRunnerUseCase`.
