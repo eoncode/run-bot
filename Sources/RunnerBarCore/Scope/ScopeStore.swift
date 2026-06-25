@@ -98,7 +98,9 @@ public final class ScopeStore {
     // MARK: - Mutations
 
     /// Appends a new enabled entry after trimming whitespace.
-    /// No-ops if empty or if `scope` already exists (any case).
+    /// No-ops if `scope` is empty after trimming, or if an entry with the same
+    /// scope string already exists. Comparison is case-sensitive — GitHub scope
+    /// strings are case-sensitive API paths (`owner/repo` ≠ `Owner/Repo`).
     public func add(_ scope: String) {
         let trimmed = scope.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !entries.contains(where: { $0.scope == trimmed }) else { return }
