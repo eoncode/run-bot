@@ -200,7 +200,7 @@ public struct RunnerLifecycleService: RunnerLifecycleServiceProtocol {
         // isCorrupt takes priority: surface the broken-install signal to the caller even when the
         // API DELETE fallback succeeded. A corrupt local install still needs user attention.
         if isCorrupt { return .corruptInstall }
-        if removeOk  { return .success }
+        if removeOk { return .success }
         return .failed("Failed to deregister runner \(runner.runnerName)")
     }
 
