@@ -43,6 +43,73 @@ private func runProcess(_ path: String, _ arguments: [String], timeout: TimeInte
     return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+// MARK: - Parse helpers
+
+/// Converts newline-separated `pgrep` stdout into a comma-joined PID list
+/// suitable for passing to `ps -p`.
+///
+/// Uses `.split(separator:)` which drops empty subsequences natively,
+/// so a trailing newline in `pgrep` output produces no spurious empty PID.
+///
+/// - Parameter output: Raw stdout from a `pgrep` invocation.
+/// - Returns: A non-empty comma-joined string of PIDs, or `nil` when the
+///   input contains no non-empty lines.
+private func parsePIDs(_ output: String) -> String? {
+    let pids = output
+        .split(separator: "\n")
+        .map(String.init)
+        .joined(separator: ",")
+    return pids.isEmpty ? nil : pids
+}
+
+/// Parses `ps -o pid,%cpu,%mem,command` output into an array of `RunnerMetrics`.
+///
+/// The first (header) line is always skipped. Subsequent lines are split with
+/// `.split(separator:omittingEmptySubsequences:)`, consistent with `parsePIDs`.
+/// Each non-blank line must supply at least three columns: PID (index 0),
+/// %CPU (index 1), and %MEM (index 2). The command column (index 3) is
+/// intentionally **not** required: `ps` may omit it for zombie or kernel
+/// threads, yet their cpu/mem values are still valid and should be counted.
+/// (The previous `allWorkerMetrics` implementation used `parts.count > 3`,
+/// which was over-strict for that reason; the threshold is consciously
+/// unified at `> 2` here.)
+///
+/// Each successfully parsed line is logged with its cpu, mem, and the first
+/// three words of the command column (when present) so that unexpected
+/// process matches surface clearly in diagnostics.
+///
+/// Lines that cannot be parsed are logged under the given `context` tag and
+/// silently skipped.
+///
+/// - Parameters:
+///   - output: Raw stdout returned by the `ps` invocation.
+///   - context: Caller name used as the log-line prefix (e.g. `"metricsForRunner"`).
+/// - Returns: An array of `RunnerMetrics` values; empty when no parseable
+///   lines are found.
+private func parsePSOutput(_ output: String, context: String) -> [RunnerMetrics] {
+    // Pass omittingEmptySubsequences: false so the header line is always a
+    // stable index-0 element and .dropFirst() reliably skips it. Blank lines
+    // that survive into the loop are filtered by the guard below.
+    let lines = output.split(separator: "\n", omittingEmptySubsequences: false).dropFirst()
+    var results: [RunnerMetrics] = []
+    for line in lines {
+        // Require PID + %cpu + %mem (indices 0–2). The command column (index 3)
+        // is not read for values and is not required — see doc-comment above.
+        let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+        guard parts.count > 2, let cpu = Double(parts[1]), let mem = Double(parts[2]) else {
+            if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                log("\(context) › failed to parse line: \(line)")
+            }
+            continue
+        }
+        // Log the command tail so unexpected process matches are diagnosable.
+        let tail = parts.count > 3 ? parts.dropFirst(3).prefix(3).joined(separator: " ") : "<no command>"
+        log("\(context) › found process cpu=\(cpu) mem=\(mem): \(tail)")
+        results.append(RunnerMetrics(cpu: cpu, mem: mem))
+    }
+    return results
+}
+
 // MARK: - Per-runner metrics
 
 /// Returns CPU and memory metrics for the `Runner.Worker` / `Runner.Listener` processes
@@ -56,42 +123,25 @@ private func runProcess(_ path: String, _ arguments: [String], timeout: TimeInte
 public func metricsForRunner(installPath: String) async -> RunnerMetrics? {
     log("metricsForRunner › ENTER installPath=\(installPath)")
     let pidsOutput = await runProcess(pgrepPath, ["-f", installPath], timeout: 3)
-    guard !pidsOutput.isEmpty else {
+    guard let pidList = parsePIDs(pidsOutput) else {
         log("metricsForRunner › no processes found for installPath=\(installPath)")
         return nil
     }
-    let pidList = pidsOutput
-        .split(separator: "\n")
-        .map(String.init)
-        .filter { !$0.isEmpty }
-        .joined(separator: ",")
     log("metricsForRunner › found pids=\(pidList) for installPath=\(installPath)")
     let output = await runProcess(psPath, ["-p", pidList, "-o", psOutputFormat], timeout: 5)
     guard !output.isEmpty else {
         log("metricsForRunner › ps returned empty for installPath=\(installPath)")
         return nil
     }
-    let lines = output.components(separatedBy: "\n").dropFirst()
-    var totalCPU = 0.0
-    var totalMEM = 0.0
-    var count = 0
-    for line in lines {
-        let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count > 2, let cpu = Double(parts[1]), let mem = Double(parts[2]) else {
-            if !line.trimmingCharacters(in: .whitespaces).isEmpty {
-                log("metricsForRunner › failed to parse line: \(line)")
-            }
-            continue
-        }
-        totalCPU += cpu
-        totalMEM += mem
-        count += 1
-    }
-    guard count > 0 else {
+    let metrics = parsePSOutput(output, context: "metricsForRunner")
+    guard !metrics.isEmpty else {
         log("metricsForRunner › no parseable lines for installPath=\(installPath)")
         return nil
     }
-    let result = RunnerMetrics(cpu: totalCPU, mem: totalMEM)
+    let result = RunnerMetrics(
+        cpu: metrics.reduce(0) { $0 + $1.cpu },
+        mem: metrics.reduce(0) { $0 + $1.mem }
+    )
     log("metricsForRunner › EXIT cpu=\(result.cpu) mem=\(result.mem) installPath=\(installPath)")
     return result
 }
@@ -106,20 +156,11 @@ public func metricsForRunner(installPath: String) async -> RunnerMetrics? {
 /// - Returns: Array of `RunnerMetrics` sorted by descending CPU utilisation.
 public func allWorkerMetrics() async -> [RunnerMetrics] {
     log("allWorkerMetrics › ENTER — using direct pgrep + ps (no shell wrapper)")
-    let pidsOutput = await runProcess(
-        pgrepPath,
-        ["-f", pgrepWorkerPattern],
-        timeout: 3
-    )
-    guard !pidsOutput.isEmpty else {
+    let pidsOutput = await runProcess(pgrepPath, ["-f", pgrepWorkerPattern], timeout: 3)
+    guard let pidList = parsePIDs(pidsOutput) else {
         log("allWorkerMetrics › no Runner.Worker / Runner.Listener processes found — returning []")
         return []
     }
-    let pidList = pidsOutput
-        .split(separator: "\n")
-        .map(String.init)
-        .filter { !$0.isEmpty }
-        .joined(separator: ",")
     log("allWorkerMetrics › found pids=\(pidList)")
     let output = await runProcess(psPath, ["-p", pidList, "-o", psOutputFormat], timeout: 5)
     log("allWorkerMetrics › ps returned — outputBytes=\(output.count) isEmpty=\(output.isEmpty)")
@@ -127,21 +168,8 @@ public func allWorkerMetrics() async -> [RunnerMetrics] {
         log("allWorkerMetrics › ps returned empty — returning []")
         return []
     }
-    let lines = output.components(separatedBy: "\n").dropFirst()
-    log("allWorkerMetrics › scanning \(lines.count) line(s)")
-    var results: [RunnerMetrics] = []
-    for line in lines {
-        let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count > 3, let cpu = Double(parts[1]), let mem = Double(parts[2]) else {
-            if !line.trimmingCharacters(in: .whitespaces).isEmpty {
-                log("allWorkerMetrics › failed to parse line: \(line)")
-            }
-            continue
-        }
-        let tail = parts.dropFirst(3).prefix(3).joined(separator: " ")
-        log("allWorkerMetrics › found process cpu=\(cpu) mem=\(mem): \(tail)")
-        results.append(RunnerMetrics(cpu: cpu, mem: mem))
-    }
+    let results = parsePSOutput(output, context: "allWorkerMetrics")
+    log("allWorkerMetrics › scanning \(results.count) result(s)")
     let sorted = results.sorted { $0.cpu > $1.cpu }
     log("allWorkerMetrics › EXIT — returning \(sorted.count) metric(s)")
     return sorted
