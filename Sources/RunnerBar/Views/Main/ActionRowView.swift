@@ -205,8 +205,8 @@ struct ActionRowView: View {
     @ViewBuilder private var statusBadge: some View {
         switch group.groupStatus {
         case .inProgress: StatusBadge(status: .inProgress, text: "IN PROGRESS")
-        case .loading:    StatusBadge(status: .queued,     text: "LOADING")
-        case .queued:     StatusBadge(status: .queued,     text: "QUEUED")
+        case .loading:    StatusBadge(status: .queued, text: "LOADING")
+        case .queued:     StatusBadge(status: .queued, text: "QUEUED")
         case .completed:
             switch group.conclusion {
             case .success: StatusBadge(status: .success, text: "SUCCESS")
