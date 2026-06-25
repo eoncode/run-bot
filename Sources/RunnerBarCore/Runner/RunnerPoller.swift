@@ -284,7 +284,7 @@ public actor RunnerPoller {
             try await fetchInternal()
         } catch {
             log("RunnerPoller › fetch — ⚠️ unhandled error: \(error)")
-            await applyError(error)
+            await applyError(FetchError(error))
         }
     }
 
@@ -372,7 +372,18 @@ public actor RunnerPoller {
     /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
     /// stale data alongside the error banner rather than an empty list. Stale data with
     /// a visible error is less disruptive than a sudden empty state for a transient failure.
-    private func applyError(_ error: any Error) async {
+    /// Box that bridges an arbitrary `any Error` across an actor boundary safely.
+    ///
+    /// `any Error` is not `Sendable`, so passing it directly into `MainActor.run`
+    /// produces a warning under `-strict-concurrency=complete`. We capture the
+    /// `localizedDescription` string — the only consumer (`fetchErrorBanner`) uses it
+    /// solely for display — and re-surface it as a `Sendable`-conforming value.
+    private struct FetchError: LocalizedError, Sendable {
+        let errorDescription: String?
+        init(_ underlying: any Error) { errorDescription = underlying.localizedDescription }
+    }
+
+    private func applyError(_ error: any Error & Sendable) async {
         await MainActor.run { [state] in
             state.fetchError = error
         }

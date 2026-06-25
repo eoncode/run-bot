@@ -33,10 +33,9 @@ public final class RunnerState {
     /// Set by `RunnerPoller.applyError(_:)`; cleared on every successful
     /// `applyFetchResult`. Views read this to show a non-modal error banner.
     ///
-    /// Typed `(any Error)?` — `@MainActor` isolation on `RunnerState` is the
-    /// correct and sufficient safety mechanism for cross-actor reads (they already
-    /// require `await`). A `& Sendable` constraint adds nothing here and forces
-    /// an unsound widening at the `catch`-block call site in `RunnerPoller.fetch()`.
+    /// Typed `(any Error)?` — the stored value is always a `RunnerPoller.FetchError`,
+    /// which is `Sendable`. The property stays `any Error` for display flexibility;
+    /// `@MainActor` isolation on `RunnerState` ensures safe cross-actor reads.
     public internal(set) var fetchError: (any Error)?
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
