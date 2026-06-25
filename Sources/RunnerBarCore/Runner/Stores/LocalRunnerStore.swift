@@ -2,8 +2,6 @@
 // RunnerBarCore
 import Foundation
 
-// swiftlint:disable missing_docs
-
 // MARK: - LocalRunnerStore
 
 /// Swift 6 actor that owns the list of locally-installed GitHub Actions runner agents.
