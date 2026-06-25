@@ -13,6 +13,10 @@ import Observation
 /// The six poll-written properties are `public internal(set)` — only
 /// `RunnerPoller.applyFetchResult` (same module) should mutate them.
 /// Views and app-layer code are read-only consumers.
+///
+/// `localRunners` and `isLocalScanning` are fully `public var` because
+/// `RunnerViewModelProtocol` requires a public setter (they are written
+/// via `await MainActor.run { }` inside `LocalRunnerStore`, same module).
 @Observable
 @MainActor
 public final class RunnerState {
@@ -42,12 +46,14 @@ public final class RunnerState {
 
     /// Locally-installed runner agents discovered on this Mac.
     /// Pushed by `LocalRunnerStore` via `await MainActor.run { }` after every refresh cycle.
-    /// Write access is module-internal — only `LocalRunnerStore` (in `RunnerBarCore`) pushes here.
-    public internal(set) var localRunners: [RunnerModel] = []
+    /// Fully `public var` to satisfy `RunnerViewModelProtocol`; in practice only
+    /// `LocalRunnerStore` (same module, same `@MainActor` context) ever writes here.
+    public var localRunners: [RunnerModel] = []
     /// `true` while `LocalRunnerStore` is running a refresh cycle.
     /// Pushed by `LocalRunnerStore` alongside `localRunners`.
-    /// Write access is module-internal — only `LocalRunnerStore` (in `RunnerBarCore`) pushes here.
-    public internal(set) var isLocalScanning: Bool = false
+    /// Fully `public var` to satisfy `RunnerViewModelProtocol`; in practice only
+    /// `LocalRunnerStore` (same module, same `@MainActor` context) ever writes here.
+    public var isLocalScanning: Bool = false
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
     /// Observed by `AppDelegate`'s `statusIconLoop` via `ObservationLoop`.
