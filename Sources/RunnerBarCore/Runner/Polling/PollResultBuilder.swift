@@ -20,6 +20,13 @@ public struct GroupStateDeps: Sendable {
     /// Enriches a job list by backfilling step data from the job cache.
     public let enrichJobs: @Sendable ([ActiveJob]) async -> [ActiveJob]
 
+    /// Creates a `GroupStateDeps` with the four required closures.
+    ///
+    /// - Parameters:
+    ///   - fetchGroups: Fetches live groups for every active scope.
+    ///   - scopeFromGroup: Derives a scope string from a group.
+    ///   - fireFailureHook: Invoked the first time a group transitions to a hook-triggering conclusion.
+    ///   - enrichJobs: Enriches a job list by backfilling step data from the job cache.
     public init(
         fetchGroups: @escaping @Sendable ([String: WorkflowActionGroup]) async -> [WorkflowActionGroup],
         scopeFromGroup: @escaping @Sendable (WorkflowActionGroup) -> String,
@@ -327,6 +334,7 @@ public struct PollResultBuilder {
     ///     when a vanished group fires so the caller's set stays consistent.
     ///   - scopeFromGroup: Derives the scope string for the failure hook call.
     ///   - fireFailureHook: Invoked when a newly-vanished group has a hook-triggering conclusion.
+    // swiftlint:disable:next function_parameter_count
     public static func freezeVanishedGroups(
         snapPrev: [String: WorkflowActionGroup],
         liveIDs: Set<String>,
