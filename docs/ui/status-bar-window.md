@@ -190,5 +190,5 @@ apps like **Tot** and **Pockity** handle it.
 
 ---
 
-*See also: `docs/ui/nspopover-without-jump-issues.md` for the NSPopover sizing/anchor mental model.*
-*See also: `docs/ui/status-bar-app-position-warning.md` for the definitive no-jumping checklist.*
+*See also: `docs/ui/nspopover-dynamic-width.md` for the NSPopover sizing/anchor mental model.*
+*See also: `docs/ui/popover-side-jump-prevention.md` for the definitive no-jumping checklist.*

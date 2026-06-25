@@ -18,8 +18,8 @@ runner-bar/
 ├── .periphery.yml                           — Periphery dead-code scanner configuration
 │
 ├── docs/
+│   ├── AGENTS.md                            — instructions / context for AI coding agents
 │   ├── architecture/
-│   │   ├── agents.md                        — AI agent usage guidelines for this codebase
 │   │   ├── file-hierarchy.md                — this file; annotated map of the codebase
 │   │   ├── concurrency-overview.md          — overview of the concurrency architecture (actors, isolation, poll loop)
 │   │   ├── data-model.md                    — description of the runner data model and how it is populated
@@ -35,7 +35,7 @@ runner-bar/
 │   │   ├── runnerbar-light-glass.html       — HTML prototype of the light glass UI
 │   │   └── zap.svg                          — zap icon asset used in design explorations
 │   ├── guides/
-│   │   ├── DEVELOPMENT.md                    — local development setup and workflow
+│   │   ├── development.md                   — local development setup and workflow
 │   │   ├── deployment.md                    — release and deployment instructions
 │   │   ├── ui-testing.md                    — UI test runner setup and instructions
 │   │   ├── commenting-standard.md           — Swift code commenting conventions for the project
@@ -47,9 +47,9 @@ runner-bar/
 │   │   ├── github-permission-rationale.md   — justification for requested GitHub OAuth scopes
 │   │   └── privacy.md                       — privacy policy and data-handling notes
 │   └── ui/
-│       ├── nspopover-without-jump-issues.md  — fix notes for NSPopover dynamic-width side-jump issues
-│       ├── popover.md                        — NSPopover architecture: dismiss, sheets, and file pickers
-│       ├── status-bar-app-position-warning.md — definitive guide to preventing status-bar popover side-jumping
+│       ├── nspopover-dynamic-width.md       — NSPopover dynamic-width positioning without side-jumps
+│       ├── nspopover-dismiss-and-sheets.md  — NSPopover architecture: dismiss, sheets, and file pickers
+│       ├── popover-side-jump-prevention.md  — definitive guide to preventing status-bar popover side-jumping
 │       ├── status-bar-window.md             — status-bar window construction strategy
 │       └── ui-architecture.md               — UI layer architecture reference and component responsibilities
 │

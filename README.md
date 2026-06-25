@@ -79,7 +79,7 @@ curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 - [Deployment](docs/guides/deployment.md) — releases and deployment
 - [UI Testing](docs/guides/ui-testing.md) — UI test runner setup
 - [AI Review](docs/guides/ai-review.md) — AI reviewer configuration
-- [Agents](docs/architecture/agents.md) — context for AI coding agents
+- [Agents](docs/AGENTS.md) — context for AI coding agents
 - [Privacy](docs/legal/privacy.md) — OAuth scopes, token storage, data handling
 
 ---
