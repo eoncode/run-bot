@@ -185,6 +185,17 @@ public struct PollResultBuilder {
 
     // MARK: - Job helpers
 
+    /// Moves jobs that were live in the previous snapshot but are absent from the current
+    /// live poll into `cache` as completed entries.
+    ///
+    /// A job that disappears without a conclusion (vanished) is given a `.neutral` conclusion
+    /// and marked dimmed. Existing cache entries for vanished jobs are never overwritten.
+    ///
+    /// - Parameters:
+    ///   - snapPrev: Live-job snapshot from the previous poll cycle.
+    ///   - liveIDs: Set of job IDs present in the current live poll.
+    ///   - now: Timestamp to use as `completedAt` for vanished jobs.
+    ///   - cache: Completed-job cache to mutate.
     public static func applyVanishedJobs(
         snapPrev: [Int: ActiveJob],
         liveIDs: Set<Int>,
@@ -197,6 +208,15 @@ public struct PollResultBuilder {
         }
     }
 
+    /// Evicts the oldest completed-job cache entries until `cache.count <= limit`.
+    ///
+    /// Entries are sorted by `completedAt` descending so the most-recently-completed
+    /// jobs are retained. Jobs without a `completedAt` date sort to the end and are
+    /// evicted first.
+    ///
+    /// - Parameters:
+    ///   - cache: Completed-job cache to mutate in place.
+    ///   - limit: Maximum number of entries to retain.
     public static func trimJobCache(_ cache: inout [Int: ActiveJob], limit: Int) {
         guard cache.count > limit else { return }
         let sorted = cache.values.sorted {
@@ -205,6 +225,15 @@ public struct PollResultBuilder {
         cache = [Int: ActiveJob](uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
+    /// Combines live and cached jobs into the ordered display list shown in the panel.
+    ///
+    /// In-progress jobs appear before queued jobs, which appear before cached completed
+    /// jobs. The total list is capped at `jobDisplayLimit`; live jobs are never truncated
+    /// by `jobCacheLimit`.
+    ///
+    /// - Parameters:
+    ///   - live: Currently active jobs from the latest poll.
+    ///   - cache: Completed-job cache from the latest poll cycle.
     public static func buildJobDisplay(live: [ActiveJob], cache: [Int: ActiveJob]) -> [ActiveJob] {
         let inProgress: [ActiveJob] = live.filter { $0.status == .inProgress }
         let queued: [ActiveJob] = live.filter { $0.status == .queued }
@@ -221,6 +250,13 @@ public struct PollResultBuilder {
 
     // MARK: - Group helpers
 
+    /// Returns a SHA-keyed view of `cache`, used to detect whether a fetched group's
+    /// SHA already has a cached entry (for stale-row self-healing).
+    ///
+    /// When two cache entries share the same `headSha`, the one with the larger `id`
+    /// (more recent run) is retained.
+    ///
+    /// - Parameter cache: The current group cache keyed by run ID.
     public static func makeShaKeyedCache(_ cache: [String: WorkflowActionGroup]) -> [String: WorkflowActionGroup] {
         Dictionary(
             cache.values.map { ($0.headSha, $0) },
@@ -228,6 +264,15 @@ public struct PollResultBuilder {
         )
     }
 
+    /// Returns a copy of `cache` with all entries whose `headSha` appears in
+    /// `freshGroups` removed.
+    ///
+    /// Called at the start of every poll so that freshly-fetched groups replace
+    /// their stale cached counterparts rather than coexisting with them.
+    ///
+    /// - Parameters:
+    ///   - cache: Current group cache to filter.
+    ///   - freshGroups: Groups returned by the latest fetch.
     public static func evictFreshShas(
         from cache: [String: WorkflowActionGroup],
         freshGroups: [WorkflowActionGroup]
@@ -236,6 +281,21 @@ public struct PollResultBuilder {
         return cache.filter { !freshShas.contains($0.value.headSha) }
     }
 
+    /// Moves groups that were live in `snapPrev` but absent from the current live
+    /// set into `cache` as dimmed completed entries, firing the failure hook when
+    /// appropriate.
+    ///
+    /// A group whose `lastJobCompletedAt` is nil receives the current timestamp so
+    /// the cache sort order remains stable.
+    ///
+    /// - Parameters:
+    ///   - snapPrev: Live-group snapshot from the previous poll cycle.
+    ///   - liveIDs: Set of group IDs present in the current live poll.
+    ///   - now: Timestamp used as `lastJobCompletedAt` for vanished groups that lack one.
+    ///   - cache: Group cache to mutate.
+    ///   - seenGroupIDs: Set of group IDs that have already fired the hook; prevents re-firing.
+    ///   - scopeFromGroup: Derives the scope string for the failure hook call.
+    ///   - fireFailureHook: Invoked when a newly-vanished group has a hook-triggering conclusion.
     public static func freezeVanishedGroups(
         snapPrev: [String: WorkflowActionGroup],
         liveIDs: Set<String>,
@@ -268,6 +328,14 @@ public struct PollResultBuilder {
         }
     }
 
+    /// Evicts the oldest completed-group cache entries until `cache.count <= limit`.
+    ///
+    /// Entries are sorted by `lastJobCompletedAt` (falling back to `createdAt`) descending
+    /// so the most recently completed groups are retained.
+    ///
+    /// - Parameters:
+    ///   - cache: Group cache to mutate in place.
+    ///   - limit: Maximum number of entries to retain.
     public static func trimGroupCache(_ cache: inout [String: WorkflowActionGroup], limit: Int) {
         guard cache.count > limit else { return }
         let sorted = cache.values.sorted {
@@ -277,12 +345,28 @@ public struct PollResultBuilder {
         cache = [String: WorkflowActionGroup](uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
+    /// Evicts the oldest entries from `ids` (FIFO) until `ids.count <= limit`.
+    ///
+    /// Because `ids` is an `OrderedSet`, the elements with the lowest indices
+    /// (inserted earliest) are removed first, giving true FIFO eviction.
+    ///
+    /// - Parameters:
+    ///   - ids: The seen-group-IDs set to trim in place.
+    ///   - limit: Maximum number of entries to retain.
     public static func trimSeenGroupIDs(_ ids: inout OrderedSet<String>, limit: Int) {
         guard ids.count > limit else { return }
         let excess = ids.count - limit
         ids.removeFirst(excess)
     }
 
+    /// Combines live and cached groups into the ordered display list shown in the panel.
+    ///
+    /// In-progress groups appear before queued groups, which appear before cached
+    /// completed groups. The total list is capped at `groupDisplayLimit`.
+    ///
+    /// - Parameters:
+    ///   - live: Currently active groups from the latest poll.
+    ///   - cache: Completed-group cache from the latest poll cycle.
     public static func buildGroupDisplay(
         live: [WorkflowActionGroup],
         cache: [String: WorkflowActionGroup]
@@ -305,6 +389,15 @@ public struct PollResultBuilder {
 // MARK: - Array fill helper
 
 private extension Array {
+    /// Appends elements from `source` to `self` up to `limit` total elements,
+    /// optionally filtered by `shouldAppend`.
+    ///
+    /// Does nothing if `self.count >= limit` on entry.
+    ///
+    /// - Parameters:
+    ///   - limit: Maximum total count of `self` after appending.
+    ///   - source: Sequence of elements to draw from.
+    ///   - shouldAppend: Optional predicate; defaults to accepting all elements.
     mutating func appendUpTo<S>(
         _ limit: Int,
         from source: S,
