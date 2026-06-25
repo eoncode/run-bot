@@ -258,6 +258,10 @@ public struct WorkflowActionGroup: Identifiable, Equatable, Sendable {
         if runs.contains(where: { $0.status == .inProgress }) { return .inProgress }
         if runs.contains(where: { $0.status == .queued }) { return .queued }
         if jobs.isEmpty && !allRunsConcluded { return .loading }
+        // Intentional fallthrough: allRunsConcluded == true && jobs.isEmpty.
+        // Reached when a run concluded before any job was dispatched (e.g. immediately
+        // cancelled). .loading is correctly skipped here because !allRunsConcluded is
+        // false — a concluded-with-no-jobs run is done, not loading.
         return .completed
     }
 
