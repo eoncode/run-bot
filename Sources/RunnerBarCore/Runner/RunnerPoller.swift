@@ -365,6 +365,8 @@ public actor RunnerPoller {
             state.actions = groupResult.display
             state.isRateLimited = rateLimitSnapshot.isLimited
             state.rateLimitResetDate = rateLimitSnapshot.resetDate
+            // `any Error` is not Equatable — skip the write when already nil
+            // to avoid a spurious @Observable notification on every healthy cycle.
             if state.fetchError != nil { state.fetchError = nil }
         }
     }
@@ -384,14 +386,16 @@ public actor RunnerPoller {
 
     /// Surfaces a fetch failure to the `RunnerState` read model.
     ///
-    /// Snapshots rate-limit state alongside the error so the UI never shows both the
-    /// rate-limit banner and the fetch-error banner simultaneously. If `clearGhRateLimit()`
-    /// ran at the top of `fetchInternal()` and then the cycle threw, the internal
-    /// `RateLimitActor` is already clear — this snapshot reflects that, preventing
-    /// a stale `isRateLimited = true` from persisting until the next successful cycle.
+    /// Snapshots `ghRateLimitSnapshot()` so that `state.isRateLimited` and
+    /// `state.rateLimitResetDate` reflect the post-`clearGhRateLimit()` reality even
+    /// when `fetchInternal()` throws before reaching `applyFetchResult`. Without this,
+    /// a throw after `clearGhRateLimit()` would leave `state.isRateLimited = true` in
+    /// the UI until the next fully-successful cycle, causing both banners to appear
+    /// simultaneously on a degraded network.
     ///
     /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
-    /// stale data alongside the error banner rather than an empty list.
+    /// stale data alongside the error banner rather than an empty list. Stale data with
+    /// a visible error is less disruptive than a sudden empty state for a transient failure.
     private func applyError(_ error: any Error & Sendable) async {
         let rateLimitSnapshot = await ghRateLimitSnapshot()
         await MainActor.run { [state] in
@@ -420,7 +424,7 @@ public actor RunnerPoller {
     ///
     /// **Install-path lookup priority** (matches the original `RunnerStore`):
     /// `byApiId ?? byAgentId ?? byFullKey ?? byName`
-    /// `byFullKey` ("scope/name" composite) ranks above `byName` so runners sharing
+    /// `byFullKey` (\"scope/name\" composite) ranks above `byName` so runners sharing
     /// a name across different scopes resolve to the correct install path.
     ///
     /// - Parameters:
