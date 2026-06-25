@@ -254,7 +254,7 @@ private struct JobRowCard: View {
                 StepRowView(
                     step: step,
                     isLast: index == job.steps.count - 1,
-                    onTap: { step in onStepTap(step) }
+                    onTap: { onStepTap(step) }
                 )
             }
         }
