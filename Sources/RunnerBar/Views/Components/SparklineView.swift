@@ -1,5 +1,6 @@
 // SparklineView.swift
 // RunnerBar
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - SparklineView

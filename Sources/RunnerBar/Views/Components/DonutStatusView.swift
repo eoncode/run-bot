@@ -1,5 +1,6 @@
 // DonutStatusView.swift
 // RunnerBar
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - DonutStatusView

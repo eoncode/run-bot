@@ -1,6 +1,7 @@
 // PanelHeaderView.swift
 // RunnerBar
 
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - PanelHeaderView

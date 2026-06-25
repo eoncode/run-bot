@@ -1,5 +1,6 @@
 // PanelContainerView.swift
 // RunnerBar
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - PanelContainerView

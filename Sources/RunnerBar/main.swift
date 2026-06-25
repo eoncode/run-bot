@@ -6,6 +6,7 @@
 /// execution on the main thread, so this assertion is always valid.
 /// ❌ NEVER remove this wrapper — it prevents a strict-concurrency build error.
 import AppKit
+import RunnerBarCore
 
 // RunnerBar requires Apple Silicon. Building for x86_64 is not supported.
 #if !arch(arm64)

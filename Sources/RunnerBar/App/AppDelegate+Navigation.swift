@@ -1,6 +1,7 @@
 // AppDelegate+Navigation.swift
 // RunnerBar
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - AppDelegate + Navigation

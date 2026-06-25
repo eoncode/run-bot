@@ -15,6 +15,7 @@
 // ⚠️ All methods must be called on the main actor.
 
 import AppKit
+import RunnerBarCore
 
 /// Owns the four popover lifecycle concerns extracted from `AppDelegate`:
 /// panel-open flag, preserved-sheet-window flag, outside-click monitor, and

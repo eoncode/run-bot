@@ -1,5 +1,6 @@
 // PanelViewModifiers.swift
 // RunnerBar
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - GlassCard

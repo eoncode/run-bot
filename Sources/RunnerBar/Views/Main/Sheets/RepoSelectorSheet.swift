@@ -1,5 +1,6 @@
 // RepoSelectorSheet.swift
 // RunnerBar
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - RepoSelectorSheet
