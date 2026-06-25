@@ -48,7 +48,7 @@ private func runProcess(_ path: String, _ arguments: [String], timeout: TimeInte
 /// Converts newline-separated `pgrep` stdout into a comma-joined PID list
 /// suitable for passing to `ps -p`.
 ///
-/// - Parameter pgrep output: Raw stdout from a `pgrep` invocation.
+/// - Parameter output: Raw stdout from a `pgrep` invocation.
 /// - Returns: A non-empty comma-joined string of PIDs, or `nil` when the
 ///   input contains no non-empty lines.
 private func parsePIDs(_ output: String) -> String? {
@@ -63,7 +63,14 @@ private func parsePIDs(_ output: String) -> String? {
 /// Parses `ps -o pid,%cpu,%mem,command` output into an array of `RunnerMetrics`.
 ///
 /// The first (header) line is always skipped. Each subsequent non-blank line
-/// must have at least three whitespace-separated columns: PID, %CPU, %MEM.
+/// must supply at least three whitespace-separated columns: PID (index 0),
+/// %CPU (index 1), and %MEM (index 2). The command column (index 3) is
+/// intentionally **not** required: `ps` may omit it for zombie or kernel
+/// threads, yet their cpu/mem values are still valid and should be counted.
+/// (The previous `allWorkerMetrics` implementation used `parts.count > 3`,
+/// which was over-strict for that reason; the threshold is consciously
+/// unified at `> 2` here.)
+///
 /// Lines that cannot be parsed are logged under the given `context` tag and
 /// silently skipped.
 ///
@@ -76,6 +83,8 @@ private func parsePSOutput(_ output: String, context: String) -> [RunnerMetrics]
     let lines = output.components(separatedBy: "\n").dropFirst()
     var results: [RunnerMetrics] = []
     for line in lines {
+        // Require PID + %cpu + %mem (indices 0–2). The command column (index 3)
+        // is not read and is not required — see doc-comment above.
         let parts = line.split(separator: " ", omittingEmptySubsequences: true)
         guard parts.count > 2, let cpu = Double(parts[1]), let mem = Double(parts[2]) else {
             if !line.trimmingCharacters(in: .whitespaces).isEmpty {
