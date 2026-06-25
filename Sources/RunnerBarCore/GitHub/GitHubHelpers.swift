@@ -1,20 +1,17 @@
 // GitHubHelpers.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 import os
-import RunnerBarCore
 
 // MARK: - URL helpers
 
 // `scopeFromHtmlUrl` is defined in RunnerBarCore/Utilities/GitHubURLHelpers.swift
-// and re-exported here via `RunnerBarCore` import. The previous app-target copy
-// has been removed to eliminate the divergence between repo-scoped and org-scoped
-// URL handling. Use `scopeFromHtmlUrl(_:)` from RunnerBarCore directly.
+// in the same module. Use `scopeFromHtmlUrl(_:)` directly.
 
 // MARK: - User orgs and repos
 
 /// Returns the login names of all GitHub organisations the authenticated user belongs to.
-func fetchUserOrgs() async -> [String] {
+public func fetchUserOrgs() async -> [String] {
     guard let data = await ghAPIPaginated("\(GitHubConstants.userOrgsPath)?per_page=\(GitHubConstants.maxPageSize)") else { return [] }
     /// Minimal org payload — only the login name is needed.
     struct Org: Decodable {
@@ -26,7 +23,7 @@ func fetchUserOrgs() async -> [String] {
 }
 
 /// Returns the `owner/repo` full names of all repositories visible to the authenticated user.
-func fetchUserRepos() async -> [String] {
+public func fetchUserRepos() async -> [String] {
     guard let data = await ghAPIPaginated("\(GitHubConstants.userReposPath)?sort=updated&per_page=\(GitHubConstants.maxPageSize)") else { return [] }
     /// Minimal repo payload — only the full name is needed.
     struct Repo: Decodable {
@@ -54,7 +51,7 @@ private let ansiRegex: NSRegularExpression? = try? NSRegularExpression(
 /// `urlSessionRaw` uses `application/vnd.github.v3.raw` and lets URLSession follow
 /// the GitHub 302→S3 redirect automatically, eliminating the need for a manual
 /// two-step redirect implementation.
-func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) async -> String? {
+public func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)")
         return nil
@@ -70,11 +67,11 @@ func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) async 
         log("fetchStepLog › urlSessionRaw returned nil for job \(jobID)")
         return nil
     }
-    guard let raw = String(data: data, encoding: .utf8) else {
+    guard let raw = String( data, encoding: .utf8) else {
         log("fetchStepLog › UTF-8 decode failed for job \(jobID) (\(data.count) bytes)")
         return nil
     }
-    guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    guard !raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else {
         log("fetchStepLog › empty body for job \(jobID)")
         return nil
     }
@@ -120,15 +117,13 @@ private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
     }
     let section = sections[index]
     log("parseStepLog › step \(stepNumber) → \(section.count)ch")
-    return section.isEmpty ? cleaned : section
+    return section
 }
 
-/// Strips ANSI escape codes from a raw log string.
+/// Strips ANSI escape sequences from a string using the pre-compiled `ansiRegex`.
+/// Returns the original string unchanged if the regex is unavailable.
 private func stripAnsi(_ input: String) -> String {
     guard let ansiRegex else { return input }
-    return ansiRegex.stringByReplacingMatches(
-        in: input,
-        range: NSRange(input.startIndex..., in: input),
-        withTemplate: ""
-    )
+    let range = NSRange(input.startIndex..., in: input)
+    return ansiRegex.stringByReplacingMatches(in: input, range: range, withTemplate: "")
 }
