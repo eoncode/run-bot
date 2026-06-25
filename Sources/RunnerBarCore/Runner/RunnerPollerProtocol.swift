@@ -42,6 +42,11 @@ extension RunnerPoller: RunnerPollerProtocol {}
 /// **Usage in tests**
 /// Inject `MockPoller` wherever `any RunnerPollerProtocol` is expected.
 /// Call `start()` freely — it is a guaranteed no-op and never starts a Task.
+///
+/// > Note: `init` is `@MainActor`-isolated because `RunnerState` is an
+/// > `@MainActor` class. In a plain `async` test function (which is not
+/// > `@MainActor` by default) construct via
+/// > `await MainActor.run { MockPoller() }`, or annotate the test `@MainActor`.
 public actor MockPoller: RunnerPollerProtocol {
     /// The observable state object this mock was initialised with.
     /// Callers may pre-populate it before passing it into the view or test subject.
