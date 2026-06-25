@@ -384,12 +384,20 @@ public actor RunnerPoller {
 
     /// Surfaces a fetch failure to the `RunnerState` read model.
     ///
+    /// Snapshots rate-limit state alongside the error so the UI never shows both the
+    /// rate-limit banner and the fetch-error banner simultaneously. If `clearGhRateLimit()`
+    /// ran at the top of `fetchInternal()` and then the cycle threw, the internal
+    /// `RateLimitActor` is already clear — this snapshot reflects that, preventing
+    /// a stale `isRateLimited = true` from persisting until the next successful cycle.
+    ///
     /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
-    /// stale data alongside the error banner rather than an empty list. Stale data with
-    /// a visible error is less disruptive than a sudden empty state for a transient failure.
+    /// stale data alongside the error banner rather than an empty list.
     private func applyError(_ error: any Error & Sendable) async {
+        let rateLimitSnapshot = await ghRateLimitSnapshot()
         await MainActor.run { [state] in
             state.fetchError = error
+            state.isRateLimited = rateLimitSnapshot.isLimited
+            state.rateLimitResetDate = rateLimitSnapshot.resetDate
         }
     }
 
