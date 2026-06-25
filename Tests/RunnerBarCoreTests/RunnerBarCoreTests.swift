@@ -3,11 +3,392 @@
 import Collections
 import Foundation
 import Testing
-@testable import RunnerBarCore
+import RunnerBarCore
 
-// MARK: - PollResultBuilder tests
+// MARK: - ActiveJob.elapsed
 
-@Suite struct PollResultBuilderTests {
+@Suite("ActiveJob.elapsed")
+struct ActiveJobElapsedTests {
+
+    /// A queued job (never started) returns "00:00" elapsed time.
+    @Test func elapsedQueuedReturnsZero() {
+        let job = ActiveJob(id: 1, name: "J", status: "queued")
+        #expect(job.elapsed == "00:00")
+    }
+
+    /// Elapsed time is formatted as "MM:SS" when start and end dates are provided for a completed job.
+    @Test func elapsedCompletedWithTimes() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end   = Date(timeIntervalSinceReferenceDate: 125)
+        let job = ActiveJob(
+            id: 1, name: "J", status: "completed",
+            conclusion: "success",
+            startedAt: start,
+            completedAt: end
+        )
+        #expect(job.elapsed == "02:05")
+    }
+
+    /// A completed job without timestamps returns "--:--" as elapsed time.
+    @Test func elapsedCompletedMissingTimesReturnsDashes() {
+        let job = ActiveJob(id: 1, name: "J", status: "completed", conclusion: "success")
+        #expect(job.elapsed == "--:--")
+    }
+
+    /// An in-progress job calculates elapsed time from startedAt to now, within a reasonable tolerance.
+    @Test func elapsedInProgressUsesStartedAt() {
+        let start = Date(timeIntervalSinceNow: -90)
+        let job = ActiveJob(id: 1, name: "J", status: "in_progress", startedAt: start)
+        let mins = Int(job.elapsed.prefix(2))!
+        let secs = Int(job.elapsed.suffix(2))!
+        let total = mins * 60 + secs
+        #expect(total >= 89)
+        #expect(total <= 95)
+    }
+
+    /// An in-progress job falls back to createdAt when startedAt is nil (still queued/assigning).
+    @Test func elapsedInProgressFallsBackToCreatedAt() {
+        let created = Date(timeIntervalSinceNow: -60)
+        let job = ActiveJob(id: 1, name: "J", status: "in_progress", createdAt: created)
+        let mins = Int(job.elapsed.prefix(2))!
+        let secs = Int(job.elapsed.suffix(2))!
+        let total = mins * 60 + secs
+        #expect(total >= 59)
+        #expect(total <= 65)
+    }
+
+    /// An in-progress job with neither startedAt nor createdAt returns "00:00".
+    @Test func elapsedInProgressNeitherDateReturnsZero() {
+        let job = ActiveJob(id: 1, name: "J", status: "in_progress")
+        #expect(job.elapsed == "00:00")
+    }
+}
+
+// MARK: - JobStep.elapsed
+
+@Suite("JobStep.elapsed")
+struct JobStepElapsedTests {
+
+    /// A completed job step formats elapsed time as "MM:SS" given fixed start/end dates.
+    @Test func elapsedFixedDuration() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end   = Date(timeIntervalSinceReferenceDate: 185) // 3m 5s
+        let step = JobStep(id: 1, name: "S", status: "completed",
+                           startedAt: start, completedAt: end)
+        #expect(step.elapsed == "03:05")
+    }
+
+    /// A step with nil start and end dates returns "00:00".
+    @Test func elapsedNilDatesReturnsZero() {
+        let step = JobStep(id: 1, name: "S", status: "in_progress")
+        #expect(step.elapsed == "00:00")
+    }
+
+    /// Exactly one minute (60 seconds) is formatted as "01:00".
+    @Test func elapsedExactlyOneMinute() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let end   = Date(timeIntervalSinceReferenceDate: 60)
+        let step = JobStep(id: 1, name: "S", status: "completed",
+                           startedAt: start, completedAt: end)
+        #expect(step.elapsed == "01:00")
+    }
+}
+
+// MARK: - ActiveJob.isLocalRunner
+
+@Suite("ActiveJob.isLocalRunner")
+struct ActiveJobIsLocalRunnerTests {
+
+    /// isLocalRunner returns nil when a job has no runner name.
+    @Test func isLocalRunnerNilWhenNoRunnerName() {
+        let job = ActiveJob(id: 1, name: "J", status: "queued")
+        #expect(job.isLocalRunner == nil)
+    }
+
+    /// All known hosted-runner name patterns return false — they are not local runners.
+    @Test(arguments: [
+        "ubuntu-latest",
+        "macos-14",
+        "windows-2022",
+        "buildjet-4vcpu-ubuntu-2204",
+        "depot-ubuntu-22.04",
+        "GitHub Actions 12"
+    ])
+    func isLocalRunnerFalseForHostedRunners(runnerName: String) {
+        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: runnerName)
+        #expect(job.isLocalRunner == false)
+    }
+
+    /// An arbitrary self-hosted runner name is identified as local.
+    @Test func isLocalRunnerTrueForSelfHosted() {
+        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "my-mac-mini")
+        #expect(job.isLocalRunner == true)
+    }
+
+    /// A custom-named runner (e.g., "office-m2-runner") is identified as local.
+    @Test func isLocalRunnerTrueForCustomName() {
+        let job = ActiveJob(id: 1, name: "J", status: "completed", runnerName: "office-m2-runner")
+        #expect(job.isLocalRunner == true)
+    }
+}
+
+// MARK: - RunnerModel.displayStatus
+
+@Suite("RunnerModel.displayStatus")
+struct RunnerModelDisplayStatusTests {
+
+    @Test func displayStatusRunning() {
+        #expect(makeRunnerModel(isRunning: true).displayStatus == "running")
+    }
+
+    @Test func displayStatusBusy() {
+        #expect(makeRunnerModel(isRunning: true, isBusy: true).displayStatus == "busy")
+    }
+
+    @Test func displayStatusOnline() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .online).displayStatus == "online")
+    }
+
+    @Test func displayStatusOffline() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .offline).displayStatus == "offline")
+    }
+
+    @Test func displayStatusLifecycleWarningTakesPriority() {
+        let runner = makeRunnerModel(isRunning: true, lifecycleWarning: "update required")
+        #expect(runner.displayStatus == "update required")
+    }
+
+    @Test func displayStatusBusyGithubStatusWhenNotRunning() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .busy).displayStatus == "busy")
+    }
+
+    @Test func displayStatusDefaultsToOfflineForUnknownStatus() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .unknown("draining")).displayStatus == "offline")
+    }
+}
+
+// MARK: - RunnerModel.statusColor
+
+@Suite("RunnerModel.statusColor")
+struct RunnerModelStatusColorTests {
+
+    @Test func statusColorRunning() {
+        #expect(makeRunnerModel(isRunning: true).statusColor == .running)
+    }
+
+    @Test func statusColorBusy() {
+        #expect(makeRunnerModel(isRunning: true, isBusy: true).statusColor == .busy)
+    }
+
+    @Test func statusColorGithubOnlineIsIdle() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .online).statusColor == .idle)
+    }
+
+    @Test func statusColorOffline() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .offline).statusColor == .offline)
+    }
+
+    @Test func statusColorLifecycleWarning() {
+        #expect(makeRunnerModel(isRunning: true, lifecycleWarning: "restart failed").statusColor == .offline)
+    }
+
+    @Test func statusColorUnknownGithubStatus() {
+        #expect(makeRunnerModel(isRunning: false, githubStatus: .unknown("draining")).statusColor == .offline)
+    }
+}
+
+// MARK: - Runner.displayStatus
+
+@Suite("Runner.displayStatus")
+struct RunnerDisplayStatusTests {
+
+    private func makeRunner(status: RunnerStatus, busy: Bool = false, metrics: RunnerMetrics? = nil) -> Runner {
+        Runner(id: 1, name: "r", status: status, busy: busy, metrics: metrics)
+    }
+
+    @Test func offlineReturnsOffline() {
+        #expect(makeRunner(status: .offline).displayStatus == "offline")
+    }
+
+    @Test func unknownReturnsOffline() {
+        #expect(makeRunner(status: .unknown("draining")).displayStatus == "offline")
+    }
+
+    @Test func onlineIdleNoMetrics() {
+        #expect(makeRunner(status: .online, busy: false).displayStatus == "idle (CPU: \u{2014} MEM: \u{2014})")
+    }
+
+    @Test func onlineBusyWithMetrics() {
+        let m = RunnerMetrics(cpu: 45.0, mem: 12.3)
+        #expect(makeRunner(status: .online, busy: true, metrics: m).displayStatus == "active (CPU: 45.0% MEM: 12.3%)")
+    }
+
+    @Test func busyStatusShowsActiveWithMetrics() {
+        let m = RunnerMetrics(cpu: 80.0, mem: 50.0)
+        #expect(makeRunner(status: .busy, busy: true, metrics: m).displayStatus == "active (CPU: 80.0% MEM: 50.0%)")
+    }
+}
+
+// MARK: - PollResultBuilder (pure logic)
+
+@Suite("PollResultBuilder")
+struct PollResultBuilderTests {
+
+    // MARK: trimJobCache
+
+    @Test func trimJobCacheRemovesOldestWhenOverLimit() {
+        var cache: [Int: ActiveJob] = [
+            1: ActiveJob(id: 1, name: "A", status: "completed", completedAt: Date(timeIntervalSinceReferenceDate: 100)),
+            2: ActiveJob(id: 2, name: "B", status: "completed", completedAt: Date(timeIntervalSinceReferenceDate: 200)),
+            3: ActiveJob(id: 3, name: "C", status: "completed", completedAt: Date(timeIntervalSinceReferenceDate: 300)),
+            4: ActiveJob(id: 4, name: "D", status: "completed", completedAt: Date(timeIntervalSinceReferenceDate: 400)),
+        ]
+        PollResultBuilder.trimJobCache(&cache, limit: 3)
+        #expect(cache.count == 3)
+        #expect(cache[1] == nil, "Oldest entry should be evicted")
+    }
+
+    @Test func trimJobCacheNoopWhenUnderLimit() {
+        var cache: [Int: ActiveJob] = [
+            1: ActiveJob(id: 1, name: "A", status: "completed"),
+            2: ActiveJob(id: 2, name: "B", status: "completed"),
+        ]
+        PollResultBuilder.trimJobCache(&cache, limit: 3)
+        #expect(cache.count == 2)
+    }
+
+    // MARK: buildJobDisplay
+
+    @Test func buildJobDisplayLiveJobsFirst() {
+        let live: [ActiveJob] = [
+            ActiveJob(id: 10, name: "Live", status: "in_progress")
+        ]
+        let cache: [Int: ActiveJob] = [
+            20: ActiveJob(id: 20, name: "Done", status: "completed", conclusion: "success")
+        ]
+        let display = PollResultBuilder.buildJobDisplay(live: live, cache: cache)
+        #expect(display.first?.id == 10)
+        #expect(display.contains(where: { $0.id == 20 }))
+    }
+
+    @Test func buildJobDisplayEmptyLiveAndCacheIsEmpty() {
+        let display = PollResultBuilder.buildJobDisplay(live: [], cache: [:])
+        #expect(display.isEmpty)
+    }
+
+    @Test func buildJobDisplayDoesNotCapLiveJobsAtCacheLimit() {
+        let live: [ActiveJob] = (1...5).map {
+            ActiveJob(id: $0, name: "Job \($0)", status: "in_progress")
+        }
+        let display = PollResultBuilder.buildJobDisplay(live: live, cache: [:])
+        #expect(display.count == 5, "jobCacheLimit must not truncate live jobs")
+    }
+
+    @Test func buildJobDisplayCapsAtJobDisplayLimit() {
+        let live: [ActiveJob] = (1...8).map {
+            ActiveJob(id: $0, name: "Job \($0)", status: "in_progress")
+        }
+        let cached: [Int: ActiveJob] = Dictionary(uniqueKeysWithValues: (100...106).map {
+            ($0, ActiveJob(id: $0, name: "Done \($0)", status: "completed",
+                           conclusion: "success",
+                           completedAt: Date(timeIntervalSinceReferenceDate: Double($0))))
+        })
+        let display = PollResultBuilder.buildJobDisplay(live: live, cache: cached)
+        #expect(display.count <= PollResultBuilder.jobDisplayLimit)
+    }
+
+    // MARK: applyVanishedJobs
+
+    @Test func applyVanishedJobsMovesVanishedJobToCache() {
+        let vanished = ActiveJob(id: 55, name: "Vanished", status: "in_progress")
+        var cache: [Int: ActiveJob] = [:]
+        PollResultBuilder.applyVanishedJobs(
+            snapPrev: [55: vanished],
+            liveIDs: [],
+            now: Date(),
+            into: &cache
+        )
+        #expect(cache[55] != nil)
+        #expect(cache[55]?.status == "completed")
+        #expect(cache[55]?.isDimmed == true)
+        #expect(cache[55]?.conclusion == "neutral", "Missing conclusion defaults to neutral")
+    }
+
+    @Test func applyVanishedJobsDoesNotOverwriteExistingCacheEntry() {
+        let vanished = ActiveJob(id: 55, name: "Vanished", status: "in_progress")
+        let existing = ActiveJob(id: 55, name: "Vanished", status: "completed",
+                                 conclusion: "failure", isDimmed: true)
+        var cache: [Int: ActiveJob] = [55: existing]
+        PollResultBuilder.applyVanishedJobs(
+            snapPrev: [55: vanished],
+            liveIDs: [],
+            now: Date(),
+            into: &cache
+        )
+        #expect(cache[55]?.conclusion == "failure", "Existing cache entry must not be overwritten")
+    }
+
+    @Test func applyVanishedJobsIgnoresStillLiveJobs() {
+        let job = ActiveJob(id: 77, name: "StillLive", status: "in_progress")
+        var cache: [Int: ActiveJob] = [:]
+        PollResultBuilder.applyVanishedJobs(
+            snapPrev: [77: job],
+            liveIDs: [77],
+            now: Date(),
+            into: &cache
+        )
+        #expect(cache[77] == nil)
+    }
+
+    @Test func applyVanishedJobsPreservesExistingConclusion() {
+        let vanished = ActiveJob(id: 88, name: "Done", status: "completed",
+                                 conclusion: "failure")
+        var cache: [Int: ActiveJob] = [:]
+        PollResultBuilder.applyVanishedJobs(
+            snapPrev: [88: vanished],
+            liveIDs: [],
+            now: Date(),
+            into: &cache
+        )
+        #expect(cache[88]?.conclusion == "failure")
+    }
+
+    // MARK: buildJobState
+
+    @Test func buildJobStateLiveJobAppearsInDisplay() async {
+        let liveJob = ActiveJob(id: 99, name: "CI", status: "in_progress")
+        let result = await PollResultBuilder.buildJobState(
+            snapPrev: [:],
+            snapCache: [:],
+            fetchJobs: { [liveJob] },
+            backfill: { _ in }
+        )
+        #expect(result.display.contains(where: { $0.id == 99 }))
+    }
+
+    @Test func buildJobStateCompletedJobMovesToCache() async {
+        let doneJob = ActiveJob(id: 42, name: "Deploy", status: "completed", conclusion: "success")
+        let result = await PollResultBuilder.buildJobState(
+            snapPrev: [:],
+            snapCache: [:],
+            fetchJobs: { [doneJob] },
+            backfill: { _ in }
+        )
+        #expect(result.newCache.keys.contains(42))
+        #expect(result.newCache[42]?.isDimmed == true)
+    }
+
+    @Test func buildJobStateVanishedLiveJobAppearsInCache() async {
+        let prev = ActiveJob(id: 11, name: "Old", status: "in_progress")
+        let result = await PollResultBuilder.buildJobState(
+            snapPrev: [11: prev],
+            snapCache: [:],
+            fetchJobs: { [] },
+            backfill: { _ in }
+        )
+        #expect(result.newCache[11] != nil)
+        #expect(result.newCache[11]?.status == "completed")
+    }
 
     // MARK: trimSeenGroupIDs
 
@@ -25,26 +406,12 @@ import Testing
         #expect(ids.count == 10)
     }
 
-    /// Set below the limit must not be modified.
-    @Test func trimSeenGroupIDsNoopBelowLimit() {
-        var ids: OrderedSet<String> = ["a", "b", "c"]
-        PollResultBuilder.trimSeenGroupIDs(&ids, limit: 10)
-        #expect(ids.count == 3)
-    }
-
-    /// Oldest entries (lowest indices) must be evicted first — FIFO.
-    ///
-    /// Inserts 12 IDs in order ("group-1" … "group-12"), then trims to 10.
-    /// The two oldest ("group-1", "group-2") must be gone; the ten newest must remain
-    /// in insertion order.
-    @Test func trimSeenGroupIDsEvictsOldestFirst() {
-        var ids: OrderedSet<String> = OrderedSet((1...12).map { "group-\($0)" })
-        PollResultBuilder.trimSeenGroupIDs(&ids, limit: 10)
-        #expect(ids.count == 10)
-        #expect(!ids.contains("group-1"))
-        #expect(!ids.contains("group-2"))
-        #expect(ids.first == "group-3")
-        #expect(ids.last == "group-12")
+    /// One entry over the limit must leave exactly `limit` entries.
+    @Test func trimSeenGroupIDsTrimsToLimitNotHalf() {
+        let limit = 10
+        var ids: OrderedSet<String> = OrderedSet((1...(limit + 1)).map { "group-\($0)" })
+        PollResultBuilder.trimSeenGroupIDs(&ids, limit: limit)
+        #expect(ids.count == limit)
     }
 
     /// Well over the limit must also leave exactly `limit` entries.
@@ -54,6 +421,17 @@ import Testing
         PollResultBuilder.trimSeenGroupIDs(&ids, limit: limit)
         #expect(ids.count == limit)
     }
+
+    /// Oldest entries (lowest indices) must be evicted first — FIFO.
+    @Test func trimSeenGroupIDsEvictsOldestFirst() {
+        var ids: OrderedSet<String> = OrderedSet((1...12).map { "group-\($0)" })
+        PollResultBuilder.trimSeenGroupIDs(&ids, limit: 10)
+        #expect(ids.count == 10)
+        #expect(!ids.contains("group-1"))
+        #expect(!ids.contains("group-2"))
+        #expect(ids.first == "group-3")
+        #expect(ids.last == "group-12")
+    }
 }
 
 // MARK: - JobStatus.isActive
@@ -61,10 +439,6 @@ import Testing
 @Suite("JobStatus.isActive")
 struct JobStatusIsActiveTests {
 
-    /// queued, inProgress, waiting, requested, pending, completed, and unknown are all covered.
-    /// completed and unknown must be inactive; active statuses must be active.
-    /// Removed separate completedIsNotActive / unknownIsNotActive tests (#1500) —
-    /// both are trivially-obvious negatives, folded here for completeness.
     @Test func activeStatuses() {
         #expect(JobStatus.queued.isActive)
         #expect(JobStatus.inProgress.isActive)
@@ -81,7 +455,6 @@ struct JobStatusIsActiveTests {
 @Suite("JobConclusion.isFailure")
 struct JobConclusionIsFailureTests {
 
-    /// failure, timedOut, startupFailure, and actionRequired are all failures.
     @Test(arguments: [
         JobConclusion.failure,
         .timedOut,
@@ -92,7 +465,6 @@ struct JobConclusionIsFailureTests {
         #expect(conclusion.isFailure)
     }
 
-    /// success, neutral, stale, cancelled, skipped, and unknown are not failures.
     @Test(arguments: [
         JobConclusion.success,
         .neutral,
@@ -111,9 +483,6 @@ struct JobConclusionIsFailureTests {
 @Suite("JobConclusion.isHookConclusion")
 struct JobConclusionIsHookConclusionTests {
 
-    /// All failure conclusions plus cancelled trigger the hook.
-    /// cancelled is included even though it is not isFailure —
-    /// a cancellation often signals a problem the user wants to be notified about.
     @Test(arguments: [
         JobConclusion.failure,
         .timedOut,
@@ -125,14 +494,11 @@ struct JobConclusionIsHookConclusionTests {
         #expect(conclusion.isHookConclusion)
     }
 
-    /// Verifies the deliberate semantic split: cancelled triggers the hook but is not a failure.
-    /// Guards against accidentally adding .cancelled to the isFailure branch in future.
     @Test func cancelledIsHookConclusionButNotFailure() {
         #expect(JobConclusion.cancelled.isHookConclusion)
         #expect(!JobConclusion.cancelled.isFailure)
     }
 
-    /// success, skipped, neutral, stale, and unknown must not trigger the hook.
     @Test(arguments: [
         JobConclusion.success,
         .skipped,
@@ -150,18 +516,14 @@ struct JobConclusionIsHookConclusionTests {
 @Suite("formatElapsed")
 struct FormatElapsedTests {
 
-    /// nil start + isCompleted=false returns "00:00" (not yet started).
     @Test func nilStartNotCompletedReturnsZero() {
         #expect(formatElapsed(start: nil, end: nil, isCompleted: false) == "00:00")
     }
 
-    /// nil start + isCompleted=true returns "--:--" (completed but timing data unavailable).
     @Test func nilStartCompletedReturnsDashes() {
         #expect(formatElapsed(start: nil, end: nil, isCompleted: true) == "--:--")
     }
 
-    /// Valid start + nil end measures elapsed time up to now (still running).
-    /// Asserts a window rather than an exact value to tolerate scheduling jitter.
     @Test func validStartNilEndMeasuresToNow() {
         let start = Date(timeIntervalSinceNow: -65)
         let result = formatElapsed(start: start, end: nil, isCompleted: false)
@@ -172,48 +534,35 @@ struct FormatElapsedTests {
         #expect(total <= 70)
     }
 
-    /// Valid start + valid end returns exact "MM:SS" for the given interval.
     @Test func validStartAndEndReturnsExactFormat() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
-        let end   = Date(timeIntervalSinceReferenceDate: 167) // 2m 47s
+        let end   = Date(timeIntervalSinceReferenceDate: 167)
         #expect(formatElapsed(start: start, end: end, isCompleted: true) == "02:47")
     }
 
-    /// A sub-second interval rounds down to "00:00".
     @Test func subSecondIntervalReturnsZero() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
         let end   = Date(timeIntervalSinceReferenceDate: 0.9)
         #expect(formatElapsed(start: start, end: end, isCompleted: true) == "00:00")
     }
 
-    /// end before start clamps to "00:00" rather than producing a negative string.
     @Test func endBeforeStartClampsToZero() {
         let start = Date(timeIntervalSinceReferenceDate: 100)
         let end   = Date(timeIntervalSinceReferenceDate: 50)
         #expect(formatElapsed(start: start, end: end, isCompleted: true) == "00:00")
     }
 
-    /// Verifies that MM:SS format does not roll over to HH:MM:SS for durations >= 60 min.
-    /// Design decision: formatElapsed intentionally uses plain `secs / 60` for minutes,
-    /// so values beyond 59:59 continue counting up rather than switching to an hours display.
-    /// This keeps the UI consistent for the typical runner job duration.
-    /// Boundary: exactly 3600 s = "60:00" (the first minute value >= 60).
-    /// General: 4000 s = "66:40".
     @Test func largeIntervalFormatsMmSs() {
         let ref = Date(timeIntervalSinceReferenceDate: 0)
-        // Exactly 60-minute boundary — must not roll over to hours.
         #expect(formatElapsed(start: ref, end: Date(timeIntervalSinceReferenceDate: 3600), isCompleted: true) == "60:00")
-        // Well beyond 60 minutes.
         #expect(formatElapsed(start: ref, end: Date(timeIntervalSinceReferenceDate: 4000), isCompleted: true) == "66:40")
     }
 }
 
-// MARK: - PollResultBuilder.buildGroupState (fix #1041)
+// MARK: - PollResultBuilder.buildGroupState
 
 @Suite("PollResultBuilder.buildGroupState")
 struct PollResultBuilderGroupStateTests {
-
-    // MARK: Helpers
 
     private func makeGroup(
         id runID: Int,
@@ -257,12 +606,8 @@ struct PollResultBuilderGroupStateTests {
         )
     }
 
-    // MARK: Tests
-
-    /// Regression test for #1041: completed-only group must land in cache, not live display.
     @Test func completedOnlyGroupIsRoutedToCacheNotLive() async {
         let completedGroup = makeGroup(id: 500, sha: "aabbcc", groupStatus: .completed, conclusion: "failure")
-
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -271,15 +616,12 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in },
             enrichJobs: { $0 }
         )
-
-        #expect(result.display.filter { !$0.isDimmed }.isEmpty, "Completed group must not appear as a live (non-dimmed) row")
+        #expect(result.display.filter { !$0.isDimmed }.isEmpty)
         #expect(!result.newGroupCache.isEmpty)
     }
 
-    /// An in-progress group appears as a live (non-dimmed) display row.
     @Test func inProgressGroupAppearsLiveInDisplay() async {
         let liveGroup = makeGroup(id: 600, sha: "ddeeff", groupStatus: .inProgress, jobStatus: .inProgress)
-
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -288,15 +630,12 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in },
             enrichJobs: { $0 }
         )
-
         #expect(result.display.contains(where: { !$0.isDimmed }))
     }
 
-    /// fireFailureHook must fire exactly once for a newly-completed failed group.
     @Test func fireFailureHookCalledOnceForNewFailedGroup() async {
         let failedGroup = makeGroup(id: 700, sha: "112233", groupStatus: .completed, conclusion: "failure")
         let counter = HookCounter()
-
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -306,15 +645,12 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-
-        #expect(await counter.value == 1, "fireFailureHook must fire exactly once for a new failed group")
+        #expect(await counter.value == 1)
     }
 
-    /// fireFailureHook must NOT fire for a successfully completed group.
     @Test func fireFailureHookNotCalledForSuccessGroup() async {
         let successGroup = makeGroup(id: 750, sha: "aabbdd", groupStatus: .completed, conclusion: "success")
         let counter = HookCounter()
-
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -324,21 +660,12 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-
         #expect(await counter.value == 0)
     }
 
-    // fireFailureHook conclusion-variant tests (cancelled, startup_failure, action_required)
-    // removed in #1500 — already exhaustively covered by the parameterised
-    // JobConclusionIsHookConclusionTests suite. Keeping integration-level
-    // duplication of unit-level table tests adds noise without regression value.
-
-    /// fireFailureHook must NOT re-fire when the group ID is already in snapSeenGroupIDs,
-    /// even if it has been evicted from snapGroupCache by trimGroupCache.
     @Test func fireFailureHookNotCalledWhenGroupAlreadySeenEvenIfEvictedFromCache() async {
         let completedGroup = makeGroup(id: 800, sha: "445566", groupStatus: .completed, conclusion: "failure", isDimmed: true)
         let counter = HookCounter()
-
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -348,16 +675,13 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-
         #expect(await counter.value == 0)
     }
 
-    /// Stale-row self-heal: group that was live in snapPrevGroups comes back completed -> must land in cache.
     @Test func previouslyLiveGroupSelfHealsAfterCompletion() async {
         let sha = "cafe01"
         let liveGroup      = makeGroup(id: 901, sha: sha, groupStatus: .inProgress, jobStatus: .inProgress)
         let completedGroup = makeGroup(id: 901, sha: sha, groupStatus: .completed, conclusion: "failure")
-
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [liveGroup.id: liveGroup],
             snapGroupCache: [:],
@@ -366,13 +690,10 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in },
             enrichJobs: { $0 }
         )
-
         #expect(result.display.filter { !$0.isDimmed }.isEmpty)
         #expect(result.newGroupCache[completedGroup.id] != nil)
     }
 
-    /// A mixed-SHA group (one in_progress run + one completed run) must produce exactly
-    /// one live display entry and zero cache entries while still running.
     @Test func shaWithBothLiveAndCompletedRunsProducesOneDisplayEntry() async {
         let sha = "beef02"
         let mixedGroup = WorkflowActionGroup(
@@ -393,7 +714,6 @@ struct PollResultBuilderGroupStateTests {
             lastJobCompletedAt: nil,
             isDimmed: false
         )
-
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -402,21 +722,15 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in },
             enrichJobs: { $0 }
         )
-
         let displayForSha = result.display.filter { $0.headSha == sha }
         let cacheForSha   = result.newGroupCache.values.filter { $0.headSha == sha }
         #expect(displayForSha.count == 1)
         #expect(cacheForSha.count == 0)
     }
 
-    /// An ID evicted from seenGroupIDs by trimSeenGroupIDs will re-trigger the failure
-    /// hook when it resurfaces in the feed on the next poll.
-    /// Known limitation: seenGroupIDs is an in-memory approximate set; eviction is
-    /// intentional to bound memory, and the occasional re-fire is an accepted trade-off.
     @Test func evictedGroupIDRefiresHookOnNextPoll() async {
         let failedGroup = makeGroup(id: 1001, sha: "dead01", groupStatus: .completed, conclusion: "failure")
         let counter = HookCounter()
-
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
@@ -426,20 +740,14 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-
         #expect(await counter.value == 1)
     }
 
-    /// A group present in both the fetched completed list (doneGroups) and snapPrevGroups
-    /// (was live last poll) must fire the failure hook exactly once.
-    /// The ordering invariant — doneGroups are processed before freezeVanishedGroups —
-    /// ensures the group is marked seen before the vanish path can re-fire the hook.
     @Test func doneGroupsSeenBeforeFreezeVanishedGroupsPreventsDoubleFire() async {
         let sha = "ff0011"
         let liveVersion      = makeGroup(id: 1002, sha: sha, groupStatus: .inProgress, jobStatus: .inProgress)
         let completedVersion = makeGroup(id: 1002, sha: sha, groupStatus: .completed, conclusion: "failure")
         let counter = HookCounter()
-
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [liveVersion.id: liveVersion],
             snapGroupCache: [:],
@@ -449,8 +757,7 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-
-        #expect(await counter.value == 1, "doneGroups must be marked seen before freezeVanishedGroups runs to prevent double-fire")
+        #expect(await counter.value == 1)
     }
 }
 
@@ -459,9 +766,6 @@ struct PollResultBuilderGroupStateTests {
 @Suite("ProcessRunner.runAsync stdin")
 struct ProcessRunnerRunAsyncStdinTests {
 
-    /// runAsync correctly pipes stdin through to the child process for a small payload.
-    /// Note: .timeLimit(.minutes(1)) is used intentionally — 1 minute is a loose upper bound
-    /// for a fast operation. .seconds is available in Swift 6+ but minutes gives more headroom on CI.
     @Test(.timeLimit(.minutes(1)))
     func runAsyncStdinSmallPayloadRoundtrip() async {
         let input = "hello stdin"
@@ -475,13 +779,9 @@ struct ProcessRunnerRunAsyncStdinTests {
         #expect(result.output == input)
     }
 
-    /// runAsync does NOT deadlock with a large stdin payload (1 MB — above the ~64 KB kernel pipe buffer).
-    /// Regression test for the pre-launch synchronous write bug in #1228.
-    /// Note: .timeLimit(.minutes(1)) is used intentionally — 1 minute is a loose upper bound
-    /// for a slow-ish operation. .seconds is available in Swift 6+ but minutes gives more headroom on CI.
     @Test(.timeLimit(.minutes(1)))
     func runAsyncStdinLargePayloadRoundtrip() async {
-        let input = String(repeating: "x", count: 1_024 * 1_024) // 1 MB
+        let input = String(repeating: "x", count: 1_024 * 1_024)
         let data = Data(input.utf8)
         let result = await ProcessRunner.runAsync(
             executableURL: URL(fileURLWithPath: "/bin/cat"),
@@ -492,12 +792,6 @@ struct ProcessRunnerRunAsyncStdinTests {
         #expect(result.output.count == input.count)
     }
 
-    // MARK: - Exit codes
-
-    /// A command that exits with a non-zero status must report that exit code.
-    /// Regression guard: a bug that always reports exitCode == 0 would silently pass
-    /// the stdin round-trip tests above while breaking callers that rely on exit codes.
-    /// `/usr/bin/false` always exits 1 on macOS and Linux — asserting == 1 is deterministic.
     @Test(.timeLimit(.minutes(1)))
     func runAsyncNonZeroExitCode() async {
         let result = await ProcessRunner.runAsync(
@@ -514,9 +808,6 @@ struct ProcessRunnerRunAsyncStdinTests {
 @Suite("RunnerConfigStoreError.errorDescription")
 struct RunnerConfigStoreErrorDescriptionTests {
 
-    /// .malformedExistingFile errorDescription must contain the install path,
-    /// the word "malformed", and the phrase "agent-managed" so callers and UI
-    /// can identify both the file location and the consequence.
     @Test func malformedExistingFileDescriptionContainsPathAndConsequence() {
         let error = RunnerConfigStoreError.malformedExistingFile("/opt/runners/my-runner")
         let desc  = error.errorDescription ?? ""
@@ -525,9 +816,6 @@ struct RunnerConfigStoreErrorDescriptionTests {
         #expect(desc.contains("agent-managed"))
     }
 
-    /// .malformedExistingFile must be distinct from .decodeFailed — the two cases
-    /// describe different failure sites (save pre-read vs. load) and must not
-    /// share an identical description.
     @Test func malformedExistingFileDescriptionDiffersFromDecodeFailed() {
         let malformed = RunnerConfigStoreError.malformedExistingFile("/opt/runners/r")
         let decode    = RunnerConfigStoreError.decodeFailed("/opt/runners/r")
