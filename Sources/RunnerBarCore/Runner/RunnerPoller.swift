@@ -372,8 +372,7 @@ public actor RunnerPoller {
     /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
     /// stale data alongside the error banner rather than an empty list. Stale data with
     /// a visible error is less disruptive than a sudden empty state for a transient failure.
-    private func applyError(_ error: any Error & Sendable) async {
-        log("RunnerPoller › applyError — \(error)")
+    private func applyError(_ error: any Error) async {
         await MainActor.run { [state] in
             state.fetchError = error
         }
