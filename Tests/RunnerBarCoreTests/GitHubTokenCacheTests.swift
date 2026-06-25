@@ -2,21 +2,22 @@
 // RunnerBarCoreTests
 //
 // ⚠️ ISOLATION REQUIREMENT
-// tokenCache is a process-global Mutex(nil) at module scope. Every test that
-// calls githubToken() must call invalidateTokenCache() before returning so that
-// cache state does not bleed across cases. This is enforced via `defer` at the
-// top of each test body below.
+// tokenCache is a process-global Mutex(nil) at module scope. Every test body
+// calls invalidateTokenCache() at ENTRY (to flush state left by any concurrently
+// finishing suite) and again in a defer at exit (to clean up for the next test
+// in this serialized suite).
 //
-// The suite is marked .serialized because tokenCache is process-global: parallel
-// execution would allow one test's invalidateTokenCache() defer to race with
-// another test's githubToken() call, producing non-deterministic results.
+// The suite is marked .serialized so tests within it never race on tokenCache.
+// The entry invalidation guards against other suites in the same test process
+// that may have populated the cache before this suite starts.
 //
 // Keychain is never touched: token resolution is exercised through environment
 // variables only (GH_TOKEN / GITHUB_TOKEN), keeping these tests sandboxing-free
 // and safe to run with `swift test`.
 //
-// CI note: GitHub Actions always injects GITHUB_TOKEN into the environment.
-// Every test that asserts a nil return must strip BOTH env vars explicitly.
+// CI note: GitHub Actions always injects GITHUB_TOKEN into the runner environment.
+// Every test wraps its body in withCleanEnv, which strips both vars and restores
+// them afterwards.
 
 import Foundation
 import Testing
@@ -24,8 +25,7 @@ import Testing
 
 // MARK: - Helpers
 
-/// Saves and clears both token env vars, runs body, then restores originals.
-/// Use this as the outermost wrapper for any test that controls the env.
+/// Strips both token env vars, runs body, then restores the previous values.
 private func withCleanEnv(_ body: () -> Void) {
     let prevGH     = ProcessInfo.processInfo.environment["GH_TOKEN"]
     let prevGitHub = ProcessInfo.processInfo.environment["GITHUB_TOKEN"]
@@ -36,7 +36,7 @@ private func withCleanEnv(_ body: () -> Void) {
     if let prevGitHub { setenv("GITHUB_TOKEN", prevGitHub, 1) } else { unsetenv("GITHUB_TOKEN") }
 }
 
-/// Sets a single env var for the duration of body, then restores previous value.
+/// Sets one env var for the duration of body, then restores the previous value.
 private func withEnv(_ key: String, value: String, _ body: () -> Void) {
     let previous = ProcessInfo.processInfo.environment[key]
     setenv(key, value, 1)
@@ -46,8 +46,6 @@ private func withEnv(_ key: String, value: String, _ body: () -> Void) {
 
 // MARK: - GitHubTokenCacheTests
 
-/// Serialized so the process-global tokenCache is never shared across
-/// concurrently running test bodies.
 @Suite("GitHubTokenCache", .serialized)
 struct GitHubTokenCacheTests {
 
@@ -55,6 +53,7 @@ struct GitHubTokenCacheTests {
 
     /// Returns nil when neither env var is set and the Keychain is empty.
     @Test func githubToken_noSource_returnsNil() {
+        invalidateTokenCache()         // flush any cache from other suites
         defer { invalidateTokenCache() }
         withCleanEnv {
             #expect(githubToken() == nil)
@@ -65,6 +64,7 @@ struct GitHubTokenCacheTests {
 
     /// Resolves a token from GH_TOKEN when Keychain is empty.
     @Test func githubToken_ghTokenEnvVar_returnsToken() {
+        invalidateTokenCache()
         defer { invalidateTokenCache() }
         withCleanEnv {
             withEnv("GH_TOKEN", value: "gh-test-token") {
@@ -77,6 +77,7 @@ struct GitHubTokenCacheTests {
 
     /// Falls back to GITHUB_TOKEN when GH_TOKEN is absent.
     @Test func githubToken_githubTokenEnvVarFallback_returnsToken() {
+        invalidateTokenCache()
         defer { invalidateTokenCache() }
         withCleanEnv {
             withEnv("GITHUB_TOKEN", value: "github-test-token") {
@@ -87,6 +88,7 @@ struct GitHubTokenCacheTests {
 
     /// Prefers GH_TOKEN over GITHUB_TOKEN when both are set.
     @Test func githubToken_bothEnvVarsSet_prefersGhToken() {
+        invalidateTokenCache()
         defer { invalidateTokenCache() }
         withCleanEnv {
             withEnv("GH_TOKEN", value: "primary-token") {
@@ -101,14 +103,14 @@ struct GitHubTokenCacheTests {
 
     /// Returns the cached value on a second call without re-reading the environment.
     @Test func githubToken_secondCall_returnsFromCache() {
+        invalidateTokenCache()
         defer { invalidateTokenCache() }
         withCleanEnv {
             withEnv("GH_TOKEN", value: "cached-token") {
-                let first = githubToken() // populates cache
+                _ = githubToken() // populate cache; result discarded intentionally
             }
-            // Both env vars now absent; only the cache can satisfy the second call.
-            let second = githubToken()
-            #expect(second == "cached-token")
+            // Both env vars now absent — only the in-memory cache can return a value.
+            #expect(githubToken() == "cached-token")
         }
     }
 
@@ -116,19 +118,21 @@ struct GitHubTokenCacheTests {
 
     /// Clears a populated cache so the next call re-resolves from source.
     @Test func invalidateTokenCache_clearsCache() {
+        invalidateTokenCache()
         defer { invalidateTokenCache() }
         withCleanEnv {
             withEnv("GH_TOKEN", value: "original-token") {
                 _ = githubToken() // populate cache
             }
             invalidateTokenCache()
-            // Both env vars absent + cache cleared — must return nil.
+            // Cache cleared + both env vars absent — must return nil.
             #expect(githubToken() == nil)
         }
     }
 
     /// Safe to call when the cache is already nil — does not crash.
     @Test func invalidateTokenCache_whenAlreadyNil_isNoop() {
+        invalidateTokenCache()
         defer { invalidateTokenCache() }
         withCleanEnv {
             invalidateTokenCache() // must not crash on empty cache
