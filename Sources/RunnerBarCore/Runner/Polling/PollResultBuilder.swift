@@ -99,7 +99,6 @@ public struct PollResultBuilder {
     ///   `freezeVanishedGroups` runs, so a group that appears in both the fetched
     ///   completed list and in `snapPrevGroups` fires the hook exactly once.
     ///   Enrichment is split into two sequential sweeps — see inline comments for rationale.
-// swiftlint:disable:next function_parameter_count
     public static func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
@@ -297,7 +296,6 @@ public struct PollResultBuilder {
     ///   - seenGroupIDs: Set of group IDs that have already fired the hook; prevents re-firing.
     ///   - scopeFromGroup: Derives the scope string for the failure hook call.
     ///   - fireFailureHook: Invoked when a newly-vanished group has a hook-triggering conclusion.
-// swiftlint:disable:next function_parameter_count
     public static func freezeVanishedGroups(
         snapPrev: [String: WorkflowActionGroup],
         liveIDs: Set<String>,
@@ -314,7 +312,7 @@ public struct PollResultBuilder {
                 log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping")
                 continue
             }
-            if !seenGroupIDs.contains(groupID) && cache[groupID] == nil {
+            if !seenGroupIDs.contains(groupID) {
                 let scope = scopeFromGroup(group)
                 let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
                 if shouldFire {
