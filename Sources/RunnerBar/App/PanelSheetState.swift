@@ -4,6 +4,17 @@ import Observation
 import RunnerBarCore
 
 // MARK: - PanelSheetState
+//
+// ❌ DO NOT MOVE TO RunnerBarCore.
+//
+// Although this file imports only Observation + RunnerBarCore (no AppKit import
+// line), PanelSheetState is AppKit lifecycle glue. Its entire purpose is to
+// work around NSPopover teardown: SwiftUI clears `.sheet(item:)` bindings when
+// the NSPopover window is hidden, so this class survives the teardown cycle by
+// living outside the transient SettingsView state. The concept has no meaning
+// outside an NSPopover/NSPanel app and there is no domain logic here worth
+// testing with `swift test` headlessly. A clean import list does not make a
+// type a Core candidate — the deciding criterion is CI testability.
 
 /// Process-lifetime sheet state owned by AppDelegate, not by SettingsView.
 ///
@@ -11,6 +22,9 @@ import RunnerBarCore
 /// hidden because the attached sheet NSWindow is removed with its parent. This
 /// object keeps the user's sheet intent outside the transient SettingsView
 /// state so hiding the status-bar panel can be restored on the next open.
+///
+/// - Important: Intentionally kept in the `RunnerBar` app target. See
+///   file-level comment for rationale — the clean imports are misleading.
 @MainActor
 @Observable
 final class PanelSheetState {
