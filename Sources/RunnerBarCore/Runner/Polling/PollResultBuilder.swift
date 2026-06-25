@@ -1,8 +1,8 @@
 // PollResultBuilder.swift
 // RunnerBarCore
 import Collections
-import OrderedCollections
 import Foundation
+import OrderedCollections
 
 // MARK: - PollResultBuilder
 
