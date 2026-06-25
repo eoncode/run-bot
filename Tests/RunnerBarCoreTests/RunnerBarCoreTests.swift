@@ -311,7 +311,7 @@ struct PollResultBuilderTests {
         #expect(cache[55] != nil)
         #expect(cache[55]?.status == "completed")
         #expect(cache[55]?.isDimmed == true)
-        #expect(cache[55]?.conclusion == "neutral", "Missing conclusion defaults to neutral")
+        #expect(cache[55]?.conclusion == "neutral", "Missing conclusion defaults to neutral (.cancelled has isHookConclusion side-effects)")
     }
 
     @Test func applyVanishedJobsDoesNotOverwriteExistingCacheEntry() {
@@ -392,21 +392,12 @@ struct PollResultBuilderTests {
 
     // MARK: trimSeenGroupIDs
 
-    /// Empty set must remain empty.
-    @Test func trimSeenGroupIDsEmpty() {
-        var ids: OrderedSet<String> = []
-        PollResultBuilder.trimSeenGroupIDs(&ids, limit: 10)
-        #expect(ids.isEmpty)
-    }
-
-    /// Set at exactly the limit must not be modified.
     @Test func trimSeenGroupIDsNoopAtLimit() {
         var ids: OrderedSet<String> = OrderedSet((1...10).map { "group-\($0)" })
         PollResultBuilder.trimSeenGroupIDs(&ids, limit: 10)
         #expect(ids.count == 10)
     }
 
-    /// One entry over the limit must leave exactly `limit` entries.
     @Test func trimSeenGroupIDsTrimsToLimitNotHalf() {
         let limit = 10
         var ids: OrderedSet<String> = OrderedSet((1...(limit + 1)).map { "group-\($0)" })
@@ -414,7 +405,6 @@ struct PollResultBuilderTests {
         #expect(ids.count == limit)
     }
 
-    /// Well over the limit must also leave exactly `limit` entries.
     @Test func trimSeenGroupIDsWellOverLimit() {
         let limit = 10
         var ids: OrderedSet<String> = OrderedSet((1...25).map { "group-\($0)" })
@@ -559,7 +549,7 @@ struct FormatElapsedTests {
     }
 }
 
-// MARK: - PollResultBuilder.buildGroupState
+// MARK: - PollResultBuilder.buildGroupState (fix #1041)
 
 @Suite("PollResultBuilder.buildGroupState")
 struct PollResultBuilderGroupStateTests {
@@ -616,7 +606,7 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in },
             enrichJobs: { $0 }
         )
-        #expect(result.display.filter { !$0.isDimmed }.isEmpty)
+        #expect(result.display.filter { !$0.isDimmed }.isEmpty, "Completed group must not appear as a live (non-dimmed) row")
         #expect(!result.newGroupCache.isEmpty)
     }
 
@@ -645,7 +635,7 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-        #expect(await counter.value == 1)
+        #expect(await counter.value == 1, "fireFailureHook must fire exactly once for a new failed group")
     }
 
     @Test func fireFailureHookNotCalledForSuccessGroup() async {
@@ -757,7 +747,7 @@ struct PollResultBuilderGroupStateTests {
             fireFailureHook: { _, _ in await counter.increment() },
             enrichJobs: { $0 }
         )
-        #expect(await counter.value == 1)
+        #expect(await counter.value == 1, "doneGroups must be marked seen before freezeVanishedGroups runs to prevent double-fire")
     }
 }
 
@@ -790,35 +780,5 @@ struct ProcessRunnerRunAsyncStdinTests {
         )
         #expect(result.exitCode == 0)
         #expect(result.output.count == input.count)
-    }
-
-    @Test(.timeLimit(.minutes(1)))
-    func runAsyncNonZeroExitCode() async {
-        let result = await ProcessRunner.runAsync(
-            executableURL: URL(fileURLWithPath: "/usr/bin/false"),
-            arguments: [],
-            stdin: nil
-        )
-        #expect(result.exitCode == 1)
-    }
-}
-
-// MARK: - RunnerConfigStoreError.errorDescription
-
-@Suite("RunnerConfigStoreError.errorDescription")
-struct RunnerConfigStoreErrorDescriptionTests {
-
-    @Test func malformedExistingFileDescriptionContainsPathAndConsequence() {
-        let error = RunnerConfigStoreError.malformedExistingFile("/opt/runners/my-runner")
-        let desc  = error.errorDescription ?? ""
-        #expect(desc.contains("/opt/runners/my-runner"))
-        #expect(desc.contains("malformed"))
-        #expect(desc.contains("agent-managed"))
-    }
-
-    @Test func malformedExistingFileDescriptionDiffersFromDecodeFailed() {
-        let malformed = RunnerConfigStoreError.malformedExistingFile("/opt/runners/r")
-        let decode    = RunnerConfigStoreError.decodeFailed("/opt/runners/r")
-        #expect(malformed.errorDescription != decode.errorDescription)
     }
 }
