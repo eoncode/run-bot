@@ -178,7 +178,8 @@ public struct WorkflowActionGroupFetcher: Sendable {
 
         for data in [ipData, qData].compactMap({ $0 }) {
             if let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
-                for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
+                for run in resp.workflowRuns {
+                    guard seenIDs.insert(run.id).inserted else { continue }
                     runPayloads.append(run)
                 }
             }
@@ -194,7 +195,8 @@ public struct WorkflowActionGroupFetcher: Sendable {
         // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
         if let data = cData,
            let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
-            for run in resp.workflowRuns where seenIDs.insert(run.id).inserted {
+            for run in resp.workflowRuns {
+                guard seenIDs.insert(run.id).inserted else { continue }
                 bySha[run.headSha, default: []].append(run)
             }
         }

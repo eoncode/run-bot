@@ -740,7 +740,7 @@ struct PollResultBuilderGroupStateTests {
         #expect(cacheForSha.count == 0)
     }
 
-    @Test func evictedGroupIDRefiresHookOnNextPoll() async {
+    @Test func doneGroupWithFailureConclusionFiresHook() async {
         let failedGroup = makeGroup(id: 1001, sha: "dead01", groupStatus: .completed, conclusion: "failure")
         let counter = HookCounter()
         _ = await PollResultBuilder.buildGroupState(
