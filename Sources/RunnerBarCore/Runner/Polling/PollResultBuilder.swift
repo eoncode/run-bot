@@ -360,8 +360,8 @@ public struct PollResultBuilder {
     ///   `seenGroupIDs` **before** this function is called, so any group already in
     ///   `cache` was also already appended to `seenGroupIDs`. ID registration
     ///   (`seenGroupIDs.append`) happens before any early-exit `continue` so the
-    ///   invariant “register unconditionally when unseen” holds even for groups that
-    ///   hit the “already cached+dimmed” fast path. Hook-fire suppression
+    ///   invariant "register unconditionally when unseen" holds even for groups that
+    ///   hit the "already cached+dimmed" fast path. Hook-fire suppression
     ///   (`cache[groupID] == nil`) is a separate concern and must not gate the registration.
     ///
     /// - Parameters:
@@ -430,7 +430,7 @@ public struct PollResultBuilder {
     public static func trimSeenGroupIDs(_ ids: inout OrderedSet<String>, limit: Int) {
         guard ids.count > limit else { return }
         let excess = ids.count - limit
-        ids.removeFirst(excess)
+        ids.removeSubrange(0..<excess)
     }
 
     /// Builds the ordered group display list from live groups and the completed cache.
