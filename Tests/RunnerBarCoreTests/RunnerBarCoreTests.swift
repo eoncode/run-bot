@@ -710,6 +710,7 @@ struct PollResultBuilderGroupStateTests {
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
+            snapSeenGroupIDs: [],
             fetchGroups: { _ in [mixedGroup] },
             scopeFromGroup: { $0.repo },
             fireFailureHook: { _, _ in },
