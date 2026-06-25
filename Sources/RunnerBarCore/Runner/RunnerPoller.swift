@@ -365,8 +365,6 @@ public actor RunnerPoller {
             state.actions = groupResult.display
             state.isRateLimited = rateLimitSnapshot.isLimited
             state.rateLimitResetDate = rateLimitSnapshot.resetDate
-            // `any Error` is not Equatable — skip the write when already nil
-            // to avoid a spurious @Observable notification on every healthy cycle.
             if state.fetchError != nil { state.fetchError = nil }
         }
     }
@@ -386,20 +384,29 @@ public actor RunnerPoller {
 
     /// Surfaces a fetch failure to the `RunnerState` read model.
     ///
-    /// Snapshots `ghRateLimitSnapshot()` so that `state.isRateLimited` and
-    /// `state.rateLimitResetDate` reflect the post-`clearGhRateLimit()` reality even
-    /// when `fetchInternal()` throws before reaching `applyFetchResult`. Without this,
-    /// a throw after `clearGhRateLimit()` would leave `state.isRateLimited = true` in
-    /// the UI until the next fully-successful cycle, causing both banners to appear
-    /// simultaneously on a degraded network.
+    /// Snapshots rate-limit state alongside the error so the UI never shows both the
+    /// rate-limit banner and the fetch-error banner simultaneously. If `clearGhRateLimit()`
+    /// ran at the top of `fetchInternal()` and then the cycle threw, the internal
+    /// `RateLimitActor` is already clear — this snapshot reflects that, preventing
+    /// a stale `isRateLimited = true` from persisting until the next successful cycle.
+    ///
+    /// The `fetchError` write is guarded by a `localizedDescription` comparison to avoid
+    /// re-notifying `@Observable` observers on every failed cycle when the error message
+    /// is unchanged (e.g. sustained network loss). Mirrors the `if fetchError != nil` guard
+    /// in `applyFetchResult` on the success path.
     ///
     /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
-    /// stale data alongside the error banner rather than an empty list. Stale data with
-    /// a visible error is less disruptive than a sudden empty state for a transient failure.
+    /// stale data alongside the error banner rather than an empty list.
     private func applyError(_ error: any Error & Sendable) async {
         let rateLimitSnapshot = await ghRateLimitSnapshot()
         await MainActor.run { [state] in
-            state.fetchError = error
+            // Guard the write: `any Error` is not Equatable, so compare via
+            // `localizedDescription` — the only field `fetchErrorBanner` consumes.
+            // Skipping the write when the message is unchanged avoids a spurious
+            // `@Observable` notification on every failed poll cycle.
+            if state.fetchError?.localizedDescription != error.localizedDescription {
+                state.fetchError = error
+            }
             state.isRateLimited = rateLimitSnapshot.isLimited
             state.rateLimitResetDate = rateLimitSnapshot.resetDate
         }
@@ -424,7 +431,7 @@ public actor RunnerPoller {
     ///
     /// **Install-path lookup priority** (matches the original `RunnerStore`):
     /// `byApiId ?? byAgentId ?? byFullKey ?? byName`
-    /// `byFullKey` (\"scope/name\" composite) ranks above `byName` so runners sharing
+    /// `byFullKey` ("scope/name" composite) ranks above `byName` so runners sharing
     /// a name across different scopes resolve to the correct install path.
     ///
     /// - Parameters:
@@ -513,19 +520,6 @@ public actor RunnerPoller {
             }
         }
 
-        // Write metrics back to injected local runner store for busy runners where
-        // Phase 2 successfully resolved an install path and applied metrics.
-        // Keyed on entry.runner.metrics != nil — Phase 2 is the canonical resolver;
-        // duplicating the four-map OR predicate here would create a drift risk if
-        // lookup priority ever changes.
-        //
-        // Intentional nil-clearing omission: the old RunnerStore called applyMetrics(nil, ...)
-        // for busy runners whose metricsForRunner returned nil (e.g. a process-read failure),
-        // which cleared any stale badge metric. This filter skips that call, so stale metrics
-        // persist in LocalRunnerStore until the next successful read or the runner goes idle.
-        // Accepted tradeoff: the stale window is at most one poll cycle, and clearing on a
-        // transient read failure caused unnecessary badge flicker. applyMetrics(nil, ...) can
-        // be reinstated here if stale-metric persistence becomes observable in practice.
         let metricsUpdates = indexed.filter { $0.runner.busy && $0.runner.metrics != nil }
         if !metricsUpdates.isEmpty {
             for entry in metricsUpdates {

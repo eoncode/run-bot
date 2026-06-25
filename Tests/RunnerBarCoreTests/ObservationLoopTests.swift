@@ -129,7 +129,7 @@ struct ObservationLoopTests {
     }
 
     @Test("onChange does not fire after loop is deallocated")
-    func doesNotFireAfterDealloc() async throws {
+    func doesNotFireAfterDealloc() async {
         let counter = ObservableCounter()
         var fired = 0
         let signal = Signal()
@@ -166,7 +166,7 @@ struct ObservationLoopTests {
     }
 
     @Test("onChange does not fire when an untracked property changes")
-    func doesNotFireForUntrackedProperty() async throws {
+    func doesNotFireForUntrackedProperty() async {
         let counter = ObservableCounter()
         var fired = 0
         let signal = Signal()
