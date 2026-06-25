@@ -256,7 +256,8 @@ public struct FailureHookRunnerUseCase: Sendable {
                 continue
             }
             log("FailureHookRunnerUseCase fetchFailedJobs -- run=\(run.id) decoded \(resp.jobs.count) jobs")
-            for job in resp.jobs where seenIDs.insert(job.id).inserted {
+            for job in resp.jobs {
+                guard seenIDs.insert(job.id).inserted else { continue }
                 guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else {
                     log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
                     continue

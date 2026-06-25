@@ -67,12 +67,10 @@ func fetchActiveJobs(for scopeString: String, decoder: JSONDecoder) async -> [Ac
         guard let data = await ghAPI(runsEndpoint(status: status)),
               let resp = try? decoder.decode(WorkflowRunsResponse.self, from: data)
         else { continue }
-        // filter() cannot replace this loop: insert() mutates seenRunIDs as a side effect.
-        // swiftlint:disable for_where
         for run in resp.workflowRuns {
-            if seenRunIDs.insert(run.id).inserted { runIDs.append(run.id) }
+            guard seenRunIDs.insert(run.id).inserted else { continue }
+            runIDs.append(run.id)
         }
-        // swiftlint:enable for_where
     }
 
     var jobs: [ActiveJob] = []
