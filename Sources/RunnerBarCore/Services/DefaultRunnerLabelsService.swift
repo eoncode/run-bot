@@ -14,7 +14,7 @@ import Foundation
 /// Placing this type in Core means the label-patching path is fully testable
 /// via `swift test` with a mock `GitHubTransportProtocol` — no simulator,
 /// no signing, no entitlements.
-public struct DefaultRunnerLabelsService: RunnerLabelsService {
+public struct DefaultRunnerLabelsService: RunnerLabelsService, Sendable {
     /// Creates a new `DefaultRunnerLabelsService`.
     public init() {}
 
