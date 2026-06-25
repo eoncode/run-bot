@@ -5,11 +5,12 @@ import SwiftUI
 
 // MARK: - Color extension for RunnerModel.StatusColor
 
+/// Design-system `Color` mapping for `RunnerModel.StatusColor`.
+///
+/// Centralises the runner-status dot colour used by `LocalRunnersView`
+/// and `RunnerDetailSheet` (resolves #1643).
 extension RunnerModel.StatusColor {
     /// The design-system `Color` that represents this status category.
-    ///
-    /// Single source of truth for the runner-status dot colour used by
-    /// `LocalRunnersView` and `RunnerDetailSheet` (resolves #1643).
     ///
     /// - `.running`  → `Color.rbSuccess`      (green — agent process is up, idle)
     /// - `.busy`     → `Color.rbWarning`       (amber — agent is executing a job)
