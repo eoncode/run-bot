@@ -98,7 +98,11 @@ public final class OAuthService: OAuthServiceProtocol {
     ///     NSWorkspace.shared.open(url)  // app layer — not Core's concern
     /// }
     /// ```
-    /// Returns `nil` if the URL cannot be constructed.
+    /// Returns `nil` if the URL cannot be constructed. In practice both guard paths
+    /// are unreachable — `authorizeURL` is a compile-time constant from `GitHubConstants`
+    /// and `URLComponents` will not fail on it. The `nil` return communicates failure
+    /// to the call site; no stream event is fired here because no real sign-in attempt
+    /// was made.
     public func makeSignInURL() -> URL? {
         log("OAuthService › makeSignInURL — building OAuth URL")
         let state = UUID().uuidString
@@ -106,7 +110,6 @@ public final class OAuthService: OAuthServiceProtocol {
         guard var comps = URLComponents(string: authorizeURL) else {
             log("OAuthService › makeSignInURL: malformed authorizeURL — aborting")
             pendingState = nil
-            fireSignIn(false)
             return nil
         }
         comps.queryItems = [
@@ -118,7 +121,6 @@ public final class OAuthService: OAuthServiceProtocol {
         guard let url = comps.url else {
             log("OAuthService › makeSignInURL: failed to build URL — aborting")
             pendingState = nil
-            fireSignIn(false)
             return nil
         }
         log("OAuthService › makeSignInURL — URL built, returning to caller")
