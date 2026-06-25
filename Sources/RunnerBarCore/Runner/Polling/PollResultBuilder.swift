@@ -80,6 +80,7 @@ public struct PollResultBuilder {
     }
 
     // MARK: - Group state
+    // swiftlint:disable function_parameter_count
 
     /// Builds the action-group display list and updated caches from a background poll.
     ///
@@ -141,7 +142,7 @@ public struct PollResultBuilder {
             liveIDs: liveIDs,
             now: now,
             into: &newCache,
-            seenGroupIDs: newSeenGroupIDs,
+            seenGroupIDs: &newSeenGroupIDs,
             scopeFromGroup: scopeFromGroup,
             fireFailureHook: fireFailureHook
         )
@@ -151,8 +152,9 @@ public struct PollResultBuilder {
         let display = buildGroupDisplay(live: liveGroups, cache: newCache)
         let inProgCount = liveGroups.filter { $0.groupStatus == .inProgress }.count
         let queuedCount = liveGroups.filter { $0.groupStatus == .queued }.count
+        let loadingCount = liveGroups.filter { $0.groupStatus == .loading }.count
         log(
-            "PollResultBuilder › groups: \(inProgCount) in_progress \(queuedCount) queued"
+            "PollResultBuilder › groups: \(inProgCount) in_progress \(queuedCount) queued \(loadingCount) loading"
                 + " | cache: \(newCache.count) | seenIDs: \(newSeenGroupIDs.count) | display: \(display.count)"
         )
         let enriched: [WorkflowActionGroup] = await withTaskGroup(
@@ -254,13 +256,14 @@ public struct PollResultBuilder {
     /// SHA already has a cached entry (for stale-row self-healing).
     ///
     /// When two cache entries share the same `headSha`, the one with the larger `id`
-    /// (more recent run) is retained.
+    /// (more recent run) is retained. Tie-breaking uses numeric integer comparison
+    /// to avoid lexicographic ordering issues across digit boundaries (e.g. "9" vs "10").
     ///
     /// - Parameter cache: The current group cache keyed by run ID.
     public static func makeShaKeyedCache(_ cache: [String: WorkflowActionGroup]) -> [String: WorkflowActionGroup] {
         Dictionary(
             cache.values.map { ($0.headSha, $0) },
-            uniquingKeysWith: { lhs, rhs in lhs.id > rhs.id ? lhs : rhs }
+            uniquingKeysWith: { lhs, rhs in (Int(lhs.id) ?? 0) > (Int(rhs.id) ?? 0) ? lhs : rhs }
         )
     }
 
@@ -288,12 +291,17 @@ public struct PollResultBuilder {
     /// A group whose `lastJobCompletedAt` is nil receives the current timestamp so
     /// the cache sort order remains stable.
     ///
+    /// The fired group's ID is appended to `seenGroupIDs` (`inout`) so the caller's
+    /// `newSeenGroupIDs` reflects the vanish-path fires and the hook cannot re-fire
+    /// on a subsequent poll if the group reappears in `snapPrevGroups`.
+    ///
     /// - Parameters:
     ///   - snapPrev: Live-group snapshot from the previous poll cycle.
     ///   - liveIDs: Set of group IDs present in the current live poll.
     ///   - now: Timestamp used as `lastJobCompletedAt` for vanished groups that lack one.
     ///   - cache: Group cache to mutate.
-    ///   - seenGroupIDs: Set of group IDs that have already fired the hook; prevents re-firing.
+    ///   - seenGroupIDs: Set of group IDs that have already fired the hook; mutated in place
+    ///     when a vanished group fires so the caller's set stays consistent.
     ///   - scopeFromGroup: Derives the scope string for the failure hook call.
     ///   - fireFailureHook: Invoked when a newly-vanished group has a hook-triggering conclusion.
     public static func freezeVanishedGroups(
@@ -301,7 +309,7 @@ public struct PollResultBuilder {
         liveIDs: Set<String>,
         now: Date,
         into cache: inout [String: WorkflowActionGroup],
-        seenGroupIDs: OrderedSet<String>,
+        seenGroupIDs: inout OrderedSet<String>,
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void
     ) async {
@@ -319,6 +327,7 @@ public struct PollResultBuilder {
                     log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)")
                     await fireFailureHook(group, scope)
                 }
+                seenGroupIDs.append(groupID)
             }
             if group.lastJobCompletedAt == nil {
                 cache[groupID] = group.copying(isDimmed: true, settingCompletedAt: now)
@@ -361,8 +370,8 @@ public struct PollResultBuilder {
 
     /// Combines live and cached groups into the ordered display list shown in the panel.
     ///
-    /// In-progress groups appear before queued groups, which appear before cached
-    /// completed groups. The total list is capped at `groupDisplayLimit`.
+    /// Display order: in-progress → loading → queued → cached (most-recently-completed first).
+    /// The total list is capped at `groupDisplayLimit`.
     ///
     /// - Parameters:
     ///   - live: Currently active groups from the latest poll.
@@ -372,7 +381,11 @@ public struct PollResultBuilder {
         cache: [String: WorkflowActionGroup]
     ) -> [WorkflowActionGroup] {
         let inProgress = live.filter { $0.groupStatus == .inProgress }
-        let queued = live.filter { $0.groupStatus == .queued }
+        let loading    = live.filter { $0.groupStatus == .loading }
+        let queued     = live.filter { $0.groupStatus == .queued }
+        // Use all live IDs (not just inProgress + queued) so that groups in other
+        // non-completed statuses (.loading, .waiting, .requested, etc.) also prevent
+        // their stale dimmed cache entry from appearing alongside the live entry.
         let liveGroupIDs = Set(live.map { $0.id })
         let cached = cache.values.sorted {
             ($0.lastJobCompletedAt ?? $0.createdAt ?? .distantPast)
@@ -380,6 +393,7 @@ public struct PollResultBuilder {
         }
         var display: [WorkflowActionGroup] = []
         display.appendUpTo(groupDisplayLimit, from: inProgress)
+        display.appendUpTo(groupDisplayLimit, from: loading)
         display.appendUpTo(groupDisplayLimit, from: queued)
         display.appendUpTo(groupDisplayLimit, from: cached) { !liveGroupIDs.contains($0.id) }
         return display
