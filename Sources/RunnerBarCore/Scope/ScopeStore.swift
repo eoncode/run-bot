@@ -97,12 +97,18 @@ public final class ScopeStore {
 
     // MARK: - Mutations
 
-    /// Appends a new enabled entry after trimming whitespace.
-    /// No-ops if `scope` is empty after trimming, or if an entry with the same
-    /// scope string already exists. Comparison is case-sensitive — GitHub scope
-    /// strings are case-sensitive API paths (`owner/repo` ≠ `Owner/Repo`).
+    /// Appends a new enabled entry after trimming whitespace and lowercasing.
+    /// No-ops if `scope` is empty after trimming, or if an identical (lowercased)
+    /// scope string already exists.
+    ///
+    /// Scope strings are lowercased at the point of entry so that `MyOrg/Repo`
+    /// and `myorg/repo` are treated as the same scope. This is necessary because
+    /// `ScopePreferencesStore` keys its `UserDefaults` blobs as
+    /// `"scope.<scope>.preferences"` using the raw string verbatim — storing
+    /// mixed-case variants would silently produce orphaned prefs keys and
+    /// double-poll the same upstream GitHub scope.
     public func add(_ scope: String) {
-        let trimmed = scope.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = scope.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty, !entries.contains(where: { $0.scope == trimmed }) else { return }
         entries.append(ScopeEntry(scope: trimmed))
         persist()
@@ -146,6 +152,13 @@ public final class ScopeStore {
     /// into a `[UUID: String?]` map and merges them into the *current* `entries` array
     /// after all awaits complete. Entries added or removed during the loop are
     /// unaffected; only their `displayName` field is updated when found by ID.
+    ///
+    /// ## @Observable churn avoidance
+    /// `ScopeEntry.Equatable` intentionally excludes `displayName` (it is transient,
+    /// not persisted). An unconditional array reassignment would fire `@Observable`
+    /// change notifications even when no alias actually changed, causing unnecessary
+    /// SwiftUI re-renders. This method therefore only writes back entries whose
+    /// `displayName` actually differs from the fetched alias.
     public func refreshDisplayNames() async {
         // Iterate the snapshot to know which scopes to fetch — but do NOT write
         // this snapshot back to `entries` after the awaits.
@@ -161,12 +174,19 @@ public final class ScopeStore {
         }
         // Merge into the *current* entries (not the pre-await snapshot) so that
         // any add/remove/setEnabled mutations that occurred during the awaits above
-        // are preserved. Entries not present in aliasByID (added after the snapshot
-        // was taken) are left unchanged.
+        // are preserved. Only write back an entry when its displayName actually
+        // changed — avoids spurious @Observable notifications for unchanged aliases.
+        var changed = false
         entries = entries.map { entry in
             guard let alias = aliasByID[entry.id] else { return entry }
+            guard alias != entry.displayName else { return entry }
+            changed = true
             return entry.copying(displayName: alias)
         }
-        log("ScopeStore › refreshed display names for \(entries.count) scope(s)")
+        if changed {
+            log("ScopeStore › refreshed display names for \(entries.count) scope(s)")
+        } else {
+            log("ScopeStore › refreshDisplayNames: no display names changed, skipping write")
+        }
     }
 }
