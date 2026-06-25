@@ -1,7 +1,7 @@
 # Development
 
 How to build, run, and verify RunnerBar locally. For agent-specific rules see
-[`docs/AGENTS.md`](../AGENTS.md); for the full source map see
+[`AGENTS.md`](../../AGENTS.md); for the full source map see
 [`docs/architecture/file-hierarchy.md`](../architecture/file-hierarchy.md).
 
 ## Philosophy
@@ -64,7 +64,7 @@ for the full annotated layout.
 
 No IDE required.
 
-- **AI agent (recommended)** — provide [`docs/AGENTS.md`](../AGENTS.md) as context.
+- **AI agent (recommended)** — provide [`AGENTS.md`](../../AGENTS.md) as context.
 - **Any text editor** for manual edits.
 - **Xcode** (optional) — run `xcodegen generate` first, then open the generated `.xcodeproj`. Never
   hand-edit or commit the generated project; edit `project.yml` instead.
