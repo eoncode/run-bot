@@ -43,16 +43,19 @@ public final class RunnerState {
     /// Locally-installed runner agents discovered on this Mac.
     ///
     /// Pushed by `LocalRunnerStore` via `await MainActor.run { }` after every refresh cycle.
-    /// Declared `public var` (not `public internal(set)`) to satisfy the `{ get set }`
-    /// requirement in `RunnerViewModelProtocol` — Swift requires the setter to be public
-    /// when the conformance is public. Write discipline is enforced by convention:
-    /// only `LocalRunnerStore` (inside `RunnerBarCore`, same `@MainActor` context) pushes here.
+    ///
+    /// Declared `public var` (not `public internal(set) var`) because Swift requires the
+    /// setter to be at least as accessible as the protocol requirement when conforming to a
+    /// public protocol with a `{ get set }` requirement. `public internal(set)` would restrict
+    /// the setter to `RunnerBarCore` and fail to satisfy the requirement at the module interface.
+    /// In practice, only `LocalRunnerStore` (inside `RunnerBarCore`) ever writes this property;
+    /// the `public` setter is a type-system necessity, not an invitation for external mutation.
     public var localRunners: [RunnerModel] = []
 
     /// `true` while `LocalRunnerStore` is running a refresh cycle.
     ///
     /// Pushed by `LocalRunnerStore` alongside `localRunners`.
-    /// See `localRunners` doc for why `public var` is required here.
+    /// See `localRunners` for the access-level rationale.
     public var isLocalScanning: Bool = false
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
