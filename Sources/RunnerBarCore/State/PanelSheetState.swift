@@ -12,21 +12,25 @@ import Observation
 /// state so hiding the status-bar panel can be restored on the next open.
 @MainActor
 @Observable
-final class PanelSheetState {
+public final class PanelSheetState {
     /// The runner currently selected for the runner detail sheet.
-    var editingRunner: RunnerModel?
+    public var editingRunner: RunnerModel?
 
     /// Backing store for captureTransientHideState() — persists sheet intent
     /// across NSPopover hide/show cycles. See type doc for NSPopover teardown context.
     private var runnerSheetSnapshot: RunnerModel?
 
+    /// Public no-arg initialiser — required because Swift only synthesises an
+    /// internal init for classes; callers in RunnerBar need public access.
+    public init() {}
+
     /// Captures the current runner sheet before hiding the popover.
-    func captureTransientHideState() {
+    public func captureTransientHideState() {
         runnerSheetSnapshot = editingRunner
     }
 
     /// Restores the runner sheet after the popover has been shown again.
-    func restoreTransientHideStateIfNeeded() {
+    public func restoreTransientHideStateIfNeeded() {
         // Only restore if no sheet is already active — prevents overwriting a runner set after the snapshot was captured.
         guard editingRunner == nil, let runnerSheetSnapshot else { return }
         editingRunner = runnerSheetSnapshot
@@ -34,7 +38,7 @@ final class PanelSheetState {
     }
 
     /// Clears all runner sheet state for explicit close/reset paths.
-    func clearRunnerSheet() {
+    public func clearRunnerSheet() {
         editingRunner = nil
         runnerSheetSnapshot = nil
     }

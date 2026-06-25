@@ -15,7 +15,7 @@
 /// Extracted from AppDelegate.swift (#602) — was a private enum co-located with
 /// AppDelegate. Moved here so navigation cases can be extended without opening
 /// AppDelegate.
-enum NavState {
+public enum NavState {
     /// The root popover showing runners and the recent-actions list.
     case main
     /// The raw log for a single step, reached from the main inline step row.
