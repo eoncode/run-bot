@@ -1,5 +1,5 @@
 // DefaultRunnerLabelsService.swift
-// RunnerBarCore
+// RunnerBar
 import Foundation
 
 // MARK: - DefaultRunnerLabelsService
@@ -15,6 +15,7 @@ import Foundation
 /// via `swift test` with a mock `GitHubTransportProtocol` — no simulator,
 /// no signing, no entitlements.
 public struct DefaultRunnerLabelsService: RunnerLabelsService {
+    /// Creates a new `DefaultRunnerLabelsService`.
     public init() {}
 
     /// Replaces ALL custom labels on the runner identified by `runnerID` within `scope`
