@@ -771,52 +771,51 @@ struct PollResultBuilderGroupStateTests {
         )
         #expect(await counter.value == 1, "doneGroups must be marked seen before freezeVanishedGroups runs to prevent double-fire")
     }
-/// Regression test: a group that fires the failure hook via freezeVanishedGroups
-    /// (the vanish path) must have its ID appended to seenGroupIDs so the hook
-    /// cannot re-fire on a subsequent poll when it reappears in doneGroups.
-    ///
-    /// - Poll 1: Group is in snapPrevGroups but absent from fetchGroups → vanish
-    ///   path fires → ID written into newSeenGroupIDs.
-    /// - Poll 2: Same group reappears in fetchGroups as completed → doneGroups
-    ///   path checks newSeenGroupIDs → already present → hook is suppressed.
-    @Test func freezeVanishedGroupsWriteBackPreventsReFireOnNextPoll() async {
-        let groupID = 2000
-        let sha = "vanish02"
-        let vanishedGroup = makeGroup(id: groupID, sha: sha, groupStatus: .completed, conclusion: "failure")
-        let reappearedGroup = makeGroup(id: groupID, sha: sha, groupStatus: .completed, conclusion: "failure")
-        let counter = HookCounter()
 
-        // ── Poll 1: group vanishes from the live feed ────────────────────────
-        let result1 = await PollResultBuilder.buildGroupState(
+    /// Regression: a group that fires the hook via the vanish path (freezeVanishedGroups)
+    /// must NOT re-fire if its cache entry is later evicted by trimGroupCache and it
+    /// reappears in snapPrevGroups on a subsequent poll. seenGroupIDs must survive
+    /// cache eviction because it is trimmed independently (seenGroupIDsLimit >> groupCacheLimit).
+    @Test func vanishPathHookDoesNotRefireAfterCacheEviction() async {
+        let sha = "cc0011"
+        let vanishedGroup = makeGroup(id: 1003, sha: sha, groupStatus: .inProgress, jobStatus: .inProgress)
+
+        // Poll 1: group is in snapPrevGroups but absent from fetchGroups — vanish path fires the hook.
+        let counter = HookCounter()
+        let poll1 = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [vanishedGroup.id: vanishedGroup],
             snapGroupCache: [:],
             snapSeenGroupIDs: [],
             deps: GroupStateDeps(
-                fetchGroups: { _ in [] },  // group not present — vanish path
+                fetchGroups: { _ in [] },
                 scopeFromGroup: { $0.repo },
                 fireFailureHook: { _, _ in await counter.increment() },
                 enrichJobs: { $0 }
             )
         )
-        #expect(await counter.value == 1, "Vanish path must fire the hook once")
-        #expect(
-            result1.newSeenGroupIDs.contains(vanishedGroup.id),
-            "Vanish path must record the group ID in seenGroupIDs"
-        )
+        #expect(await counter.value == 1, "hook must fire on first vanish")
+        #expect(poll1.newSeenGroupIDs.contains(vanishedGroup.id), "vanish path must insert into seenGroupIDs")
 
-        // ── Poll 2: same group reappears in doneGroups ───────────────────────
+        // Simulate cache eviction: poll1's group cache is trimmed to 0 (groupCacheLimit=0).
+        // seenGroupIDs survives because it is passed forward independently.
+        var evictedCache = poll1.newGroupCache
+        PollResultBuilder.trimGroupCache(&evictedCache, limit: 0)
+        #expect(evictedCache.isEmpty, "cache must be empty after eviction")
+
+        // Poll 2: same group reappears in snapPrevGroups (e.g. from stale store state),
+        // cache is empty, but seenGroupIDs still contains the ID — hook must NOT re-fire.
         _ = await PollResultBuilder.buildGroupState(
-            snapPrevGroups: result1.newPrevLiveGroups,   // empty — no live groups from poll 1
-            snapGroupCache: result1.newGroupCache,        // has the dimmed vanished group
-            snapSeenGroupIDs: result1.newSeenGroupIDs,     // has group ID from vanish path
+            snapPrevGroups: [vanishedGroup.id: vanishedGroup],
+            snapGroupCache: evictedCache,
+            snapSeenGroupIDs: poll1.newSeenGroupIDs,
             deps: GroupStateDeps(
-                fetchGroups: { _ in [reappearedGroup] },  // group now in doneGroups
+                fetchGroups: { _ in [] },
                 scopeFromGroup: { $0.repo },
                 fireFailureHook: { _, _ in await counter.increment() },
                 enrichJobs: { $0 }
             )
         )
-        #expect(await counter.value == 1, "Hook must NOT re-fire — group ID already in seenGroupIDs from vanish path")
+        #expect(await counter.value == 1, "hook must not re-fire after cache eviction when seenGroupIDs still holds the ID")
     }
 }
 
