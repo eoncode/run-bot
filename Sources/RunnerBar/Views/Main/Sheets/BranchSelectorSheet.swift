@@ -1,6 +1,7 @@
 // BranchSelectorSheet.swift
 // RunnerBar
 import SwiftUI
+import RunnerBarCore
 
 // MARK: - BranchSelectorSheet
 // #560: Sheet for selecting a branch to filter the failure hook on.

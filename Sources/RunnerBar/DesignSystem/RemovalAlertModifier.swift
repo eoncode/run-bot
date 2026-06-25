@@ -1,6 +1,7 @@
 // RemovalAlertModifier.swift
 // RunnerBar
 import SwiftUI
+import RunnerBarCore
 
 // MARK: - RemovalAlertModifier
 

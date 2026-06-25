@@ -2,6 +2,7 @@
 // RunnerBar
 
 import SwiftUI
+import RunnerBarCore
 
 // MARK: - PanelHeaderView
 /// Top bar of the popover panel showing system stats and the settings/quit buttons.

@@ -2,6 +2,7 @@
 // RunnerBar
 
 import AppKit
+import RunnerBarCore
 
 /// AppDelegate extension handling the OAuth callback URL delivered by the OS.
 extension AppDelegate {

@@ -1,6 +1,7 @@
 // AddRunnerSheet.swift
 // RunnerBar
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - URI Constants

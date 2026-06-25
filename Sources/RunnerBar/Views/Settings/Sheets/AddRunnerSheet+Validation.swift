@@ -2,6 +2,7 @@
 // RunnerBar
 
 import Foundation
+import RunnerBarCore
 
 /// Computed validation helpers and state-check predicates for `AddRunnerSheet`.
 extension AddRunnerSheet {

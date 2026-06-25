@@ -1,6 +1,7 @@
 // SparklineView.swift
 // RunnerBar
 import SwiftUI
+import RunnerBarCore
 
 // MARK: - SparklineView
 /// A mini sparkline graph using Path: polyline stroke + gradient fill.

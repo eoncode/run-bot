@@ -2,6 +2,7 @@
 // RunnerBar
 
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 /// Form field subviews and pre-existing folder actions for `AddRunnerSheet`.

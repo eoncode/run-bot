@@ -1,6 +1,7 @@
 // RingBuffer.swift
 // RunnerBar
 import Foundation
+import RunnerBarCore
 
 /// Fixed-capacity circular buffer whose `values` property returns elements oldest-first.
 struct RingBuffer {

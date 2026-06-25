@@ -7,6 +7,7 @@
 //   - ActionRowView.swift    (ActionRowView, RowTapModifier)
 
 import SwiftUI
+import RunnerBarCore
 
 // MARK: - String+nilIfEmpty
 /// Convenience helpers used across panel subview files.

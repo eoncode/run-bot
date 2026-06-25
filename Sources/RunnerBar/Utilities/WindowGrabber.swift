@@ -12,6 +12,7 @@
 // #1195 — required for NSOpenPanel.beginSheetModal inside NSPopover.
 
 import AppKit
+import RunnerBarCore
 import SwiftUI
 
 // MARK: - NSWindowGrabber (NSView subclass)

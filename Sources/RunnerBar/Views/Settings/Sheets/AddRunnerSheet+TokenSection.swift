@@ -2,6 +2,7 @@
 // RunnerBar
 
 import Foundation
+import RunnerBarCore
 
 // MARK: - Runner download URL
 
