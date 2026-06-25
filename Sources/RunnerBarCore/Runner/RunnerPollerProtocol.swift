@@ -46,7 +46,7 @@ public actor MockPoller: RunnerPollerProtocol {
     /// - Parameter state: The observable state object to expose. Defaults to an
     ///   empty `RunnerState()` so callers that don't need pre-populated data can
     ///   omit the argument.
-    public init(state: RunnerState = RunnerState()) {
+    @MainActor public init(state: RunnerState = RunnerState()) {
         self.state = state
     }
 
