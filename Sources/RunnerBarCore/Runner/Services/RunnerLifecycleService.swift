@@ -152,9 +152,14 @@ public struct RunnerLifecycleService: RunnerLifecycleServiceProtocol {
             logStep("REMOVE", "abort — no gitHubUrl on runner \(runner.runnerName)")
             return .failed("GitHub URL unknown")
         }
-        // Delegates to the canonical `scopeFromUrl` in GitHubURLHelpers (F-52).
-        // Falls back to the raw absoluteString so the log is always meaningful.
-        let scopeString = scopeFromUrl(gitHubUrl) ?? gitHubUrl.absoluteString
+        // Hard-fail when no scope can be derived: passing a bare URL string
+        // (e.g. https://github.com) to fetchRemovalToken / deleteRunnerByID
+        // causes a silent API failure. Surfacing the error here gives the caller
+        // a clear signal rather than a confusing "failed to fetch removal token".
+        guard let scopeString = scopeFromUrl(gitHubUrl) else {
+            logStep("REMOVE", "abort — cannot derive scope from gitHubUrl=\(gitHubUrl.absoluteString) for \(runner.runnerName)")
+            return .failed("Cannot derive scope from GitHub URL '\(gitHubUrl.absoluteString)'")
+        }
 
         logStep("REMOVE", "step2: fetching removal token for scope=\(scopeString)")
         guard let token = await fetchRemovalToken(scope: scopeString) else {
