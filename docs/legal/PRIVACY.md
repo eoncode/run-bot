@@ -10,7 +10,7 @@ RunnerBar uses the **GitHub OAuth Authorization Code flow** to authenticate. You
 
 ### How it works
 
-1. Clicking **Sign In** opens GitHub's authorization page in your default browser (`OAuthService.signIn()`).
+1. Clicking **Sign In** calls `OAuthService.makeSignInURL()` to build the GitHub authorization URL, then opens it in your default browser via `NSWorkspace.shared.open(url)`.
 2. After you click **Authorize**, GitHub redirects back to `runnerbar://oauth/callback` with a short-lived code.
 3. RunnerBar exchanges the code for an access token via a server-side POST to `github.com/login/oauth/access_token`.
 4. The token is stored **exclusively in the macOS Keychain** using `Security.framework` with `kSecUseDataProtectionKeychain: true` and `kSecAttrAccessibleAfterFirstUnlock` — the same modern Data Protection Keychain used by Safari and iCloud.
@@ -147,8 +147,8 @@ RunnerBar does not request access to contacts, location, camera, microphone, Pho
 
 RunnerBar is open source. You can audit every network call, every persistence write, and every credential access in the source code:
 
-- OAuth flow: [`Sources/RunnerBar/GitHub/OAuthService.swift`](../Sources/RunnerBar/GitHub/OAuthService.swift)
-- Token storage: [`Sources/RunnerBar/GitHub/Keychain.swift`](../Sources/RunnerBar/GitHub/Keychain.swift)
-- GitHub API calls: [`Sources/RunnerBar/GitHub/GitHubURLSessionTransport.swift`](../Sources/RunnerBar/GitHub/GitHubURLSessionTransport.swift)
-- Per-scope preferences: [`Sources/RunnerBarCore/Scope/ScopePreferencesStore.swift`](../Sources/RunnerBarCore/Scope/ScopePreferencesStore.swift)
-- Failure hooks: [`Sources/RunnerBar/Services/FailureHookRunner.swift`](../Sources/RunnerBar/Services/FailureHookRunner.swift)
+- OAuth flow: [`Sources/RunnerBarCore/GitHub/OAuthService.swift`](../../Sources/RunnerBarCore/GitHub/OAuthService.swift)
+- Token storage: [`Sources/RunnerBarCore/GitHub/Keychain.swift`](../../Sources/RunnerBarCore/GitHub/Keychain.swift)
+- GitHub API calls: [`Sources/RunnerBar/GitHub/GitHubURLSessionTransport.swift`](../../Sources/RunnerBar/GitHub/GitHubURLSessionTransport.swift)
+- Per-scope preferences: [`Sources/RunnerBarCore/Scope/ScopePreferencesStore.swift`](../../Sources/RunnerBarCore/Scope/ScopePreferencesStore.swift)
+- Failure hooks: [`Sources/RunnerBar/Services/FailureHookRunner.swift`](../../Sources/RunnerBar/Services/FailureHookRunner.swift)

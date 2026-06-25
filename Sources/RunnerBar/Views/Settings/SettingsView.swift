@@ -135,6 +135,10 @@ struct SettingsView: View {
             signInTask = nil
             signOutTask?.cancel()
             signOutTask = nil
+            // Reset isSigningIn so a close-during-flow doesn't leave a stale spinner
+            // on the next open. The stream task is already cancelled above, so the
+            // for-await loop will not reset it — we must do it explicitly here.
+            isSigningIn = false
         }
     }
 
