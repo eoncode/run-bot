@@ -189,7 +189,7 @@ extension AppDelegate: NSPopoverDelegate {
         log("AppDelegate › setupSubscriptions — begin")
 
         // local runner list changes are now pushed directly from LocalRunnerStore
-        // into observable.localRunners via await MainActor.run — no Combine sink needed.
+        // into runnerState.localRunners via await MainActor.run — no Combine sink needed.
 
         // Everything below makes live network calls — skip entirely in UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else {
@@ -197,7 +197,9 @@ extension AppDelegate: NSPopoverDelegate {
             return
         }
 
-        // Wire LocalRunnerStore.shared to this AppDelegate's RunnerViewModel instance.
+        // Wire LocalRunnerStore.shared to RunnerState so all local-runner pushes
+        // (localRunners, isLocalScanning) land in the single observable source of
+        // truth that SwiftUI views will read from after the migration.
         //
         // ⚠️ Must be called before the startup Task below (and before any other
         // LocalRunnerStore.shared access). LocalRunnerStore no longer self-initialises
@@ -209,8 +211,8 @@ extension AppDelegate: NSPopoverDelegate {
         //    is a computed `lazy var` backed by `LocalRunnerStore.shared`. The first
         //    access to `localRunnerStore` (inside the Task) must find the instance
         //    already configured, or it fatalErrors.
-        LocalRunnerStore.configure(viewModel: observable)
-        log("AppDelegate › setupSubscriptions — LocalRunnerStore.configure(viewModel:) called")
+        LocalRunnerStore.configure(viewModel: runnerState)
+        log("AppDelegate › setupSubscriptions — LocalRunnerStore.configure(viewModel: runnerState) called")
 
         // NOTE: The old `RunnerStore.didUpdate` Combine sink has been removed.
         // `RunnerPoller` is a Swift actor in RunnerBarCore that pushes state directly
@@ -231,7 +233,7 @@ extension AppDelegate: NSPopoverDelegate {
             state: runnerState,
             preferencesStore: AppPreferencesStore.shared,
             scopeStore: ScopeStore.shared,
-            localRunners: { [observable] in observable.localRunners },
+            localRunners: { [weak self] in self?.runnerState.localRunners ?? [] },
             // Capture the stored property rather than the .shared singleton so a test
             // double wired via localRunnerStore is honoured here too.
             applyMetrics: { [localRunnerStore] metrics, id, name in
