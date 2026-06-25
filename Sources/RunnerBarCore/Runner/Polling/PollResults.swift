@@ -1,7 +1,7 @@
 // PollResults.swift
 // RunnerBarCore
-import Collections
 import Foundation
+import Collections
 
 // MARK: - Poll result value types
 
