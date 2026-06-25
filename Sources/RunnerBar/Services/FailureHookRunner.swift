@@ -8,6 +8,12 @@ import RunnerBarCore
 
 /// Production shim for `FailureHookRunnerUseCase`.
 ///
+/// # Why this lives in the app target
+/// This is the composition root for the failure hook: it wires concrete production
+/// dependencies (`ScopePreferencesStore.shared`, `DefaultTerminalLauncher`) into
+/// `FailureHookRunnerUseCase`. Binding singletons and AppKit-bound adapters is
+/// inherently app-layer work and must not leak into `RunnerBarCore`.
+///
 /// Creates the use-case with the concrete production adapters
 /// (`DefaultScopePreferencesStore`, `DefaultTerminalLauncher`) and
 /// delegates `fireIfNeeded` to it. All business logic lives in
