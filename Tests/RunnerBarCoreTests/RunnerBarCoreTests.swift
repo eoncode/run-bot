@@ -937,3 +937,33 @@ struct RunnerConfigStoreErrorDescriptionTests {
         #expect(malformed.errorDescription != decode.errorDescription)
     }
 }
+
+// MARK: - WorkflowActionGroup.groupStatus
+
+@Suite("WorkflowActionGroup.groupStatus")
+struct WorkflowActionGroupGroupStatusTests {
+
+    /// Regression test for #1637: groupStatus must return .loading when jobs are empty
+    /// and not all runs have concluded (i.e. the initial loading window before the first
+    /// job fetch returns). Before the fix, this path fell through to .completed, causing
+    /// the group to be routed to doneGroups and shown as "DONE" during the loading window.
+    @Test func groupStatusIsLoadingWhenJobsEmptyAndRunsNotConcluded() {
+        let group = WorkflowActionGroup(
+            headSha: "abc123",
+            label: "abc123",
+            title: "test commit",
+            headBranch: "main",
+            repo: "owner/repo",
+            runs: [
+                WorkflowRunRef(id: 1, name: "CI", status: .inProgress, conclusion: nil, htmlUrl: nil)
+            ],
+            jobs: [],                          // no jobs yet — loading window
+            firstJobStartedAt: nil,
+            lastJobCompletedAt: nil,
+            isDimmed: false
+        )
+        // allRunsConcluded == false (run is still inProgress), jobs.isEmpty == true
+        // → must return .loading, not .completed
+        #expect(group.groupStatus == .loading)
+    }
+}
