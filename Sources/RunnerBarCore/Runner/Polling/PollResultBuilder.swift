@@ -2,7 +2,6 @@
 // RunnerBarCore
 import Collections
 import Foundation
-import OrderedCollections
 
 // MARK: - GroupStateDeps
 
@@ -373,6 +372,11 @@ public struct PollResultBuilder {
     ///   hit the "already cached+dimmed" fast path. Hook-fire suppression
     ///   (`cache[groupID] == nil`) is a separate concern and must not gate the registration.
     ///
+    /// - Note: This function is `public` for testability only. It has no intended
+    ///   external consumers outside the `RunnerBarCore` module — the `inout OrderedSet`
+    ///   signature is an internal implementation detail and is not considered part of
+    ///   the library's public API surface.
+    ///
     /// - Parameters:
     ///   - config: Snapshot, live-IDs, and timestamp bundled into a `FreezeVanishedConfig`.
     ///   - cache: Group cache to mutate in place.
@@ -399,6 +403,10 @@ public struct PollResultBuilder {
             // is always safe even when doneGroups already registered this ID first.
             let isUnseen = !seenGroupIDs.contains(groupID)
             if isUnseen { seenGroupIDs.append(groupID) }
+            // Fast path: group is already cached and dimmed with at least as many jobs
+            // as the previous snapshot — no cache update needed. Note: seenGroupIDs was
+            // already mutated above, so the hook-suppression invariant holds even for
+            // groups that exit here. The cache write is skipped; the ID registration is not.
             if let existing = cache[groupID], existing.isDimmed, existing.jobs.count >= group.jobs.count {
                 log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping")
                 continue
