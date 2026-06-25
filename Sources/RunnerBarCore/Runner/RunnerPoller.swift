@@ -270,10 +270,26 @@ public actor RunnerPoller {
 
     /// Performs one full poll cycle.
     ///
+    /// Wraps the fetch body in a `do/catch` so any unhandled error surfaces via
+    /// `applyError` rather than silently crashing or swallowing the failure.
+    /// Existing fetch helpers (`buildJobState`, `buildGroupState`, `fetchAndEnrichRunners`)
+    /// do not currently throw — they return empty arrays on failure. The `do/catch`
+    /// guards against future changes that introduce throwing paths.
+    ///
     /// Not on `RunnerPollerProtocol`. Use `start()` to drive the poll cadence.
     /// Accessible at `internal` scope so tests holding a concrete `RunnerPoller` can
     /// trigger a single cycle without going through the protocol seam.
     func fetch() async {
+        do {
+            try await fetchInternal()
+        } catch {
+            log("RunnerPoller › fetch — ⚠️ unhandled error: \(error)")
+            await applyError(FetchError(error))
+        }
+    }
+
+    /// Inner throwing fetch body. Extracted so `fetch()` can wrap it cleanly in `do/catch`.
+    private func fetchInternal() async throws {
         await clearGhRateLimit()
         let scopesSnapshot = await MainActor.run { scopeStore.activeScopes }
         log("RunnerPoller › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
@@ -320,6 +336,11 @@ public actor RunnerPoller {
     // MARK: - Apply result
 
     /// Merges a completed fetch into actor state and pushes the snapshot to `RunnerState`.
+    ///
+    /// Clears `state.fetchError` on every successful cycle so the UI error banner
+    /// dismisses automatically as soon as connectivity is restored. The write is
+    /// guarded — if `fetchError` is already `nil` the assignment is skipped to
+    /// avoid a spurious `@Observable` notification on every healthy poll cycle.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -342,6 +363,50 @@ public actor RunnerPoller {
             state.runners = enrichedRunners
             state.jobs = jobResult.display
             state.actions = groupResult.display
+            state.isRateLimited = rateLimitSnapshot.isLimited
+            state.rateLimitResetDate = rateLimitSnapshot.resetDate
+            if state.fetchError != nil { state.fetchError = nil }
+        }
+    }
+
+    /// Sendable-safe wrapper that bridges an arbitrary `any Error` across an actor boundary.
+    ///
+    /// `any Error` is not `Sendable`, so passing it directly into `MainActor.run`
+    /// produces a warning under `-strict-concurrency=complete`. `FetchError` captures
+    /// `localizedDescription` — the only field read by `fetchErrorBanner` — and
+    /// re-surfaces it as a `LocalizedError` conformance so the message is preserved.
+    private struct FetchError: LocalizedError, Sendable {
+        /// The user-facing description forwarded from the underlying error.
+        let errorDescription: String?
+        /// Wraps `underlying`, capturing its `localizedDescription` as a `Sendable` string.
+        init(_ underlying: any Error) { errorDescription = underlying.localizedDescription }
+    }
+
+    /// Surfaces a fetch failure to the `RunnerState` read model.
+    ///
+    /// Snapshots rate-limit state alongside the error so the UI never shows both the
+    /// rate-limit banner and the fetch-error banner simultaneously. If `clearGhRateLimit()`
+    /// ran at the top of `fetchInternal()` and then the cycle threw, the internal
+    /// `RateLimitActor` is already clear — this snapshot reflects that, preventing
+    /// a stale `isRateLimited = true` from persisting until the next successful cycle.
+    ///
+    /// The `fetchError` write is guarded by a `localizedDescription` comparison to avoid
+    /// re-notifying `@Observable` observers on every failed cycle when the error message
+    /// is unchanged (e.g. sustained network loss). Mirrors the `if fetchError != nil` guard
+    /// in `applyFetchResult` on the success path.
+    ///
+    /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
+    /// stale data alongside the error banner rather than an empty list.
+    private func applyError(_ error: any Error & Sendable) async {
+        let rateLimitSnapshot = await ghRateLimitSnapshot()
+        await MainActor.run { [state] in
+            // Guard the write: `any Error` is not Equatable, so compare via
+            // `localizedDescription` — the only field `fetchErrorBanner` consumes.
+            // Skipping the write when the message is unchanged avoids a spurious
+            // `@Observable` notification on every failed poll cycle.
+            if state.fetchError?.localizedDescription != error.localizedDescription {
+                state.fetchError = error
+            }
             state.isRateLimited = rateLimitSnapshot.isLimited
             state.rateLimitResetDate = rateLimitSnapshot.resetDate
         }
@@ -455,19 +520,6 @@ public actor RunnerPoller {
             }
         }
 
-        // Write metrics back to injected local runner store for busy runners where
-        // Phase 2 successfully resolved an install path and applied metrics.
-        // Keyed on entry.runner.metrics != nil — Phase 2 is the canonical resolver;
-        // duplicating the four-map OR predicate here would create a drift risk if
-        // lookup priority ever changes.
-        //
-        // Intentional nil-clearing omission: the old RunnerStore called applyMetrics(nil, ...)
-        // for busy runners whose metricsForRunner returned nil (e.g. a process-read failure),
-        // which cleared any stale badge metric. This filter skips that call, so stale metrics
-        // persist in LocalRunnerStore until the next successful read or the runner goes idle.
-        // Accepted tradeoff: the stale window is at most one poll cycle, and clearing on a
-        // transient read failure caused unnecessary badge flicker. applyMetrics(nil, ...) can
-        // be reinstated here if stale-metric persistence becomes observable in practice.
         let metricsUpdates = indexed.filter { $0.runner.busy && $0.runner.metrics != nil }
         if !metricsUpdates.isEmpty {
             for entry in metricsUpdates {
