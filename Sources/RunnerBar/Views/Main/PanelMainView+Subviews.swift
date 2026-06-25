@@ -6,8 +6,8 @@
 //   - RunnerRowViews.swift   (PanelLocalRunnerRow, RunnerMetricsBadge, RunnerTypeIcon)
 //   - ActionRowView.swift    (ActionRowView, RowTapModifier)
 
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
 
 // MARK: - String+nilIfEmpty
 /// Convenience helpers used across panel subview files.

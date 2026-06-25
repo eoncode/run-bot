@@ -1,7 +1,7 @@
 // RepoSelectorSheet.swift
 // RunnerBar
-import SwiftUI
 import RunnerBarCore
+import SwiftUI
 
 // MARK: - RepoSelectorSheet
 // #580 / #576: Reusable searchable sheet for picking a repository or organisation.
