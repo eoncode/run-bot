@@ -20,13 +20,6 @@ public struct GroupStateDeps: Sendable {
     /// Enriches a job list by backfilling step data from the job cache.
     public let enrichJobs: @Sendable ([ActiveJob]) async -> [ActiveJob]
 
-    /// Creates a `GroupStateDeps` with the four required closures.
-    ///
-    /// - Parameters:
-    ///   - fetchGroups: Fetches live groups for every active scope.
-    ///   - scopeFromGroup: Derives a scope string from a group.
-    ///   - fireFailureHook: Invoked the first time a group transitions to a hook-triggering conclusion.
-    ///   - enrichJobs: Enriches a job list by backfilling step data from the job cache.
     public init(
         fetchGroups: @escaping @Sendable ([String: WorkflowActionGroup]) async -> [WorkflowActionGroup],
         scopeFromGroup: @escaping @Sendable (WorkflowActionGroup) -> String,
