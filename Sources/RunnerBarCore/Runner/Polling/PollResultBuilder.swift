@@ -376,15 +376,23 @@ public struct PollResultBuilder {
                 log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping")
                 continue
             }
-            if !seenGroupIDs.contains(groupID) && cache[groupID] == nil {
-                let scope = scopeFromGroup(group)
-                // Fire for any hook-triggering conclusion — failures and cancellations.
-                // Do not fire for successful groups that vanished from the live feed normally.
-                // See JobConclusion.isHookConclusion for full rationale.
-                let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
-                if shouldFire {
-                    log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)")
-                    await fireFailureHook(group, scope)
+            if !seenGroupIDs.contains(groupID) {
+                // Hook fire is gated separately on cache absence: if doneGroups already
+                // cached this group in the same poll, the hook was fired (or intentionally
+                // skipped) there. The seenGroupIDs.append is NOT gated on cache absence —
+                // the set must stay consistent regardless of which path processed the group
+                // first. Separating these two concerns prevents a latent re-fire if the
+                // doneGroups-before-freezeVanishedGroups ordering invariant ever shifts.
+                if cache[groupID] == nil {
+                    let scope = scopeFromGroup(group)
+                    // Fire for any hook-triggering conclusion — failures and cancellations.
+                    // Do not fire for successful groups that vanished from the live feed normally.
+                    // See JobConclusion.isHookConclusion for full rationale.
+                    let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
+                    if shouldFire {
+                        log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)")
+                        await fireFailureHook(group, scope)
+                    }
                 }
                 seenGroupIDs.append(groupID)
             }
