@@ -576,8 +576,8 @@ struct PollResultBuilderGroupStateTests {
         let job = ActiveJob(
             id: runID * 10,
             name: "job",
-            status: resolvedJobStatus,
-            conclusion: jobConclusion
+            status: resolvedJobStatus.rawValue,
+            conclusion: jobConclusion?.rawValue
         )
         let runConclusion: JobConclusion? = resolvedJobStatus == .completed
             ? JobConclusion(rawString: conclusion)
@@ -697,8 +697,8 @@ struct PollResultBuilderGroupStateTests {
                 WorkflowRunRef(id: 903, name: "Deploy", status: JobStatus.completed,  conclusion: JobConclusion.success, htmlUrl: nil),
             ],
             jobs: [
-                ActiveJob(id: 9020, name: "lint-job",   status: JobStatus.inProgress),
-                ActiveJob(id: 9030, name: "deploy-job", status: JobStatus.completed, conclusion: JobConclusion.success),
+                ActiveJob(id: 9020, name: "lint-job",   status: JobStatus.inProgress.rawValue),
+                ActiveJob(id: 9030, name: "deploy-job", status: JobStatus.completed.rawValue, conclusion: JobConclusion.success.rawValue),
             ],
             firstJobStartedAt: Date(timeIntervalSinceReferenceDate: 0),
             lastJobCompletedAt: nil,
