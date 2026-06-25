@@ -11,10 +11,10 @@ import Foundation
 ///
 /// **Concurrency model**
 /// - The actor runs on its own executor (background thread).
-/// - After every refresh cycle, results are pushed to the injected `RunnerViewModel`
-///   on the main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
+/// - After every refresh cycle, results are pushed to the injected `RunnerViewModelProtocol`
+///   conformer on the main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
 ///   picks up the mutation automatically.
-/// - `isLocalScanning` is also pushed to `RunnerViewModel` so views can observe it
+/// - `isLocalScanning` is also pushed to the conformer so views can observe it
 ///   without holding a direct reference to the actor.
 /// - Index persistence is delegated to `LocalRunnerIndex`.
 /// - JSON parsing is delegated to `runnerModelFromIndex(name:installPath:)` in `RunnerModelParser`.
