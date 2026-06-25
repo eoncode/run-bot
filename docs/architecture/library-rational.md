@@ -32,11 +32,10 @@ Great question. Here's the full picture for your specific setup.
 
 **Module boundary boilerplate.** Types that were `internal` in the app become `public` when moved to Core. Every struct, actor, protocol, and initializer that crosses the boundary needs explicit `public` access control. In a large move this is mechanical but noisy — lots of diff noise in PRs.
 
-**No practical benefit for truly app-specific code.** Moving `LoginItem`, `OAuthService`, or `TerminalLauncher` to Core would be wrong — they need the app bundle, `NSWorkspace`, or `ServiceManagement`. The value is only in genuinely framework-agnostic logic.
+**No practical benefit for truly app-specific code.** Moving `LoginItem` or `TerminalLauncher` to Core would be wrong — they need the app bundle or `ServiceManagement`. The value is only in genuinely framework-agnostic logic. Note: `OAuthService` has now been successfully moved to Core by extracting the `NSWorkspace.shared.open(url)` side-effect back to the app layer — demonstrating that the AppKit dependency was in the call site, not in the OAuth state machine itself.
 
 ***
 
 ## The Net Position for Your Setup
 
 In a pure SPM / no-`.xcodeproj` codebase with GitHub Actions CI, the payoff is **high and concrete**: faster CI via `swift test`, enforced architectural boundaries, and a clean path to testing business logic without the full app build. The main cost is upfront refactoring — particularly the `RunnerStore`/`RunnerViewModel` coupling — but the files that don't have that coupling (the 13 straightforward candidates in the issue) are essentially free wins.
- 

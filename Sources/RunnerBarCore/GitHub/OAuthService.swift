@@ -1,8 +1,6 @@
 // OAuthService.swift
-// RunnerBar
-import AppKit
+// RunnerBarCore
 import Foundation
-import RunnerBarCore
 
 // MARK: - OAuthService
 //
@@ -11,88 +9,50 @@ import RunnerBarCore
 // @MainActor ensures all access to `pendingState` and continuation registries
 // is serialised on the main thread. This matches how AppKit delivers
 // application(_:open:) callbacks and how SwiftUI reads `isSignedIn`.
-// It also silences the -strict-concurrency warning about non-Sendable
-// captures of `self` in DispatchQueue.main.async closures.
 //
 // Flow:
-// 1. signIn() generates a random state nonce, stores it, opens the GitHub
-//    authorization URL (with state= param) in the default browser.
+// 1. makeSignInURL() generates a random state nonce, stores it, and returns
+//    the GitHub authorization URL. The caller is responsible for opening it
+//    (e.g. NSWorkspace.shared.open(url) in SettingsView / AppDelegate).
 // 2. The user clicks "Authorize" on GitHub's consent screen.
 // 3. GitHub redirects to runnerbar://oauth/callback?code=...&state=...
 // 4. AppDelegate.application(_:open:) catches the URL and calls handleCallback(_:).
 // 5. handleCallback verifies the state param matches pendingState (CSRF guard),
 //    then exchanges the code for an access token via POST to GitHub.
-// 6. Token is saved to Keychain (which also invalidates the token cache).
-//    fireSignIn(_:) yields the result to all registered makeSignInStream() consumers.
-//
-// Client credentials are in OAuthSecrets.swift — see that file for why they are
-// intentionally committed (open-source native app industry standard).
+// 6. Token is saved to Keychain. fireSignIn(_:) yields the result to all
+//    registered makeSignInStream() consumers.
 
-/// Manages OAuthService state and behaviour.
+/// Manages OAuth state and behaviour. Lives in RunnerBarCore — no AppKit dependency.
 @MainActor
-final class OAuthService: OAuthServiceProtocol {
-    /// Shared `JSONDecoder` — reused across token-exchange decode calls instead of per-call instantiation.
+public final class OAuthService: OAuthServiceProtocol {
+    /// Shared `JSONDecoder` — reused across token-exchange decode calls.
     private let decoder = JSONDecoder()
-    /// Shared `JSONEncoder` — reused across token-exchange encode calls instead of per-call instantiation.
+    /// Shared `JSONEncoder` — reused across token-exchange encode calls.
     private let encoder = JSONEncoder()
-
     /// The OAuth redirect URI. Must match the value registered in the GitHub OAuth app settings.
-    /// Sourced from `GitHubConstants.oauthRedirectURI` — do not duplicate this string inline.
     private let redirectURI = GitHubConstants.oauthRedirectURI
     /// OAuth scopes requested during sign-in.
-    ///
-    /// - `repo`: Read access to repository runners, workflow runs, and job logs.
-    ///   Required for all repo-scoped API calls (`/repos/{owner}/{repo}/actions/*`).
-    /// - `read:org`: Read org membership and team info. Required to list org-level
-    ///   runners via `/orgs/{org}/actions/runners` for users who are org members
-    ///   but not owners.
-    /// - `admin:org`: Broader org admin access. Required to call the runners API
-    ///   on organisations where the authenticated user is an owner. Without this,
-    ///   org-runner fetches return 403 for owner-level accounts.
-    /// - `manage_runners:org`: Fine-grained scope (added in 2023) that explicitly
-    ///   grants runner management on org level. Requested in addition to `admin:org`
-    ///   for forward-compatibility as GitHub narrows older broad scopes.
-    /// - `workflow`: Required to trigger and re-run workflow runs via the API.
-    ///   Without this, dispatch and re-run actions fail with 403 even when `repo`
-    ///   is present.
-    ///
-    /// Previously only `repo` and `read:org` were requested. The additional scopes
-    /// were added because org-runner listing and workflow dispatch were returning 403
-    /// for accounts with org-owner or org-admin roles.
     private let scopes = "repo read:org admin:org manage_runners:org workflow"
-
-    // MARK: - OAuth endpoint constants
-    /// GitHub OAuth authorisation URL — entry point for the browser-based sign-in flow.
+    /// GitHub OAuth authorisation URL.
     private let authorizeURL = "\(GitHubConstants.base)/login/oauth/authorize"
-    /// GitHub OAuth token-exchange URL — receives the code and returns the access token.
+    /// GitHub OAuth token-exchange URL.
     private let accessTokenURL = "\(GitHubConstants.base)/login/oauth/access_token"
-
-    /// CSRF nonce generated in signIn(), verified in handleCallback().
-    /// Cleared after use or on sign-out.
+    /// CSRF nonce generated in makeSignInURL(), verified in handleCallback(). Cleared after use.
     private var pendingState: String?
 
-    // MARK: - Sign-out multicast
-    //
-    // Each caller receives its own dedicated AsyncStream via makeSignOutStream().
-    // signOut() yields to every registered continuation, restoring the multicast
-    // semantics of the old PassthroughSubject without reintroducing Combine.
-    // AsyncStream is single-consumer — sharing one stream across multiple Tasks
-    // would deliver each event to only one consumer (whichever wakes first).
+    /// Creates a new `OAuthService` instance.
+    ///
+    /// Declared explicitly as `public` because Swift does not promote a synthesised
+    /// `init()` to `public` automatically, even when the enclosing type is `public`.
+    public init() {}
 
-    /// Registered continuations keyed by UUID — one per active consumer.
-    /// Entries are removed automatically via `onTermination` when the consumer's
-    /// Task is cancelled (e.g. SettingsView.onDisappear), preventing unbounded growth.
+    // MARK: - Sign-out multicast
+
+    /// Registered sign-out continuations keyed by UUID — one per active consumer.
     private var signOutContinuations: [UUID: AsyncStream<Void>.Continuation] = [:]
 
     /// Returns a new `AsyncStream<Void>` that fires once per `signOut()` call.
-    /// Each call site must request its own stream; the streams are multicasted.
-    /// The continuation is removed from the registry when the consumer's Task
-    /// is cancelled or the stream is otherwise terminated.
-    /// Observe via:
-    /// ```swift
-    /// Task { for await _ in oauthService.makeSignOutStream() { … } }
-    /// ```
-    func makeSignOutStream() -> AsyncStream<Void> {
+    public func makeSignOutStream() -> AsyncStream<Void> {
         let id = UUID()
         let (stream, cont) = AsyncStream<Void>.makeStream()
         signOutContinuations[id] = cont
@@ -105,25 +65,12 @@ final class OAuthService: OAuthServiceProtocol {
     }
 
     // MARK: - Sign-in multicast
-    //
-    // Each caller receives its own dedicated AsyncStream<Bool> via makeSignInStream().
-    // fireSignIn(_:) yields the success value to every registered continuation.
-    // AsyncStream is single-consumer — each call site must request its own stream.
 
-    /// Registered continuations keyed by UUID — one per active sign-in consumer.
-    /// Entries are removed automatically via `onTermination` when the consumer's
-    /// Task is cancelled (e.g. SettingsView.onDisappear), preventing unbounded growth.
+    /// Registered sign-in continuations keyed by UUID — one per active consumer.
     private var signInContinuations: [UUID: AsyncStream<Bool>.Continuation] = [:]
 
-    /// Returns a new `AsyncStream<Bool>` that fires once per completed sign-in attempt.
-    /// `true` = success, `false` = failure. Each call site must request its own stream.
-    /// The continuation is removed from the registry when the consumer's Task
-    /// is cancelled or the stream is otherwise terminated.
-    /// Observe via:
-    /// ```swift
-    /// Task { for await success in OAuthService.shared.makeSignInStream() { … } }
-    /// ```
-    func makeSignInStream() -> AsyncStream<Bool> {
+    /// Returns a new `AsyncStream<Bool>` that fires once per sign-in attempt (`true` = success).
+    public func makeSignInStream() -> AsyncStream<Bool> {
         let id = UUID()
         let (stream, cont) = AsyncStream<Bool>.makeStream()
         signInContinuations[id] = cont
@@ -141,18 +88,34 @@ final class OAuthService: OAuthServiceProtocol {
         signInContinuations.values.forEach { $0.yield(success) }
     }
 
-    // MARK: Sign In
+    // MARK: - Sign In
 
-    /// Opens the GitHub OAuth authorization page in the default browser to begin sign-in.
-    func signIn() {
-        log("OAuthService › signIn — initiating OAuth flow")
+    /// Builds and returns the GitHub OAuth authorization URL, storing the CSRF nonce.
+    ///
+    /// The caller is responsible for opening the URL in the appropriate environment:
+    /// ```swift
+    /// if let url = oauthService.makeSignInURL() {
+    ///     NSWorkspace.shared.open(url)  // app layer — not Core's concern
+    /// }
+    /// ```
+    ///
+    /// Returns `nil` if the URL cannot be constructed (both guard paths are unreachable
+    /// at runtime — `authorizeURL` is a compile-time constant from `GitHubConstants`).
+    ///
+    /// **Stream asymmetry:** `makeSignInStream()` consumers are **not** notified when
+    /// this method returns `nil`. No sign-in attempt reached the network, so no stream
+    /// event is appropriate. The call site is responsible for handling `nil` directly
+    /// (e.g. resetting `isSigningIn = false`). Only `handleCallback(_:)` and
+    /// `exchangeCode(_:)` fire stream events, because those represent real sign-in
+    /// outcomes.
+    public func makeSignInURL() -> URL? {
+        log("OAuthService › makeSignInURL — building OAuth URL")
         let state = UUID().uuidString
         pendingState = state
         guard var comps = URLComponents(string: authorizeURL) else {
-            log("OAuthService › signIn: malformed authorizeURL — aborting")
+            log("OAuthService › makeSignInURL: malformed authorizeURL — aborting")
             pendingState = nil
-            fireSignIn(false)
-            return
+            return nil
         }
         comps.queryItems = [
             URLQueryItem(name: "client_id", value: OAuthSecrets.clientID),
@@ -161,30 +124,18 @@ final class OAuthService: OAuthServiceProtocol {
             URLQueryItem(name: "state", value: state)
         ]
         guard let url = comps.url else {
-            log("OAuthService › signIn: failed to build authorization URL — aborting")
+            log("OAuthService › makeSignInURL: failed to build URL — aborting")
             pendingState = nil
-            fireSignIn(false)
-            return
+            return nil
         }
-        // NOTE: pendingState is left set if the browser open fails silently.
-        // handleCallback will CSRF-reject any eventual redirect with a mismatched
-        // or absent state, so a stuck pendingState is safe — it will be cleared
-        // on the next signIn(), signOut(), or a rejected handleCallback().
-        log("OAuthService › signIn — opening browser for OAuth")
-        NSWorkspace.shared.open(url)
+        log("OAuthService › makeSignInURL — URL built, returning to caller")
+        return url
     }
 
-    // MARK: Sign Out
+    // MARK: - Sign Out
 
-    /// Clears the stored token and emits `didSignOut` — but only when the token
-    /// was actually removed from Keychain.
-    ///
-    /// Gating `didSignOut` on `deleted == true` prevents a "ghost sign-in" state
-    /// where the UI shows signed-out while the old token remains in Keychain and
-    /// subsequent API calls succeed as if the user were still authenticated.
-    /// Mirrors the same pattern used in `exchangeCode()` where the stream is
-    /// gated on the actual Keychain save result.
-    func signOut() {
+    /// Clears the stored token and emits a sign-out event to all stream consumers.
+    public func signOut() {
         log("OAuthService › signOut — called, pendingState=\(pendingState != nil ? "set" : "nil")")
         pendingState = nil
         let deleted = Keychain.delete()
@@ -197,10 +148,10 @@ final class OAuthService: OAuthServiceProtocol {
         }
     }
 
-    // MARK: Callback Handler
+    // MARK: - Callback Handler
 
     /// Handles the OAuth redirect URL from AppDelegate, verifying state and exchanging the code.
-    func handleCallback(_ url: URL) {
+    public func handleCallback(_ url: URL) {
         log("OAuthService › handleCallback — url=\(url.absoluteString)")
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
@@ -209,7 +160,6 @@ final class OAuthService: OAuthServiceProtocol {
             fireSignIn(false)
             return
         }
-        // CSRF guard: verify the state param matches what we sent in signIn().
         guard let returnedState = comps.queryItems?.first(where: { $0.name == "state" })?.value else {
             log("OAuthService › handleCallback: no state param in redirect URL")
             pendingState = nil
@@ -227,7 +177,7 @@ final class OAuthService: OAuthServiceProtocol {
         Task { await exchangeCode(code) }
     }
 
-    // MARK: Token Exchange
+    // MARK: - Token Exchange
 
     /// POSTs the authorization code to GitHub and saves the returned access token to Keychain.
     private func exchangeCode(_ code: String) async {
@@ -242,16 +192,14 @@ final class OAuthService: OAuthServiceProtocol {
             clientSecret: OAuthSecrets.clientSecret,
             code: code
         )
-        // OAuthTokenRequest contains only String fields and will always encode
-        // successfully in practice. However, a nil httpBody would silently send
-        // a broken POST to GitHub with no diagnostic — fail loudly instead.
-        do {
-            req.httpBody = try encoder.encode(body)
-        } catch {
-            log("OAuthService › exchangeCode: failed to encode request body — \(error)")
+        // OAuthTokenRequest contains only String fields — encode never throws in practice.
+        // Treat a nil result as a hard failure rather than using do/catch.
+        guard let httpBody = try? encoder.encode(body) else {
+            log("OAuthService › exchangeCode: failed to encode request body — aborting")
             fireSignIn(false)
             return
         }
+        req.httpBody = httpBody
         guard let (data, _) = try? await URLSession.shared.data(for: req),
               let response = try? decoder.decode(OAuthTokenResponse.self, from: data)
         else {
@@ -259,7 +207,6 @@ final class OAuthService: OAuthServiceProtocol {
             fireSignIn(false)
             return
         }
-        // GitHub returns 200 even on failure; check for an error field before accessToken.
         if let errorCode = response.error {
             let desc = response.errorDescription ?? ""
             log("OAuthService › exchangeCode: GitHub error=\(errorCode) \(desc)")
@@ -271,9 +218,6 @@ final class OAuthService: OAuthServiceProtocol {
             fireSignIn(false)
             return
         }
-        // Gate success on whether the token was actually persisted to Keychain.
-        // If Keychain.save fails, report failure so the UI does not show signed-in
-        // while Keychain.token remains nil and subsequent API calls lack auth.
         log("OAuthService › exchangeCode — got access_token (len=\(token.count)), saving to Keychain")
         let saved = Keychain.save(token)
         log("OAuthService › exchangeCode — Keychain.save result=\(saved), calling fireSignIn(\(saved))")
@@ -282,7 +226,7 @@ final class OAuthService: OAuthServiceProtocol {
     }
 }
 
-// MARK: - Private response models
+// MARK: - OAuthTokenResponse
 
 /// Response body from the GitHub OAuth token exchange.
 /// GitHub returns HTTP 200 even on failure, so both `accessToken` and `error` are optional.
@@ -298,7 +242,7 @@ private struct OAuthTokenResponse: Decodable {
     private enum CodingKeys: String, CodingKey {
         /// JSON key: `access_token`.
         case accessToken = "access_token"
-        /// JSON key: `error` — maps directly (no rename).
+        /// JSON key: `error`.
         case error
         /// JSON key: `error_description`.
         case errorDescription = "error_description"
@@ -329,10 +273,10 @@ private struct OAuthTokenRequest: Encodable {
     /// Maps Swift property names to the snake_case JSON keys expected by the GitHub OAuth endpoint.
     private enum CodingKeys: String, CodingKey {
         /// JSON key: `client_id`.
-        case clientID     = "client_id"
+        case clientID = "client_id"
         /// JSON key: `client_secret`.
         case clientSecret = "client_secret"
-        /// JSON key: `code` — maps directly (no rename).
+        /// JSON key: `code`.
         case code
     }
 }

@@ -1,5 +1,6 @@
 // SettingsView.swift
 // RunnerBar
+import AppKit
 import RunnerBarCore
 import ServiceManagement
 import SwiftUI
@@ -134,6 +135,10 @@ struct SettingsView: View {
             signInTask = nil
             signOutTask?.cancel()
             signOutTask = nil
+            // Reset isSigningIn so a close-during-flow doesn't leave a stale spinner
+            // on the next open. The stream task is already cancelled above, so the
+            // for-await loop will not reset it — we must do it explicitly here.
+            isSigningIn = false
         }
     }
 
@@ -239,10 +244,19 @@ struct SettingsView: View {
     func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
 
     /// Initiates the OAuth sign-in flow via the injected `oauthService`.
+    ///
+    /// `makeSignInURL()` builds the authorization URL and stores the CSRF nonce.
+    /// Opening the browser is the app layer's responsibility — `OAuthService` (Core)
+    /// has no AppKit dependency and cannot call `NSWorkspace` directly.
     func signInWithGitHub() {
         log("SettingsView › signInWithGitHub — isSigningIn=true")
         isSigningIn = true
-        oauthService.signIn()
+        if let url = oauthService.makeSignInURL() {
+            NSWorkspace.shared.open(url)
+        } else {
+            log("SettingsView › signInWithGitHub: makeSignInURL returned nil — aborting")
+            isSigningIn = false
+        }
     }
 
     /// Signs out of GitHub via the injected `oauthService`.
