@@ -40,6 +40,12 @@ public final class OAuthService: OAuthServiceProtocol {
     /// CSRF nonce generated in makeSignInURL(), verified in handleCallback(). Cleared after use.
     private var pendingState: String?
 
+    /// Creates a new `OAuthService` instance.
+    ///
+    /// Declared explicitly as `public` because Swift does not promote a synthesised
+    /// `init()` to `public` automatically, even when the enclosing type is `public`.
+    public init() {}
+
     // MARK: - Sign-out multicast
 
     /// Registered sign-out continuations keyed by UUID — one per active consumer.
