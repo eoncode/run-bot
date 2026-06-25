@@ -1,5 +1,6 @@
 // PollResultBuilder.swift
 // RunnerBarCore
+import Collections
 import Foundation
 
 // MARK: - PollResultBuilder
@@ -37,7 +38,7 @@ public struct PollResultBuilder {
     /// Kept much larger than `groupCacheLimit` so that the failure-hook suppression
     /// set survives well beyond the display-cache eviction horizon.
     /// Sized for ~6–7 poll cycles worth of typical group completions at once.
-    /// Entries are pruned by arbitrary eviction when the limit is exceeded.
+    /// Entries are pruned FIFO (oldest-first) when the limit is exceeded.
     public static let seenGroupIDsLimit = 200
 
     // MARK: - Job state
@@ -85,9 +86,10 @@ public struct PollResultBuilder {
     /// - Parameters:
     ///   - snapPrevGroups: Live-group snapshot from the previous poll.
     ///   - snapGroupCache: Completed-group cache from the previous poll.
-    ///   - snapSeenGroupIDs: Set of group IDs that have already triggered the failure
+    ///   - snapSeenGroupIDs: OrderedSet of group IDs that have already triggered the failure
     ///     hook in a previous poll cycle. Contains `WorkflowActionGroup.id` values.
     ///     Survives `trimGroupCache` eviction so the hook cannot re-fire for old groups.
+    ///     Insertion order is preserved so `trimSeenGroupIDs` evicts the oldest entries first.
     ///   - fetchGroups: Async closure that fetches live groups for every active scope.
     ///   - scopeFromGroup: Synchronous closure that derives a scope string from a WorkflowActionGroup.
     ///   - fireFailureHook: Async closure invoked the first time a group transitions to a hook-triggering conclusion.
@@ -100,7 +102,7 @@ public struct PollResultBuilder {
     public static func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
-        snapSeenGroupIDs: Set<String> = [],
+        snapSeenGroupIDs: OrderedSet<String> = [],
         fetchGroups: @Sendable ([String: WorkflowActionGroup]) async -> [WorkflowActionGroup],
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void,
@@ -139,7 +141,7 @@ public struct PollResultBuilder {
                 if shouldFire {
                     await fireFailureHook(group, scope)
                 }
-                newSeenGroupIDs.insert(group.id)
+                newSeenGroupIDs.append(group.id)
             }
             newCache[group.id] = group.copying(isDimmed: true)
         }
@@ -295,7 +297,7 @@ public struct PollResultBuilder {
         liveIDs: Set<String>,
         now: Date,
         into cache: inout [String: WorkflowActionGroup],
-        seenGroupIDs: Set<String> = [],
+        seenGroupIDs: OrderedSet<String> = [],
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void
     ) async {
@@ -335,19 +337,18 @@ public struct PollResultBuilder {
         cache = [String: WorkflowActionGroup](uniqueKeysWithValues: sorted.prefix(limit).map { ($0.id, $0) })
     }
 
-    /// Trims the seen-group-IDs set to at most `limit` entries.
+    /// Trims the seen-group-IDs set to at most `limit` entries, evicting the oldest first.
     ///
-    /// `Set` is unordered so eviction order is arbitrary, not FIFO.
-    /// Removes `count − limit` entries; the resulting set has exactly `limit` members.
+    /// `OrderedSet` preserves insertion order, so `removeFirst()` always evicts the
+    /// entry that was seen earliest — true FIFO behaviour.
     /// The limit (200) is intentionally much larger than `groupCacheLimit` (30) so
     /// hook-suppression memory outlasts the display cache by a wide margin — a
     /// group evicted from the display cache cannot re-trigger the hook simply because
     /// it reappears in GitHub's feed on a subsequent poll.
-    public static func trimSeenGroupIDs(_ ids: inout Set<String>, limit: Int) {
+    public static func trimSeenGroupIDs(_ ids: inout OrderedSet<String>, limit: Int) {
         guard ids.count > limit else { return }
         let excess = ids.count - limit
-        let toRemove = ids.prefix(excess)
-        ids.subtract(toRemove)
+        ids.removeFirst(excess)
     }
 
     /// Builds the ordered group display list from live groups and the completed cache.
@@ -385,7 +386,7 @@ private extension Array {
     ///
     /// Elements are appended in source order. An optional predicate can skip
     /// individual elements (e.g. cached groups that are already live) without
-    /// breaking the “fill until full” semantics.
+    /// breaking the "fill until full" semantics.
     mutating func appendUpTo<S>(
         _ limit: Int,
         from source: S,
