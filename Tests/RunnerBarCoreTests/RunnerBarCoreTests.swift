@@ -785,4 +785,46 @@ struct ProcessRunnerRunAsyncStdinTests {
         #expect(result.exitCode == 0)
         #expect(result.output.count == input.count)
     }
+
+    // MARK: - Exit codes
+
+    /// A command that exits with a non-zero status must report that exit code.
+    /// Regression guard: a bug that always reports exitCode == 0 would silently pass
+    /// the stdin round-trip tests above while breaking callers that rely on exit codes.
+    /// `/usr/bin/false` always exits 1 on macOS and Linux — asserting == 1 is deterministic.
+    @Test(.timeLimit(.minutes(1)))
+    func runAsyncNonZeroExitCode() async {
+        let result = await ProcessRunner.runAsync(
+            executableURL: URL(fileURLWithPath: "/usr/bin/false"),
+            arguments: [],
+            stdin: nil
+        )
+        #expect(result.exitCode == 1)
+    }
+}
+
+// MARK: - RunnerConfigStoreError.errorDescription
+
+@Suite("RunnerConfigStoreError.errorDescription")
+struct RunnerConfigStoreErrorDescriptionTests {
+
+    /// .malformedExistingFile errorDescription must contain the install path,
+    /// the word "malformed", and the phrase "agent-managed" so callers and UI
+    /// can identify both the file location and the consequence.
+    @Test func malformedExistingFileDescriptionContainsPathAndConsequence() {
+        let error = RunnerConfigStoreError.malformedExistingFile("/opt/runners/my-runner")
+        let desc  = error.errorDescription ?? ""
+        #expect(desc.contains("/opt/runners/my-runner"))
+        #expect(desc.contains("malformed"))
+        #expect(desc.contains("agent-managed"))
+    }
+
+    /// .malformedExistingFile must be distinct from .decodeFailed — the two cases
+    /// describe different failure sites (save pre-read vs. load) and must not
+    /// share an identical description.
+    @Test func malformedExistingFileDescriptionDiffersFromDecodeFailed() {
+        let malformed = RunnerConfigStoreError.malformedExistingFile("/opt/runners/r")
+        let decode    = RunnerConfigStoreError.decodeFailed("/opt/runners/r")
+        #expect(malformed.errorDescription != decode.errorDescription)
+    }
 }
