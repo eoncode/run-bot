@@ -189,7 +189,7 @@ extension AppDelegate: NSPopoverDelegate {
         log("AppDelegate › setupSubscriptions — begin")
 
         // local runner list changes are now pushed directly from LocalRunnerStore
-        // into observable.localRunners via await MainActor.run — no Combine sink needed.
+        // into runnerState.localRunners via await MainActor.run — no Combine sink needed.
 
         // Everything below makes live network calls — skip entirely in UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else {
@@ -197,31 +197,34 @@ extension AppDelegate: NSPopoverDelegate {
             return
         }
 
-        // Wire LocalRunnerStore.shared to this AppDelegate's RunnerViewModel instance.
+        // Wire LocalRunnerStore.shared to RunnerState so all local-runner pushes
+        // (localRunners, isLocalScanning) land in the single observable source of
+        // truth that SwiftUI views read from via @Environment(RunnerState.self).
         //
         // ⚠️ Must be called before the startup Task below (and before any other
         // LocalRunnerStore.shared access). LocalRunnerStore no longer self-initialises
         // with RunnerViewModel.shared — that singleton was a different object from
-        // AppDelegate.observable and caused localRunners to push into a view model
+        // AppDelegate.runnerState and caused localRunners to push into a view model
         // that no SwiftUI view observed (permanent empty local-runner list).
         //
         // ❌ NEVER move this call inside the Task — AppDelegate.localRunnerStore
         //    is a computed `lazy var` backed by `LocalRunnerStore.shared`. The first
         //    access to `localRunnerStore` (inside the Task) must find the instance
         //    already configured, or it fatalErrors.
-        LocalRunnerStore.configure(viewModel: observable)
-        log("AppDelegate › setupSubscriptions — LocalRunnerStore.configure(viewModel:) called")
+        LocalRunnerStore.configure(viewModel: runnerState)
+        log("AppDelegate › setupSubscriptions — LocalRunnerStore.configure(viewModel: runnerState) called")
 
         // NOTE: The old `RunnerStore.didUpdate` Combine sink has been removed.
         // `RunnerPoller` is a Swift actor in RunnerBarCore that pushes state directly
         // to `AppDelegate.runnerState` (a stored property) via `await MainActor.run { }`
         // at the end of every fetch cycle.
         //
-        // Step 11 (dual-write bridge): `runnerState` is now a stored AppDelegate property
-        // so it persists for the full app lifetime and is ready for environment injection
-        // in Step 12. `RunnerPoller.applyFetchResult` already writes both `state.*` and
-        // the actor-local mirrors. Views read from `RunnerViewModel` (`observable`) until
-        // Step 12 migrates them to `runnerState`.
+        // `runnerState` is a stored AppDelegate property that persists for the full app
+        // lifetime and is injected into the SwiftUI environment via `wrapEnv(_:)`.
+        // `RunnerPoller.applyFetchResult` writes GitHub runner/job/action state;
+        // `LocalRunnerStore` writes `localRunners` and `isLocalScanning`.
+        // All views now read exclusively from `runnerState` — the migration from
+        // `RunnerViewModel`/`observable` is complete.
         //
         // `RunnerPoller.init` does not accept @MainActor-isolated default values
         // (Swift 6: default values for parameters must not be @MainActor-isolated
@@ -231,7 +234,7 @@ extension AppDelegate: NSPopoverDelegate {
             state: runnerState,
             preferencesStore: AppPreferencesStore.shared,
             scopeStore: ScopeStore.shared,
-            localRunners: { [observable] in observable.localRunners },
+            localRunners: { [weak self] in self?.runnerState.localRunners ?? [] },
             // Capture the stored property rather than the .shared singleton so a test
             // double wired via localRunnerStore is honoured here too.
             applyMetrics: { [localRunnerStore] metrics, id, name in

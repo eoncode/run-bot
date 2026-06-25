@@ -58,12 +58,9 @@ struct AddRunnerSheet: View {
     let onComplete: () -> Void
     /// Injected local runner store — avoids direct `.shared` references inside the sheet.
     var localRunnerStore: LocalRunnerStore = .shared
-    /// View model used for synchronous duplicate checks against `localRunners` already
-    /// pushed to the UI layer — avoids crossing the actor boundary in computed properties.
-    ///
-    /// No default is provided: every call site must pass an explicit `store:` argument.
-    /// (Previously defaulted to `RunnerViewModel.shared`, which is a `fatalError` trap.)
-    var store: RunnerViewModel
+    /// Core runner state — read for synchronous duplicate checks against localRunners.
+    /// No default is provided: the value is injected via `AppDelegate.wrapEnv`.
+    @Environment(RunnerState.self) var runnerState: RunnerState
 
     // MARK: - Add Mode
 
@@ -325,7 +322,7 @@ struct AddRunnerSheet: View {
         let resolvedDir = URL(fileURLWithPath: dir).resolvingSymlinksInPath().path
         guard resolvedDir == homeDir || resolvedDir.hasPrefix(homeDir + "/") else {
             isRegistering = false
-            errorMessage = "Install directory must be inside your home folder (~/…)."
+            errorMessage = "Install directory must be inside your home folder (~/\u{2026})."
             return
         }
 
@@ -347,7 +344,7 @@ struct AddRunnerSheet: View {
         let configPath = URL(fileURLWithPath: dir).appendingPathComponent("config.sh").path
 
         if !FileManager.default.fileExists(atPath: configPath) {
-            setStep("Downloading runner package…")
+            setStep("Downloading runner package\u{2026}")
             guard let downloadURL = await fetchRunnerDownloadURL() else {
                 isRegistering = false
                 errorMessage = "Could not determine runner download URL. Check your internet connection."
@@ -364,7 +361,7 @@ struct AddRunnerSheet: View {
                 errorMessage = "Download failed."
                 return
             }
-            setStep("Unpacking runner package…")
+            setStep("Unpacking runner package\u{2026}")
             let tarResult = await runSimpleProcess(GitHubURIs.tarPath, args: ["xzf", tarPath, "-C", dir])
             try? FileManager.default.removeItem(atPath: tarPath)
             guard tarResult == 0 else {
@@ -374,7 +371,7 @@ struct AddRunnerSheet: View {
             }
         }
 
-        setStep("Fetching registration token…")
+        setStep("Fetching registration token\u{2026}")
         guard let token = await fetchRegistrationToken(scope: scope) else {
             isRegistering = false
             if currentScopeType == .org {
@@ -385,7 +382,7 @@ struct AddRunnerSheet: View {
             return
         }
 
-        setStep("Configuring runner…")
+        setStep("Configuring runner\u{2026}")
         let ghURL = "\(GitHubURIs.base)\(scope)"
         let configExit = await runRegistrationCommand(
             dir: dir, ghURL: ghURL, token: token, name: name, labels: labels
@@ -396,7 +393,7 @@ struct AddRunnerSheet: View {
             return
         }
 
-        setStep("Registering service…")
+        setStep("Registering service\u{2026}")
         writeLaunchAgentPlist(scope: scope, runnerName: name, workingDirectory: dir)
         // Await directly — register() is already async, no Task wrapper needed.
         // This guarantees add() completes before isPresented = false fires and

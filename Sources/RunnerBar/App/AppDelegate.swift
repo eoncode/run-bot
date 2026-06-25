@@ -104,10 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The SwiftUI hosting controller embedded inside `popover`. Its `rootView` is
     /// swapped on navigation; the controller itself is never recreated.
     var hostingController: NSHostingController<AnyView>?
-    /// The owned observable view-model passed into every SwiftUI view via the environment.
-    /// `LocalRunnerStore` pushes updates into this instance via `await MainActor.run { }`.
-    /// GitHub runner/job/action state is now written to `runnerState` by `RunnerPoller`.
-    let observable = RunnerViewModel()
     /// Owned OAuth service instance. Typed to protocol so tests can supply a stub
     /// without going through the live singleton (P7).
     ///
@@ -120,8 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Constructed once here — injected into `SettingsView` → `LocalRunnersView`
     /// rather than accessed via a global `.shared`.
     let lifecycleService: any RunnerLifecycleServiceProtocol = RunnerLifecycleService()
-    /// Owned `LocalRunnerStore` actor — injected with `observable` so all state
-    /// pushes land in the view model that SwiftUI actually observes.
+    /// Owned `LocalRunnerStore` actor.
     ///
     /// `lazy var` is required: `LocalRunnerStore.shared` is only valid after
     /// `LocalRunnerStore.configure(viewModel:)` is called in
@@ -146,9 +141,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The observable read model for Core-side runner/job/action/rate-limit state.
     ///
     /// Created here (not inside `setupSubscriptions`) so it survives for the full
-    /// app lifetime and can be injected into the SwiftUI environment in Step 12.
+    /// app lifetime and can be injected into the SwiftUI environment in `wrapEnv(_:)`.
     /// `RunnerPoller.applyFetchResult` writes into this instance on the `@MainActor`
-    /// after every poll cycle; views read from it in Step 12 onwards.
+    /// after every poll cycle; views read from it via `@Environment(RunnerState.self)`.
+    /// `LocalRunnerStore` pushes `localRunners` and `isLocalScanning` into this instance
+    /// via `LocalRunnerStore.configure(viewModel: runnerState)` in `setupSubscriptions()`.
     let runnerState = RunnerState()
     /// The last nav destination the user was on before the popover was closed or hidden.
     /// Restored by `openPanel()` so the user lands back where they left off.

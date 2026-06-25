@@ -1,5 +1,5 @@
 // LocalRunnerStore.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - LocalRunnerStore
@@ -11,21 +11,21 @@ import Foundation
 ///
 /// **Concurrency model**
 /// - The actor runs on its own executor (background thread).
-/// - After every refresh cycle, results are pushed to the injected `RunnerViewModel`
-///   on the main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
+/// - After every refresh cycle, results are pushed to the injected `RunnerViewModelProtocol`
+///   conformer on the main actor via `await MainActor.run { }`. SwiftUI's `@Observable` machinery
 ///   picks up the mutation automatically.
-/// - `isLocalScanning` is also pushed to `RunnerViewModel` so views can observe it
+/// - `isLocalScanning` is also pushed to the conformer so views can observe it
 ///   without holding a direct reference to the actor.
 /// - Index persistence is delegated to `LocalRunnerIndex`.
 /// - JSON parsing is delegated to `runnerModelFromIndex(name:installPath:)` in `RunnerModelParser`.
-actor LocalRunnerStore {
+public actor LocalRunnerStore {
     // MARK: - Shared instance
 
     /// Backing storage. Set once at startup by `configure(viewModel:)` before any view
     /// is mounted. `@MainActor` ensures the compiler enforces single-actor write discipline
     /// without relying on `nonisolated(unsafe)` — any read from a non-`@MainActor` context
     /// is a compile-time error rather than a silent data race.
-    @MainActor private(set) static var sharedInstance: LocalRunnerStore?
+    @MainActor public private(set) static var sharedInstance: LocalRunnerStore?
 
     /// The app-wide shared instance. Must be called on the main actor.
     ///
@@ -33,11 +33,11 @@ actor LocalRunnerStore {
     /// `AppDelegate+PanelSetup.applicationDidFinishLaunching`. Accessing it earlier
     /// produces a `fatalError` with a diagnostic message.
     @MainActor
-    static var shared: LocalRunnerStore {
+    public static var shared: LocalRunnerStore {
         guard let instance = sharedInstance else {
             fatalError(
                 "LocalRunnerStore.shared accessed before configure(viewModel:) was called. "
-                    + "Call LocalRunnerStore.configure(viewModel: appDelegate.observable) in "
+                    + "Call LocalRunnerStore.configure(viewModel: appDelegate.runnerState) in "
                     + "applicationDidFinishLaunching before using this accessor."
             )
         }
@@ -55,7 +55,7 @@ actor LocalRunnerStore {
     /// concurrently will race unless serialised. The compiler enforces `@MainActor`
     /// access to `sharedInstance`, so any off-actor write is a compile-time error.
     @MainActor
-    static func configure(viewModel: RunnerViewModel) {
+    public static func configure(viewModel: any RunnerViewModelProtocol) {
         // Shut down the previous instance before replacing it so its in-flight
         // Tasks are cancelled and cannot deliver stale snapshots into the new viewModel.
         //
@@ -65,6 +65,11 @@ actor LocalRunnerStore {
         // design. The new sharedInstance assignment below happens on the main actor immediately,
         // so any snapshot the old actor pushes after this point targets the old viewModel
         // reference it already holds — it cannot corrupt the new instance.
+        //
+        // ⚠️ This isolation guarantee requires the old and new viewModel to be *different*
+        // objects. Tests must pass a fresh RunnerState (or mock) on each configure call;
+        // reusing the same instance means the old actor's in-flight pushes can still land
+        // in the new instance's shared push target.
         if let previous = sharedInstance {
             Task { await previous.shutdown() }
         }
@@ -77,7 +82,7 @@ actor LocalRunnerStore {
     /// The current list of locally-installed runners, sorted by name.
     /// Private: all external reads go through `viewModel.localRunners` (pushed via MainActor.run).
     /// Widening to internal is unnecessary — the `localRunners` closure in AppDelegate+PanelSetup
-    /// reads `observable.localRunners`, not this property directly.
+    /// reads `runnerState.localRunners`, not this property directly.
     private var runners: [RunnerModel] = []
     /// `true` while a refresh cycle is in flight; prevents concurrent refreshes.
     private var isScanning: Bool = false
@@ -104,7 +109,7 @@ actor LocalRunnerStore {
     ///     Pass `RunnerStatusEnricher()` in production; inject a test double in unit tests.
     ///     The `shared` singleton has been removed (#1539 item 22) — callers must
     ///     construct an explicit instance.
-    init(
+    public init(
         viewModel: any RunnerViewModelProtocol,
         enricher: any RunnerStatusEnricherProtocol = RunnerStatusEnricher()
     ) {
@@ -120,7 +125,7 @@ actor LocalRunnerStore {
     /// Called by `configure(viewModel:)` before replacing `sharedInstance` so that the
     /// previous actor's background work does not push stale snapshots into the
     /// incoming `viewModel`.
-    func shutdown() {
+    public func shutdown() {
         refreshTask?.cancel()
         refreshTask = nil
         log("LocalRunnerStore › shutdown — refreshTask cancelled")
@@ -141,13 +146,13 @@ actor LocalRunnerStore {
     // MARK: - Convenience API (called by views via Task { await ... })
 
     /// Registers a new runner by name and install path.
-    func add(runnerName: String, installPath: String) {
+    public func add(runnerName: String, installPath: String) {
         log("LocalRunnerStore › add — '\(runnerName)' at \(installPath)")
         register(name: runnerName, installPath: installPath)
     }
 
     /// Immediately reflects a start/stop action before the next refresh cycle.
-    func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) async {
+    public func optimisticallySetRunning(_ runnerName: String, isRunning: Bool) async {
         log("LocalRunnerStore › optimisticallySetRunning '\(runnerName)' isRunning=\(isRunning)")
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else {
             log("LocalRunnerStore › ⚠️ optimisticallySetRunning — '\(runnerName)' not found in runners (count=\(runners.count))")
@@ -158,7 +163,7 @@ actor LocalRunnerStore {
     }
 
     /// Sets or clears the lifecycle warning badge for a runner.
-    func setLifecycleWarning(_ runnerName: String, warning: String?) async {
+    public func setLifecycleWarning(_ runnerName: String, warning: String?) async {
         log("LocalRunnerStore › setLifecycleWarning '\(runnerName)' warning=\(String(describing: warning))")
         guard let idx = runners.firstIndex(where: { $0.runnerName == runnerName }) else {
             log("LocalRunnerStore › ⚠️ setLifecycleWarning — '\(runnerName)' not found in runners (count=\(runners.count))")
@@ -169,7 +174,7 @@ actor LocalRunnerStore {
     }
 
     /// Immediately removes `runnerName` from the index and display list without waiting for a refresh.
-    func optimisticallyRemove(_ runnerName: String) async {
+    public func optimisticallyRemove(_ runnerName: String) async {
         log("LocalRunnerStore › optimisticallyRemove '\(runnerName)'")
         unregister(name: runnerName)
         let beforeCount = runners.count
@@ -179,7 +184,7 @@ actor LocalRunnerStore {
     }
 
     /// Rolls back an `optimisticallyRemove` by re-registering the runner and restoring it.
-    func optimisticallyRestore(_ runner: RunnerModel) async {
+    public func optimisticallyRestore(_ runner: RunnerModel) async {
         log("LocalRunnerStore › optimisticallyRestore '\(runner.runnerName)' installPath=\(String(describing: runner.installPath))")
         if let installPath = runner.installPath {
             register(name: runner.runnerName, installPath: installPath)
@@ -203,7 +208,7 @@ actor LocalRunnerStore {
     ///   1. runner.apiId   == runnerId (GitHub REST API id — org runners use this)
     ///   2. runner.agentId == runnerId (local .runner JSON AgentId — repo runners use this)
     ///   3. runner.runnerName == name  (name-only last resort)
-    func applyMetrics(_ metrics: RunnerMetrics?, forRunnerId runnerId: Int?, name: String) async {
+    public func applyMetrics(_ metrics: RunnerMetrics?, forRunnerId runnerId: Int?, name: String) async {
         #if DEBUG
         log("LocalRunnerStore › applyMetrics — called with runnerId=\(String(describing: runnerId)) name=\(name) metrics=\(String(describing: metrics))")
         // swiftlint:disable:next line_length
@@ -244,7 +249,7 @@ actor LocalRunnerStore {
     /// At app startup, prefer `refreshAsync()` so that `RunnerStore.start()` is only
     /// called after `runners` is fully populated — ensuring cycle-1 `installPathMap`
     /// is never empty and metrics appear on first runner appearance.
-    func refresh() {
+    public func refresh() {
         log("LocalRunnerStore › refresh() — fire-and-forget wrapper")
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
@@ -257,7 +262,7 @@ actor LocalRunnerStore {
     ///
     /// Use ONLY at app startup in `AppDelegate+PanelSetup` so that `RunnerStore.start()`
     /// is guaranteed to have a populated `runners` array before its first `fetch()` fires.
-    func refreshAsync() async {
+    public func refreshAsync() async {
         await performRefresh()
     }
 
