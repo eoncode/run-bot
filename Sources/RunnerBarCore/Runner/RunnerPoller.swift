@@ -338,7 +338,9 @@ public actor RunnerPoller {
     /// Merges a completed fetch into actor state and pushes the snapshot to `RunnerState`.
     ///
     /// Clears `state.fetchError` on every successful cycle so the UI error banner
-    /// dismisses automatically as soon as connectivity is restored.
+    /// dismisses automatically as soon as connectivity is restored. The write is
+    /// guarded — if `fetchError` is already `nil` the assignment is skipped to
+    /// avoid a spurious `@Observable` notification on every healthy poll cycle.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -363,7 +365,7 @@ public actor RunnerPoller {
             state.actions = groupResult.display
             state.isRateLimited = rateLimitSnapshot.isLimited
             state.rateLimitResetDate = rateLimitSnapshot.resetDate
-            state.fetchError = nil
+            if state.fetchError != nil { state.fetchError = nil }
         }
     }
 
