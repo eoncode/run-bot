@@ -5,6 +5,7 @@
 // `FailureHookRunner` is decoupled — the injected `fireFailureHook` closure
 // stored on `RunnerPoller` is the sole integration point, keeping
 // `FailureHookRunner` in the app target and out of `RunnerBarCore`.
+import Collections
 import Foundation
 import os
 
