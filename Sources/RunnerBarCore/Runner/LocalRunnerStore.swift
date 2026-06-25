@@ -65,6 +65,11 @@ public actor LocalRunnerStore {
         // design. The new sharedInstance assignment below happens on the main actor immediately,
         // so any snapshot the old actor pushes after this point targets the old viewModel
         // reference it already holds — it cannot corrupt the new instance.
+        //
+        // ⚠️ This isolation guarantee requires the old and new viewModel to be *different*
+        // objects. Tests must pass a fresh RunnerState (or mock) on each configure call;
+        // reusing the same instance means the old actor's in-flight pushes can still land
+        // in the new instance's shared push target.
         if let previous = sharedInstance {
             Task { await previous.shutdown() }
         }
