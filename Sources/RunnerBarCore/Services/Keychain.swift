@@ -27,8 +27,21 @@ import Security
 //
 // Conclusion: a KeychainActor would require all call-sites to become async with
 // no correctness benefit. The current design satisfies P16.
+//
+// Visibility rationale:
+// Keychain is intentionally internal. The public API boundary for token access
+// is the narrower githubToken() / invalidateTokenCache() pair in
+// GitHubTokenCache.swift. Exposing Keychain.save() / .delete() / .token as
+// public would allow any RunnerBarCore consumer — including test bundles — to
+// read, overwrite, or delete the stored OAuth token directly.
 
-/// Wrapper around Security.framework for storing and retrieving the GitHub OAuth token.
+/// Internal wrapper around Security.framework for storing and retrieving the GitHub OAuth token.
+///
+/// ## Visibility
+/// This type is `internal`. External callers access the token via `githubToken()`
+/// and manage cache state via `invalidateTokenCache()` (both public in
+/// `GitHubTokenCache.swift`). Direct Keychain manipulation is intentionally
+/// restricted to within `RunnerBarCore`.
 ///
 /// ## Thread safety
 /// `SecItem*` calls are OS-serialised by the Security framework and are safe to
@@ -36,7 +49,7 @@ import Security
 /// `Synchronization.Mutex` in `GitHubTokenCache` (P24); `invalidateTokenCache()`
 /// is called after every mutation to keep it consistent. No actor wrapper is
 /// required — see the file-level comment for the full P16 rationale.
-public enum Keychain {
+enum Keychain {
     /// Keychain service name used for RunnerBar credentials.
     private static let service = "runner-bar"
     /// Keychain account name used for the stored OAuth token.
@@ -54,13 +67,13 @@ public enum Keychain {
         ]
     }
 
-    // MARK: - Public API
+    // MARK: - Internal API
 
     /// The stored OAuth token, or nil if none is present.
     ///
-    /// - Note: `nonisolated` — `SecItem*` calls are OS-serialised by the Security
-    ///   framework. No actor or lock is required. See file-level P16 rationale.
-    public static var token: String? {
+    /// - Note: `SecItem*` calls are OS-serialised by the Security framework.
+    ///   No actor or lock is required. See file-level P16 rationale.
+    static var token: String? {
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -76,18 +89,12 @@ public enum Keychain {
     /// Saves (or overwrites) the token and invalidates the in-memory token cache.
     /// Returns true if the token was successfully persisted.
     ///
-    /// - Note: `nonisolated` — `SecItemUpdate`/`SecItemAdd` are OS-serialised.
+    /// - Note: `SecItemUpdate`/`SecItemAdd` are OS-serialised.
     ///   Concurrent writers are handled by the upsert retry guard below.
     ///   See file-level P16 rationale.
     @discardableResult
-    public static func save(_ token: String) -> Bool {
+    static func save(_ token: String) -> Bool {
         guard let data = token.data(using: .utf8) else { return false }
-        // Try update first; fall back to add if item does not exist.
-        // kSecAttrAccessibleAfterFirstUnlock is included on both paths so that a
-        // legacy item created without this attribute (e.g. from an older build or
-        // different signing identity) is upgraded in place. Without it, the existing
-        // accessibility attribute is preserved, and a legacy item may be inaccessible
-        // at launch before the first device unlock.
         let updateStatus = SecItemUpdate(
             baseQuery() as CFDictionary,
             [
@@ -99,15 +106,9 @@ public enum Keychain {
         if updateStatus == errSecItemNotFound {
             var addQuery = baseQuery()
             addQuery[kSecValueData as String] = data
-            // kSecAttrAccessibleAfterFirstUnlock: token is readable after the first
-            // unlock post-reboot, which covers app launch in the background before
-            // the user has unlocked the screen. Without this, the default
-            // kSecAttrAccessibleWhenUnlocked would block token reads at launch.
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             if addStatus == errSecDuplicateItem {
-                // A concurrent writer inserted the item between our update and add.
-                // Retry the update now that the item exists.
                 let retryStatus = SecItemUpdate(
                     baseQuery() as CFDictionary,
                     [
@@ -140,10 +141,9 @@ public enum Keychain {
     /// Invalidates the in-memory token cache only when deletion actually succeeds
     /// (or the item was already absent). Returns true on success.
     ///
-    /// - Note: `nonisolated` — `SecItemDelete` is OS-serialised.
-    ///   See file-level P16 rationale.
+    /// - Note: `SecItemDelete` is OS-serialised. See file-level P16 rationale.
     @discardableResult
-    public static func delete() -> Bool {
+    static func delete() -> Bool {
         let status = SecItemDelete(baseQuery() as CFDictionary)
         let succeeded = status == errSecSuccess || status == errSecItemNotFound
         if !succeeded {
