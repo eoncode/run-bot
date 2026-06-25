@@ -1,5 +1,5 @@
 // RunnerLifecycleService.swift
-// RunnerBar
+// RunnerBarCore
 import Foundation
 
 // MARK: - RunnerLifecycleService
