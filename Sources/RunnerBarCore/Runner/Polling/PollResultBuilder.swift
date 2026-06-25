@@ -356,6 +356,13 @@ public struct PollResultBuilder {
     ///   `Set<String>` of `WorkflowActionGroup.id` values for the containment check to
     ///   be correct.
     ///
+    /// - Important: `buildGroupState` guarantees that `doneGroups` populates
+    ///   `seenGroupIDs` **before** this function is called, so any group already in
+    ///   `cache` was also already appended to `seenGroupIDs`. The append below is
+    ///   therefore gated only on `!seenGroupIDs.contains` — independent of cache state.
+    ///   Hook-fire suppression (`cache[groupID] == nil`) is a separate concern and must
+    ///   not gate the ID registration.
+    ///
     /// - Parameters:
     ///   - config: Snapshot, live-IDs, and timestamp bundled into a `FreezeVanishedConfig`.
     ///   - cache: Group cache to mutate in place.
@@ -377,12 +384,13 @@ public struct PollResultBuilder {
                 continue
             }
             if !seenGroupIDs.contains(groupID) {
-                // Hook fire is gated separately on cache absence: if doneGroups already
-                // cached this group in the same poll, the hook was fired (or intentionally
-                // skipped) there. The seenGroupIDs.append is NOT gated on cache absence —
-                // the set must stay consistent regardless of which path processed the group
-                // first. Separating these two concerns prevents a latent re-fire if the
-                // doneGroups-before-freezeVanishedGroups ordering invariant ever shifts.
+                // Register the ID unconditionally — idempotent membership, independent of
+                // whether the hook fires. Must not be gated on cache[groupID] == nil.
+                seenGroupIDs.append(groupID)
+                // Fire the hook only when this group was not already written to cache by
+                // the doneGroups loop in buildGroupState. A cache entry means the group
+                // was already processed (and the hook already fired or it succeeded) via
+                // the doneGroups path; no second fire is needed.
                 if cache[groupID] == nil {
                     let scope = scopeFromGroup(group)
                     // Fire for any hook-triggering conclusion — failures and cancellations.
@@ -394,7 +402,6 @@ public struct PollResultBuilder {
                         await fireFailureHook(group, scope)
                     }
                 }
-                seenGroupIDs.append(groupID)
             }
             if group.lastJobCompletedAt == nil {
                 cache[groupID] = group.copying(isDimmed: true, settingCompletedAt: config.now)
