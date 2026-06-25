@@ -15,6 +15,7 @@ import Foundation
 ///
 /// Moved from `RunnerBar` to `RunnerBarCore` in #1623.
 public struct DefaultTerminalLauncher: TerminalLauncherProtocol {
+    /// Creates a new `DefaultTerminalLauncher` instance.
     public init() {}
     /// Forwards to `TerminalLauncher.open(command:)`. Must be called on `@MainActor`.
     @MainActor
