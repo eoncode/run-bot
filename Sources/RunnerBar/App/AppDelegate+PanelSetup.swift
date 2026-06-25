@@ -234,7 +234,11 @@ extension AppDelegate: NSPopoverDelegate {
             state: runnerState,
             preferencesStore: AppPreferencesStore.shared,
             scopeStore: ScopeStore.shared,
-            localRunners: { [weak self] in self?.runnerState.localRunners ?? [] },
+            // Capture runnerState directly — not via [weak self] — so a nil AppDelegate
+            // can never silently return [] and drop all local runners from the poll cycle.
+            // runnerState is a @MainActor-isolated class reference; capturing it directly
+            // is safe and matches the pattern used by the applyMetrics closure below.
+            localRunners: { [runnerState] in runnerState.localRunners },
             // Capture the stored property rather than the .shared singleton so a test
             // double wired via localRunnerStore is honoured here too.
             applyMetrics: { [localRunnerStore] metrics, id, name in
