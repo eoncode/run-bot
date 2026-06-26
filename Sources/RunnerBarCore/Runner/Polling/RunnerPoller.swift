@@ -1,10 +1,12 @@
 // RunnerPoller.swift
-// RunnerBarCore
+// RunnerBar
 //
 // Step 10: RunnerStore renamed to RunnerPoller and moved into RunnerBarCore.
 // Step 14: applyFetchResult writes only to RunnerState (no viewModel.* writes remain).
 // App-layer dependencies replaced with protocol-typed injections and closures
 // so Core has no import of the RunnerBar app target.
+// F-35: startObservingPreferences and startObservingScopes updated to use
+//       ObservationRelay's trailing-closure init (read closure) instead of store: parameter.
 
 import Collections
 import Foundation
@@ -170,9 +172,11 @@ public actor RunnerPoller {
         let newTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
             let observer: PreferencesObserver = await MainActor.run {
-                let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
-                preferencesObserver.start()
-                return preferencesObserver
+                let relay = PreferencesObserver(continuation: continuation) {
+                    TimeInterval(injectedStore.pollingInterval)
+                }
+                relay.start()
+                return relay
             }
             for await newInterval in stream {
                 guard !Task.isCancelled else { break }
@@ -182,7 +186,11 @@ public actor RunnerPoller {
                 await self?.start()
                 break
             }
-            _ = observer
+            // withExtendedLifetime pins the relay until the for-await loop above exits,
+            // preventing ARC from deallocating it between the MainActor.run return and
+            // the first stream yield. Prefer this over `_ = observer` — it makes the
+            // intent explicit and cannot be silently stripped by a future refactor.
+            withExtendedLifetime(observer) {}
         }
         pollLoop.setIntervalObservationTask(newTask)
     }
@@ -198,9 +206,11 @@ public actor RunnerPoller {
         let newTask = Task { [weak self] in
             let (stream, continuation) = AsyncStream<[String]>.makeStream()
             let observer: ScopesObserver = await MainActor.run {
-                let scopesObserver = ScopesObserver(continuation: continuation, store: injectedStore)
-                scopesObserver.start()
-                return scopesObserver
+                let relay = ScopesObserver(continuation: continuation) {
+                    injectedStore.activeScopes
+                }
+                relay.start()
+                return relay
             }
             for await _ in stream {
                 guard !Task.isCancelled else { break }
@@ -210,7 +220,11 @@ public actor RunnerPoller {
                 await self?.start()
                 break
             }
-            _ = observer
+            // withExtendedLifetime pins the relay until the for-await loop above exits,
+            // preventing ARC from deallocating it between the MainActor.run return and
+            // the first stream yield. Prefer this over `_ = observer` — it makes the
+            // intent explicit and cannot be silently stripped by a future refactor.
+            withExtendedLifetime(observer) {}
         }
         pollLoop.setScopeObservationTask(newTask)
     }
