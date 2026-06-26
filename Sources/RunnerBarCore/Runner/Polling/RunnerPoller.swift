@@ -310,6 +310,7 @@ public actor RunnerPoller {
             log("RunnerPoller › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty", category: .runner)
         } else {
 #if DEBUG
+            // swiftlint:disable:next line_length
             log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })", category: .runner)
 #endif
         }
@@ -528,6 +529,7 @@ public actor RunnerPoller {
         if !metricsUpdates.isEmpty {
             for entry in metricsUpdates {
 #if DEBUG
+                // swiftlint:disable:next line_length
                 log("RunnerPoller › fetchAndEnrichRunners — applyMetrics: \(entry.runner.name) id=\(entry.runner.id) busy=\(entry.runner.busy) metrics=\(String(describing: entry.runner.metrics))", category: .runner)
 #endif
                 await applyMetrics(entry.runner.metrics, entry.runner.id, entry.runner.name)
