@@ -151,6 +151,12 @@ extension RunnerPoller {
             // the step list when the job is expanded, so a brief one-poll transient where
             // conclusion is set but steps are still completing is acceptable and preferable
             // to stale data. This is NOT a conclusion/steps inconsistency bug.
+            //
+            // completedAt: always prefer cached.completedAt when available, regardless of
+            // which merge arm fires. GitHub transiently returns conclusion != nil with
+            // completedAt == nil for a brief window after a job finishes; without the
+            // cached fallback the recorded completion timestamp would be lost for one poll
+            // cycle in the cacheHasBetterSteps-only path.
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
             let cacheHasBetterSteps = !cached.steps.isEmpty
                 && (job.steps.isEmpty || job.steps.contains { $0.status == .inProgress })
@@ -158,7 +164,7 @@ extension RunnerPoller {
             guard cacheHasConclusion || cacheHasBetterSteps else { return job }
             return job
                 .copying(conclusion: cacheHasConclusion ? cached.conclusion : job.conclusion)
-                .copying(completedAt: cacheHasConclusion ? cached.completedAt ?? job.completedAt : job.completedAt)
+                .copying(completedAt: cached.completedAt ?? job.completedAt)
                 .copying(steps: cacheHasBetterSteps ? cached.steps : job.steps)
         }
     }
