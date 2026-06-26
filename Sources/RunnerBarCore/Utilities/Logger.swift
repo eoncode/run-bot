@@ -55,12 +55,23 @@ nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
 
 /// Returns the `os.Logger` for the given category.
 ///
-/// `loggers` is built from `LogCategory.allCases` and is therefore guaranteed to
-/// contain every case. A nil result is structurally impossible — `allCases` +
-/// `uniqueKeysWithValues` ensures every case has an entry. `preconditionFailure`
-/// is used rather than `fatalError` because this path is unreachable by construction;
-/// it catches programmer error (a new case skipping the dict build) in debug and
-/// test builds without risking a production crash for a condition that cannot occur.
+/// Under normal operation this function always succeeds: `loggers` is built from
+/// `LogCategory.allCases` via `uniqueKeysWithValues`, guaranteeing every case is
+/// present. The `guard` branch is therefore structurally unreachable at runtime.
+///
+/// **Why `preconditionFailure` and not `fatalError`?**
+/// The missing-key path is unreachable by construction — `CaseIterable` synthesis
+/// guarantees `allCases` is exhaustive. `fatalError` would crash in all build
+/// configurations including production, which is unnecessarily harsh for a path
+/// that cannot be reached. `preconditionFailure` fires in debug and test builds
+/// (where the omission would be caught immediately) and is a no-op in `-Ounchecked`
+/// release builds — acceptable given the path is structurally impossible.
+///
+/// **Why not a silent fallback `Logger`?**
+/// A fallback would silently allocate a new `os.Logger` on every `log()` call for
+/// the unrecognised category, routing messages to an unnamed or wrong category
+/// with no indication anything is wrong. That failure mode is harder to diagnose
+/// than an immediate crash in development.
 @inline(__always)
 private func resolvedLogger(for category: LogCategory) -> Logger {
     // allCases guarantees every case is present; a nil result is a programmer error.
