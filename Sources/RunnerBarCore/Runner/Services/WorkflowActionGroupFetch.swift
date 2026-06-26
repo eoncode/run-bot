@@ -11,6 +11,14 @@ private let prNumberPattern = #"/(\d+)/"# // NOSONAR — fixed regex pattern
 ///
 /// Capped to avoid a thundering-herd of single-job API calls when a run has
 /// many steps still in-progress simultaneously (e.g. a large matrix job).
+///
+/// **Determinism:** `initial` is sorted by `job.id` (ascending) before slicing,
+/// so the first `maxRefreshConcurrency` jobs selected are always the lowest-ID
+/// jobs needing refresh — not whichever tasks happened to complete first in the
+/// preceding `withTaskGroup`. Without the sort, `withTaskGroup` completion order
+/// is non-deterministic and different jobs could be skipped on every poll cycle,
+/// causing some jobs to serve stale data indefinitely in a large matrix run where
+/// all jobs finish concurrently and no slot ever frees before the cap is re-evaluated.
 private let maxRefreshConcurrency = 3
 
 // MARK: - Codable helpers (private to this file)
@@ -329,6 +337,9 @@ public struct WorkflowActionGroupFetcher: Sendable {
     /// Refresh calls for in-progress/inconclusive jobs run concurrently,
     /// capped at `maxRefreshConcurrency` to avoid a thundering-herd of single-job
     /// API calls on runs with many simultaneously in-progress steps.
+    /// `initial` is sorted by `job.id` ascending before slicing so the cap always
+    /// selects the same lowest-ID jobs — not whichever tasks finished first in the
+    /// preceding `withTaskGroup` (whose completion order is non-deterministic).
     /// All date parsing goes through `ISO8601DateParser.shared`.
     private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
         guard let data = await transport.apiAsync("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)") else {
@@ -348,10 +359,16 @@ public struct WorkflowActionGroupFetcher: Sendable {
             }
             var out: [ActiveJob] = []
             for await job in group { out.append(job) }
-            return out
+            // Sort by id so the refresh cap below is deterministic across poll cycles.
+            return out.sorted { $0.id < $1.id }
         }
 
         // Refresh in-progress/inconclusive jobs concurrently, capped at maxRefreshConcurrency.
+        // `initial` is already sorted by job.id (above), so `.prefix(maxRefreshConcurrency)`
+        // always selects the same lowest-ID jobs needing refresh — independent of task
+        // completion order. Without the sort, a matrix run with N > maxRefreshConcurrency
+        // simultaneous jobs could starve the same job indefinitely if it consistently
+        // lands beyond position maxRefreshConcurrency in whichever order the group finishes.
         // Note: `idx` is the position in `initial`/`result`, not the position in `needsRefresh`.
         // The `.prefix(maxRefreshConcurrency)` reduces the number of refresh tasks, but the
         // original enumerated indices are preserved for the `result[idx]` write-back below.
@@ -362,7 +379,7 @@ public struct WorkflowActionGroupFetcher: Sendable {
         let skippedCount = allNeedingRefresh.count - needsRefresh.count
         if skippedCount > 0 {
             log("fetchJobsForRun -- \(skippedCount) in-progress job(s) skipped beyond cap (\(maxRefreshConcurrency)) — "
-                + "these jobs will serve stale data every poll cycle until the capped jobs conclude", category: .runner)
+                + "these jobs will serve stale step data this cycle; they rotate into the refresh window as lower-ID jobs conclude", category: .runner)
         }
         guard !needsRefresh.isEmpty else { return initial }
 
@@ -377,12 +394,15 @@ public struct WorkflowActionGroupFetcher: Sendable {
                     if fresh.conclusion != nil { return (idx, freshJob) }
                     let betterSteps = !freshJob.steps.isEmpty && !freshJob.steps.contains { $0.status == JobStatus.inProgress }
                     if betterSteps {
-                        // Use copying() helpers rather than the full constructor so that any
-                        // future field added to ActiveJob with a non-nil default is automatically
-                        // preserved from `job` without requiring a manual update here.
-                        // createdAt is carried forward explicitly (in addition to the implicit
-                        // preservation via copying()'s self forwarding) to match the stated fix
-                        // in commit f8264d3 and make the intent unambiguous to future readers.
+                        // Use copying() helpers so any future field added to ActiveJob is
+                        // automatically preserved from `job` without a manual update here.
+                        // `.copying(createdAt:)` is included explicitly even though copying()
+                        // already carries all unlisted fields forward unchanged — the original
+                        // bug (commit f8264d3) dropped createdAt in an earlier version of this
+                        // function that used the full constructor. The explicit call is
+                        // belt-and-suspenders: it documents intent, costs nothing at runtime,
+                        // and guards against a future refactor that switches back to a
+                        // constructor form accidentally dropping the field again.
                         return (idx, job
                             .copying(runnerName: freshJob.runnerName ?? job.runnerName)
                             .copying(startedAt: freshJob.startedAt ?? job.startedAt)

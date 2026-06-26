@@ -51,10 +51,18 @@ private let subsystem = "com.eoncode.runner-bar"
 /// `resolvedLogger` will call `preconditionFailure`, surfacing the omission in debug
 /// and test builds without risking a production crash for a structurally unreachable path.
 ///
-/// `nonisolated(unsafe)` suppresses the `#MutableGlobalVariable` warning that Swift 6
-/// strict-concurrency mode emits for top-level `let` bindings of non-`Sendable` types.
-/// This dictionary is initialised once during module load and never mutated, making it
-/// safe to read from any concurrency domain without an explicit isolation annotation.
+/// **Why `nonisolated(unsafe)`?**
+/// Swift 6 strict-concurrency mode requires all mutable global state to be either
+/// actor-isolated or explicitly marked `nonisolated(unsafe)`. Even though
+/// `[LogCategory: Logger]` is technically `Sendable` (both `LogCategory` and
+/// `os.Logger` are value/struct types with no mutable state), the Swift 6 checker
+/// emits a `#MutableGlobalVariable` diagnostic for any top-level `let` or `var`
+/// whose type does not carry a *public* unconditional `Sendable` conformance visible
+/// at the use site — and the `os` module's `Logger` type does not declare such a
+/// conformance in all SDK versions targeted by this project. `nonisolated(unsafe)`
+/// is the correct suppression: it asserts to the compiler that we, the authors,
+/// guarantee safe concurrent access — which is true because this dictionary is
+/// initialised once at module load and never mutated thereafter.
 nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
     uniqueKeysWithValues: LogCategory.allCases.map { category in
         (category, Logger(subsystem: subsystem, category: category.rawValue))
@@ -90,7 +98,14 @@ nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
 /// the unrecognised category, routing messages to an unnamed or wrong category
 /// with no indication anything is wrong. That failure mode is harder to diagnose
 /// than an immediate crash in development.
-@inline(__always)
+///
+/// **Why not `@inline(__always)`?**
+/// This is a dictionary-lookup wrapper, not a bit-twiddling accessor. The compiler
+/// will inline it when beneficial without being forced to. `@inline(__always)` on
+/// a function containing a dictionary lookup and a `preconditionFailure` branch
+/// would bloat the call-site binary at every `log()` invocation without a
+/// measurable hot-path benefit — `os.Logger.debug` itself is orders of magnitude
+/// more expensive than one dictionary lookup.
 private func resolvedLogger(for category: LogCategory) -> Logger {
     // allCases guarantees every case is present; a nil result is a programmer error.
     guard let logger = loggers[category] else {
