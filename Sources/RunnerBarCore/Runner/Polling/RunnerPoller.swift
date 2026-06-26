@@ -331,6 +331,7 @@ public actor RunnerPoller {
             from: localRunnersSnapshot,
             configuredScopes: scopesSnapshot
         )
+        log("RunnerPoller › fetch — extraOrgScopes=\(extraOrgScopes) (\(extraOrgScopes.count) inferred from local runner gitHubUrl)", category: .runner)
         let allScopes = scopesSnapshot + extraOrgScopes
         let installPathMap = buildInstallPathMap(
             scopes: allScopes,
@@ -477,8 +478,9 @@ public actor RunnerPoller {
     ///    Written before scope-injection was introduced; the Jobs API requires a full
     ///    `owner/repo` path so these can never be backfilled. Evicting them prevents
     ///    repeated per-poll warning spam. They re-enter the cache with correct scope
-    ///    data on the next live fetch. This flash is cosmetic, happens at most once
-    ///    per app lifecycle after an upgrade, and self-corrects immediately.
+    ///    data on the next poll cycle once a new live fetch completes. This flash is
+    ///    cosmetic, happens at most once per app lifecycle after an upgrade, and
+    ///    self-corrects within one poll cycle.
     ///
     /// 2. **Org-only scope (`!scope.contains("/")`)**
     ///    The GitHub Jobs API has no `orgs/{org}/actions/jobs/{id}` endpoint — only
