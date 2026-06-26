@@ -1,5 +1,5 @@
 // RunnerPollerObservers.swift
-// RunnerBarCore
+// RunnerBar
 //
 // Step 10: Moved from RunnerBar app target to RunnerBarCore.
 // F-35: PreferencesObserver and ScopesObserver replaced by ObservationRelay<Element>.
