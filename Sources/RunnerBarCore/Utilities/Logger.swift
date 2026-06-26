@@ -63,9 +63,11 @@ nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
 /// The missing-key path is unreachable by construction — `CaseIterable` synthesis
 /// guarantees `allCases` is exhaustive. `fatalError` would crash in all build
 /// configurations including production, which is unnecessarily harsh for a path
-/// that cannot be reached. `preconditionFailure` fires in debug and test builds
-/// (where the omission would be caught immediately) and is a no-op in `-Ounchecked`
-/// release builds — acceptable given the path is structurally impossible.
+/// that cannot be reached. `preconditionFailure` fires in debug builds and in
+/// standard `-O` release builds (including App Store and TestFlight); it is only
+/// silenced under the rarely-used `-Ounchecked` optimisation flag. Because the
+/// path is structurally unreachable, `-O` release behaviour is acceptable — the
+/// condition will never evaluate to false in a correct build.
 ///
 /// **Why not a silent fallback `Logger`?**
 /// A fallback would silently allocate a new `os.Logger` on every `log()` call for

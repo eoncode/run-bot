@@ -349,14 +349,15 @@ public actor RunnerPoller {
 
     /// Fetches all active jobs across all scopes.
     ///
-    /// Iterates the active scopes, fetches workflow action groups for each scope,
-    /// and returns the flattened job list from all groups. This gives the full
-    /// set of live + recently-completed jobs for `PollResultBuilder.buildJobState`
-    /// to split into live vs. cached display tiers.
+    /// Iterates the active scopes and calls `fetchActiveJobs(for:decoder:)` for each,
+    /// which resolves to the correct GitHub endpoint for both `.repo` and `.org` scopes
+    /// via `scope.apiPrefix`. This correctly handles org-only scope strings (e.g. "myorg")
+    /// that do not contain a "/".
     ///
-    /// Passes `cache: [:]` intentionally — the job-polling path does not use the
-    /// SHA-keyed deduplication that `buildGroupState` relies on. Each job poll
-    /// fetches fresh group data so that no stale SHA entries suppress a live update.
+    /// Note: `actionGroupFetcher.fetch(for:cache:)` is **not** used here because it contains
+    /// `guard scope.contains("/") else { return [] }`, which silently drops org-scoped jobs.
+    /// That guard is correct for group fetching (org-level workflow run endpoints differ),
+    /// but the standalone job endpoint handles both scope kinds via `scope.apiPrefix`.
     ///
     /// `internal` — called only via the `fetchJobs` closure passed to
     /// `PollResultBuilder.buildJobState`.
@@ -365,10 +366,7 @@ public actor RunnerPoller {
         guard !scopes.isEmpty else { return [] }
         var allJobs: [ActiveJob] = []
         for scope in scopes {
-            let groups = await actionGroupFetcher.fetch(for: scope, cache: [:])
-            for group in groups {
-                allJobs.append(contentsOf: group.jobs)
-            }
+            allJobs.append(contentsOf: await fetchActiveJobs(for: scope, decoder: decoder))
         }
         log("RunnerPoller › fetchAllJobs — fetched \(allJobs.count) job(s) across \(scopes.count) scope(s)", category: .runner)
         return allJobs
