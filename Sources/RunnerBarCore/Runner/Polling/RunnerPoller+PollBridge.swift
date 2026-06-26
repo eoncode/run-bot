@@ -28,24 +28,52 @@ import os
 /// point, keeping `FailureHookRunner` in the app target and out of `RunnerBarCore`.
 extension RunnerPoller {
 
+    // MARK: - [weak self] in GroupStateDeps closures
+    //
+    // The closures passed to `GroupStateDeps` are stored inside a struct value that is
+    // passed by value to `PollResultBuilder.buildGroupState`. Although `buildGroupState`
+    // is `async` and returns before the struct is freed, the struct is heap-allocated as
+    // part of the async frame and keeps its closure captures alive for the full duration
+    // of that async call. A strong `self` capture would create a temporary reference cycle:
+    //
+    //   RunnerPoller (actor) → GroupStateDeps (value in async frame)
+    //                          → closures → RunnerPoller (strong)
+    //
+    // This cycle resolves once `buildGroupState` returns, so it is not a permanent leak.
+    // However, it can delay deallocation if the actor is released while a fetch is in
+    // flight (e.g. in tests or on settings change). `[weak self]` is the correct and
+    // idiomatic pattern here: it breaks the cycle eagerly without requiring a separate
+    // cancellation mechanism, and the guard-let / optional-chain fallbacks in each
+    // closure handle the nil case safely.
+    //
+    // Note: `[weak self]` on a Swift actor is valid. Actors are reference types; the
+    // `weak` modifier prevents the closure from holding a strong reference to the actor
+    // instance, exactly as it would for a class.
+
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
+    ///
+    /// - Parameter scopes: The scope snapshot captured by `fetchInternal`, threaded
+    ///   through to `fetchAllJobs(scopes:)` to avoid a TOCTOU re-read of
+    ///   `scopeStore.activeScopes`.
     func buildJobState(
         snapPrev: [Int: ActiveJob],
-        snapCache: [Int: ActiveJob]
+        snapCache: [Int: ActiveJob],
+        scopes: [String]
     ) async -> JobPollResult {
         await PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
             snapCache: snapCache,
-            fetchJobs: {
-                let scopes = await MainActor.run { self.scopeStore.activeScopes }
-                var jobs: [ActiveJob] = []
-                for scope in scopes {
-                    jobs.append(contentsOf: await fetchActiveJobs(for: scope, decoder: self.decoder))
-                }
-                return jobs
+            fetchJobs: { [weak self] in
+                // weak: see [weak self] in GroupStateDeps closures note above.
+                guard let self else { return [] }
+                return await self.fetchAllJobs(scopes: scopes)
             },
-            backfill: { cache in
+            backfill: { [weak self] cache in
+                // weak: see [weak self] in GroupStateDeps closures note above.
+                // `self?` optional-chaining cannot be used with an inout argument.
+                // Guard-unwrap to a concrete reference so the compiler accepts &cache.
+                guard let self else { return }
                 await self.backfillSteps(into: &cache)
             }
         )
@@ -54,67 +82,50 @@ extension RunnerPoller {
     /// Builds a `GroupPollResult` by fetching live workflow action groups for all monitored scopes,
     /// firing failure hooks for newly-failed groups, enriching jobs from the job cache,
     /// and diffing against `snapPrevGroups`.
+    ///
+    /// - Parameter scopes: The scope snapshot captured by `fetchInternal`, threaded
+    ///   through to `fetchActionGroups(scopes:shaKeyedCache:)` to avoid a TOCTOU re-read
+    ///   of `scopeStore.activeScopes`.
     func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: OrderedSet<String>,
-        jobCache: [Int: ActiveJob]
+        jobCache: [Int: ActiveJob],
+        scopes: [String]
     ) async -> GroupPollResult {
-        let deps = GroupStateDeps(
-            fetchGroups: { shaKeyedCache in
-                let scopes = await MainActor.run { self.scopeStore.activeScopes }
-                var groups: [WorkflowActionGroup] = []
-                for scope in scopes {
-                    let fetched = await self.actionGroupFetcher.fetch(
-                        for: scope,
-                        cache: shaKeyedCache
-                    )
-                    groups.append(contentsOf: fetched)
-                }
-                return groups
-            },
-            scopeFromGroup: { group in
-                self.scopeFromActionGroup(group)
-            },
-            fireFailureHook: { group, scope in
-                // PollResultBuilder.buildGroupState (and freezeVanishedGroups) already
-                // `await` this closure directly — no Task wrapper needed or correct here.
-                // The hook runs inline on the cooperative thread pool as part of the
-                // structured async chain that buildGroupState owns.
-                // `fireFailureHook` is injected at init by the app layer so Core never
-                // imports `FailureHookRunner`.
-                await self.fireFailureHook(group, scope)
-            },
-            enrichJobs: { jobs in
-                self.enrichGroupJobs(jobs, jobCache: jobCache)
-            }
-        )
         return await PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
             snapSeenGroupIDs: snapSeenGroupIDs,
-            deps: deps
+            deps: GroupStateDeps(
+                fetchGroups: { [weak self] shaKeyedCache in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
+                    await self?.fetchActionGroups(scopes: scopes, shaKeyedCache: shaKeyedCache) ?? []
+                },
+                scopeFromGroup: { [weak self] group in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
+                    guard let self else {
+                        log("RunnerPoller › scopeFromGroup — ⚠️ self is nil, returning empty scope for groupID=\(group.id)", category: .runner)
+                        return ""
+                    }
+                    return self.scopeFromActionGroup(group)
+                },
+                fireFailureHook: { [weak self] group, scope in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
+                    // PollResultBuilder.buildGroupState (and freezeVanishedGroups) already
+                    // `await` this closure directly — no Task wrapper needed or correct here.
+                    // The hook runs inline on the cooperative thread pool as part of the
+                    // structured async chain that buildGroupState owns.
+                    // `fireFailureHook` is injected at init by the app layer so Core never
+                    // imports `FailureHookRunner`.
+                    await self?.fireFailureHook(group, scope)
+                },
+                enrichJobs: { [weak self] jobs in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
+                    self?.enrichGroupJobs(jobs, jobCache: jobCache) ?? jobs
+                }
+            )
         )
-    }
-
-    /// Backfills step data into the completed-job cache.
-    ///
-    /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
-    /// fetches the full job payload from the GitHub API, and updates the cache entry.
-    /// Uses `decoder` — a stored instance property on `RunnerPoller` — which is serialised
-    /// by the actor's own executor, ensuring no concurrent access.
-    func backfillSteps(into cache: inout [Int: ActiveJob]) async {
-        for cacheID in Array(cache.keys) {
-            guard let cached = cache[cacheID] else { continue }
-            guard cached.conclusion != nil,
-                  cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }),
-                  let scope = scopeFromHtmlUrl(cached.htmlUrl),
-                  let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)"),
-                  let fresh = try? decoder.decode(JobPayload.self, from: data),
-                  !fresh.steps.isEmpty
-            else { continue }
-            cache[cacheID] = await ISO8601DateParser.shared.makeJob(from: fresh, isDimmed: true)
-        }
     }
 
     // MARK: - Group helpers
@@ -128,19 +139,19 @@ extension RunnerPoller {
     /// `internal` (not `public`): called only via the `scopeFromGroup` closure passed to
     /// `PollResultBuilder` — no external callers exist outside `RunnerBarCore`.
     nonisolated func scopeFromActionGroup(_ group: WorkflowActionGroup) -> String {
-        log("RunnerPoller › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)")
+        log("RunnerPoller › scopeFromActionGroup — group.repo='\(group.repo)' groupID=\(group.id)", category: .runner)
         if !group.repo.isEmpty {
-            log("RunnerPoller › scopeFromActionGroup — using group.repo='\(group.repo)'")
+            log("RunnerPoller › scopeFromActionGroup — using group.repo='\(group.repo)'", category: .runner)
             return group.repo
         }
-        log("RunnerPoller › scopeFromActionGroup — group.repo is empty, trying htmlUrl of first run")
+        log("RunnerPoller › scopeFromActionGroup — group.repo is empty, trying htmlUrl of first run", category: .runner)
         if let firstRun = group.runs.first,
            let url = firstRun.htmlUrl,
            let scope = scopeFromHtmlUrl(url) {
-            log("RunnerPoller › scopeFromActionGroup — derived scope '\(scope)' from htmlUrl '\(url)'")
+            log("RunnerPoller › scopeFromActionGroup — derived scope '\(scope)' from htmlUrl '\(url)'", category: .runner)
             return scope
         }
-        log("RunnerPoller › scopeFromActionGroup — ⚠️ could not derive scope for groupID=\(group.id)")
+        log("RunnerPoller › scopeFromActionGroup — ⚠️ could not derive scope for groupID=\(group.id)", category: .runner)
         return ""
     }
 
@@ -167,6 +178,14 @@ extension RunnerPoller {
             // cacheHasBetterSteps: the cache has fully-resolved steps while the live payload
             // still shows in-progress ones (backfill ran after the main fetch).
             //
+            // The third clause `(job.steps.isEmpty || !cached.steps.contains { .inProgress })`
+            // guards against overwriting fresher live steps with staler cached in-progress ones.
+            // The `job.steps.isEmpty` short-circuit is intentional: when the live payload has
+            // no steps at all, there is no live data to protect — showing partial cached steps
+            // (even if some are still in-progress) is strictly better than showing zero rows
+            // for an entire poll cycle. The settled-cache guard only applies when the live
+            // payload itself has step entries that could be overwritten.
+            //
             // When only cacheHasConclusion fires (cacheHasBetterSteps is false), the merged
             // job carries conclusion from the cache and steps from the live job. This is
             // intentional: the live steps are the freshest available data; showing them
@@ -175,24 +194,29 @@ extension RunnerPoller {
             // the step list when the job is expanded, so a brief one-poll transient where
             // conclusion is set but steps are still completing is acceptable and preferable
             // to stale data. This is NOT a conclusion/steps inconsistency bug.
+            //
+            // completedAt: prefer cached.completedAt only when cacheHasConclusion is true.
+            // GitHub transiently returns conclusion != nil with completedAt == nil for a
+            // brief window after a job finishes; without the cached fallback the recorded
+            // completion timestamp would be lost for one poll cycle. In the
+            // cacheHasBetterSteps-only path the live job's completedAt is used directly —
+            // the cache entry is for steps only and its completedAt must not overwrite a
+            // fresher live value.
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
             let cacheHasBetterSteps = !cached.steps.isEmpty
                 && (job.steps.isEmpty || job.steps.contains { $0.status == .inProgress })
-                && !cached.steps.contains { $0.status == .inProgress }
+                && (job.steps.isEmpty || !cached.steps.contains { $0.status == .inProgress })
             guard cacheHasConclusion || cacheHasBetterSteps else { return job }
-            return ActiveJob(
-                id: job.id,
-                name: job.name,
-                htmlUrl: job.htmlUrl,
-                status: job.status,
-                conclusion: cached.conclusion ?? job.conclusion,
-                isDimmed: job.isDimmed,
-                runnerName: job.runnerName,
-                scope: job.scope,
-                startedAt: job.startedAt,
-                completedAt: cached.completedAt ?? job.completedAt,
-                steps: cacheHasBetterSteps ? cached.steps : job.steps
-            )
+            if cacheHasConclusion {
+                return job
+                    .copying(conclusion: cached.conclusion)
+                    .copying(completedAt: cached.completedAt ?? job.completedAt)
+                    .copying(steps: cacheHasBetterSteps ? cached.steps : job.steps)
+            } else {
+                // cacheHasBetterSteps only — keep live conclusion and completedAt.
+                return job
+                    .copying(steps: cached.steps)
+            }
         }
     }
 }

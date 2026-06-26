@@ -3,6 +3,7 @@
 //
 // Step 10: Moved from RunnerBar app target to RunnerBarCore.
 // F-35: PreferencesObserver and ScopesObserver replaced by ObservationRelay<Element>.
+// F-26: log calls use category: parameter (per-subsystem logger).
 
 import Foundation
 

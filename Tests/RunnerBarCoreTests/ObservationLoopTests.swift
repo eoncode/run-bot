@@ -124,6 +124,7 @@ struct ObservationLoopTests {
         counter.count = 2
         await signal2.wait()   // wait for second onChange
 
+        // Both mutations propagated — re-registration is working.
         #expect(fired == 2)
         _ = loop
     }

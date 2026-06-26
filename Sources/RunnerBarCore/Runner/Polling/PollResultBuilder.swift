@@ -146,7 +146,8 @@ public struct PollResultBuilder {
         let queuedCount = liveJobs.filter { $0.status == .queued }.count
         log(
             "PollResultBuilder › \(inProgCount) in_progress \(queuedCount) queued"
-                + " | cache: \(newCache.count) | display: \(display.count)"
+                + " | cache: \(newCache.count) | display: \(display.count)",
+            category: .runner
         )
         return JobPollResult(display: display, newCache: newCache, newPrevLive: newPrevLive)
     }
@@ -166,8 +167,8 @@ public struct PollResultBuilder {
     ///   - deps: Injected async/sync closures (fetch, scope, hook, enrich).
     ///
     /// - Important: `doneGroups` inserts into `newSeenGroupIDs` **before**
-    ///   `freezeVanishedGroups` runs, so a group that appears in both the fetched
-    ///   completed list and in `snapPrevGroups` fires the hook exactly once.
+    ///   `freezeVanishedGroups` runs, so a group present in both paths fires the hook
+    ///   exactly once (freezeVanishedGroups checks seenGroupIDs before firing).
     ///   Enrichment is split into two sequential sweeps — see inline comments for rationale.
     public static func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
@@ -175,13 +176,13 @@ public struct PollResultBuilder {
         snapSeenGroupIDs: OrderedSet<String> = OrderedSet(),
         deps: GroupStateDeps
     ) async -> GroupPollResult {
-        log("PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count) snapSeenGroupIDs=\(snapSeenGroupIDs.count)")
+        log("PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count) snapSeenGroupIDs=\(snapSeenGroupIDs.count)", category: .runner)
         let shaKeyedCache = makeShaKeyedCache(snapGroupCache)
         let allFetched = await deps.fetchGroups(shaKeyedCache)
         if allFetched.isEmpty {
-            log("PollResultBuilder › buildGroupState — ⚠️ fetchGroups returned 0 groups; activeScopes may be empty or all scopes are unreachable")
+            log("PollResultBuilder › buildGroupState — ⚠️ fetchGroups returned 0 groups; activeScopes may be empty or all scopes are unreachable", category: .runner)
         }
-        log("PollResultBuilder › buildGroupState — allFetched=\(allFetched.count)")
+        log("PollResultBuilder › buildGroupState — allFetched=\(allFetched.count)", category: .runner)
         let liveGroups = allFetched.filter { $0.groupStatus != .completed }
         let doneGroups = allFetched.filter { $0.groupStatus == .completed }
         let liveIDs = Set(liveGroups.map { $0.id })
@@ -194,10 +195,10 @@ public struct PollResultBuilder {
         for group in doneGroups {
             let isNew = !newSeenGroupIDs.contains(group.id)
             let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(separator: ", ")
-            log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]")
+            log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=\(isNew) runs=[\(runSummary)]", category: .runner)
             if isNew {
                 let scope = deps.scopeFromGroup(group)
-                log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → scope=\(scope)")
+                log("PollResultBuilder › doneGroups — groupID=\(group.id) isNew=true → scope=\(scope)", category: .runner)
                 let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
                 if shouldFire {
                     await deps.fireFailureHook(group, scope)
@@ -230,7 +231,8 @@ public struct PollResultBuilder {
         let loadingCount = liveGroups.filter { $0.groupStatus == .loading }.count
         log(
             "PollResultBuilder › groups: \(inProgCount) in_progress \(queuedCount) queued \(loadingCount) loading"
-                + " | cache: \(newCache.count) | seenIDs: \(newSeenGroupIDs.count) | display: \(display.count)"
+                + " | cache: \(newCache.count) | seenIDs: \(newSeenGroupIDs.count) | display: \(display.count)",
+            category: .runner
         )
         // ── Sweep 1: enrich the display array ────────────────────────────────────────────
         // Keyed by Int (array index) so the sort order produced by buildGroupDisplay
@@ -391,9 +393,9 @@ public struct PollResultBuilder {
         scopeFromGroup: @Sendable (WorkflowActionGroup) -> String,
         fireFailureHook: @Sendable (WorkflowActionGroup, String) async -> Void
     ) async {
-        log("PollResultBuilder › freezeVanishedGroups — snapPrev=\(config.snapPrev.count) liveIDs=\(config.liveIDs)")
+        log("PollResultBuilder › freezeVanishedGroups — snapPrev=\(config.snapPrev.count) liveIDs=\(config.liveIDs)", category: .runner)
         for (groupID, group) in config.snapPrev where !config.liveIDs.contains(groupID) {
-            log("PollResultBuilder › freezeVanishedGroups — vanished groupID=\(group.id) inCache=\(cache[groupID] != nil)")
+            log("PollResultBuilder › freezeVanishedGroups — vanished groupID=\(group.id) inCache=\(cache[groupID] != nil)", category: .runner)
             // Register the ID unconditionally before any early-exit so the invariant holds:
             // a group that hits the cached+dimmed fast path below must still be marked seen,
             // otherwise a re-run (which resets jobs.count) could re-arm the hook.
@@ -409,7 +411,7 @@ public struct PollResultBuilder {
             // already mutated above, so the hook-suppression invariant holds even for
             // groups that exit here. The cache write is skipped; the ID registration is not.
             if let existing = cache[groupID], existing.isDimmed, existing.jobs.count >= group.jobs.count {
-                log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping")
+                log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) already cached+dimmed, skipping", category: .runner)
                 continue
             }
             // Hook-fire gate: requires both isUnseen AND cache[groupID] == nil.
@@ -429,7 +431,7 @@ public struct PollResultBuilder {
                 // See JobConclusion.isHookConclusion for full rationale.
                 let shouldFire = group.runs.contains { $0.conclusion?.isHookConclusion == true }
                 if shouldFire {
-                    log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)")
+                    log("PollResultBuilder › freezeVanishedGroups — groupID=\(group.id) unseen+hookConclusion → fireFailureHook scope=\(scope)", category: .runner)
                     await fireFailureHook(group, scope)
                 }
             }

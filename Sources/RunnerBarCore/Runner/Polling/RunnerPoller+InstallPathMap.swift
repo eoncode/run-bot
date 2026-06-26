@@ -61,14 +61,14 @@ func buildInstallPathMap(
     var byApiId: [Int: String] = [:]
     for localRunner in localRunners {
         guard let path = localRunner.installPath else {
-            log("RunnerPoller › buildInstallPathMap — SKIP \(localRunner.runnerName): installPath is nil")
+            log("RunnerPoller › buildInstallPathMap — SKIP \(localRunner.runnerName): installPath is nil", category: .runner)
             continue
         }
         byName[localRunner.runnerName] = path
         if let agentId = localRunner.agentId {
             byAgentId[agentId] = path
         } else {
-            log("RunnerPoller › buildInstallPathMap — \(localRunner.runnerName): agentId is nil (will rely on apiId/fullKey/name fallback)")
+            log("RunnerPoller › buildInstallPathMap — \(localRunner.runnerName): agentId is nil (will rely on apiId/fullKey/name fallback)", category: .runner)
         }
         if let apiId = localRunner.apiId {
             byApiId[apiId] = path
@@ -78,12 +78,13 @@ func buildInstallPathMap(
         }
     }
     // swiftlint:disable:next line_length
-    log("RunnerPoller › buildInstallPathMap — localRunners=\(localRunners.count) scopes=\(scopes) → fullKeys=\(byFullKey.keys.sorted()) nameKeys=\(byName.keys.sorted()) agentIdKeys=\(byAgentId.keys.sorted()) apiIdKeys=\(byApiId.keys.sorted())")
+    log("RunnerPoller › buildInstallPathMap — localRunners=\(localRunners.count) scopes=\(scopes) → fullKeys=\(byFullKey.keys.sorted()) nameKeys=\(byName.keys.sorted()) agentIdKeys=\(byAgentId.keys.sorted()) apiIdKeys=\(byApiId.keys.sorted())", category: .runner)
     if byFullKey.isEmpty && !localRunners.isEmpty {
-        log("RunnerPoller › ⚠️ buildInstallPathMap — fullKey map is EMPTY despite localRunners=\(localRunners.count). Scopes=\(scopes). Check scope string format alignment with localRunner names.")
+        // swiftlint:disable:next line_length
+        log("RunnerPoller › ⚠️ buildInstallPathMap — fullKey map is EMPTY despite localRunners=\(localRunners.count). Scopes=\(scopes). Check scope string format alignment with localRunner names.", category: .runner)
     }
     if localRunners.isEmpty {
-        log("RunnerPoller › ⚠️ buildInstallPathMap — localRunners is EMPTY. All maps are empty. Busy runners will have no installPath this cycle.")
+        log("RunnerPoller › ⚠️ buildInstallPathMap — localRunners is EMPTY. All maps are empty. Busy runners will have no installPath this cycle.", category: .runner)
     }
     return InstallPathMap(byFullKey: byFullKey, byName: byName, byAgentId: byAgentId, byApiId: byApiId)
 }

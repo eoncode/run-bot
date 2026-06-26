@@ -147,6 +147,150 @@ extension ActiveJob {
         )
     }
 
+    /// Returns a copy of this job with `conclusion` replaced.
+    public func copying(conclusion newValue: JobConclusion?) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: newValue,
+            isDimmed: isDimmed,
+            runnerName: runnerName,
+            scope: scope,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            createdAt: createdAt,
+            steps: steps
+        )
+    }
+
+    /// Returns a copy of this job with `completedAt` replaced.
+    ///
+    /// Used in `enrichGroupJobs` to carry the cached completion timestamp forward
+    /// when bridging a conclusion from the completed-job cache onto a live job
+    /// that the API still reports as in-progress. Without this, a job with a
+    /// bridged conclusion would show `completedAt == nil` and render a running
+    /// timer in the panel for one poll cycle.
+    public func copying(completedAt newValue: Date?) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: conclusion,
+            isDimmed: isDimmed,
+            runnerName: runnerName,
+            scope: scope,
+            startedAt: startedAt,
+            completedAt: newValue,
+            createdAt: createdAt,
+            steps: steps
+        )
+    }
+
+    /// Returns a copy of this job with `startedAt` replaced.
+    ///
+    /// Used in the `betterSteps` branch of `fetchJobsForRun` to carry a fresher
+    /// start timestamp from the single-job refresh response back onto the cached
+    /// job entry, without touching any other field.
+    public func copying(startedAt newValue: Date?) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: conclusion,
+            isDimmed: isDimmed,
+            runnerName: runnerName,
+            scope: scope,
+            startedAt: newValue,
+            completedAt: completedAt,
+            createdAt: createdAt,
+            steps: steps
+        )
+    }
+
+    /// Returns a copy of this job with `runnerName` replaced.
+    ///
+    /// Used in the `betterSteps` branch of `fetchJobsForRun` to pick up a runner
+    /// name from the single-job refresh response when the original job payload
+    /// had none (e.g. a queued job that was assigned a runner mid-poll).
+    public func copying(runnerName newValue: String?) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: conclusion,
+            isDimmed: isDimmed,
+            runnerName: newValue,
+            scope: scope,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            createdAt: createdAt,
+            steps: steps
+        )
+    }
+
+    /// Returns a copy of this job with `createdAt` replaced.
+    ///
+    /// Used in the `betterSteps` branch of `fetchJobsForRun` to carry the
+    /// creation timestamp forward from the single-job refresh response, ensuring
+    /// elapsed-time display is never reset to zero on a mid-poll refresh.
+    public func copying(createdAt newValue: Date?) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: conclusion,
+            isDimmed: isDimmed,
+            runnerName: runnerName,
+            scope: scope,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            createdAt: newValue,
+            steps: steps
+        )
+    }
+
+    /// Returns a copy of this job with `steps` replaced.
+    public func copying(steps newValue: [JobStep]) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: conclusion,
+            isDimmed: isDimmed,
+            runnerName: runnerName,
+            scope: scope,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            createdAt: createdAt,
+            steps: newValue
+        )
+    }
+
+    /// Returns a copy of this job with `scope` replaced.
+    public func copying(scope newValue: String?) -> ActiveJob {
+        ActiveJob(
+            id: id,
+            name: name,
+            htmlUrl: htmlUrl,
+            status: status,
+            conclusion: conclusion,
+            isDimmed: isDimmed,
+            runnerName: runnerName,
+            scope: newValue,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            createdAt: createdAt,
+            steps: steps
+        )
+    }
+
     /// Returns a completed, dimmed copy of this job.
     ///
     /// Centralises the repeated "freeze a job into the cache" pattern in
@@ -157,7 +301,7 @@ extension ActiveJob {
     /// When the job has no recorded conclusion (e.g. an API timing race where the
     /// job disappeared before the conclusion field was populated), `.neutral` is
     /// used as the fallback. `.neutral` is the correct "inconclusive" value and
-    /// avoids the semantic side-effects of `.cancelled` (hook firing, ⊘ icon).
+    /// avoids the semantic side-effects of `.cancelled` (hook firing, ⊗ icon).
     /// - Parameter fallbackDate: Date used as `completedAt` when the job has none.
     public func asCompleted(at fallbackDate: Date) -> ActiveJob {
         ActiveJob(
@@ -167,7 +311,7 @@ extension ActiveJob {
             status: .completed,
             // .neutral: inconclusive fallback for jobs that vanished before the API
             // populated their conclusion field. Avoids .cancelled side-effects
-            // (isHookConclusion=true, conclusionIcon=⊘).
+            // (isHookConclusion=true, conclusionIcon=⊗).
             conclusion: conclusion ?? .neutral,
             isDimmed: true,
             runnerName: runnerName,

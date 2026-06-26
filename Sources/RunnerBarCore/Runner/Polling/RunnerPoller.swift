@@ -12,24 +12,6 @@ import Collections
 import Foundation
 import os
 
-// MARK: - IndexedScopedRunner
-
-/// Carries a scope-fetched `Runner` alongside its source-scope string.
-/// Used internally by `fetchAndEnrichRunners` to pass data through two
-/// concurrent `withTaskGroup` phases without a 3-member tuple
-/// (which would trigger the `large_tuple` SwiftLint rule).
-///
-/// ⚠️ The ordering of entries in the `indexed` array after Phase 1 is
-/// non-deterministic: `withTaskGroup` tasks complete in arrival order.
-/// This matches the previous `RunnerStore` behaviour; views sort
-/// runners independently for display.
-private struct IndexedScopedRunner {
-    /// The GitHub scope URL string (repo or org) this runner belongs to.
-    var scope: String
-    /// The enriched `Runner` value. Mutated in-place during Phase 2 to add metrics.
-    var runner: Runner
-}
-
 // MARK: - RunnerPoller
 
 /// Swift 6 actor that owns the GitHub poll loop and all derived runner/job/action state.
@@ -48,50 +30,76 @@ private struct IndexedScopedRunner {
 public actor RunnerPoller {
 
     // MARK: - State
+    //
+    // NOTE: Several properties below are `internal` (not `private`) solely to allow
+    // extension files in separate source files to read them. All writes must go through
+    // `setDisplayState(_:)` (success path) or `applyError(_:)` (failure path) in
+    // RunnerPoller+ApplyResult.swift. Swift does not enforce this at the language level
+    // for cross-file extensions — the invariant is documented, not mechanically enforced.
 
     /// Runners currently shown in the panel.
+    /// Written exclusively by `applyFetchResult` (success path) and `applyError` (error path).
     private(set) var runners: [Runner] = []
     /// Jobs currently shown in the panel, including dimmed completed entries.
+    /// Written exclusively by `applyFetchResult`.
     private(set) var jobs: [ActiveJob] = []
     /// Workflow action groups currently shown in the panel.
+    /// Written exclusively by `applyFetchResult`.
     private(set) var actions: [WorkflowActionGroup] = []
+
+    // MARK: ⚠️ Mutable state — write ONLY via applyFetchResult / applyError
+    // (RunnerPoller+ApplyResult.swift). Swift cannot enforce this across extension
+    // files; the invariant is by convention. Do not write these properties directly
+    // from any other extension or call site.
+
     /// Live-job snapshot from the previous poll, used to detect vanished jobs.
-    private var prevLiveJobs: [Int: ActiveJob] = [:]
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
+    var prevLiveJobs: [Int: ActiveJob] = [:]
     /// Completed-job cache keyed by job ID; capped at `PollResultBuilder.jobCacheLimit`.
-    private var completedCache: [Int: ActiveJob] = [:]
+    /// **In-memory only** — not persisted to disk, not `Codable`. Entries are lost on
+    /// app restart; this is intentional (stale cache after restart is better than
+    /// persisting potentially scope-nil entries across upgrades).
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
+    var completedCache: [Int: ActiveJob] = [:]
     /// Live-group snapshot from the previous poll, used to detect vanished groups.
-    private var prevLiveGroups: [String: WorkflowActionGroup] = [:]
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
+    var prevLiveGroups: [String: WorkflowActionGroup] = [:]
     /// Group cache keyed by group ID; capped at `PollResultBuilder.groupCacheLimit`.
-    private var actionGroupCache: [String: WorkflowActionGroup] = [:]
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
+    var actionGroupCache: [String: WorkflowActionGroup] = [:]
     /// IDs of action groups whose failure hook has already fired.
     ///
     /// Kept separate from `actionGroupCache` so that cache eviction does not re-arm
     /// the hook for old completed groups still present in GitHub's last-completed feed.
     /// `OrderedSet` preserves insertion order so `trimSeenGroupIDs` evicts the
     /// oldest entries first (FIFO), rather than arbitrary ones as `Set` would.
-    private var seenGroupIDs: OrderedSet<String> = []
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
+    var seenGroupIDs: OrderedSet<String> = []
     /// Whether the GitHub API is currently rate-limiting this client.
+    /// Written by `applyFetchResult` and `applyError` (via `RunnerPoller+ApplyResult`).
     private(set) var isRateLimited = false
     /// The exact moment the current rate-limit window expires, or `nil` when no
     /// rate-limit is active or the reset time is unknown.
-    /// Assigned in `applyFetchResult` and written to `state`. periphery:ignore
+    /// Assigned in `applyFetchResult`/`applyError` and written to `state`. periphery:ignore
     private(set) var rateLimitResetDate: Date?
     /// Owns the three structured `Task` handles for the poll loop.
+    /// `private` — all call sites (startObservingPreferences, startObservingScopes,
+    /// start(), isolated deinit) are in this file; no extension file needs access.
     private let pollLoop = PollLoopCoordinator()
     /// Observable read model — the source of truth for all views and AppDelegate observers.
     public let state: RunnerState
     /// Returns the current local-runner snapshot on the `@MainActor`.
     /// Injected at init so the actor body never imports the app-layer `LocalRunnerStore`.
-    private let localRunners: @MainActor @Sendable () -> [RunnerModel]
+    let localRunners: @MainActor @Sendable () -> [RunnerModel]
     /// Writes metrics back into the local runner store.
     /// Injected at init to decouple Core from the app-layer `LocalRunnerStore` actor.
-    private let applyMetrics: @Sendable (_ metrics: RunnerMetrics?, _ runnerId: Int, _ name: String) async -> Void
+    let applyMetrics: @Sendable (_ metrics: RunnerMetrics?, _ runnerId: Int, _ name: String) async -> Void
     /// Fires a failure hook for a newly-failed workflow action group.
     /// Injected at init so Core never imports the app-layer `FailureHookRunner`.
     /// `internal` so that extension files (e.g. `RunnerPoller+PollBridge`) can call it.
     let fireFailureHook: @Sendable (_ group: WorkflowActionGroup, _ scope: String) async -> Void
     /// Injected preferences store. Provides `pollingInterval`.
-    private let preferencesStore: any AppPreferencesStoreProtocol
+    let preferencesStore: any AppPreferencesStoreProtocol
     /// Injected scope store. Provides `activeScopes`.
     /// `internal` (not `private`) so that extension files can read this property.
     internal let scopeStore: any ScopeStoreProtocol
@@ -180,16 +188,16 @@ public actor RunnerPoller {
             }
             for await newInterval in stream {
                 guard !Task.isCancelled else { break }
-                log("RunnerPoller › pollingInterval changed to \(Int(newInterval))s — restarting poll loop")
+                log("RunnerPoller › pollingInterval changed to \(Int(newInterval))s — restarting poll loop", category: .runner)
                 await self?.startObservingPreferences()
                 guard !Task.isCancelled else { break }
                 await self?.start()
                 break
             }
-            // withExtendedLifetime pins the relay until the for-await loop above exits,
-            // preventing ARC from deallocating it between the MainActor.run return and
-            // the first stream yield. Prefer this over `_ = observer` — it makes the
-            // intent explicit and cannot be silently stripped by a future refactor.
+            // LOAD-BEARING: keeps the ObservationRelay alive until the for-await loop above
+            // exits. Without this, ARC may drop `observer` immediately after the `let`
+            // binding above goes out of scope (the Task captures `self` weakly and the relay
+            // is not otherwise retained), silently stopping preference-change detection.
             withExtendedLifetime(observer) {}
         }
         pollLoop.setIntervalObservationTask(newTask)
@@ -214,16 +222,16 @@ public actor RunnerPoller {
             }
             for await _ in stream {
                 guard !Task.isCancelled else { break }
-                log("RunnerPoller › ScopeStore.activeScopes changed — restarting fetch")
+                log("RunnerPoller › ScopeStore.activeScopes changed — restarting fetch", category: .runner)
                 await self?.startObservingScopes()
                 guard !Task.isCancelled else { break }
                 await self?.start()
                 break
             }
-            // withExtendedLifetime pins the relay until the for-await loop above exits,
-            // preventing ARC from deallocating it between the MainActor.run return and
-            // the first stream yield. Prefer this over `_ = observer` — it makes the
-            // intent explicit and cannot be silently stripped by a future refactor.
+            // LOAD-BEARING: keeps the ObservationRelay alive until the for-await loop above
+            // exits. Without this, ARC may drop `observer` immediately after the `let`
+            // binding above goes out of scope (the Task captures `self` weakly and the relay
+            // is not otherwise retained), silently stopping scope-change detection.
             withExtendedLifetime(observer) {}
         }
         pollLoop.setScopeObservationTask(newTask)
@@ -234,33 +242,33 @@ public actor RunnerPoller {
     /// Starts (or restarts) the structured async poll loop.
     public func start() async {
         let scopes = await MainActor.run { scopeStore.activeScopes }
-        log("RunnerPoller › start — activeScopes=\(scopes)")
+        log("RunnerPoller › start — activeScopes=\(scopes)", category: .runner)
         if scopes.isEmpty {
-            log("RunnerPoller › ⚠️ start called but activeScopes is EMPTY — actions will not load")
+            log("RunnerPoller › ⚠️ start called but activeScopes is EMPTY — actions will not load", category: .runner)
         }
         let localCount = await MainActor.run { localRunners().count }
-        log("RunnerPoller › start — localRunners.count=\(localCount) at start() time")
+        log("RunnerPoller › start — localRunners.count=\(localCount) at start() time", category: .runner)
         if localCount == 0 {
-            log("RunnerPoller › ⚠️ start — localRunners=0 at start time; installPathMap will be empty on first fetch.")
+            log("RunnerPoller › ⚠️ start — localRunners=0 at start time; installPathMap will be empty on first fetch.", category: .runner)
         }
-        log("RunnerPoller › start — previous pollTask cancelled, launching new poll task")
+        log("RunnerPoller › start — previous pollTask cancelled, launching new poll task", category: .runner)
         pollLoop.setPollTask(Task { [weak self] in
             guard let self else { return }
             await self.fetch()
             while !Task.isCancelled {
                 let interval = await self.nextPollInterval()
-                log("RunnerPoller › poll loop — next fetch in \(Int(interval))s")
+                log("RunnerPoller › poll loop — next fetch in \(Int(interval))s", category: .runner)
                 do {
                     try await Task.sleep(for: .seconds(interval))
                 } catch is CancellationError {
-                    log("RunnerPoller › poll loop — CancellationError, exiting cleanly")
+                    log("RunnerPoller › poll loop — CancellationError, exiting cleanly", category: .runner)
                     break
                 } catch {
-                    log("RunnerPoller › poll loop — unexpected error \(error), exiting")
+                    log("RunnerPoller › poll loop — unexpected error \(error), exiting", category: .runner)
                     break
                 }
                 guard !Task.isCancelled else {
-                    log("RunnerPoller › poll loop — cancelled after sleep, exiting")
+                    log("RunnerPoller › poll loop — cancelled after sleep, exiting", category: .runner)
                     break
                 }
                 await self.fetch()
@@ -269,49 +277,35 @@ public actor RunnerPoller {
     }
 
     /// Computes the delay before the next poll.
-    ///
-    /// Uses typed `JobStatus` enum cases rather than raw string literals so that
-    /// a raw-value rename is caught at compile time. `ActiveJob.status` and
-    /// `WorkflowActionGroup.groupStatus` are both `JobStatus`.
     private func nextPollInterval() async -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == .inProgress || $0.status == .queued }
         let hasActiveActions = actions.contains { $0.groupStatus == .inProgress || $0.groupStatus == .queued }
         let hasActive = hasActiveJobs || hasActiveActions
         let baseIdle = max(10, await MainActor.run { preferencesStore.pollingInterval })
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
-        log("RunnerPoller › nextPollInterval — \(Int(interval))s hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle)")
+        log("RunnerPoller › nextPollInterval — \(Int(interval))s hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle)", category: .runner)
         return interval
     }
 
     // MARK: - Fetch
 
     /// Performs one full poll cycle.
-    ///
-    /// Wraps the fetch body in a `do/catch` so any unhandled error surfaces via
-    /// `applyError` rather than silently crashing or swallowing the failure.
-    /// Existing fetch helpers (`buildJobState`, `buildGroupState`, `fetchAndEnrichRunners`)
-    /// do not currently throw — they return empty arrays on failure. The `do/catch`
-    /// guards against future changes that introduce throwing paths.
-    ///
-    /// Not on `RunnerPollerProtocol`. Use `start()` to drive the poll cadence.
-    /// Accessible at `internal` scope so tests holding a concrete `RunnerPoller` can
-    /// trigger a single cycle without going through the protocol seam.
     func fetch() async {
         do {
             try await fetchInternal()
         } catch {
-            log("RunnerPoller › fetch — ⚠️ unhandled error: \(error)")
+            log("RunnerPoller › fetch — ⚠️ unhandled error: \(error)", category: .runner)
             await applyError(FetchError(error))
         }
     }
 
-    /// Inner throwing fetch body. Extracted so `fetch()` can wrap it cleanly in `do/catch`.
+    /// Inner throwing fetch body.
     private func fetchInternal() async throws {
         await clearGhRateLimit()
         let scopesSnapshot = await MainActor.run { scopeStore.activeScopes }
-        log("RunnerPoller › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
+        log("RunnerPoller › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)", category: .runner)
         if scopesSnapshot.isEmpty {
-            log("RunnerPoller › ⚠️ fetch — activeScopes snapshot is EMPTY")
+            log("RunnerPoller › ⚠️ fetch — activeScopes snapshot is EMPTY", category: .runner)
         }
         let snapPrev = prevLiveJobs
         let snapCache = completedCache
@@ -319,29 +313,50 @@ public actor RunnerPoller {
         let snapGroupCache = actionGroupCache
         let snapSeenGroupIDs = seenGroupIDs
         let localRunnersSnapshot = await MainActor.run { localRunners() }
-        log("RunnerPoller › fetch — localRunners.count=\(localRunnersSnapshot.count) (used for installPathMap)")
+        log("RunnerPoller › fetch — localRunners.count=\(localRunnersSnapshot.count) (used for installPathMap)", category: .runner)
         if localRunnersSnapshot.isEmpty {
-            log("RunnerPoller › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty")
+            log("RunnerPoller › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty", category: .runner)
         } else {
 #if DEBUG
-            log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
+            // swiftlint:disable:next line_length
+            log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })", category: .runner)
 #endif
         }
+        // Derive extra org scopes before buildInstallPathMap so byFullKey covers
+        // inferred org scopes as well as user-configured ones. Without this,
+        // installPathMap.byFullKey["\(extraOrgScope)/\(runnerName)"] always misses
+        // in Phase 2 of fetchAndEnrichRunners, silently skipping metrics for runners
+        // whose API id is unresolved and whose name is ambiguous across scopes.
+        let extraOrgScopes = deriveExtraOrgScopes(
+            from: localRunnersSnapshot,
+            configuredScopes: scopesSnapshot
+        )
+        log("RunnerPoller › fetch — extraOrgScopes=\(extraOrgScopes) (\(extraOrgScopes.count) inferred from local runner gitHubUrl)", category: .runner)
+        let allScopes = scopesSnapshot + extraOrgScopes
         let installPathMap = buildInstallPathMap(
-            scopes: scopesSnapshot,
+            scopes: allScopes,
             localRunners: localRunnersSnapshot
         )
         let enrichedRunners = await fetchAndEnrichRunners(
             scopes: scopesSnapshot,
+            extraOrgScopes: extraOrgScopes,
             localRunners: localRunnersSnapshot,
             installPathMap: installPathMap
         )
-        let jobResult = await buildJobState(snapPrev: snapPrev, snapCache: snapCache)
+        // Pass scopesSnapshot directly so fetchAllJobs and fetchActionGroups use the
+        // same scope list as the rest of fetchInternal, eliminating the TOCTOU window
+        // that would arise from re-reading scopeStore.activeScopes inside those methods.
+        let jobResult = await buildJobState(
+            snapPrev: snapPrev,
+            snapCache: snapCache,
+            scopes: scopesSnapshot
+        )
         let groupResult = await buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
             snapSeenGroupIDs: snapSeenGroupIDs,
-            jobCache: jobResult.newCache
+            jobCache: jobResult.newCache,
+            scopes: scopesSnapshot
         )
         await applyFetchResult(
             enrichedRunners: enrichedRunners,
@@ -350,206 +365,212 @@ public actor RunnerPoller {
         )
     }
 
-    // MARK: - Apply result
-
-    /// Merges a completed fetch into actor state and pushes the snapshot to `RunnerState`.
+    /// Derives extra org scopes from local runner `gitHubUrl` values that are not
+    /// already present in the user-configured scope list.
     ///
-    /// Clears `state.fetchError` on every successful cycle so the UI error banner
-    /// dismisses automatically as soon as connectivity is restored. The write is
-    /// guarded — if `fetchError` is already `nil` the assignment is skipped to
-    /// avoid a spurious `@Observable` notification on every healthy poll cycle.
-    private func applyFetchResult(
-        enrichedRunners: [Runner],
-        jobResult: JobPollResult,
-        groupResult: GroupPollResult
-    ) async {
-        let rateLimitSnapshot = await ghRateLimitSnapshot()
-        runners = enrichedRunners
-        jobs = jobResult.display
-        completedCache = jobResult.newCache
-        prevLiveJobs = jobResult.newPrevLive
-        actions = groupResult.display
-        actionGroupCache = groupResult.newGroupCache
-        prevLiveGroups = groupResult.newPrevLiveGroups
-        seenGroupIDs = groupResult.newSeenGroupIDs
-        isRateLimited = rateLimitSnapshot.isLimited
-        rateLimitResetDate = rateLimitSnapshot.resetDate
-        // swiftlint:disable:next line_length
-        log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))")
-        await MainActor.run { [state] in
-            state.runners = enrichedRunners
-            state.jobs = jobResult.display
-            state.actions = groupResult.display
-            state.isRateLimited = rateLimitSnapshot.isLimited
-            state.rateLimitResetDate = rateLimitSnapshot.resetDate
-            if state.fetchError != nil { state.fetchError = nil }
-        }
-    }
-
-    /// Sendable-safe wrapper that bridges an arbitrary `any Error` across an actor boundary.
+    /// Only org-scoped URLs (single path component, no "/" in the derived scope)
+    /// are returned. Repo-scoped URLs are filtered out by the `!contains("/")` guard.
+    /// Duplicates and scopes already in `configuredScopes` are suppressed.
     ///
-    /// `any Error` is not `Sendable`, so passing it directly into `MainActor.run`
-    /// produces a warning under `-strict-concurrency=complete`. `FetchError` captures
-    /// `localizedDescription` — the only field read by `fetchErrorBanner` — and
-    /// re-surfaces it as a `LocalizedError` conformance so the message is preserved.
-    private struct FetchError: LocalizedError, Sendable {
-        /// The user-facing description forwarded from the underlying error.
-        let errorDescription: String?
-        /// Wraps `underlying`, capturing its `localizedDescription` as a `Sendable` string.
-        init(_ underlying: any Error) { errorDescription = underlying.localizedDescription }
-    }
-
-    /// Surfaces a fetch failure to the `RunnerState` read model.
-    ///
-    /// Mirrors `applyFetchResult` by updating both the actor-local rate-limit copies
-    /// (`self.isRateLimited`, `self.rateLimitResetDate` — read by `nextPollInterval()`)
-    /// and the `@Observable` read model (`state.*` — read by the view layer).
-    /// Without this sync, a failed cycle while rate-limited would leave the actor-local
-    /// copies stale, causing `nextPollInterval()` to compute the wrong cadence until the
-    /// next successful `applyFetchResult`.
-    ///
-    /// Snapshots rate-limit state so the UI never shows both banners simultaneously:
-    /// `clearGhRateLimit()` at the top of `fetchInternal()` clears the internal actor
-    /// before any throw, so this snapshot reflects the cleared state.
-    ///
-    /// The `fetchError` write is guarded by a `localizedDescription` comparison to avoid
-    /// re-notifying `@Observable` observers on every failed cycle when the message is
-    /// unchanged (e.g. sustained network loss).
-    ///
-    /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
-    /// stale data alongside the error banner rather than an empty list.
-    private func applyError(_ error: any Error & Sendable) async {
-        let rateLimitSnapshot = await ghRateLimitSnapshot()
-        // Sync actor-local copies first — nextPollInterval() reads these directly.
-        isRateLimited = rateLimitSnapshot.isLimited
-        rateLimitResetDate = rateLimitSnapshot.resetDate
-        await MainActor.run { [state] in
-            // Guard the write: `any Error` is not Equatable, so compare via
-            // `localizedDescription` — the only field `fetchErrorBanner` consumes.
-            // Skipping the write when the message is unchanged avoids a spurious
-            // `@Observable` notification on every failed poll cycle.
-            if state.fetchError?.localizedDescription != error.localizedDescription {
-                state.fetchError = error
-            }
-            state.isRateLimited = rateLimitSnapshot.isLimited
-            state.rateLimitResetDate = rateLimitSnapshot.resetDate
-        }
-    }
-
-    // MARK: - fetchAndEnrichRunners
-
-    /// Fetches runners for the given scopes, resolves install paths, and enriches with metrics.
-    ///
-    /// `internal` — `fetch()` is the public entry point; this method is an implementation
-    /// detail not intended for direct external calls.
-    ///
-    /// **Phase 0** derives extra org scopes from local runners whose `gitHubUrl` points to a
-    /// single-path-component URL (org-only, not repo). This handles runners registered against
-    /// an org that the user hasn't explicitly added as a scope in ScopeStore — their org is
-    /// inferred from the local runner's URL so those runners continue to appear in the panel.
-    ///
-    /// **Phase 1** fans out concurrent scope fetches via `withTaskGroup`. Task completion order
-    /// is non-deterministic; views sort runners for display independently.
-    ///
-    /// **Phase 2** enriches each busy runner with system metrics concurrently.
-    ///
-    /// **Install-path lookup priority** (matches the original `RunnerStore`):
-    /// `byApiId ?? byAgentId ?? byFullKey ?? byName`
-    /// `byFullKey` ("scope/name" composite) ranks above `byName` so runners sharing
-    /// a name across different scopes resolve to the correct install path.
-    ///
-    /// - Parameters:
-    ///   - scopes: The active scopes to fetch runners for.
-    ///   - localRunners: The current local-runner snapshot (used for org-scope derivation).
-    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`.
-    internal func fetchAndEnrichRunners(
-        scopes: [String],
-        localRunners: [RunnerModel],
-        installPathMap: InstallPathMap
-    ) async -> [Runner] {
-        log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
-
-        // MARK: Phase 0 — Extra org-scope derivation from local runner URLs
-        // Delegates to `scopeFromUrl(_:)` in GitHubURLHelpers (F-52).
-        // Only org-scoped URLs produce a scope string without a "/"; repo-scoped
-        // URLs ("owner/repo") are filtered out by the `!contains("/")` guard below.
-        let configuredScopeSet = Set(scopes)
-        var extraOrgScopes: [String] = []
+    /// Extracted from `fetchAndEnrichRunners` Phase 0 so the result is available
+    /// before `buildInstallPathMap` is called, allowing `byFullKey` to cover
+    /// inferred org scopes as well as user-configured ones.
+    func deriveExtraOrgScopes(
+        from localRunners: [RunnerModel],
+        configuredScopes: [String]
+    ) -> [String] {
+        let configuredScopeSet = Set(configuredScopes)
+        // Use a Set accumulator for O(1) dedup checks (Array.contains is O(n),
+        // making the old loop O(n²) in the number of local runners). The parallel
+        // `extra` array preserves insertion order for deterministic output.
+        var extraSet = Set<String>()
+        var extra: [String] = []
         for localRunner in localRunners {
             guard let url = localRunner.gitHubUrl,
                   let derivedScope = scopeFromUrl(url),
-                  !derivedScope.contains("/") else { continue }
-            let orgScope = derivedScope
-            guard !configuredScopeSet.contains(orgScope),
-                  !extraOrgScopes.contains(orgScope)
+                  !derivedScope.contains("/"),
+                  !configuredScopeSet.contains(derivedScope),
+                  extraSet.insert(derivedScope).inserted
             else { continue }
-            extraOrgScopes.append(orgScope)
-            log("RunnerPoller › fetchAndEnrichRunners — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'")
+            extra.append(derivedScope)
+            log("RunnerPoller › deriveExtraOrgScopes — derived '\(derivedScope)' from '\(localRunner.runnerName)'", category: .runner)
         }
-        if !extraOrgScopes.isEmpty {
-            log("RunnerPoller › fetchAndEnrichRunners — extra org scopes to fetch: \(extraOrgScopes)")
-        }
+        return extra
+    }
 
-        let allScopes = scopes + extraOrgScopes
-
-        // MARK: Phase 1 — Fetch raw runners for all scopes concurrently
-        var indexed: [IndexedScopedRunner] = []
-        await withTaskGroup(of: (String, [Runner]).self) { group in
-            for scope in allScopes {
+    /// Fetches all active jobs across all scopes concurrently, injecting the source scope
+    /// into each job.
+    ///
+    /// - Parameter scopes: The scope snapshot captured by `fetchInternal` — passed in
+    ///   directly to avoid re-reading `scopeStore.activeScopes` and creating a TOCTOU
+    ///   window between the snapshot used for runners/groups and the one used for jobs.
+    ///
+    /// `fetchActiveJobs(for:decoder:)` returns `ActiveJob` values with `scope == nil`
+    /// because the GitHub Jobs API payload has no scope field. Without `.copying(scope:)`
+    /// at fetch time, every concluded job entering `completedCache` has `scope == nil`.
+    /// On the very next `backfillSteps` call those entries would hit the eviction branch
+    /// (`scope is nil → removeValue`), causing a one-poll dimmed-job flash on every job
+    /// completion — not just once after an upgrade.
+    ///
+    /// Note: `actionGroupFetcher.fetch(for:cache:)` is **not** used here because it contains
+    /// `guard scope.contains("/") else { return [] }`, which silently drops org-scoped jobs.
+    /// That guard is correct for group fetching (org-level workflow run endpoints differ),
+    /// but the standalone job endpoint handles both scope kinds via `scope.apiPrefix`.
+    ///
+    /// Results are collected in task-completion order; no downstream consumer depends on
+    /// scope-ordering of the returned array.
+    ///
+    /// `internal` — required for cross-file extension access from `RunnerPoller+PollBridge.swift`;
+    /// not a public API. Call sites are exclusively within `RunnerBarCore`.
+    func fetchAllJobs(scopes: [String]) async -> [ActiveJob] {
+        guard !scopes.isEmpty else { return [] }
+        let dec = decoder
+        var allJobs: [ActiveJob] = []
+        await withTaskGroup(of: [ActiveJob].self) { group in
+            for scope in scopes {
                 group.addTask {
-                    let fetched = await fetchRunners(for: scope, decoder: self.decoder)
-                    return (scope, fetched)
+                    // fetchActiveJobs is a free function in GitHubRunnerFetchers.swift
+                    await fetchActiveJobs(for: scope, decoder: dec)
+                        .map { $0.copying(scope: scope) }
                 }
             }
-            for await (scope, fetched) in group {
-                indexed.append(contentsOf: fetched.map { IndexedScopedRunner(scope: scope, runner: $0) })
-            }
+            for await jobs in group { allJobs.append(contentsOf: jobs) }
         }
+        log("RunnerPoller › fetchAllJobs — fetched \(allJobs.count) job(s) across \(scopes.count) scope(s)", category: .runner)
+        return allJobs
+    }
 
-        // MARK: Phase 2 — Enrich each busy runner with system metrics concurrently
-        // Lookup priority: byApiId ?? byAgentId ?? byFullKey ?? byName
-        let busyIndices = indexed.indices.filter { indexed[$0].runner.busy }
-        if !busyIndices.isEmpty {
-            let metricsResults: [(Int, RunnerMetrics?)] = await withTaskGroup(
-                of: (Int, RunnerMetrics?).self
-            ) { group in
-                for i in busyIndices {
-                    let runner = indexed[i].runner
-                    let scope = indexed[i].scope
-                    let installPath = installPathMap.byApiId[runner.id]
-                        ?? installPathMap.byAgentId[runner.id]
-                        ?? installPathMap.byFullKey["\(scope)/\(runner.name)"]
-                        ?? installPathMap.byName[runner.name]
-                    guard let path = installPath else {
-                        log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id) scope=\(scope)")
-                        continue
-                    }
-                    group.addTask {
-                        let metrics = await metricsForRunner(installPath: path)
-                        return (i, metrics)
-                    }
+    /// Fetches workflow action groups for the given scopes concurrently, using the
+    /// SHA-keyed cache.
+    ///
+    /// - Parameter scopes: The scope snapshot captured by `fetchInternal` — passed in
+    ///   directly to avoid re-reading `scopeStore.activeScopes` and creating a TOCTOU
+    ///   window between the snapshot used for runners/jobs and the one used for groups.
+    ///
+    /// Results are collected in task-completion order; no downstream consumer depends on
+    /// scope-ordering of the returned array.
+    ///
+    /// `internal` — required for cross-file extension access from `RunnerPoller+PollBridge.swift`;
+    /// not a public API. Call sites are exclusively within `RunnerBarCore`.
+    func fetchActionGroups(scopes: [String], shaKeyedCache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup] {
+        guard !scopes.isEmpty else { return [] }
+        var allGroups: [WorkflowActionGroup] = []
+        await withTaskGroup(of: [WorkflowActionGroup].self) { group in
+            for scope in scopes {
+                group.addTask { await self.actionGroupFetcher.fetch(for: scope, cache: shaKeyedCache) }
+            }
+            for await groups in group { allGroups.append(contentsOf: groups) }
+        }
+        log("RunnerPoller › fetchActionGroups — fetched \(allGroups.count) group(s) across \(scopes.count) scope(s)", category: .runner)
+        return allGroups
+    }
+
+    /// Backfills step data into the completed-job cache.
+    ///
+    /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
+    /// fetches the full job payload from the GitHub API, and updates the cache entry.
+    ///
+    /// **Eviction rationale — these are NOT data-loss bugs:**
+    /// Three categories of cache entry are evicted (via `removeValue`) rather than
+    /// skipped or retried. Each is intentional and self-correcting:
+    ///
+    /// 1. **`scope == nil` (pre-scope-injection entries)**
+    ///    Written before scope-injection was introduced (pre-F-26). As of F-26,
+    ///    `fetchAllJobs` always injects scope via `.copying(scope:)` at fetch time,
+    ///    so `scope == nil` entries should only appear in the first poll cycle after
+    ///    an upgrade from a pre-F-26 build. Evicting them prevents repeated per-poll
+    ///    warning spam. They re-enter the cache with correct scope data on the next
+    ///    poll cycle once a new live fetch completes. This flash is cosmetic and
+    ///    self-corrects within one poll cycle.
+    ///    TODO: Remove this guard after two release cycles once pre-F-26 cache
+    ///    entries are definitively gone from the field.
+    ///
+    /// 2. **Org-only scope (`!scope.contains("/")`)**
+    ///    The GitHub Jobs API has no `orgs/{org}/actions/jobs/{id}` endpoint — only
+    ///    `repos/{owner}/{repo}/actions/jobs/{id}`. Keeping these entries would log a
+    ///    warning every poll cycle with no path to ever resolve them. Eviction is a
+    ///    one-time operation; the entry cannot re-populate via any backfill path
+    ///    (no GitHub org/actions/jobs endpoint exists).
+    ///
+    /// 3. **Empty-steps API response**
+    ///    Early-queued jobs may return zero steps transiently. The guard
+    ///    `guard !updated.steps.isEmpty` keeps the existing cache entry unchanged and
+    ///    retries on the next poll — this is a *skip*, not an eviction.
+    ///
+    /// The `removeValue` calls for cases 1 and 2 are therefore intentional, not data loss.
+    func backfillSteps(into cache: inout [Int: ActiveJob]) async {
+        for cacheID in Array(cache.keys) {
+            guard let cached = cache[cacheID] else { continue }
+            guard cached.conclusion != nil else { continue }
+            guard cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }) else { continue }
+            guard let scope = cached.scope else {
+                cache.removeValue(forKey: cacheID)
+                log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): scope is nil (pre-scope-injection entry)", category: .runner)
+                continue
+            }
+            guard scope.contains("/") else {
+                cache.removeValue(forKey: cacheID)
+                // swiftlint:disable:next line_length
+                log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): org-only scope '\(scope)' has no repo path; org-only jobs cannot be backfilled (no GitHub org/actions/jobs endpoint)", category: .runner)
+                continue
+            }
+            guard let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)") else { continue }
+            do {
+                let payload = try decoder.decode(JobPayload.self, from: data)
+                let updated = await ISO8601DateParser.shared.makeJob(from: payload, isDimmed: true)
+                // Guard against an empty-steps API response clobbering valid cached steps.
+                // Early-queued jobs may return a payload with zero steps; in that case
+                // preserve the existing cache entry unchanged and retry on the next poll.
+                guard !updated.steps.isEmpty else {
+                    log("RunnerPoller › backfillSteps — jobID=\(cacheID) API returned 0 steps, keeping existing cache entry", category: .runner)
+                    continue
                 }
-                var results: [(Int, RunnerMetrics?)] = []
-                for await pair in group { results.append(pair) }
-                return results
-            }
-            for (i, metrics) in metricsResults {
-                indexed[i].runner = indexed[i].runner.copying(metrics: metrics)
+                // Restore scope — not present in the API payload, must be carried forward.
+                cache[cacheID] = updated.copying(scope: cached.scope)
+            } catch {
+                log("RunnerPoller › backfillSteps — ⚠️ decode failed for jobID=\(cacheID): \(error)", category: .runner)
             }
         }
+    }
 
-        let metricsUpdates = indexed.filter { $0.runner.busy && $0.runner.metrics != nil }
-        if !metricsUpdates.isEmpty {
-            for entry in metricsUpdates {
-#if DEBUG
-                log("RunnerPoller › fetchAndEnrichRunners — applyMetrics: \(entry.runner.name) id=\(entry.runner.id) busy=\(entry.runner.busy) metrics=\(String(describing: entry.runner.metrics))")
-#endif
-                await applyMetrics(entry.runner.metrics, entry.runner.id, entry.runner.name)
-            }
-        }
+    // MARK: - Private(set) write-through
 
-        let result = indexed.map(\.runner)
-        log("RunnerPoller › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)")
-        return result
+    /// Sets the actor-local display properties in a single controlled call.
+    ///
+    /// **Scope:** this function manages `runners`, `jobs`, `actions`, `isRateLimited`,
+    /// and `rateLimitResetDate` only. The five poll-cycle state properties
+    /// (`completedCache`, `prevLiveJobs`, `actionGroupCache`, `prevLiveGroups`,
+    /// `seenGroupIDs`) are written directly by `applyFetchResult` before calling this
+    /// function — they are not routed through `setDisplayState` because they are not
+    /// display properties and have no partial-update semantics.
+    ///
+    /// **Partial-update contract:** `runners`, `jobs`, and `actions` are optional.
+    /// Passing `nil` for any of these means "leave the current value unchanged" —
+    /// it does **not** clear the list. `isRateLimited` and `rateLimitResetDate` are
+    /// non-optional and are **always** updated on every call.
+    ///
+    /// This asymmetry is intentional: `applyError` calls this function with
+    /// `runners/jobs/actions` all `nil` to preserve stale display data during an
+    /// error cycle (views continue to show the last known state). Do not call this
+    /// function with `nil` display lists intending to clear them — use explicit
+    /// empty arrays instead.
+    ///
+    /// `private(set)` prevents arbitrary writes from outside the actor, but Swift's
+    /// file-scoped `private` means extension files in separate source files cannot
+    /// write these properties either. This internal setter is therefore the controlled
+    /// mutation path for display properties, used exclusively by `applyFetchResult`
+    /// and `applyError` (in `RunnerPoller+ApplyResult.swift`).
+    func setDisplayState(
+        runners newRunners: [Runner]? = nil,
+        jobs newJobs: [ActiveJob]? = nil,
+        actions newActions: [WorkflowActionGroup]? = nil,
+        isRateLimited newIsRateLimited: Bool,
+        rateLimitResetDate newResetDate: Date?
+    ) {
+        if let newRunners { runners = newRunners }
+        if let newJobs { jobs = newJobs }
+        if let newActions { actions = newActions }
+        isRateLimited = newIsRateLimited
+        rateLimitResetDate = newResetDate
     }
 }
