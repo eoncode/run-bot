@@ -454,10 +454,11 @@ public actor RunnerPoller {
     /// not a public API. Call sites are exclusively within `RunnerBarCore`.
     func fetchActionGroups(scopes: [String], shaKeyedCache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup] {
         guard !scopes.isEmpty else { return [] }
+        let fetcher = actionGroupFetcher
         var allGroups: [WorkflowActionGroup] = []
         await withTaskGroup(of: [WorkflowActionGroup].self) { group in
             for scope in scopes {
-                group.addTask { await self.actionGroupFetcher.fetch(for: scope, cache: shaKeyedCache) }
+                group.addTask { await fetcher.fetch(for: scope, cache: shaKeyedCache) }
             }
             for await groups in group { allGroups.append(contentsOf: groups) }
         }
@@ -522,8 +523,12 @@ public actor RunnerPoller {
                     log("RunnerPoller › backfillSteps — jobID=\(cacheID) API returned 0 steps, keeping existing cache entry", category: .runner)
                     continue
                 }
-                // Restore scope — not present in the API payload, must be carried forward.
-                cache[cacheID] = updated.copying(scope: cached.scope)
+                // Restore scope and createdAt — neither is present in the single-job API
+                // payload. createdAt can be null transiently for early-queued jobs; fall
+                // back to the cached value to avoid clobbering a valid timestamp.
+                cache[cacheID] = updated
+                    .copying(scope: cached.scope)
+                    .copying(createdAt: updated.createdAt ?? cached.createdAt)
             } catch {
                 log("RunnerPoller › backfillSteps — ⚠️ decode failed for jobID=\(cacheID): \(error)", category: .runner)
             }
