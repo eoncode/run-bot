@@ -9,15 +9,33 @@ import SwiftUI
 /// - in_progress : animated rotating shimmer arc (blue) + arc trim from 0 to progress
 /// - success     : full green circle stroke + checkmark SF Symbol
 /// - failed      : full red circle stroke + xmark SF Symbol
-/// - queued      : solid yellow circle stroke
+/// - queued      : revolving amber glow ring (idle liveness indicator)
 ///
 /// Animation contract:
 /// - In-progress background ring uses `@State rotationAngle` driven by
 ///   `.linear(duration: 2).repeatForever(autoreverses: false)`.
+/// - Queued ring uses `@State queuedRotation` driven by
+///   `.linear(duration: 3).repeatForever(autoreverses: false)` — slower to
+///   remain visually distinct from the in-progress shimmer.
 /// - Progress arc uses `trim(from: 0, to: fraction)` animated with `.easeInOut`.
+/// - Both rotation angles are reset to 0 before re-arming to avoid a SwiftUI
+///   no-op when the status re-enters the same state (target already == 360).
 ///
-/// Do NOT remove the repeatForever animation -- it is the liveness indicator.
-/// Do NOT start the rotation for non-.inProgress states -- it wastes CPU/GPU.
+/// ### Re-arm strategy — why no bool flag guard
+/// An alternative pattern would track animation liveness with a `@State Bool`
+/// (e.g. `queuedAnimationActive`) and skip the reset when the animation is already
+/// running, to prevent a visible snap-to-zero on rapid re-entry. We intentionally
+/// do NOT use that pattern here. A `.queued → inProgress → queued` round-trip
+/// requires at minimum one full GitHub API poll cycle (several seconds) — by which
+/// point the `repeatForever` ring has completed many revolutions and `queuedRotation`
+/// has already wrapped back to its internal start position. The snap is therefore a
+/// zero-degree correction in practice, not a visible jump. The bool-flag adds two
+/// extra `@State` properties, two extra reset paths in `onChange`, and extra
+/// Periphery tracking surface for no perceptible visual benefit in this polling-driven
+/// context.
+///
+/// Do NOT remove the repeatForever animations -- they are liveness indicators.
+/// Do NOT start rotation for states that do not own the animation -- wastes CPU/GPU.
 struct DonutStatusView: View {
     /// The workflow/job status this donut reflects.
     let status: RBStatus
@@ -26,8 +44,10 @@ struct DonutStatusView: View {
     /// Outer ring diameter in points.
     var size: CGFloat = 16
 
-    /// Current rotation angle for the shimmer ring; driven by `startRotationIfNeeded()`.
+    /// Current rotation angle for the in-progress shimmer ring.
     @State private var rotationAngle: Double = 0
+    /// Current rotation angle for the queued glow ring.
+    @State private var queuedRotation: Double = 0
     /// Animated copy of `progress` updated via `withAnimation(.easeInOut)` for smooth arc trim.
     @State private var displayProgress: Double = 0
 
@@ -67,21 +87,41 @@ struct DonutStatusView: View {
         .onAppear {
             displayProgress = max(0, min(1, progress))
             startRotationIfNeeded()
+            startQueuedAnimationIfNeeded()
         }
         .onChange(of: progress) { _, _ in
             withAnimation(.easeInOut(duration: 0.4)) {
                 displayProgress = max(0, min(1, progress))
             }
         }
-        .onChange(of: status) { _, _ in startRotationIfNeeded() }
+        .onChange(of: status) { _, _ in
+            startRotationIfNeeded()
+            startQueuedAnimationIfNeeded()
+        }
     }
 
-    /// Starts the `repeatForever` rotation animation only when status is `.inProgress`.
-    /// Safe to call multiple times -- SwiftUI deduplicates identical in-flight animations.
+    /// Starts the `repeatForever` in-progress shimmer rotation.
+    /// Resets `rotationAngle` to 0 first so re-entry after a status round-trip
+    /// does not produce a SwiftUI no-op (target already 360).
+    /// Safe to call multiple times — guard ensures it only runs for `.inProgress`.
     private func startRotationIfNeeded() {
         guard status == .inProgress else { return }
+        rotationAngle = 0
         withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
             rotationAngle = 360
+        }
+    }
+
+    /// Starts the `repeatForever` queued-glow rotation.
+    /// Resets `queuedRotation` to 0 first so re-entry (e.g. re-queued after failure)
+    /// does not produce a SwiftUI no-op (target already 360).
+    /// Runs at 3 s/revolution — slower than in-progress — so the two states stay
+    /// visually distinct. Safe to call multiple times.
+    private func startQueuedAnimationIfNeeded() {
+        guard status == .queued else { return }
+        queuedRotation = 0
+        withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+            queuedRotation = 360
         }
     }
 
@@ -106,11 +146,24 @@ struct DonutStatusView: View {
         }
     }
 
-    /// Queued state ring: solid yellow stroke.
+    /// Queued state ring: revolving amber angular-gradient glow over a dimmed base stroke.
+    /// The sweep rotates at 3 s/revolution driven by `queuedRotation`.
     private var queuedRing: some View {
-        Circle()
-            .stroke(Color.rbWarning, lineWidth: strokeWidth)
-            .frame(width: size, height: size)
+        ZStack {
+            Circle()
+                .stroke(Color.rbWarning.opacity(0.25), lineWidth: strokeWidth)
+                .frame(width: size, height: size)
+            Circle()
+                .stroke(
+                    AngularGradient(
+                        colors: [Color.rbWarning.opacity(0.0), Color.rbWarning.opacity(0.30)],
+                        center: .center
+                    ),
+                    lineWidth: strokeWidth
+                )
+                .frame(width: size, height: size)
+                .rotationEffect(.degrees(queuedRotation))
+        }
     }
 
     /// Terminal state (success/failed): solid colored ring + SF Symbol in the centre.
