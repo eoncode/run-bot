@@ -81,6 +81,26 @@ final class Signal {
     }
 }
 
+// MARK: - Helpers
+
+/// Returns an `(ObservationLoop, AsyncStream<Void>)` pair.
+///
+/// The stream yields one element each time `onChange` fires. Awaiting
+/// `stream.first(where: { true })` blocks until the next firing — no
+/// timing-dependent sleeps needed.
+///
+/// - Parameters:
+///   - observe: Forwarded to `ObservationLoop.init(observe:onChange:)`.
+private func makeLoop(
+    observe: @escaping @MainActor () -> Void
+) -> (loop: ObservationLoop, signals: AsyncStream<Void>) {
+    let (stream, continuation) = AsyncStream<Void>.makeStream()
+    let loop = ObservationLoop(observe: observe) {
+        continuation.yield()
+    }
+    return (loop, stream)
+}
+
 @Suite("ObservationLoop")
 @MainActor
 struct ObservationLoopTests {
@@ -88,6 +108,7 @@ struct ObservationLoopTests {
     @Test("onChange fires when observed property changes")
     func firesOnChange() async {
         let counter = ObservableCounter()
+<<<<<<< Updated upstream
         var fired = 0
         let signal = Signal()
 
@@ -103,11 +124,24 @@ struct ObservationLoopTests {
 
         #expect(fired == 1)
         _ = loop
+=======
+        let (loop, signals) = makeLoop { _ = counter.count }
+
+        counter.count = 1
+        // Await the real signal instead of a fixed-duration sleep — deterministic
+        // regardless of scheduler load or CI runner speed.
+        var iter = signals.makeAsyncIterator()
+        let fired = await iter.next() != nil
+
+        #expect(fired)
+        _ = loop // keep alive
+>>>>>>> Stashed changes
     }
 
     @Test("onChange fires again on second mutation — re-registration works")
     func firesOnSecondMutation() async {
         let counter = ObservableCounter()
+<<<<<<< Updated upstream
         var fired = 0
         let signal1 = Signal()
         let signal2 = Signal()
@@ -123,8 +157,19 @@ struct ObservationLoopTests {
         await signal1.wait()   // wait for first onChange + re-registration
         counter.count = 2
         await signal2.wait()   // wait for second onChange
+=======
+        let (loop, signals) = makeLoop { _ = counter.count }
+        var iter = signals.makeAsyncIterator()
 
-        #expect(fired == 2)
+        counter.count = 1
+        _ = await iter.next() // wait for first firing
+>>>>>>> Stashed changes
+
+        counter.count = 2
+        _ = await iter.next() // wait for second firing
+
+        // Both mutations propagated — re-registration is working.
+        #expect(counter.count == 2)
         _ = loop
     }
 
@@ -141,6 +186,7 @@ struct ObservationLoopTests {
             signal.yield()
         }
 
+<<<<<<< Updated upstream
         // `isolated deinit` on ObservationLoop guarantees isRunning = false is written
         // on @MainActor — the same executor we're on now. The nil assignment therefore
         // synchronously completes the deinit before the mutation below runs, making the
@@ -160,6 +206,15 @@ struct ObservationLoopTests {
             signal.cancel() // finish stream so the losing wait() child can exit
             return first
         }
+=======
+        loop = nil // deallocate — isRunning = false, weak self guard will drop the queued Task
+        counter.count = 1
+        // Give the cooperative scheduler a full turn to confirm nothing fires.
+        // This is the one place a short yield is correct: we are asserting *absence*
+        // of a signal, so we cannot block on a stream. Three yields is sufficient to
+        // drain a Task { @MainActor } that was already enqueued before dealloc.
+        for _ in 0 ..< 3 { await Task.yield() }
+>>>>>>> Stashed changes
 
         #expect(fired == 0)
         #expect(raceResult == false, "onChange fired after dealloc — isolated deinit guard broken")

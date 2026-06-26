@@ -10,21 +10,31 @@ import Foundation
 /// `AppDelegate+StoreSetup` for DI wiring). `buildInstallPathMap` is `internal`
 /// — it is only called from within `RunnerBarCore`.
 public struct InstallPathMap {
+<<<<<<< Updated upstream:Sources/RunnerBarCore/Runner/Polling/RunnerPoller+InstallPathMap.swift
+/// `public` so the app target can reference the type (e.g. in tests and in
+/// `AppDelegate+StoreSetup` for DI wiring). `buildInstallPathMap` is `internal`
+/// — it is only called from within `RunnerBarCore`.
+public struct InstallPathMap {
+=======
+/// Migration note (step 10): now `internal` — no app-layer callers exist.
+/// TODO: fold into `extension RunnerPoller` once the dual-write bridge is removed.
+struct InstallPathMap {
+>>>>>>> Stashed changes:Sources/RunnerBarCore/Runner/RunnerPoller+InstallPathMap.swift
     /// Maps "scope/runnerName" to installPath (exact scope-prefixed match).
-    public let byFullKey: [String: String]
+    let byFullKey: [String: String]
     /// Maps "runnerName" to installPath (name-only fallback).
-    public let byName: [String: String]
+    let byName: [String: String]
     /// Maps local `.runner` JSON `AgentId` to installPath (scope-agnostic).
     ///
     /// Keyed on `localRunner.agentId`, **not** the GitHub REST API runner id.
     /// Use `byApiId` when resolving API runner ids (they differ for org runners).
-    public let byAgentId: [Int: String]
+    let byAgentId: [Int: String]
     /// Maps apiId to installPath using the GitHub REST API runner id from the last enrichment cycle.
     ///
     /// For org runners the GitHub API assigns an `id` that differs from the local
     /// `.runner` JSON `AgentId`. This map is keyed on the API id so that metrics
     /// can be resolved for org runners even when `byAgentId` misses.
-    public let byApiId: [Int: String]
+    let byApiId: [Int: String]
 
     /// Creates an `InstallPathMap` with pre-built lookup dictionaries.
     ///
@@ -33,7 +43,7 @@ public struct InstallPathMap {
     ///   - byName: Maps runnerName to installPath (name-only fallback).
     ///   - byAgentId: Maps local `.runner` JSON AgentId to installPath.
     ///   - byApiId: Maps GitHub REST API runner id to installPath.
-    public init(
+    init(
         byFullKey: [String: String],
         byName: [String: String],
         byAgentId: [Int: String],
@@ -48,9 +58,16 @@ public struct InstallPathMap {
 
 /// Builds four lookup maps from the local runner list.
 ///
+<<<<<<< Updated upstream:Sources/RunnerBarCore/Runner/Polling/RunnerPoller+InstallPathMap.swift
 /// `internal` — called only by `RunnerPoller.fetch()` inside `RunnerBarCore`.
 /// Kept as a top-level free function (rather than `extension RunnerPoller`) so
 /// it can be tested without an actor instance.
+=======
+/// Builds four lookup maps from the local runner list.
+///
+/// `internal` — only called by `RunnerPoller.fetch()`. TODO: move into
+/// `extension RunnerPoller` once the dual-write bridge is removed (step 10).
+>>>>>>> Stashed changes:Sources/RunnerBarCore/Runner/RunnerPoller+InstallPathMap.swift
 func buildInstallPathMap(
     scopes: [String],
     localRunners: [RunnerModel]
