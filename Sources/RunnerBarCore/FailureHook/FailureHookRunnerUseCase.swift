@@ -259,6 +259,7 @@ public struct FailureHookRunnerUseCase: Sendable {
             for job in resp.jobs {
                 guard seenIDs.insert(job.id).inserted else { continue }
                 guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else {
+                    // swiftlint:disable:next line_length
                     log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)", category: .failureHook)
                     continue
                 }

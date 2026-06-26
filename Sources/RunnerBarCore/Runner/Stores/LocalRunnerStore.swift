@@ -320,6 +320,7 @@ public actor LocalRunnerStore {
         let enriched = await enricher.enrich(runners: hydrated)
         log("LocalRunnerStore › performRefresh() — GitHub enrichment complete, \(enriched.count) runner(s) enriched", category: .runner)
         #if DEBUG
+        // swiftlint:disable:next line_length
         log("LocalRunnerStore › performRefresh() — enriched apiIds=\(enriched.map { "\($0.runnerName)(apiId=\(String(describing: $0.apiId)) agentId=\(String(describing: $0.agentId)))" })", category: .runner)
         #endif
 
@@ -349,6 +350,7 @@ public actor LocalRunnerStore {
             metricsByName[runner.runnerName] = preservedMetrics  // Priority 3: name (last resort)
         }
         #if DEBUG
+        // swiftlint:disable:next line_length
         log("LocalRunnerStore › applyRefreshResults — preserved metrics: byApiId=\(metricsByApiId.keys.sorted()) byAgentId=\(metricsByAgentId.keys.sorted()) byName=\(metricsByName.keys.sorted())", category: .runner)
         #endif
 

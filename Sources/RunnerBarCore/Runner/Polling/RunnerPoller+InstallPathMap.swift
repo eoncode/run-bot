@@ -80,6 +80,7 @@ func buildInstallPathMap(
     // swiftlint:disable:next line_length
     log("RunnerPoller › buildInstallPathMap — localRunners=\(localRunners.count) scopes=\(scopes) → fullKeys=\(byFullKey.keys.sorted()) nameKeys=\(byName.keys.sorted()) agentIdKeys=\(byAgentId.keys.sorted()) apiIdKeys=\(byApiId.keys.sorted())", category: .runner)
     if byFullKey.isEmpty && !localRunners.isEmpty {
+        // swiftlint:disable:next line_length
         log("RunnerPoller › ⚠️ buildInstallPathMap — fullKey map is EMPTY despite localRunners=\(localRunners.count). Scopes=\(scopes). Check scope string format alignment with localRunner names.", category: .runner)
     }
     if localRunners.isEmpty {
