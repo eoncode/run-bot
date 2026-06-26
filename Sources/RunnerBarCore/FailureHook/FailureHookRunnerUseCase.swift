@@ -75,11 +75,11 @@ public struct FailureHookRunnerUseCase: Sendable {
         callsite: String = "unknown"
     ) async {
         // swiftlint:disable:next line_length
-        log("FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)")
+        log("FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)", category: .failureHook)
         let hookEnabled = await preferencesStore.failureHookEnabled(for: scope)
-        log("FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(hookEnabled)")
+        log("FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(hookEnabled)", category: .failureHook)
         guard hookEnabled else {
-            log("FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)")
+            log("FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)", category: .failureHook)
             return
         }
         // Branch filter — skip if a branch filter is set and doesn't match.
@@ -87,33 +87,33 @@ public struct FailureHookRunnerUseCase: Sendable {
         if let filter = filterBranch {
             let groupBranch = group.headBranch ?? ""
             guard groupBranch == filter else {
-                log("FailureHookRunnerUseCase SKIP -- branch filter '\(filter)' != group branch '\(groupBranch)'")
+                log("FailureHookRunnerUseCase SKIP -- branch filter '\(filter)' != group branch '\(groupBranch)'", category: .failureHook)
                 return
             }
-            log("FailureHookRunnerUseCase branch filter '\(filter)' MATCHED group branch '\(groupBranch)'")
+            log("FailureHookRunnerUseCase branch filter '\(filter)' MATCHED group branch '\(groupBranch)'", category: .failureHook)
         }
         let storedCommand = await preferencesStore.failureHookCommand(for: scope)
-        log("FailureHookRunnerUseCase storedCommand for scope=\(scope) -> \(storedCommand ?? "<nil -- will use defaultCommand>")")
+        log("FailureHookRunnerUseCase storedCommand for scope=\(scope) -> \(storedCommand ?? "<nil -- will use defaultCommand>")", category: .failureHook)
         let command = storedCommand ?? FailureHookRunnerUseCase.defaultCommand
-        log("FailureHookRunnerUseCase resolved command (first 200): \(command.prefix(200))")
+        log("FailureHookRunnerUseCase resolved command (first 200): \(command.prefix(200))", category: .failureHook)
         let failure = Self.isFailure(group: group)
         let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(separator: ", ")
-        log("FailureHookRunnerUseCase isFailure=\(failure) for groupID=\(group.id) runs=\(runSummary)")
+        log("FailureHookRunnerUseCase isFailure=\(failure) for groupID=\(group.id) runs=\(runSummary)", category: .failureHook)
         guard failure else {
-            log("FailureHookRunnerUseCase SKIP -- group is not a failure, groupID=\(group.id)")
+            log("FailureHookRunnerUseCase SKIP -- group is not a failure, groupID=\(group.id)", category: .failureHook)
             return
         }
-        log("FailureHookRunnerUseCase ALL CHECKS PASSED -- fetching failed jobs for scope=\(scope) groupID=\(group.id)")
+        log("FailureHookRunnerUseCase ALL CHECKS PASSED -- fetching failed jobs for scope=\(scope) groupID=\(group.id)", category: .failureHook)
         let jobs = await Self.fetchFailedJobs(group: group, scope: scope)
-        log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })")
+        log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })", category: .failureHook)
         let localPath = await preferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
-        log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))")
-        log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)")
+        log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))", category: .failureHook)
+        log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)", category: .failureHook)
         // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
         await MainActor.run {
             terminalLauncher.open(resolved)
-            log("FailureHookRunnerUseCase main actor -- terminalLauncher.open returned for groupID=\(group.id)")
+            log("FailureHookRunnerUseCase main actor -- terminalLauncher.open returned for groupID=\(group.id)", category: .failureHook)
         }
     }
 
@@ -160,7 +160,7 @@ public struct FailureHookRunnerUseCase: Sendable {
         let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
         let escapedLog = singleQuoteEscape(logContent)
         // swiftlint:disable:next line_length
-        log("FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)")
+        log("FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)", category: .failureHook)
         return command
             .replacingOccurrences(of: "$LOCAL_PATH", with: singleQuoteEscape(localRepoPath))
             .replacingOccurrences(of: "$SCOPE", with: singleQuoteEscape(scope))
@@ -243,40 +243,40 @@ public struct FailureHookRunnerUseCase: Sendable {
         var seenIDs = Set<Int>()
         for run in group.runs {
             guard run.conclusion?.isHookConclusion == true else {
-                log("FailureHookRunnerUseCase fetchFailedJobs -- run \(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
+                log("FailureHookRunnerUseCase fetchFailedJobs -- run \(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)", category: .failureHook)
                 continue
             }
-            log("FailureHookRunnerUseCase fetchFailedJobs -- fetching jobs for failed run=\(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil")")
+            log("FailureHookRunnerUseCase fetchFailedJobs -- fetching jobs for failed run=\(run.id) conclusion=\(run.conclusion?.rawValue ?? "nil")", category: .failureHook)
             guard let data = await ghAPI("repos/\(scope)/actions/runs/\(run.id)/jobs?per_page=\(GitHubConstants.maxPageSize)") else {
-                log("FailureHookRunnerUseCase fetchFailedJobs -- ghAPI returned nil for run=\(run.id)")
+                log("FailureHookRunnerUseCase fetchFailedJobs -- ghAPI returned nil for run=\(run.id)", category: .failureHook)
                 continue
             }
             guard let resp = try? JSONDecoder().decode(JobsResponse.self, from: data) else {
-                log("FailureHookRunnerUseCase fetchFailedJobs -- JSON decode failed for run=\(run.id) dataBytes=\(data.count)")
+                log("FailureHookRunnerUseCase fetchFailedJobs -- JSON decode failed for run=\(run.id) dataBytes=\(data.count)", category: .failureHook)
                 continue
             }
-            log("FailureHookRunnerUseCase fetchFailedJobs -- run=\(run.id) decoded \(resp.jobs.count) jobs")
+            log("FailureHookRunnerUseCase fetchFailedJobs -- run=\(run.id) decoded \(resp.jobs.count) jobs", category: .failureHook)
             for job in resp.jobs {
                 guard seenIDs.insert(job.id).inserted else { continue }
                 guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else {
-                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)")
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)", category: .failureHook)
                     continue
                 }
-                log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)")
+                log("FailureHookRunnerUseCase fetchFailedJobs -- fetching log for failed jobID=\(job.id) name=\(job.name)", category: .failureHook)
                 let tail: String?
                 if let fullLog = await LogFetcher().fetchJobLog(jobID: job.id, scope: scope) {
                     let lines = fullLog.components(separatedBy: "\n")
                     let kept = lines.suffix(150).joined(separator: "\n")
                     tail = kept
-                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) log lines=\(lines.count) kept last 150")
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) log lines=\(lines.count) kept last 150", category: .failureHook)
                 } else {
                     tail = nil
-                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) fetchJobLog returned nil")
+                    log("FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) fetchJobLog returned nil", category: .failureHook)
                 }
                 result.append(FailedJobResult(job: job, logTail: tail))
             }
         }
-        log("FailureHookRunnerUseCase fetchFailedJobs -- total \(result.count) unique failed jobs returned")
+        log("FailureHookRunnerUseCase fetchFailedJobs -- total \(result.count) unique failed jobs returned", category: .failureHook)
         return result
     }
 
