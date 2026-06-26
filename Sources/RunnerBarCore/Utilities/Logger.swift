@@ -113,6 +113,22 @@ private func resolvedLogger(for category: LogCategory) -> Logger {
 ///
 /// In release builds the OS elides .debug calls at zero cost.
 ///
+/// **`privacy: .public` policy**
+/// All three interpolated fields (filename, line, message) are marked `.public`.
+/// This is a deliberate, app-wide policy: RunnerBar is a developer tool whose
+/// operator controls the machine and reads their own logs. The OS default
+/// (`.private`) would redact every dynamic string in Console.app and `log stream`,
+/// making diagnostic output useless in the field. `.public` opts the entire
+/// message out of OS-level redaction.
+///
+/// **Consequence:** call sites must not embed secrets in log messages. The sole
+/// exception where content IS manually sanitised before reaching `log()` is
+/// `OAuthService.handleCallback`, which logs `scheme://host` only, stripping the
+/// one-time OAuth `code` query parameter. All other call sites (runner names,
+/// repo scopes, error descriptions, token lengths) are intentionally unredacted.
+/// Do not add `privacy: .private` or `.sensitive` overrides at individual call sites
+/// — if a call site needs redaction, sanitise the string before passing it to `log()`.
+///
 /// - Parameters:
 ///   - message:  Human-readable log message.
 ///   - category: Subsystem category for Console.app filtering.
@@ -125,6 +141,7 @@ public func log(
 ) {
     let filename = URL(fileURLWithPath: file)
         .deletingPathExtension().lastPathComponent
+    // privacy: .public — see policy note in the doc comment above.
     resolvedLogger(for: category).debug(
         "\(filename, privacy: .public):\(line, privacy: .public) — \(message, privacy: .public)"
     )
