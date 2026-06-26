@@ -4,6 +4,8 @@
 // Step 10: Moved from RunnerBar app target to RunnerBarCore.
 // F-35: PreferencesObserver and ScopesObserver replaced by ObservationRelay<Element>.
 
+import Foundation
+
 // MARK: - Typealiases
 
 /// Drives the `pollingInterval → TimeInterval` observation stream.
