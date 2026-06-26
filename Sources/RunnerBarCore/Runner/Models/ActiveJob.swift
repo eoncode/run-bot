@@ -260,7 +260,7 @@ extension ActiveJob {
             status: status,
             conclusion: conclusion,
             isDimmed: isDimmed,
-            runnerName: newValue == scope ? runnerName : runnerName,
+            runnerName: runnerName,
             scope: newValue,
             startedAt: startedAt,
             completedAt: completedAt,
