@@ -252,8 +252,13 @@ struct AddRunnerSheet: View {
 
     /// Invokes `config.sh` with the GitHub URL, registration token, runner name and labels.
     ///
+    /// `nonisolated`: called via `await` from `@MainActor register()`, which hops off the
+    /// main actor for the duration of the subprocess, then returns. This is the load-bearing
+    /// design that keeps the main thread free during shell execution.
+    /// Do not annotate `@MainActor` — that would prevent the hop and stall the UI.
+    ///
     /// Delegates to `ProcessRunner.runAsync` — no blocking `waitUntilExit()` on the pool.
-    func runRegistrationCommand(
+    nonisolated func runRegistrationCommand(
         dir: String, ghURL: String, token: String, name: String, labels: String
     ) async -> Int32 {
         var args = ["--url", ghURL, "--token", token, "--name", name, "--unattended"]
@@ -271,8 +276,12 @@ struct AddRunnerSheet: View {
 
     /// Launches `executable` with `args` asynchronously and returns the termination status.
     ///
-    /// Delegates to `ProcessRunner.runAsync` — stderr is discarded (default `mergeStderr: false`).
-    func runSimpleProcess(_ executable: String, args: [String]) async -> Int32 {
+    /// `nonisolated`: called via `await` from `@MainActor register()`, which hops off the
+    /// main actor for the duration of the subprocess, then returns. This is the load-bearing
+    /// design that keeps the main thread free during shell execution.
+    /// Do not annotate `@MainActor` — that would prevent the hop and stall the UI.
+    /// Stderr is discarded (default `mergeStderr: false`).
+    nonisolated func runSimpleProcess(_ executable: String, args: [String]) async -> Int32 {
         let result = await ProcessRunner.runAsync(
             executableURL: URL(fileURLWithPath: executable),
             arguments: args,
@@ -286,18 +295,18 @@ struct AddRunnerSheet: View {
 
     /// Downloads, unpacks, configures a new runner, registers with `LocalRunnerStore`, and dismisses.
     ///
-    /// ## Actor isolation — read before changing this function
-    /// `AddRunnerSheet` is a plain `struct … View` with **no** `@MainActor` annotation on the
-    /// type itself. Swift only synthesises `@MainActor` isolation for a SwiftUI `View` when the
-    /// conformance is on an explicitly `@MainActor`-annotated type — it does NOT do so for
-    /// unannotated structs. Only `body` and helpers explicitly marked `@MainActor` (e.g.
-    /// `setStep`) run on the main actor.
+    /// ## Actor isolation
+    /// `register()` is `@MainActor` because every state mutation it performs
+    /// (`isRegistering`, `registrationStep`, `errorMessage`, `isPresented`, `onComplete`)
+    /// targets `@State` or `@Binding` properties that are `@MainActor`-isolated.
+    /// Under Swift 6.2 strict concurrency, writing those properties from a
+    /// non-isolated async context is a concurrency error.
     ///
-    /// `register()` carries **no** actor annotation. A `Task { await register() }` created from
-    /// a SwiftUI button action inherits the *caller's* actor isolation only if the callee is
-    /// itself actor-isolated. Because `register()` is unannotated, the Task runs on the
-    /// cooperative thread pool — **not** on `@MainActor`. This is the correct and intended
-    /// behaviour, not a bug.
+    /// Being on `@MainActor` does **not** block the main thread during `await` calls:
+    /// each `await` on a `nonisolated` helper (`runSimpleProcess`, `runRegistrationCommand`)
+    /// hops off the main actor while the subprocess runs, then resumes on the main actor
+    /// when complete. `setStep(_:)` is also `@MainActor`, so no hop is required.
+    @MainActor
     func register() async {
         guard canRegister else { return }
         errorMessage = nil
