@@ -80,7 +80,9 @@ public actor RunnerPoller {
     /// Assigned in `applyFetchResult`/`applyError` and written to `state`. periphery:ignore
     private(set) var rateLimitResetDate: Date?
     /// Owns the three structured `Task` handles for the poll loop.
-    let pollLoop = PollLoopCoordinator()
+    /// `private` — all call sites (startObservingPreferences, startObservingScopes,
+    /// start(), isolated deinit) are in this file; no extension file needs access.
+    private let pollLoop = PollLoopCoordinator()
     /// Observable read model — the source of truth for all views and AppDelegate observers.
     public let state: RunnerState
     /// Returns the current local-runner snapshot on the `@MainActor`.
