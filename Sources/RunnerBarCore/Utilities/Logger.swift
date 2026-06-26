@@ -42,7 +42,12 @@ private let subsystem = "com.eoncode.runner-bar"
 /// invariant — if a new case is added without updating this initialiser the force-unwrap
 /// below will crash at the first call site in debug builds, surfacing the omission
 /// immediately rather than silently allocating a new `Logger` instance per log call.
-private let loggers: [LogCategory: Logger] = Dictionary(
+///
+/// `nonisolated(unsafe)` suppresses the `#MutableGlobalVariable` warning that Swift 6
+/// strict-concurrency mode emits for top-level `let` bindings of non-`Sendable` types.
+/// This dictionary is initialised once during module load and never mutated, making it
+/// safe to read from any concurrency domain without an explicit isolation annotation.
+nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
     uniqueKeysWithValues: LogCategory.allCases.map {
         ($0, Logger(subsystem: subsystem, category: $0.rawValue))
     }
