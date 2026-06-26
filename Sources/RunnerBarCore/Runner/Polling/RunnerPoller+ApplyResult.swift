@@ -69,8 +69,11 @@ extension RunnerPoller {
     /// re-notifying `@Observable` observers on every failed cycle when the message is
     /// unchanged (e.g. sustained network loss).
     ///
-    /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
-    /// stale data alongside the error banner rather than an empty list.
+    /// Intentionally does **not** update `runners`, `jobs`, or `actions` — contrast with
+    /// `applyFetchResult`, which passes all three to `setDisplayState`. Omitting them here
+    /// means `setDisplayState` leaves those actor-local properties at their last-successful-
+    /// cycle values. Views therefore show stale data alongside the error banner rather than
+    /// an empty list.
     func applyError(_ error: any Error & Sendable) async {
         let rateLimitSnapshot = await ghRateLimitSnapshot()
         // Sync actor-local copies first — nextPollInterval() reads these directly.
