@@ -35,6 +35,12 @@ public enum LogCategory: String, CaseIterable {
 private let subsystem = "com.eoncode.runner-bar"
 
 /// One `os.Logger` per `LogCategory`, created once at launch.
+///
+/// Built from `LogCategory.allCases` via `uniqueKeysWithValues`, so the dictionary
+/// is guaranteed to contain every current case. `resolvedLogger(for:)` depends on this
+/// invariant — if a new case is added without updating this initialiser the force-unwrap
+/// below will crash at the first call site in debug builds, surfacing the omission
+/// immediately rather than silently allocating a new `Logger` instance per log call.
 private let loggers: [LogCategory: Logger] = Dictionary(
     uniqueKeysWithValues: LogCategory.allCases.map {
         ($0, Logger(subsystem: subsystem, category: $0.rawValue))
@@ -42,9 +48,17 @@ private let loggers: [LogCategory: Logger] = Dictionary(
 )
 
 /// Returns the `os.Logger` for the given category.
+///
+/// Force-unwraps the dictionary subscript because `loggers` is built from
+/// `LogCategory.allCases` and is therefore guaranteed to contain every case.
+/// A nil result would mean a `LogCategory` case was added without a corresponding
+/// entry in `loggers` — a programmer error that should crash loudly in development
+/// rather than silently allocate a new `Logger` instance on every log call.
 @inline(__always)
 private func resolvedLogger(for category: LogCategory) -> Logger {
-    loggers[category] ?? Logger(subsystem: subsystem, category: category.rawValue)
+    // allCases guarantees every case is present; subscript will never return nil.
+    // swiftlint:disable:next force_unwrap
+    loggers[category]!
 }
 
 // MARK: - Public log() entry-point
