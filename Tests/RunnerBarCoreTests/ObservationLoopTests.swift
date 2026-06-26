@@ -142,7 +142,7 @@ struct ObservationLoopTests {
             signal.yield()
         }
 
-// `isolated deinit` on ObservationLoop guarantees isRunning = false is written
+        // `isolated deinit` on ObservationLoop guarantees isRunning = false is written
         // on @MainActor — the same executor we're on now. The nil assignment therefore
         // synchronously completes the deinit before the mutation below runs, making the
         // guard in register()'s Task body fire before any onChange can be enqueued.

@@ -40,8 +40,8 @@ private let subsystem = "com.eoncode.runner-bar"
 /// Built from `LogCategory.allCases` via `uniqueKeysWithValues`, so the dictionary
 /// is guaranteed to contain every current case. `resolvedLogger(for:)` depends on this
 /// invariant — if a new case is added without a corresponding entry in this dictionary,
-/// `resolvedLogger` will call `fatalError` and crash in all builds, surfacing the
-/// omission immediately rather than silently allocating a new `Logger` per call.
+/// `resolvedLogger` will call `preconditionFailure`, surfacing the omission in debug
+/// and test builds without risking a production crash for a structurally unreachable path.
 ///
 /// `nonisolated(unsafe)` suppresses the `#MutableGlobalVariable` warning that Swift 6
 /// strict-concurrency mode emits for top-level `let` bindings of non-`Sendable` types.
@@ -56,15 +56,16 @@ nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
 /// Returns the `os.Logger` for the given category.
 ///
 /// `loggers` is built from `LogCategory.allCases` and is therefore guaranteed to
-/// contain every case. A missing entry means a `LogCategory` case was added without
-/// a corresponding entry in `loggers` — a programmer error. `fatalError` crashes
-/// in all builds (not debug-only), making the omission impossible to miss regardless
-/// of build configuration.
+/// contain every case. A nil result is structurally impossible — `allCases` +
+/// `uniqueKeysWithValues` ensures every case has an entry. `preconditionFailure`
+/// is used rather than `fatalError` because this path is unreachable by construction;
+/// it catches programmer error (a new case skipping the dict build) in debug and
+/// test builds without risking a production crash for a condition that cannot occur.
 @inline(__always)
 private func resolvedLogger(for category: LogCategory) -> Logger {
     // allCases guarantees every case is present; a nil result is a programmer error.
     guard let logger = loggers[category] else {
-        fatalError("Logger for category '\(category.rawValue)' not found — add it to LogCategory.allCases")
+        preconditionFailure("Logger for category '\(category.rawValue)' not found — add it to LogCategory.allCases")
     }
     return logger
 }
