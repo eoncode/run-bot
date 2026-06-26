@@ -46,6 +46,12 @@ public actor RunnerPoller {
     /// Workflow action groups currently shown in the panel.
     /// Written exclusively by `applyFetchResult`.
     private(set) var actions: [WorkflowActionGroup] = []
+
+    // MARK: ⚠️ Mutable state — write ONLY via applyFetchResult / applyError
+    // (RunnerPoller+ApplyResult.swift). Swift cannot enforce this across extension
+    // files; the invariant is by convention. Do not write these properties directly
+    // from any other extension or call site.
+
     /// Live-job snapshot from the previous poll, used to detect vanished jobs.
     /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
     var prevLiveJobs: [Int: ActiveJob] = [:]
@@ -420,6 +426,13 @@ public actor RunnerPoller {
     /// `makeJob`, so every backfill cycle silently dropped the scope field from the
     /// cache entry — a latent bug that caused the nil-scope skip to fire on the very
     /// next cycle for any backfilled job. This is now fixed.
+    ///
+    /// **Upgrade note:** Cache entries written before scope-injection was introduced
+    /// have `scope == nil` and are **evicted** (not skipped) on first encounter.
+    /// Eviction prevents per-poll log spam for stale pre-migration entries. The
+    /// side-effect is a one-poll cosmetic flash where dimmed completed jobs briefly
+    /// disappear from the panel; this is intentional, happens at most once per app
+    /// lifecycle after an upgrade, and self-corrects on the next poll cycle.
     ///
     /// `isDimmed` is forced `true`: backfilled entries are completed jobs no longer in
     /// the live feed and must remain visually dimmed.

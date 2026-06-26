@@ -14,6 +14,10 @@ import os
 
 /// Logical subsystem categories for `os.Logger` filtering in Console.app
 /// and `log stream --predicate`.
+///
+/// **Access level:** `public` because the app target (`Sources/RunnerBar/**`)
+/// calls `log()` directly from `AppDelegate`, views, and sheets.
+/// `internal` would cause a compile error in the app target.
 public enum LogCategory: String, CaseIterable {
     /// Fallback / uncategorised (migration default).
     case general
@@ -86,6 +90,9 @@ private func resolvedLogger(for category: LogCategory) -> Logger {
 // MARK: - Public log() entry-point
 
 /// Writes a debug-level message to the unified logging system.
+///
+/// **Access level:** `public` — consumed by the app target (`Sources/RunnerBar/**`)
+/// in addition to `RunnerBarCore`. Do not narrow to `internal`.
 ///
 /// Messages are visible in:
 ///   - Console.app (filter by subsystem: com.eoncode.runner-bar, then by category)
