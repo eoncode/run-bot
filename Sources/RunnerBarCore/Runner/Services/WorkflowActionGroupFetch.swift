@@ -331,9 +331,16 @@ public struct WorkflowActionGroupFetcher: Sendable {
     /// API calls on runs with many simultaneously in-progress steps.
     /// All date parsing goes through `ISO8601DateParser.shared`.
     private func fetchJobsForRun(_ runID: Int, scope: String) async -> [ActiveJob] {
-        guard let data = await transport.apiAsync("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)"),
-              let resp = try? decoder.decode(JobsResponse.self, from: data)
-        else { return [] }
+        guard let data = await transport.apiAsync("repos/\(scope)/actions/runs/\(runID)/jobs?per_page=\(GitHubConstants.maxPageSize)") else {
+            return []
+        }
+        let resp: JobsResponse
+        do {
+            resp = try decoder.decode(JobsResponse.self, from: data)
+        } catch {
+            log("fetchJobsForRun — ⚠️ decode failed for runID=\(runID) scope=\(scope): \(error)", category: .runner)
+            return []
+        }
 
         let initial = await withTaskGroup(of: ActiveJob.self) { group in
             for payload in resp.jobs {
