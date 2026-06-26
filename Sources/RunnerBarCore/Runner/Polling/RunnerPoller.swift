@@ -342,12 +342,14 @@ public actor RunnerPoller {
         )
     }
 
-    /// Fetches all active jobs across all scopes.
+    /// Fetches all active jobs across all scopes, injecting the source scope into each job.
     ///
-    /// Iterates the active scopes and calls `fetchActiveJobs(for:decoder:)` for each,
-    /// which resolves to the correct GitHub endpoint for both `.repo` and `.org` scopes
-    /// via `scope.apiPrefix`. This correctly handles org-only scope strings (e.g. "myorg")
-    /// that do not contain a "/".
+    /// `fetchActiveJobs(for:decoder:)` returns `ActiveJob` values with `scope == nil`
+    /// because the GitHub Jobs API payload has no scope field. Without `.copying(scope:)`
+    /// at fetch time, every concluded job entering `completedCache` has `scope == nil`.
+    /// On the very next `backfillSteps` call those entries would hit the eviction branch
+    /// (`scope is nil → removeValue`), causing a one-poll dimmed-job flash on every job
+    /// completion — not just once after an upgrade.
     ///
     /// Note: `actionGroupFetcher.fetch(for:cache:)` is **not** used here because it contains
     /// `guard scope.contains("/") else { return [] }`, which silently drops org-scoped jobs.
@@ -358,7 +360,8 @@ public actor RunnerPoller {
         guard !scopes.isEmpty else { return [] }
         var allJobs: [ActiveJob] = []
         for scope in scopes {
-            allJobs.append(contentsOf: await fetchActiveJobs(for: scope, decoder: decoder))
+            allJobs.append(contentsOf: await fetchActiveJobs(for: scope, decoder: decoder)
+                .map { $0.copying(scope: scope) })
         }
         log("RunnerPoller › fetchAllJobs — fetched \(allJobs.count) job(s) across \(scopes.count) scope(s)", category: .runner)
         return allJobs
