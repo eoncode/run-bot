@@ -368,13 +368,17 @@ public actor RunnerPoller {
         configuredScopes: [String]
     ) -> [String] {
         let configuredScopeSet = Set(configuredScopes)
+        // Use a Set accumulator for O(1) dedup checks (Array.contains is O(n),
+        // making the old loop O(n²) in the number of local runners). The parallel
+        // `extra` array preserves insertion order for deterministic output.
+        var extraSet = Set<String>()
         var extra: [String] = []
         for localRunner in localRunners {
             guard let url = localRunner.gitHubUrl,
                   let derivedScope = scopeFromUrl(url),
                   !derivedScope.contains("/"),
                   !configuredScopeSet.contains(derivedScope),
-                  !extra.contains(derivedScope)
+                  extraSet.insert(derivedScope).inserted
             else { continue }
             extra.append(derivedScope)
             log("RunnerPoller › deriveExtraOrgScopes — derived '\(derivedScope)' from '\(localRunner.runnerName)'", category: .runner)
