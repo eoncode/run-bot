@@ -4,8 +4,8 @@
 // Regression tests for #1209 / #1192: org-scoped runners must receive CPU/MEM
 // metrics even when the local .runner JSON AgentId differs from the GitHub API id.
 import Foundation
-import Testing
 import RunnerBarCore
+import Testing
 
 // MARK: - OrgRunnerMetricsResolutionTests
 
@@ -24,92 +24,92 @@ import RunnerBarCore
 @Suite("OrgRunnerMetricsResolution")
 struct OrgRunnerMetricsResolutionTests {
 
-    // MARK: - Helpers
+  // MARK: - Helpers
 
-    private func makeOrgRunner(
-        agentId: Int?,
-        apiId: Int?,
-        installPath: String? = "/tmp/org-runner", // NOSONAR — test-only fixture path
-        metrics: RunnerMetrics? = nil
-    ) -> RunnerModel {
-        RunnerModel(
-            runnerName: "org-runner-1",
-            gitHubUrl: URL(string: "https://github.com/myorg"),
-            agentId: agentId,
-            apiId: apiId,
-            workFolder: nil,
-            installPath: installPath,
-            isRunning: true,
-            metrics: metrics
-        )
-    }
+  private func makeOrgRunner(
+    agentId: Int?,
+    apiId: Int?,
+    installPath: String? = "/tmp/org-runner",  // NOSONAR — test-only fixture path
+    metrics: RunnerMetrics? = nil
+  ) -> RunnerModel {
+    RunnerModel(
+      runnerName: "org-runner-1",
+      gitHubUrl: URL(string: "https://github.com/myorg"),
+      agentId: agentId,
+      apiId: apiId,
+      workFolder: nil,
+      installPath: installPath,
+      isRunning: true,
+      metrics: metrics
+    )
+  }
 
-    // MARK: - apiId storage
+  // MARK: - apiId storage
 
-    /// `apiId` set in init must be readable after construction.
-    @Test func apiIdIsStoredOnInit() {
-        let runner = makeOrgRunner(agentId: 100, apiId: 999)
-        #expect(runner.apiId == 999)
-        #expect(runner.agentId == 100)
-    }
+  /// `apiId` set in init must be readable after construction.
+  @Test func apiIdIsStoredOnInit() {
+    let runner = makeOrgRunner(agentId: 100, apiId: 999)
+    #expect(runner.apiId == 999)
+    #expect(runner.agentId == 100)
+  }
 
-    /// `apiId` defaults to `nil` when omitted (preserves backward-compatible call sites).
-    @Test func apiIdDefaultsToNilWhenOmitted() {
-        let runner = RunnerModel(
-            runnerName: "runner",
-            gitHubUrl: nil,
-            agentId: 42,
-            workFolder: nil,
-            installPath: nil,
-            isRunning: false
-        )
-        #expect(runner.apiId == nil)
-    }
+  /// `apiId` defaults to `nil` when omitted (preserves backward-compatible call sites).
+  @Test func apiIdDefaultsToNilWhenOmitted() {
+    let runner = RunnerModel(
+      runnerName: "runner",
+      gitHubUrl: nil,
+      agentId: 42,
+      workFolder: nil,
+      installPath: nil,
+      isRunning: false
+    )
+    #expect(runner.apiId == nil)
+  }
 
-    // MARK: - copying() round-trips
+  // MARK: - copying() round-trips
 
-    /// `copying(...)` must preserve `apiId` when no apiId-related field is changed.
-    @Test func copyingPreservesApiId() {
-        let original = makeOrgRunner(agentId: 100, apiId: 999)
-        let copy = original.copying(isRunning: false)
-        #expect(copy.apiId == 999)
-        #expect(copy.agentId == 100)
-    }
+  /// `copying(...)` must preserve `apiId` when no apiId-related field is changed.
+  @Test func copyingPreservesApiId() {
+    let original = makeOrgRunner(agentId: 100, apiId: 999)
+    let copy = original.copying(isRunning: false)
+    #expect(copy.apiId == 999)
+    #expect(copy.agentId == 100)
+  }
 
-    /// `copying(metrics:)` must preserve both `agentId` and `apiId`.
-    @Test func copyingWithMetricsPreservesApiId() {
-        let original = makeOrgRunner(agentId: 100, apiId: 999)
-        let metrics = RunnerMetrics(cpu: 55.0, mem: 30.0)
-        let copy = original.copying(metrics: .some(metrics))
-        #expect(copy.apiId == 999)
-        #expect(copy.agentId == 100)
-        #expect(copy.metrics?.cpu == 55.0)
-    }
+  /// `copying(metrics:)` must preserve both `agentId` and `apiId`.
+  @Test func copyingWithMetricsPreservesApiId() {
+    let original = makeOrgRunner(agentId: 100, apiId: 999)
+    let metrics = RunnerMetrics(cpu: 55.0, mem: 30.0)
+    let copy = original.copying(metrics: .some(metrics))
+    #expect(copy.apiId == 999)
+    #expect(copy.agentId == 100)
+    #expect(copy.metrics?.cpu == 55.0)
+  }
 
-    // MARK: - ID mismatch scenario (org runner)
+  // MARK: - ID mismatch scenario (org runner)
 
-    /// Simulates the org-runner mismatch: agentId (from .runner JSON, e.g. 100) differs from
-    /// apiId (from GitHub REST API, e.g. 5001). The model must hold both simultaneously so the
-    /// caller can build both a `byId` (keyed by agentId) and a `byApiId` (keyed by apiId) lookup map.
-    @Test func agentIdAndApiIdCanDifferForOrgRunners() {
-        let runner = makeOrgRunner(agentId: 100, apiId: 5001)
-        #expect(runner.agentId != runner.apiId)
-    }
+  /// Simulates the org-runner mismatch: agentId (from .runner JSON, e.g. 100) differs from
+  /// apiId (from GitHub REST API, e.g. 5001). The model must hold both simultaneously so the
+  /// caller can build both a `byId` (keyed by agentId) and a `byApiId` (keyed by apiId) lookup map.
+  @Test func agentIdAndApiIdCanDifferForOrgRunners() {
+    let runner = makeOrgRunner(agentId: 100, apiId: 5001)
+    #expect(runner.agentId != runner.apiId)
+  }
 
-    /// A runner whose `apiId` matches the GitHub API runner id (5001) must be
-    /// identifiable by that id even when `agentId` (100) does not match.
-    /// This is the `byApiId` lookup path used when metrics arrive keyed by GitHub's runner id.
-    @Test func apiIdMatchesGitHubApiRunnerIdForLookup() {
-        let runner = makeOrgRunner(agentId: 100, apiId: 5001)
-        let byApiId: [Int: String] = runner.apiId.map { [$0: runner.installPath!] } ?? [:]
-        #expect(byApiId[5001] != nil)
-        #expect(byApiId[100] == nil)
-    }
+  /// A runner whose `apiId` matches the GitHub API runner id (5001) must be
+  /// identifiable by that id even when `agentId` (100) does not match.
+  /// This is the `byApiId` lookup path used when metrics arrive keyed by GitHub's runner id.
+  @Test func apiIdMatchesGitHubApiRunnerIdForLookup() {
+    let runner = makeOrgRunner(agentId: 100, apiId: 5001)
+    let byApiId: [Int: String] = runner.apiId.map { [$0: runner.installPath!] } ?? [:]
+    #expect(byApiId[5001] != nil)
+    #expect(byApiId[100] == nil)
+  }
 
-    /// `nil` apiId must produce an empty `byApiId` map entry (no crash, no spurious hit).
-    @Test func nilApiIdProducesNoByApiIdEntry() {
-        let runner = makeOrgRunner(agentId: 100, apiId: nil)
-        let byApiId: [Int: String] = runner.apiId.map { [$0: runner.installPath!] } ?? [:]
-        #expect(byApiId.isEmpty)
-    }
+  /// `nil` apiId must produce an empty `byApiId` map entry (no crash, no spurious hit).
+  @Test func nilApiIdProducesNoByApiIdEntry() {
+    let runner = makeOrgRunner(agentId: 100, apiId: nil)
+    let byApiId: [Int: String] = runner.apiId.map { [$0: runner.installPath!] } ?? [:]
+    #expect(byApiId.isEmpty)
+  }
 }
