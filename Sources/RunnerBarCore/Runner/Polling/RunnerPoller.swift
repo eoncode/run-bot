@@ -312,10 +312,22 @@ public actor RunnerPoller {
     /// silently fail (the `try?` guard would always `continue`) and no steps would
     /// ever be backfilled.
     ///
-    /// `scope` is preserved from the existing cache entry because scope is a local
-    /// concept injected post-fetch — it is never present in the GitHub API job payload.
-    /// Jobs whose cached `scope` is `nil` are skipped and logged — they entered the
-    /// cache before scope injection was in place and cannot be backfilled safely.
+    /// **Scope resolution (intentional behaviour change from pre-F-26 implementation)**
+    /// The previous implementation derived scope dynamically via `scopeFromHtmlUrl(cached.htmlUrl)`
+    /// on each backfill cycle. That was unreliable — `htmlUrl` is a run URL, not a scope
+    /// string, and `scopeFromHtmlUrl` could silently return `nil` for org-scoped runners,
+    /// silently skipping backfill with no log output.
+    ///
+    /// This implementation reads `cached.scope` instead — the scope string injected
+    /// post-fetch by `buildJobState`. Jobs whose `cached.scope` is `nil` (entered the
+    /// cache before scope injection was in place) are skipped with a warning log rather
+    /// than attempting a potentially wrong re-derivation.
+    ///
+    /// Additionally, the previous implementation did not call `.copying(scope:)` after
+    /// `makeJob`, so every backfill cycle silently dropped the scope field from the
+    /// cache entry — a latent bug that caused the nil-scope skip to fire on the very
+    /// next cycle for any backfilled job. This is now fixed.
+    ///
     /// `isDimmed` is forced `true`: backfilled entries are completed jobs no longer in
     /// the live feed and must remain visually dimmed.
     func backfillSteps(into cache: inout [Int: ActiveJob]) async {
