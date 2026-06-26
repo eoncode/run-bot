@@ -20,16 +20,18 @@ extension RunnerPoller {
         groupResult: GroupPollResult
     ) async {
         let rateLimitSnapshot = await ghRateLimitSnapshot()
-        runners = enrichedRunners
-        jobs = jobResult.display
         completedCache = jobResult.newCache
         prevLiveJobs = jobResult.newPrevLive
-        actions = groupResult.display
         actionGroupCache = groupResult.newGroupCache
         prevLiveGroups = groupResult.newPrevLiveGroups
         seenGroupIDs = groupResult.newSeenGroupIDs
-        isRateLimited = rateLimitSnapshot.isLimited
-        rateLimitResetDate = rateLimitSnapshot.resetDate
+        setDisplayState(
+            runners: enrichedRunners,
+            jobs: jobResult.display,
+            actions: groupResult.display,
+            isRateLimited: rateLimitSnapshot.isLimited,
+            rateLimitResetDate: rateLimitSnapshot.resetDate
+        )
         // swiftlint:disable:next line_length
         log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))", category: .runner)
         await MainActor.run { [state] in
@@ -64,8 +66,10 @@ extension RunnerPoller {
     func applyError(_ error: any Error & Sendable) async {
         let rateLimitSnapshot = await ghRateLimitSnapshot()
         // Sync actor-local copies first — nextPollInterval() reads these directly.
-        isRateLimited = rateLimitSnapshot.isLimited
-        rateLimitResetDate = rateLimitSnapshot.resetDate
+        setDisplayState(
+            isRateLimited: rateLimitSnapshot.isLimited,
+            rateLimitResetDate: rateLimitSnapshot.resetDate
+        )
         await MainActor.run { [state] in
             // Guard the write: `any Error` is not Equatable, so compare via
             // `localizedDescription` — the only field `fetchErrorBanner` consumes.

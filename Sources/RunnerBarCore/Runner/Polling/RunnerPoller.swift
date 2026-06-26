@@ -345,7 +345,12 @@ public actor RunnerPoller {
             guard cached.conclusion != nil else { continue }
             guard cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }) else { continue }
             guard let scope = cached.scope else {
-                log("RunnerPoller › backfillSteps — ⚠️ skipping jobID=\(cacheID) scope is nil (entered cache before scope injection)", category: .runner)
+                // Evict entries whose scope is nil (entered the cache before scope
+                // injection was in place). Evicting on first encounter rather than
+                // logging-and-skipping every poll cycle prevents sustained log spam
+                // for stale pre-migration cache entries.
+                cache.removeValue(forKey: cacheID)
+                log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): scope is nil (pre-scope-injection entry)", category: .runner)
                 continue
             }
             guard let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)") else { continue }
@@ -354,5 +359,29 @@ public actor RunnerPoller {
             // Restore scope — not present in the API payload, must be carried forward.
             cache[cacheID] = updated.copying(scope: cached.scope)
         }
+    }
+
+    // MARK: - Private(set) write-through
+
+    /// Sets the five `private(set)` display properties in a single call.
+    ///
+    /// `private(set)` prevents arbitrary writes from outside the actor, but Swift's
+    /// file-scoped `private` means extension files in separate source files cannot
+    /// write these properties either. This internal setter is the single controlled
+    /// mutation path used exclusively by `applyFetchResult` and `applyError`
+    /// (in `RunnerPoller+ApplyResult.swift`) to uphold the invariant that display
+    /// state is only updated via the defined fetch-result pipeline.
+    func setDisplayState(
+        runners newRunners: [Runner]? = nil,
+        jobs newJobs: [ActiveJob]? = nil,
+        actions newActions: [WorkflowActionGroup]? = nil,
+        isRateLimited newIsRateLimited: Bool,
+        rateLimitResetDate newResetDate: Date?
+    ) {
+        if let newRunners { runners = newRunners }
+        if let newJobs { jobs = newJobs }
+        if let newActions { actions = newActions }
+        isRateLimited = newIsRateLimited
+        rateLimitResetDate = newResetDate
     }
 }
