@@ -52,9 +52,14 @@ extension RunnerPoller {
 
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
+    ///
+    /// - Parameter scopes: The scope snapshot captured by `fetchInternal`, threaded
+    ///   through to `fetchAllJobs(scopes:)` to avoid a TOCTOU re-read of
+    ///   `scopeStore.activeScopes`.
     func buildJobState(
         snapPrev: [Int: ActiveJob],
-        snapCache: [Int: ActiveJob]
+        snapCache: [Int: ActiveJob],
+        scopes: [String]
     ) async -> JobPollResult {
         await PollResultBuilder.buildJobState(
             snapPrev: snapPrev,
@@ -62,7 +67,7 @@ extension RunnerPoller {
             fetchJobs: { [weak self] in
                 // weak: see [weak self] in GroupStateDeps closures note above.
                 guard let self else { return [] }
-                return await self.fetchAllJobs()
+                return await self.fetchAllJobs(scopes: scopes)
             },
             backfill: { [weak self] cache in
                 // weak: see [weak self] in GroupStateDeps closures note above.
@@ -77,11 +82,16 @@ extension RunnerPoller {
     /// Builds a `GroupPollResult` by fetching live workflow action groups for all monitored scopes,
     /// firing failure hooks for newly-failed groups, enriching jobs from the job cache,
     /// and diffing against `snapPrevGroups`.
+    ///
+    /// - Parameter scopes: The scope snapshot captured by `fetchInternal`, threaded
+    ///   through to `fetchActionGroups(scopes:shaKeyedCache:)` to avoid a TOCTOU re-read
+    ///   of `scopeStore.activeScopes`.
     func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
         snapSeenGroupIDs: OrderedSet<String>,
-        jobCache: [Int: ActiveJob]
+        jobCache: [Int: ActiveJob],
+        scopes: [String]
     ) async -> GroupPollResult {
         return await PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
@@ -90,7 +100,7 @@ extension RunnerPoller {
             deps: GroupStateDeps(
                 fetchGroups: { [weak self] shaKeyedCache in
                     // weak: see [weak self] in GroupStateDeps closures note above.
-                    await self?.fetchActionGroups(shaKeyedCache: shaKeyedCache) ?? []
+                    await self?.fetchActionGroups(scopes: scopes, shaKeyedCache: shaKeyedCache) ?? []
                 },
                 scopeFromGroup: { [weak self] group in
                     // weak: see [weak self] in GroupStateDeps closures note above.
@@ -180,27 +190,28 @@ extension RunnerPoller {
             // conclusion is set but steps are still completing is acceptable and preferable
             // to stale data. This is NOT a conclusion/steps inconsistency bug.
             //
-            // completedAt: only prefer cached.completedAt when cacheHasConclusion is true.
+            // completedAt: prefer cached.completedAt only when cacheHasConclusion is true.
             // GitHub transiently returns conclusion != nil with completedAt == nil for a
             // brief window after a job finishes; without the cached fallback the recorded
             // completion timestamp would be lost for one poll cycle. In the
-            // cacheHasBetterSteps-only path the live job has no conclusion yet, so
-            // cached.completedAt is also expected to be nil — no fallback needed.
+            // cacheHasBetterSteps-only path the live job's completedAt is used directly —
+            // the cache entry is for steps only and its completedAt must not overwrite a
+            // fresher live value.
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
             let cacheHasBetterSteps = !cached.steps.isEmpty
                 && (job.steps.isEmpty || job.steps.contains { $0.status == .inProgress })
                 && !cached.steps.contains { $0.status == .inProgress }
             guard cacheHasConclusion || cacheHasBetterSteps else { return job }
-            // Only allocate new ActiveJob copies for fields that actually change.
-            // copying(conclusion:) and copying(completedAt:) are skipped in the
-            // cacheHasBetterSteps-only path to avoid no-op allocations.
-            var merged = job
             if cacheHasConclusion {
-                merged = merged
+                return job
                     .copying(conclusion: cached.conclusion)
                     .copying(completedAt: cached.completedAt ?? job.completedAt)
+                    .copying(steps: cacheHasBetterSteps ? cached.steps : job.steps)
+            } else {
+                // cacheHasBetterSteps only — keep live conclusion and completedAt.
+                return job
+                    .copying(steps: cached.steps)
             }
-            return merged.copying(steps: cacheHasBetterSteps ? cached.steps : job.steps)
         }
     }
 }
