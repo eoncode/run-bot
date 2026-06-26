@@ -373,10 +373,14 @@ public struct WorkflowActionGroupFetcher: Sendable {
                         // Use copying() helpers rather than the full constructor so that any
                         // future field added to ActiveJob with a non-nil default is automatically
                         // preserved from `job` without requiring a manual update here.
+                        // createdAt is carried forward explicitly (in addition to the implicit
+                        // preservation via copying()'s self forwarding) to match the stated fix
+                        // in commit f8264d3 and make the intent unambiguous to future readers.
                         return (idx, job
                             .copying(runnerName: freshJob.runnerName ?? job.runnerName)
                             .copying(startedAt: freshJob.startedAt ?? job.startedAt)
                             .copying(completedAt: freshJob.completedAt ?? job.completedAt)
+                            .copying(createdAt: freshJob.createdAt ?? job.createdAt)
                             .copying(steps: freshJob.steps)
                         )
                     }

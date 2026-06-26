@@ -204,10 +204,25 @@ public final class OAuthService: OAuthServiceProtocol {
             return
         }
         req.httpBody = httpBody
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let response = try? decoder.decode(OAuthTokenResponse.self, from: data)
-        else {
-            log("OAuthService › exchangeCode — network/parse failure, calling fireSignIn(false)", category: .transport)
+        // Network and decode failures are separated into distinct do/catch blocks so that
+        // each failure logs its actual error description. The OAuth code is one-time use;
+        // losing error detail makes user-reported sign-in failures very hard to diagnose
+        // (TLS errors, proxy timeouts, and malformed responses would otherwise all produce
+        // the same "network/parse failure" message).
+        let data: Data
+        do {
+            let (responseData, _) = try await URLSession.shared.data(for: req)
+            data = responseData
+        } catch {
+            log("OAuthService › exchangeCode: network error — \(error.localizedDescription), calling fireSignIn(false)", category: .transport)
+            fireSignIn(false)
+            return
+        }
+        let response: OAuthTokenResponse
+        do {
+            response = try decoder.decode(OAuthTokenResponse.self, from: data)
+        } catch {
+            log("OAuthService › exchangeCode: decode error — \(error.localizedDescription), calling fireSignIn(false)", category: .transport)
             fireSignIn(false)
             return
         }
