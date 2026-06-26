@@ -41,7 +41,10 @@ extension RunnerPoller {
                 await self?.fetchJobs() ?? []
             },
             backfill: { [weak self] cache in
-                await self?.backfillSteps(into: &cache)
+                // `self?` optional-chaining cannot be used with an inout argument.
+                // Guard-unwrap to a concrete reference so the compiler accepts &cache.
+                guard let self else { return }
+                await self.backfillSteps(into: &cache)
             }
         )
     }
@@ -76,7 +79,7 @@ extension RunnerPoller {
                     await self.fireFailureHook(group, scope)
                 },
                 enrichJobs: { jobs in
-                    await self.enrichGroupJobs(jobs, jobCache: jobCacheSnapshot)
+                    self.enrichGroupJobs(jobs, jobCache: jobCacheSnapshot)
                 }
             )
         )
