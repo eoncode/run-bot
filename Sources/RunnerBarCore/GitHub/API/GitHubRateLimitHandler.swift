@@ -260,6 +260,7 @@ public var ghIsRateLimited: Bool {
 /// before the function immediately suspends onto `rateLimitActor`'s executor.
 /// `@MainActor` callers release the main thread at the first `await`, so there is no
 /// risk of main-thread blocking even without a prior cooperative-pool hop.
+/// Clears the GitHub rate-limit flag on the shared rate-limit actor.
 nonisolated(nonsending)
 public func clearGhRateLimit() async {
     await rateLimitActor.clear()
@@ -276,6 +277,7 @@ public func clearGhRateLimit() async {
 /// before the function immediately suspends onto `rateLimitActor`'s executor.
 /// `@MainActor` callers release the main thread at the first `await`, so there is no
 /// risk of main-thread blocking even without a prior cooperative-pool hop.
+/// Returns a `RateLimitSnapshot` containing `isLimited` and `resetDate` in a single actor hop.
 nonisolated(nonsending)
 public func ghRateLimitSnapshot() async -> RateLimitSnapshot {
     await rateLimitActor.snapshot()

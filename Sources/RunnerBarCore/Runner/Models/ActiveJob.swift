@@ -122,12 +122,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         let done = steps.filter { $0.conclusion != nil }.count
         return Double(done) / Double(steps.count)
     }
-}
 
-// MARK: - Copy helpers
-
-/// Helpers for deriving immutable `ActiveJob` copies.
-extension ActiveJob {
+    // MARK: - Copy helpers
     /// Returns a copy of this job with `isDimmed` replaced.
     /// Use this instead of mutating `isDimmed` directly — the field is `let`.
     public func copying(isDimmed newValue: Bool) -> ActiveJob {
@@ -322,12 +318,8 @@ extension ActiveJob {
             steps: steps
         )
     }
-}
 
-// MARK: - RBStatus
-
-/// UI-status helpers derived from `conclusion` and `status` for display in the panel.
-extension ActiveJob {
+    // MARK: - RBStatus
     /// The canonical display status for this job, derived from `conclusion` and `status`.
     ///
     /// This is the single source of truth that replaces the duplicate

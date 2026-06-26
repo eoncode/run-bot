@@ -76,11 +76,8 @@ public struct GitHubTransport: GitHubTransportProtocol {
     self.rateLimiter = rateLimiter
     self.tokenProvider = tokenProvider ?? { githubTokenCore() }
   }
-}
 
-// MARK: - GitHubTransport: core execution
-
-extension GitHubTransport {
+    // MARK: - Core execution
 
   /// Core execution pipeline shared by all `GitHubTransportProtocol` methods.
   ///

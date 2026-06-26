@@ -126,7 +126,7 @@ private func prLabel(from run: RunPayload) -> String {
 /// default `sharedGitHubTransport`; tests inject a stub.
 ///
 /// - SeeAlso: ``GitHubTransportProtocol``
-public struct WorkflowActionGroupFetcher: Sendable {
+public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherProtocol {
 
   /// The transport used for all GitHub API calls made by this fetcher.
   private let transport: any GitHubTransportProtocol
@@ -459,7 +459,4 @@ public struct WorkflowActionGroupFetcher: Sendable {
   }
 }
 
-// MARK: - Protocol conformance
-/// Empty conformance — the struct already satisfies the protocol requirement via its ``fetch(for:cache:)`` method.
 
-extension WorkflowActionGroupFetcher: WorkflowActionGroupFetcherProtocol {}
