@@ -427,12 +427,14 @@ public actor RunnerPoller {
     ///
     /// **Org-only scopes:** The GitHub Jobs API (`repos/{owner}/{repo}/actions/jobs/{id}`)
     /// requires a full `owner/repo` path. There is no `orgs/{org}/actions/jobs/{id}`
-    /// equivalent. When `cached.scope` is an org-only string (no "/" present), backfill
-    /// is skipped with a warning log. The cache entry is preserved and will receive correct
-    /// step data the next time the job appears in the live feed via `fetchAllJobs`.
+    /// equivalent. Org-only cache entries are **evicted** rather than skipped: keeping
+    /// them would cause a warning log on every subsequent poll cycle with no path to
+    /// ever backfill them. Eviction is a one-time operation; the entry re-enters the
+    /// cache with correct scope data the next time it appears in the live feed via
+    /// `fetchAllJobs`.
     ///
     /// **Upgrade note:** Cache entries written before scope-injection was introduced
-    /// have `scope == nil` and are **evicted** (not skipped) on first encounter.
+    /// have `scope == nil` and are also **evicted** on first encounter.
     /// Eviction prevents per-poll log spam for stale pre-migration entries. The
     /// side-effect is a one-poll cosmetic flash where dimmed completed jobs briefly
     /// disappear from the panel; this is intentional, happens at most once per app
@@ -448,7 +450,8 @@ public actor RunnerPoller {
                 continue
             }
             guard scope.contains("/") else {
-                log("RunnerPoller › backfillSteps — ⚠️ skipping jobID=\(cacheID): scope '\(scope)' is org-only (no repo path); GitHub Jobs API requires owner/repo", category: .runner)
+                cache.removeValue(forKey: cacheID)
+                log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): org-only scope '\(scope)' has no repo path; entry will re-populate via fetchAllJobs", category: .runner)
                 continue
             }
             guard let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)") else { continue }

@@ -95,7 +95,9 @@ public struct FailureHookRunnerUseCase: Sendable {
         let storedCommand = await preferencesStore.failureHookCommand(for: scope)
         log("FailureHookRunnerUseCase storedCommand for scope=\(scope) -> \(storedCommand ?? "<nil -- will use defaultCommand>")", category: .failureHook)
         let command = storedCommand ?? FailureHookRunnerUseCase.defaultCommand
-        log("FailureHookRunnerUseCase resolved command (first 200): \(command.prefix(200))", category: .failureHook)
+#if DEBUG
+        log("FailureHookRunnerUseCase resolved command template (first 200): \(command.prefix(200))", category: .failureHook)
+#endif
         let failure = Self.isFailure(group: group)
         let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(separator: ", ")
         log("FailureHookRunnerUseCase isFailure=\(failure) for groupID=\(group.id) runs=\(runSummary)", category: .failureHook)
@@ -108,7 +110,9 @@ public struct FailureHookRunnerUseCase: Sendable {
         log("FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })", category: .failureHook)
         let localPath = await preferencesStore.localRepoPath(for: scope) ?? ""
         let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
+#if DEBUG
         log("FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))", category: .failureHook)
+#endif
         log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)", category: .failureHook)
         // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
         await MainActor.run {
