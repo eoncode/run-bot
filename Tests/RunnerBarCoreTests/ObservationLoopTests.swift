@@ -186,8 +186,7 @@ struct ObservationLoopTests {
             signal.yield()
         }
 
-<<<<<<< Updated upstream
-        // `isolated deinit` on ObservationLoop guarantees isRunning = false is written
+// `isolated deinit` on ObservationLoop guarantees isRunning = false is written
         // on @MainActor — the same executor we're on now. The nil assignment therefore
         // synchronously completes the deinit before the mutation below runs, making the
         // guard in register()'s Task body fire before any onChange can be enqueued.
@@ -206,15 +205,6 @@ struct ObservationLoopTests {
             signal.cancel() // finish stream so the losing wait() child can exit
             return first
         }
-=======
-        loop = nil // deallocate — isRunning = false, weak self guard will drop the queued Task
-        counter.count = 1
-        // Give the cooperative scheduler a full turn to confirm nothing fires.
-        // This is the one place a short yield is correct: we are asserting *absence*
-        // of a signal, so we cannot block on a stream. Three yields is sufficient to
-        // drain a Task { @MainActor } that was already enqueued before dealloc.
-        for _ in 0 ..< 3 { await Task.yield() }
->>>>>>> Stashed changes
 
         #expect(fired == 0)
         #expect(raceResult == false, "onChange fired after dealloc — isolated deinit guard broken")
