@@ -180,20 +180,27 @@ extension RunnerPoller {
             // conclusion is set but steps are still completing is acceptable and preferable
             // to stale data. This is NOT a conclusion/steps inconsistency bug.
             //
-            // completedAt: always prefer cached.completedAt when available, regardless of
-            // which merge arm fires. GitHub transiently returns conclusion != nil with
-            // completedAt == nil for a brief window after a job finishes; without the
-            // cached fallback the recorded completion timestamp would be lost for one poll
-            // cycle in the cacheHasBetterSteps-only path.
+            // completedAt: only prefer cached.completedAt when cacheHasConclusion is true.
+            // GitHub transiently returns conclusion != nil with completedAt == nil for a
+            // brief window after a job finishes; without the cached fallback the recorded
+            // completion timestamp would be lost for one poll cycle. In the
+            // cacheHasBetterSteps-only path the live job has no conclusion yet, so
+            // cached.completedAt is also expected to be nil — no fallback needed.
             let cacheHasConclusion = cached.conclusion != nil && job.conclusion == nil
             let cacheHasBetterSteps = !cached.steps.isEmpty
                 && (job.steps.isEmpty || job.steps.contains { $0.status == .inProgress })
                 && !cached.steps.contains { $0.status == .inProgress }
             guard cacheHasConclusion || cacheHasBetterSteps else { return job }
-            return job
-                .copying(conclusion: cacheHasConclusion ? cached.conclusion : job.conclusion)
-                .copying(completedAt: cached.completedAt ?? job.completedAt)
-                .copying(steps: cacheHasBetterSteps ? cached.steps : job.steps)
+            // Only allocate new ActiveJob copies for fields that actually change.
+            // copying(conclusion:) and copying(completedAt:) are skipped in the
+            // cacheHasBetterSteps-only path to avoid no-op allocations.
+            var merged = job
+            if cacheHasConclusion {
+                merged = merged
+                    .copying(conclusion: cached.conclusion)
+                    .copying(completedAt: cached.completedAt ?? job.completedAt)
+            }
+            return merged.copying(steps: cacheHasBetterSteps ? cached.steps : job.steps)
         }
     }
 }
