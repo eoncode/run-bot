@@ -1,10 +1,12 @@
 // RunnerPoller.swift
-// RunnerBarCore
+// RunnerBar
 //
 // Step 10: RunnerStore renamed to RunnerPoller and moved into RunnerBarCore.
 // Step 14: applyFetchResult writes only to RunnerState (no viewModel.* writes remain).
 // App-layer dependencies replaced with protocol-typed injections and closures
 // so Core has no import of the RunnerBar app target.
+// F-35: startObservingPreferences and startObservingScopes updated to use
+//       ObservationRelay's trailing-closure init (read closure) instead of store: parameter.
 
 import Collections
 import Foundation
@@ -139,6 +141,76 @@ public actor RunnerPoller {
         pollLoop.cancelAll()
     }
 
+// MARK: - Observation loops
+
+    /// Starts (or restarts) the `pollingInterval` observation loop.
+    ///
+    /// Uses `AsyncStream<TimeInterval>` to match `PreferencesObserver.continuation` which is
+    /// typed `AsyncStream<TimeInterval>.Continuation` and yields
+    /// `TimeInterval(store.pollingInterval)`. The stream element type must match the
+    /// continuation type exactly — `pollingInterval` is an `Int` (seconds) but the observer
+    /// converts it to `TimeInterval` before yielding so the value can be used directly in
+    /// `nextPollInterval()` without a second conversion.
+    ///
+    /// **Self-cancellation avoidance**
+    /// `setIntervalObservationTask(newTask)` cancels the *previous* interval-observation
+    /// task and installs `newTask` as the new one. When called recursively from inside the
+    /// for-await body, the calling task must therefore create the new `Task` *before* passing
+    /// it to `setIntervalObservationTask` — otherwise the setter would cancel the caller
+    /// itself and the subsequent `start()` call would never execute.
+    private func startObservingPreferences() {
+        let injectedStore = preferencesStore
+        let newTask = Task { [weak self] in
+            let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
+            let observer: PreferencesObserver = await MainActor.run {
+                let relay = PreferencesObserver(continuation: continuation) {
+                    TimeInterval(injectedStore.pollingInterval)
+                }
+                relay.start()
+                return relay
+            }
+            for await newInterval in stream {
+                guard !Task.isCancelled else { break }
+                log("RunnerPoller › pollingInterval changed to \(Int(newInterval))s — restarting poll loop", category: .runner)
+                await self?.startObservingPreferences()
+                guard !Task.isCancelled else { break }
+                await self?.start()
+                break
+            }
+            _ = observer
+        }
+        pollLoop.setIntervalObservationTask(newTask)
+    }
+
+    /// Starts (or restarts) the `activeScopes` observation loop.
+    ///
+    /// **Self-cancellation avoidance**
+    /// Same pattern as `startObservingPreferences`: the new `Task` is created first,
+    /// then handed to `setScopeObservationTask` so the setter cancels the *previous*
+    /// task rather than the one currently executing.
+    private func startObservingScopes() {
+        let injectedStore = scopeStore
+        let newTask = Task { [weak self] in
+            let (stream, continuation) = AsyncStream<[String]>.makeStream()
+            let observer: ScopesObserver = await MainActor.run {
+                let relay = ScopesObserver(continuation: continuation) {
+                    injectedStore.activeScopes
+                }
+                relay.start()
+                return relay
+            }
+            for await _ in stream {
+                guard !Task.isCancelled else { break }
+                log("RunnerPoller › ScopeStore.activeScopes changed — restarting fetch", category: .runner)
+                await self?.startObservingScopes()
+                guard !Task.isCancelled else { break }
+                await self?.start()
+                break
+            }
+            _ = observer
+        }
+        pollLoop.setScopeObservationTask(newTask)
+    }
     // MARK: - Poll loop
 
     /// Starts (or restarts) the structured async poll loop.
