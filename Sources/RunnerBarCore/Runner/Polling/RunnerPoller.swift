@@ -30,6 +30,12 @@ import os
 public actor RunnerPoller {
 
     // MARK: - State
+    //
+    // NOTE: Several properties below are `internal` (not `private`) solely to allow
+    // extension files in separate source files to read them. All writes must go through
+    // `setDisplayState(_:)` (success path) or `applyError(_:)` (failure path) in
+    // RunnerPoller+ApplyResult.swift. Swift does not enforce this at the language level
+    // for cross-file extensions — the invariant is documented, not mechanically enforced.
 
     /// Runners currently shown in the panel.
     /// Written exclusively by `applyFetchResult` (success path) and `applyError` (error path).
@@ -141,7 +147,7 @@ public actor RunnerPoller {
         pollLoop.cancelAll()
     }
 
-// MARK: - Observation loops
+    // MARK: - Observation loops
 
     /// Starts (or restarts) the `pollingInterval` observation loop.
     ///

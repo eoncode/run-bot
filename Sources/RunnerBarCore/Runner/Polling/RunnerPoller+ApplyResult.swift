@@ -34,6 +34,13 @@ extension RunnerPoller {
         )
         // swiftlint:disable:next line_length
         log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))", category: .runner)
+        // NOTE: actor-local properties (self.runners, self.jobs, self.actions) and the
+        // @Observable read model (state.*) are two separate copies that must stay in sync.
+        // The actor-local copies are consumed by nextPollInterval() and other internal
+        // actor logic; state.* is the source of truth for the view layer. Both must be
+        // updated together here. setDisplayState (above) writes the actor-local copies;
+        // the MainActor.run block below writes state.*. This split is intentional and
+        // pre-dates this PR — see RunnerPoller.setDisplayState for the write-through rationale.
         await MainActor.run { [state] in
             state.runners = enrichedRunners
             state.jobs = jobResult.display
