@@ -151,20 +151,6 @@ public actor RunnerPoller {
     // MARK: - Observation loops
 
     /// Starts (or restarts) the `pollingInterval` observation loop.
-    ///
-    /// Uses `AsyncStream<TimeInterval>` to match `PreferencesObserver.continuation` which is
-    /// typed `AsyncStream<TimeInterval>.Continuation` and yields
-    /// `TimeInterval(store.pollingInterval)`. The stream element type must match the
-    /// continuation type exactly — `pollingInterval` is an `Int` (seconds) but the observer
-    /// converts it to `TimeInterval` before yielding so the value can be used directly in
-    /// `nextPollInterval()` without a second conversion.
-    ///
-    /// **Self-cancellation avoidance**
-    /// `setIntervalObservationTask(newTask)` cancels the *previous* interval-observation
-    /// task and installs `newTask` as the new one. When called recursively from inside the
-    /// for-await body, the calling task must therefore create the new `Task` *before* passing
-    /// it to `setIntervalObservationTask` — otherwise the setter would cancel the caller
-    /// itself and the subsequent `start()` call would never execute.
     private func startObservingPreferences() {
         let injectedStore = preferencesStore
         let newTask = Task { [weak self] in
@@ -176,7 +162,7 @@ public actor RunnerPoller {
             }
             for await newInterval in stream {
                 guard !Task.isCancelled else { break }
-                log("RunnerPoller › pollingInterval changed to \(Int(newInterval))s — restarting poll loop")
+                log("RunnerPoller › pollingInterval changed to \(Int(newInterval))s — restarting poll loop", category: .runner)
                 await self?.startObservingPreferences()
                 guard !Task.isCancelled else { break }
                 await self?.start()
@@ -188,11 +174,6 @@ public actor RunnerPoller {
     }
 
     /// Starts (or restarts) the `activeScopes` observation loop.
-    ///
-    /// **Self-cancellation avoidance**
-    /// Same pattern as `startObservingPreferences`: the new `Task` is created first,
-    /// then handed to `setScopeObservationTask` so the setter cancels the *previous*
-    /// task rather than the one currently executing.
     private func startObservingScopes() {
         let injectedStore = scopeStore
         let newTask = Task { [weak self] in
@@ -204,7 +185,7 @@ public actor RunnerPoller {
             }
             for await _ in stream {
                 guard !Task.isCancelled else { break }
-                log("RunnerPoller › ScopeStore.activeScopes changed — restarting fetch")
+                log("RunnerPoller › ScopeStore.activeScopes changed — restarting fetch", category: .runner)
                 await self?.startObservingScopes()
                 guard !Task.isCancelled else { break }
                 await self?.start()
@@ -220,33 +201,33 @@ public actor RunnerPoller {
     /// Starts (or restarts) the structured async poll loop.
     public func start() async {
         let scopes = await MainActor.run { scopeStore.activeScopes }
-        log("RunnerPoller › start — activeScopes=\(scopes)")
+        log("RunnerPoller › start — activeScopes=\(scopes)", category: .runner)
         if scopes.isEmpty {
-            log("RunnerPoller › ⚠️ start called but activeScopes is EMPTY — actions will not load")
+            log("RunnerPoller › ⚠️ start called but activeScopes is EMPTY — actions will not load", category: .runner)
         }
         let localCount = await MainActor.run { localRunners().count }
-        log("RunnerPoller › start — localRunners.count=\(localCount) at start() time")
+        log("RunnerPoller › start — localRunners.count=\(localCount) at start() time", category: .runner)
         if localCount == 0 {
-            log("RunnerPoller › ⚠️ start — localRunners=0 at start time; installPathMap will be empty on first fetch.")
+            log("RunnerPoller › ⚠️ start — localRunners=0 at start time; installPathMap will be empty on first fetch.", category: .runner)
         }
-        log("RunnerPoller › start — previous pollTask cancelled, launching new poll task")
+        log("RunnerPoller › start — previous pollTask cancelled, launching new poll task", category: .runner)
         pollLoop.setPollTask(Task { [weak self] in
             guard let self else { return }
             await self.fetch()
             while !Task.isCancelled {
                 let interval = await self.nextPollInterval()
-                log("RunnerPoller › poll loop — next fetch in \(Int(interval))s")
+                log("RunnerPoller › poll loop — next fetch in \(Int(interval))s", category: .runner)
                 do {
                     try await Task.sleep(for: .seconds(interval))
                 } catch is CancellationError {
-                    log("RunnerPoller › poll loop — CancellationError, exiting cleanly")
+                    log("RunnerPoller › poll loop — CancellationError, exiting cleanly", category: .runner)
                     break
                 } catch {
-                    log("RunnerPoller › poll loop — unexpected error \(error), exiting")
+                    log("RunnerPoller › poll loop — unexpected error \(error), exiting", category: .runner)
                     break
                 }
                 guard !Task.isCancelled else {
-                    log("RunnerPoller › poll loop — cancelled after sleep, exiting")
+                    log("RunnerPoller › poll loop — cancelled after sleep, exiting", category: .runner)
                     break
                 }
                 await self.fetch()
@@ -255,49 +236,35 @@ public actor RunnerPoller {
     }
 
     /// Computes the delay before the next poll.
-    ///
-    /// Uses typed `JobStatus` enum cases rather than raw string literals so that
-    /// a raw-value rename is caught at compile time. `ActiveJob.status` and
-    /// `WorkflowActionGroup.groupStatus` are both `JobStatus`.
     private func nextPollInterval() async -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == .inProgress || $0.status == .queued }
         let hasActiveActions = actions.contains { $0.groupStatus == .inProgress || $0.groupStatus == .queued }
         let hasActive = hasActiveJobs || hasActiveActions
         let baseIdle = max(10, await MainActor.run { preferencesStore.pollingInterval })
         let interval: TimeInterval = (isRateLimited || !hasActive) ? TimeInterval(baseIdle) : 10
-        log("RunnerPoller › nextPollInterval — \(Int(interval))s hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle)")
+        log("RunnerPoller › nextPollInterval — \(Int(interval))s hasActive=\(hasActive) rateLimited=\(isRateLimited) baseIdle=\(baseIdle)", category: .runner)
         return interval
     }
 
     // MARK: - Fetch
 
     /// Performs one full poll cycle.
-    ///
-    /// Wraps the fetch body in a `do/catch` so any unhandled error surfaces via
-    /// `applyError` rather than silently crashing or swallowing the failure.
-    /// Existing fetch helpers (`buildJobState`, `buildGroupState`, `fetchAndEnrichRunners`)
-    /// do not currently throw — they return empty arrays on failure. The `do/catch`
-    /// guards against future changes that introduce throwing paths.
-    ///
-    /// Not on `RunnerPollerProtocol`. Use `start()` to drive the poll cadence.
-    /// Accessible at `internal` scope so tests holding a concrete `RunnerPoller` can
-    /// trigger a single cycle without going through the protocol seam.
     func fetch() async {
         do {
             try await fetchInternal()
         } catch {
-            log("RunnerPoller › fetch — ⚠️ unhandled error: \(error)")
+            log("RunnerPoller › fetch — ⚠️ unhandled error: \(error)", category: .runner)
             await applyError(FetchError(error))
         }
     }
 
-    /// Inner throwing fetch body. Extracted so `fetch()` can wrap it cleanly in `do/catch`.
+    /// Inner throwing fetch body.
     private func fetchInternal() async throws {
         await clearGhRateLimit()
         let scopesSnapshot = await MainActor.run { scopeStore.activeScopes }
-        log("RunnerPoller › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)")
+        log("RunnerPoller › fetch ENTER — activeScopesSnapshot=\(scopesSnapshot)", category: .runner)
         if scopesSnapshot.isEmpty {
-            log("RunnerPoller › ⚠️ fetch — activeScopes snapshot is EMPTY")
+            log("RunnerPoller › ⚠️ fetch — activeScopes snapshot is EMPTY", category: .runner)
         }
         let snapPrev = prevLiveJobs
         let snapCache = completedCache
@@ -305,12 +272,12 @@ public actor RunnerPoller {
         let snapGroupCache = actionGroupCache
         let snapSeenGroupIDs = seenGroupIDs
         let localRunnersSnapshot = await MainActor.run { localRunners() }
-        log("RunnerPoller › fetch — localRunners.count=\(localRunnersSnapshot.count) (used for installPathMap)")
+        log("RunnerPoller › fetch — localRunners.count=\(localRunnersSnapshot.count) (used for installPathMap)", category: .runner)
         if localRunnersSnapshot.isEmpty {
-            log("RunnerPoller › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty")
+            log("RunnerPoller › ⚠️ fetch — localRunners is EMPTY; installPathMap will be empty", category: .runner)
         } else {
 #if DEBUG
-            log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })")
+            log("RunnerPoller › fetch — localRunners=\(localRunnersSnapshot.map { "\($0.runnerName)(agentId=\(String(describing: $0.agentId)) apiId=\(String(describing: $0.apiId)))" })", category: .runner)
 #endif
         }
         let installPathMap = buildInstallPathMap(
@@ -338,12 +305,6 @@ public actor RunnerPoller {
 
     // MARK: - Apply result
 
-    /// Merges a completed fetch into actor state and pushes the snapshot to `RunnerState`.
-    ///
-    /// Clears `state.fetchError` on every successful cycle so the UI error banner
-    /// dismisses automatically as soon as connectivity is restored. The write is
-    /// guarded — if `fetchError` is already `nil` the assignment is skipped to
-    /// avoid a spurious `@Observable` notification on every healthy poll cycle.
     private func applyFetchResult(
         enrichedRunners: [Runner],
         jobResult: JobPollResult,
@@ -361,7 +322,7 @@ public actor RunnerPoller {
         isRateLimited = rateLimitSnapshot.isLimited
         rateLimitResetDate = rateLimitSnapshot.resetDate
         // swiftlint:disable:next line_length
-        log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))")
+        log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))", category: .runner)
         await MainActor.run { [state] in
             state.runners = enrichedRunners
             state.jobs = jobResult.display
@@ -372,48 +333,16 @@ public actor RunnerPoller {
         }
     }
 
-    /// Sendable-safe wrapper that bridges an arbitrary `any Error` across an actor boundary.
-    ///
-    /// `any Error` is not `Sendable`, so passing it directly into `MainActor.run`
-    /// produces a warning under `-strict-concurrency=complete`. `FetchError` captures
-    /// `localizedDescription` — the only field read by `fetchErrorBanner` — and
-    /// re-surfaces it as a `LocalizedError` conformance so the message is preserved.
     private struct FetchError: LocalizedError, Sendable {
-        /// The user-facing description forwarded from the underlying error.
         let errorDescription: String?
-        /// Wraps `underlying`, capturing its `localizedDescription` as a `Sendable` string.
         init(_ underlying: any Error) { errorDescription = underlying.localizedDescription }
     }
 
-    /// Surfaces a fetch failure to the `RunnerState` read model.
-    ///
-    /// Mirrors `applyFetchResult` by updating both the actor-local rate-limit copies
-    /// (`self.isRateLimited`, `self.rateLimitResetDate` — read by `nextPollInterval()`)
-    /// and the `@Observable` read model (`state.*` — read by the view layer).
-    /// Without this sync, a failed cycle while rate-limited would leave the actor-local
-    /// copies stale, causing `nextPollInterval()` to compute the wrong cadence until the
-    /// next successful `applyFetchResult`.
-    ///
-    /// Snapshots rate-limit state so the UI never shows both banners simultaneously:
-    /// `clearGhRateLimit()` at the top of `fetchInternal()` clears the internal actor
-    /// before any throw, so this snapshot reflects the cleared state.
-    ///
-    /// The `fetchError` write is guarded by a `localizedDescription` comparison to avoid
-    /// re-notifying `@Observable` observers on every failed cycle when the message is
-    /// unchanged (e.g. sustained network loss).
-    ///
-    /// Intentionally does **not** clear `runners`, `jobs`, or `actions` — views show
-    /// stale data alongside the error banner rather than an empty list.
     private func applyError(_ error: any Error & Sendable) async {
         let rateLimitSnapshot = await ghRateLimitSnapshot()
-        // Sync actor-local copies first — nextPollInterval() reads these directly.
         isRateLimited = rateLimitSnapshot.isLimited
         rateLimitResetDate = rateLimitSnapshot.resetDate
         await MainActor.run { [state] in
-            // Guard the write: `any Error` is not Equatable, so compare via
-            // `localizedDescription` — the only field `fetchErrorBanner` consumes.
-            // Skipping the write when the message is unchanged avoids a spurious
-            // `@Observable` notification on every failed poll cycle.
             if state.fetchError?.localizedDescription != error.localizedDescription {
                 state.fetchError = error
             }
@@ -424,41 +353,14 @@ public actor RunnerPoller {
 
     // MARK: - fetchAndEnrichRunners
 
-    /// Fetches runners for the given scopes, resolves install paths, and enriches with metrics.
-    ///
-    /// `internal` — `fetch()` is the public entry point; this method is an implementation
-    /// detail not intended for direct external calls.
-    ///
-    /// **Phase 0** derives extra org scopes from local runners whose `gitHubUrl` points to a
-    /// single-path-component URL (org-only, not repo). This handles runners registered against
-    /// an org that the user hasn't explicitly added as a scope in ScopeStore — their org is
-    /// inferred from the local runner's URL so those runners continue to appear in the panel.
-    ///
-    /// **Phase 1** fans out concurrent scope fetches via `withTaskGroup`. Task completion order
-    /// is non-deterministic; views sort runners for display independently.
-    ///
-    /// **Phase 2** enriches each busy runner with system metrics concurrently.
-    ///
-    /// **Install-path lookup priority** (matches the original `RunnerStore`):
-    /// `byApiId ?? byAgentId ?? byFullKey ?? byName`
-    /// `byFullKey` ("scope/name" composite) ranks above `byName` so runners sharing
-    /// a name across different scopes resolve to the correct install path.
-    ///
-    /// - Parameters:
-    ///   - scopes: The active scopes to fetch runners for.
-    ///   - localRunners: The current local-runner snapshot (used for org-scope derivation).
-    ///   - installPathMap: Pre-built lookup maps from `buildInstallPathMap`.
     internal func fetchAndEnrichRunners(
         scopes: [String],
         localRunners: [RunnerModel],
         installPathMap: InstallPathMap
     ) async -> [Runner] {
-        log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)")
+        log("RunnerPoller › fetchAndEnrichRunners ENTER — scopes=\(scopes)", category: .runner)
 
         // MARK: Phase 0 — Extra org-scope derivation from local runner URLs
-        // Delegates to `scopeFromUrl(_:)` in GitHubURLHelpers (F-52).
-        // Only org-scoped URLs produce a scope string without a "/"; repo-scoped
-        // URLs ("owner/repo") are filtered out by the `!contains("/")` guard below.
         let configuredScopeSet = Set(scopes)
         var extraOrgScopes: [String] = []
         for localRunner in localRunners {
@@ -470,10 +372,10 @@ public actor RunnerPoller {
                   !extraOrgScopes.contains(orgScope)
             else { continue }
             extraOrgScopes.append(orgScope)
-            log("RunnerPoller › fetchAndEnrichRunners — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'")
+            log("RunnerPoller › fetchAndEnrichRunners — derived extra org scope '\(orgScope)' from local runner '\(localRunner.runnerName)'", category: .runner)
         }
         if !extraOrgScopes.isEmpty {
-            log("RunnerPoller › fetchAndEnrichRunners — extra org scopes to fetch: \(extraOrgScopes)")
+            log("RunnerPoller › fetchAndEnrichRunners — extra org scopes to fetch: \(extraOrgScopes)", category: .runner)
         }
 
         let allScopes = scopes + extraOrgScopes
@@ -493,7 +395,6 @@ public actor RunnerPoller {
         }
 
         // MARK: Phase 2 — Enrich each busy runner with system metrics concurrently
-        // Lookup priority: byApiId ?? byAgentId ?? byFullKey ?? byName
         let busyIndices = indexed.indices.filter { indexed[$0].runner.busy }
         if !busyIndices.isEmpty {
             let metricsResults: [(Int, RunnerMetrics?)] = await withTaskGroup(
@@ -507,7 +408,7 @@ public actor RunnerPoller {
                         ?? installPathMap.byFullKey["\(scope)/\(runner.name)"]
                         ?? installPathMap.byName[runner.name]
                     guard let path = installPath else {
-                        log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id) scope=\(scope)")
+                        log("RunnerPoller › fetchAndEnrichRunners — no installPath for \(runner.name) id=\(runner.id) scope=\(scope)", category: .runner)
                         continue
                     }
                     group.addTask {
@@ -528,14 +429,14 @@ public actor RunnerPoller {
         if !metricsUpdates.isEmpty {
             for entry in metricsUpdates {
 #if DEBUG
-                log("RunnerPoller › fetchAndEnrichRunners — applyMetrics: \(entry.runner.name) id=\(entry.runner.id) busy=\(entry.runner.busy) metrics=\(String(describing: entry.runner.metrics))")
+                log("RunnerPoller › fetchAndEnrichRunners — applyMetrics: \(entry.runner.name) id=\(entry.runner.id) busy=\(entry.runner.busy) metrics=\(String(describing: entry.runner.metrics))", category: .runner)
 #endif
                 await applyMetrics(entry.runner.metrics, entry.runner.id, entry.runner.name)
             }
         }
 
         let result = indexed.map(\.runner)
-        log("RunnerPoller › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)")
+        log("RunnerPoller › fetchAndEnrichRunners EXIT — returning \(result.count) runner(s)", category: .runner)
         return result
     }
 }
