@@ -186,11 +186,11 @@ public actor RunnerPoller {
                 await self?.start()
                 break
             }
-            // Load-bearing retain: keeps the relay alive until the for-await loop above
-            // exits. Without this reference, ARC may deallocate the relay immediately
-            // after the MainActor.run block returns — before the stream yields its first
-            // value — silently killing the observation loop with no compiler warning.
-            _ = observer
+            // withExtendedLifetime pins the relay until the for-await loop above exits,
+            // preventing ARC from deallocating it between the MainActor.run return and
+            // the first stream yield. Prefer this over `_ = observer` — it makes the
+            // intent explicit and cannot be silently stripped by a future refactor.
+            withExtendedLifetime(observer) {}
         }
         pollLoop.setIntervalObservationTask(newTask)
     }
@@ -220,11 +220,11 @@ public actor RunnerPoller {
                 await self?.start()
                 break
             }
-            // Load-bearing retain: keeps the relay alive until the for-await loop above
-            // exits. Without this reference, ARC may deallocate the relay immediately
-            // after the MainActor.run block returns — before the stream yields its first
-            // value — silently killing the observation loop with no compiler warning.
-            _ = observer
+            // withExtendedLifetime pins the relay until the for-await loop above exits,
+            // preventing ARC from deallocating it between the MainActor.run return and
+            // the first stream yield. Prefer this over `_ = observer` — it makes the
+            // intent explicit and cannot be silently stripped by a future refactor.
+            withExtendedLifetime(observer) {}
         }
         pollLoop.setScopeObservationTask(newTask)
     }
