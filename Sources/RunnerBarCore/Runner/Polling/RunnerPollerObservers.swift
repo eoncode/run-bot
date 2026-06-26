@@ -96,3 +96,74 @@ final class ScopesObserver {
         observe()
     }
 }
+
+// MARK: - RunnerPoller observation-loop starters
+
+// swiftlint:disable:next missing_docs
+extension RunnerPoller {
+
+    /// Starts (or restarts) the `pollingInterval` observation loop.
+    ///
+    /// Uses `AsyncStream<TimeInterval>` to match `PreferencesObserver.continuation` which is
+    /// typed `AsyncStream<TimeInterval>.Continuation` and yields
+    /// `TimeInterval(store.pollingInterval)`. The stream element type must match the
+    /// continuation type exactly — `pollingInterval` is an `Int` (seconds) but the observer
+    /// converts it to `TimeInterval` before yielding so the value can be used directly in
+    /// `nextPollInterval()` without a second conversion.
+    ///
+    /// **Self-cancellation avoidance**
+    /// `setIntervalObservationTask(newTask)` cancels the *previous* interval-observation
+    /// task and installs `newTask` as the new one. When called recursively from inside the
+    /// for-await body, the calling task must therefore create the new `Task` *before* passing
+    /// it to `setIntervalObservationTask` — otherwise the setter would cancel the caller
+    /// itself and the subsequent `start()` call would never execute.
+    func startObservingPreferences() {
+        let injectedStore = preferencesStore
+        let newTask = Task { [weak self] in
+            let (stream, continuation) = AsyncStream<TimeInterval>.makeStream()
+            let observer: PreferencesObserver = await MainActor.run {
+                let preferencesObserver = PreferencesObserver(continuation: continuation, store: injectedStore)
+                preferencesObserver.start()
+                return preferencesObserver
+            }
+            for await newInterval in stream {
+                guard !Task.isCancelled else { break }
+                log("RunnerPoller › pollingInterval changed to \(Int(newInterval))s — restarting poll loop", category: .runner)
+                await self?.startObservingPreferences()
+                guard !Task.isCancelled else { break }
+                await self?.start()
+                break
+            }
+            _ = observer
+        }
+        pollLoop.setIntervalObservationTask(newTask)
+    }
+
+    /// Starts (or restarts) the `activeScopes` observation loop.
+    ///
+    /// **Self-cancellation avoidance**
+    /// Same pattern as `startObservingPreferences`: the new `Task` is created first,
+    /// then handed to `setScopeObservationTask` so the setter cancels the *previous*
+    /// task rather than the one currently executing.
+    func startObservingScopes() {
+        let injectedStore = scopeStore
+        let newTask = Task { [weak self] in
+            let (stream, continuation) = AsyncStream<[String]>.makeStream()
+            let observer: ScopesObserver = await MainActor.run {
+                let scopesObserver = ScopesObserver(continuation: continuation, store: injectedStore)
+                scopesObserver.start()
+                return scopesObserver
+            }
+            for await _ in stream {
+                guard !Task.isCancelled else { break }
+                log("RunnerPoller › ScopeStore.activeScopes changed — restarting fetch", category: .runner)
+                await self?.startObservingScopes()
+                guard !Task.isCancelled else { break }
+                await self?.start()
+                break
+            }
+            _ = observer
+        }
+        pollLoop.setScopeObservationTask(newTask)
+    }
+}
