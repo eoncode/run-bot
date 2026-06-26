@@ -28,6 +28,28 @@ import os
 /// point, keeping `FailureHookRunner` in the app target and out of `RunnerBarCore`.
 extension RunnerPoller {
 
+    // MARK: - [weak self] in GroupStateDeps closures
+    //
+    // The closures passed to `GroupStateDeps` are stored inside a struct value that is
+    // passed by value to `PollResultBuilder.buildGroupState`. Although `buildGroupState`
+    // is `async` and returns before the struct is freed, the struct is heap-allocated as
+    // part of the async frame and keeps its closure captures alive for the full duration
+    // of that async call. A strong `self` capture would create a temporary reference cycle:
+    //
+    //   RunnerPoller (actor) → GroupStateDeps (value in async frame)
+    //                          → closures → RunnerPoller (strong)
+    //
+    // This cycle resolves once `buildGroupState` returns, so it is not a permanent leak.
+    // However, it can delay deallocation if the actor is released while a fetch is in
+    // flight (e.g. in tests or on settings change). `[weak self]` is the correct and
+    // idiomatic pattern here: it breaks the cycle eagerly without requiring a separate
+    // cancellation mechanism, and the guard-let / optional-chain fallbacks in each
+    // closure handle the nil case safely.
+    //
+    // Note: `[weak self]` on a Swift actor is valid. Actors are reference types; the
+    // `weak` modifier prevents the closure from holding a strong reference to the actor
+    // instance, exactly as it would for a class.
+
     /// Builds a `JobPollResult` by fetching live jobs for all monitored scopes,
     /// backfilling step data from the cache, and diffing against `snapPrev`.
     func buildJobState(
@@ -38,10 +60,12 @@ extension RunnerPoller {
             snapPrev: snapPrev,
             snapCache: snapCache,
             fetchJobs: { [weak self] in
+                // weak: see [weak self] in GroupStateDeps closures note above.
                 guard let self else { return [] }
                 return await self.fetchAllJobs()
             },
             backfill: { [weak self] cache in
+                // weak: see [weak self] in GroupStateDeps closures note above.
                 // `self?` optional-chaining cannot be used with an inout argument.
                 // Guard-unwrap to a concrete reference so the compiler accepts &cache.
                 guard let self else { return }
@@ -65,9 +89,11 @@ extension RunnerPoller {
             snapSeenGroupIDs: snapSeenGroupIDs,
             deps: GroupStateDeps(
                 fetchGroups: { [weak self] shaKeyedCache in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
                     await self?.fetchActionGroups(shaKeyedCache: shaKeyedCache) ?? []
                 },
                 scopeFromGroup: { [weak self] group in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
                     guard let self else {
                         log("RunnerPoller › scopeFromGroup — ⚠️ self is nil, returning empty scope for groupID=\(group.id)", category: .runner)
                         return ""
@@ -75,6 +101,7 @@ extension RunnerPoller {
                     return self.scopeFromActionGroup(group)
                 },
                 fireFailureHook: { [weak self] group, scope in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
                     // PollResultBuilder.buildGroupState (and freezeVanishedGroups) already
                     // `await` this closure directly — no Task wrapper needed or correct here.
                     // The hook runs inline on the cooperative thread pool as part of the
@@ -84,6 +111,7 @@ extension RunnerPoller {
                     await self?.fireFailureHook(group, scope)
                 },
                 enrichJobs: { [weak self] jobs in
+                    // weak: see [weak self] in GroupStateDeps closures note above.
                     self?.enrichGroupJobs(jobs, jobCache: jobCache) ?? jobs
                 }
             )

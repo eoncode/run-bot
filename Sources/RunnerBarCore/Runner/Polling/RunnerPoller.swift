@@ -444,20 +444,29 @@ public actor RunnerPoller {
     /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
     ///
-    /// **Org-only scopes:** The GitHub Jobs API (`repos/{owner}/{repo}/actions/jobs/{id}`)
-    /// requires a full `owner/repo` path. There is no `orgs/{org}/actions/jobs/{id}`
-    /// equivalent. Org-only cache entries are **evicted** rather than skipped: keeping
-    /// them would cause a warning log on every subsequent poll cycle with no path to
-    /// ever backfill them. Eviction is a one-time operation; the entry re-enters the
-    /// cache with correct scope data the next time it appears in the live feed via
-    /// `fetchAllJobs`.
+    /// **Eviction rationale — these are NOT data-loss bugs:**
+    /// Three categories of cache entry are evicted (via `removeValue`) rather than
+    /// skipped or retried. Each is intentional and self-correcting:
     ///
-    /// **Upgrade note:** Cache entries written before scope-injection was introduced
-    /// have `scope == nil` and are also **evicted** on first encounter.
-    /// Eviction prevents per-poll log spam for stale pre-migration entries. The
-    /// side-effect is a one-poll cosmetic flash where dimmed completed jobs briefly
-    /// disappear from the panel; this is intentional, happens at most once per app
-    /// lifecycle after an upgrade, and self-corrects on the next poll cycle.
+    /// 1. **`scope == nil` (pre-scope-injection entries)**
+    ///    Written before scope-injection was introduced; the Jobs API requires a full
+    ///    `owner/repo` path so these can never be backfilled. Evicting them prevents
+    ///    repeated per-poll warning spam. They re-enter the cache with correct scope
+    ///    data on the next live fetch. This flash is cosmetic, happens at most once
+    ///    per app lifecycle after an upgrade, and self-corrects immediately.
+    ///
+    /// 2. **Org-only scope (`!scope.contains("/")`)**
+    ///    The GitHub Jobs API has no `orgs/{org}/actions/jobs/{id}` endpoint — only
+    ///    `repos/{owner}/{repo}/actions/jobs/{id}`. Keeping these entries would log a
+    ///    warning every poll cycle with no path to ever resolve them. Eviction is a
+    ///    one-time operation; the entry re-populates via `fetchAllJobs` on the next poll.
+    ///
+    /// 3. **Empty-steps API response**
+    ///    Early-queued jobs may return zero steps transiently. The guard
+    ///    `guard !updated.steps.isEmpty` keeps the existing cache entry unchanged and
+    ///    retries on the next poll — this is a *skip*, not an eviction.
+    ///
+    /// The `removeValue` calls for cases 1 and 2 are therefore intentional, not data loss.
     func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
