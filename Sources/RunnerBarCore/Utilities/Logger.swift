@@ -16,18 +16,18 @@ import os
 /// and `log stream --predicate`.
 public enum LogCategory: String, CaseIterable {
     /// Fallback / uncategorised (migration default).
-    case general     = "general"
+    case general
     /// GitHub transport, auth and API layers.
-    case transport   = "transport"
+    case transport
     /// Runner polling, stores, services and models.
-    case runner      = "runner"
+    case runner
     /// Scope store and preferences.
-    case scope       = "scope"
+    case scope
     /// OS-level services: Keychain, LoginItem, ProcessRunner,
     /// TerminalLauncher, LogFetcher.
-    case services    = "services"
+    case services
     /// Failure-hook use-case.
-    case failureHook = "failureHook"
+    case failureHook
 }
 
 // MARK: - Logger instances
