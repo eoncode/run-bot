@@ -18,6 +18,10 @@ import os
 /// **Access level:** `public` because the app target (`Sources/RunnerBar/**`)
 /// calls `log()` directly from `AppDelegate`, views, and sheets.
 /// `internal` would cause a compile error in the app target.
+///
+/// **Raw value convention:** all raw values are lowercase kebab-case so
+/// Console.app category predicates are visually consistent.
+/// Example: `category == "failure-hook"` not `category == "failureHook"`.
 public enum LogCategory: String, CaseIterable {
     /// Fallback / uncategorised (migration default).
     case general
@@ -31,7 +35,7 @@ public enum LogCategory: String, CaseIterable {
     /// TerminalLauncher, LogFetcher.
     case services
     /// Failure-hook use-case.
-    case failureHook
+    case failureHook = "failure-hook"
 }
 
 // MARK: - Logger instances
@@ -72,6 +76,12 @@ nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
 /// silenced under the rarely-used `-Ounchecked` optimisation flag. Because the
 /// path is structurally unreachable, `-O` release behaviour is acceptable — the
 /// condition will never evaluate to false in a correct build.
+///
+/// **Compile-time vs runtime safety:** The exhaustiveness guarantee comes from
+/// `CaseIterable` synthesis — `allCases` always includes every declared case.
+/// This means a new `LogCategory` case added without re-running the app will
+/// surface as a `preconditionFailure` crash at runtime in debug/test, not as
+/// a compile error. The `guard` is a runtime backstop, not a compile-time check.
 ///
 /// **Why not a silent fallback `Logger`?**
 /// A fallback would silently allocate a new `os.Logger` on every `log()` call for

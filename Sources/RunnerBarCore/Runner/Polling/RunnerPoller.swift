@@ -189,10 +189,6 @@ public actor RunnerPoller {
                 await self?.start()
                 break
             }
-            // withExtendedLifetime pins the relay until the for-await loop above exits,
-            // preventing ARC from deallocating it between the MainActor.run return and
-            // the first stream yield. Prefer this over `_ = observer` — it makes the
-            // intent explicit and cannot be silently stripped by a future refactor.
             withExtendedLifetime(observer) {}
         }
         pollLoop.setIntervalObservationTask(newTask)
@@ -223,14 +219,11 @@ public actor RunnerPoller {
                 await self?.start()
                 break
             }
-            // withExtendedLifetime pins the relay until the for-await loop above exits,
-            // preventing ARC from deallocating it between the MainActor.run return and
-            // the first stream yield. Prefer this over `_ = observer` — it makes the
-            // intent explicit and cannot be silently stripped by a future refactor.
             withExtendedLifetime(observer) {}
         }
         pollLoop.setScopeObservationTask(newTask)
     }
+
     // MARK: - Poll loop
 
     /// Starts (or restarts) the structured async poll loop.
@@ -271,10 +264,6 @@ public actor RunnerPoller {
     }
 
     /// Computes the delay before the next poll.
-    ///
-    /// Uses typed `JobStatus` enum cases rather than raw string literals so that
-    /// a raw-value rename is caught at compile time. `ActiveJob.status` and
-    /// `WorkflowActionGroup.groupStatus` are both `JobStatus`.
     private func nextPollInterval() async -> TimeInterval {
         let hasActiveJobs = jobs.contains { $0.status == .inProgress || $0.status == .queued }
         let hasActiveActions = actions.contains { $0.groupStatus == .inProgress || $0.groupStatus == .queued }
@@ -288,16 +277,6 @@ public actor RunnerPoller {
     // MARK: - Fetch
 
     /// Performs one full poll cycle.
-    ///
-    /// Wraps the fetch body in a `do/catch` so any unhandled error surfaces via
-    /// `applyError` rather than silently crashing or swallowing the failure.
-    /// Existing fetch helpers (`buildJobState`, `buildGroupState`, `fetchAndEnrichRunners`)
-    /// do not currently throw — they return empty arrays on failure. The `do/catch`
-    /// guards against future changes that introduce throwing paths.
-    ///
-    /// Not on `RunnerPollerProtocol`. Use `start()` to drive the poll cadence.
-    /// Accessible at `internal` scope so tests holding a concrete `RunnerPoller` can
-    /// trigger a single cycle without going through the protocol seam.
     func fetch() async {
         do {
             try await fetchInternal()
@@ -307,7 +286,7 @@ public actor RunnerPoller {
         }
     }
 
-    /// Inner throwing fetch body. Extracted so `fetch()` can wrap it cleanly in `do/catch`.
+    /// Inner throwing fetch body.
     private func fetchInternal() async throws {
         await clearGhRateLimit()
         let scopesSnapshot = await MainActor.run { scopeStore.activeScopes }
@@ -364,9 +343,6 @@ public actor RunnerPoller {
     /// `guard scope.contains("/") else { return [] }`, which silently drops org-scoped jobs.
     /// That guard is correct for group fetching (org-level workflow run endpoints differ),
     /// but the standalone job endpoint handles both scope kinds via `scope.apiPrefix`.
-    ///
-    /// `internal` — called only via the `fetchJobs` closure passed to
-    /// `PollResultBuilder.buildJobState`.
     func fetchAllJobs() async -> [ActiveJob] {
         let scopes = await MainActor.run { scopeStore.activeScopes }
         guard !scopes.isEmpty else { return [] }
@@ -379,14 +355,6 @@ public actor RunnerPoller {
     }
 
     /// Fetches workflow action groups for all active scopes, using the SHA-keyed cache.
-    ///
-    /// Iterates the active scopes and calls `actionGroupFetcher.fetch(for:cache:)`
-    /// for each, merging results into a single flat array. The `shaKeyedCache`
-    /// parameter is passed through to avoid refetching groups whose SHAs have
-    /// already been fetched in the previous poll cycle.
-    ///
-    /// `internal` — called only via the `fetchGroups` closure passed to
-    /// `PollResultBuilder.buildGroupState`.
     func fetchActionGroups(shaKeyedCache: [String: WorkflowActionGroup]) async -> [WorkflowActionGroup] {
         let scopes = await MainActor.run { scopeStore.activeScopes }
         guard !scopes.isEmpty else { return [] }
@@ -404,29 +372,6 @@ public actor RunnerPoller {
     /// Iterates jobs in `cache` that have a conclusion but missing or in-progress steps,
     /// fetches the full job payload from the GitHub API, and updates the cache entry.
     ///
-    /// Uses `JobPayload` + `makeActiveJob(from:iso:isDimmed:)` — the same decoding path
-    /// used everywhere else in the codebase — because `ActiveJob` has no `Decodable`
-    /// conformance: dates are raw strings in the API response and must be parsed via
-    /// `ISO8601DateParser.shared.formatter`. Decoding directly to `ActiveJob` would
-    /// silently fail (the `try?` guard would always `continue`) and no steps would
-    /// ever be backfilled.
-    ///
-    /// **Scope resolution (intentional behaviour change from pre-F-26 implementation)**
-    /// The previous implementation derived scope dynamically via `scopeFromHtmlUrl(cached.htmlUrl)`
-    /// on each backfill cycle. That was unreliable — `htmlUrl` is a run URL, not a scope
-    /// string, and `scopeFromHtmlUrl` could silently return `nil` for org-scoped runners,
-    /// silently skipping backfill with no log output.
-    ///
-    /// This implementation reads `cached.scope` instead — the scope string injected
-    /// post-fetch by `buildJobState`. Jobs whose `cached.scope` is `nil` (entered the
-    /// cache before scope injection was in place) are evicted on first encounter to
-    /// prevent per-poll log spam for stale pre-migration entries.
-    ///
-    /// Additionally, the previous implementation did not call `.copying(scope:)` after
-    /// `makeJob`, so every backfill cycle silently dropped the scope field from the
-    /// cache entry — a latent bug that caused the nil-scope skip to fire on the very
-    /// next cycle for any backfilled job. This is now fixed.
-    ///
     /// **Org-only scopes:** The GitHub Jobs API (`repos/{owner}/{repo}/actions/jobs/{id}`)
     /// requires a full `owner/repo` path. There is no `orgs/{org}/actions/jobs/{id}`
     /// equivalent. When `cached.scope` is an org-only string (no "/" present), backfill
@@ -439,49 +384,52 @@ public actor RunnerPoller {
     /// side-effect is a one-poll cosmetic flash where dimmed completed jobs briefly
     /// disappear from the panel; this is intentional, happens at most once per app
     /// lifecycle after an upgrade, and self-corrects on the next poll cycle.
-    ///
-    /// `isDimmed` is forced `true`: backfilled entries are completed jobs no longer in
-    /// the live feed and must remain visually dimmed.
     func backfillSteps(into cache: inout [Int: ActiveJob]) async {
         for cacheID in Array(cache.keys) {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil else { continue }
             guard cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }) else { continue }
             guard let scope = cached.scope else {
-                // Evict entries whose scope is nil (entered the cache before scope
-                // injection was in place). Evicting on first encounter rather than
-                // logging-and-skipping every poll cycle prevents sustained log spam
-                // for stale pre-migration cache entries.
                 cache.removeValue(forKey: cacheID)
                 log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): scope is nil (pre-scope-injection entry)", category: .runner)
                 continue
             }
-            // The GitHub Jobs API is always repo-scoped: repos/{owner}/{repo}/actions/jobs/{id}.
-            // There is no orgs/{org}/actions/jobs/{id} equivalent, so org-only scopes
-            // (no "/" in the string) cannot be backfilled via this endpoint.
-            // Skip with a warning rather than issuing a guaranteed-404 API call.
             guard scope.contains("/") else {
                 log("RunnerPoller › backfillSteps — ⚠️ skipping jobID=\(cacheID): scope '\(scope)' is org-only (no repo path); GitHub Jobs API requires owner/repo", category: .runner)
                 continue
             }
             guard let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)") else { continue }
-            guard let payload = try? decoder.decode(JobPayload.self, from: data) else { continue }
-            let updated = await ISO8601DateParser.shared.makeJob(from: payload, isDimmed: true)
-            // Restore scope — not present in the API payload, must be carried forward.
-            cache[cacheID] = updated.copying(scope: cached.scope)
+            do {
+                let payload = try decoder.decode(JobPayload.self, from: data)
+                let updated = await ISO8601DateParser.shared.makeJob(from: payload, isDimmed: true)
+                // Restore scope — not present in the API payload, must be carried forward.
+                cache[cacheID] = updated.copying(scope: cached.scope)
+            } catch {
+                log("RunnerPoller › backfillSteps — ⚠️ decode failed for jobID=\(cacheID): \(error)", category: .runner)
+            }
         }
     }
 
     // MARK: - Private(set) write-through
 
-    /// Sets the five `private(set)` display properties in a single call.
+    /// Sets display properties in a single controlled call.
+    ///
+    /// **Partial-update contract:** `runners`, `jobs`, and `actions` are optional.
+    /// Passing `nil` for any of these means "leave the current value unchanged" —
+    /// it does **not** clear the list. `isRateLimited` and `rateLimitResetDate` are
+    /// non-optional and are **always** updated on every call.
+    ///
+    /// This asymmetry is intentional: `applyError` calls this function with
+    /// `runners/jobs/actions` all `nil` to preserve stale display data during an
+    /// error cycle (views continue to show the last known state). Do not call this
+    /// function with `nil` display lists intending to clear them — use explicit
+    /// empty arrays instead.
     ///
     /// `private(set)` prevents arbitrary writes from outside the actor, but Swift's
     /// file-scoped `private` means extension files in separate source files cannot
     /// write these properties either. This internal setter is the single controlled
     /// mutation path used exclusively by `applyFetchResult` and `applyError`
-    /// (in `RunnerPoller+ApplyResult.swift`) to uphold the invariant that display
-    /// state is only updated via the defined fetch-result pipeline.
+    /// (in `RunnerPoller+ApplyResult.swift`).
     func setDisplayState(
         runners newRunners: [Runner]? = nil,
         jobs newJobs: [ActiveJob]? = nil,
