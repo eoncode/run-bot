@@ -48,22 +48,24 @@ private let subsystem = "com.eoncode.runner-bar"
 /// This dictionary is initialised once during module load and never mutated, making it
 /// safe to read from any concurrency domain without an explicit isolation annotation.
 nonisolated(unsafe) private let loggers: [LogCategory: Logger] = Dictionary(
-    uniqueKeysWithValues: LogCategory.allCases.map {
-        ($0, Logger(subsystem: subsystem, category: $0.rawValue))
+    uniqueKeysWithValues: LogCategory.allCases.map { category in
+        (category, Logger(subsystem: subsystem, category: category.rawValue))
     }
 )
 
 /// Returns the `os.Logger` for the given category.
 ///
-/// Force-unwraps the dictionary subscript because `loggers` is built from
-/// `LogCategory.allCases` and is therefore guaranteed to contain every case.
-/// A nil result would mean a `LogCategory` case was added without a corresponding
-/// entry in `loggers` — a programmer error that should crash loudly in development
-/// rather than silently allocate a new `Logger` instance on every log call.
+/// `loggers` is built from `LogCategory.allCases` and is therefore guaranteed to
+/// contain every case. A missing entry means a `LogCategory` case was added without
+/// a corresponding entry in `loggers` — a programmer error that should crash loudly
+/// in development rather than silently allocate a new `Logger` instance on every call.
 @inline(__always)
 private func resolvedLogger(for category: LogCategory) -> Logger {
-    // allCases guarantees every case is present; subscript will never return nil.
-    loggers[category]!
+    // allCases guarantees every case is present; a nil result is a programmer error.
+    guard let logger = loggers[category] else {
+        fatalError("Logger for category '\(category.rawValue)' not found — add it to LogCategory.allCases")
+    }
+    return logger
 }
 
 // MARK: - Public log() entry-point
