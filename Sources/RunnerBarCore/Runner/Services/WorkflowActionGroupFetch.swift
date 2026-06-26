@@ -249,7 +249,7 @@ public struct WorkflowActionGroupFetcher: Sendable {
         // `shaRuns` originates from `Dictionary(grouping:)` which never produces an empty
         // value array, so this is expected to always succeed. The guard defends against
         // a future caller constructing the dict incorrectly rather than crashing silently.
-        guard let representative = shaRuns.sorted(by: { ($0.createdAt ?? "") > ($1.createdAt ?? "") }).first else {
+        guard let representative = shaRuns.max(by: { ($0.createdAt ?? "") < ($1.createdAt ?? "") }) else {
             assertionFailure("buildActionGroup: shaRuns must not be empty (sha: \(sha))")
             return (index, WorkflowActionGroup(headSha: sha, label: String(sha.prefix(7)),
                 title: sha, headBranch: nil, repo: scope, runs: [], jobs: [],
