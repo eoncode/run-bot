@@ -30,18 +30,25 @@ public actor RunnerPoller {
     // MARK: - State
 
     /// Runners currently shown in the panel.
-    var runners: [Runner] = []
+    /// Written exclusively by `applyFetchResult` (success path) and `applyError` (error path).
+    private(set) var runners: [Runner] = []
     /// Jobs currently shown in the panel, including dimmed completed entries.
-    var jobs: [ActiveJob] = []
+    /// Written exclusively by `applyFetchResult`.
+    private(set) var jobs: [ActiveJob] = []
     /// Workflow action groups currently shown in the panel.
-    var actions: [WorkflowActionGroup] = []
+    /// Written exclusively by `applyFetchResult`.
+    private(set) var actions: [WorkflowActionGroup] = []
     /// Live-job snapshot from the previous poll, used to detect vanished jobs.
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
     var prevLiveJobs: [Int: ActiveJob] = [:]
     /// Completed-job cache keyed by job ID; capped at `PollResultBuilder.jobCacheLimit`.
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
     var completedCache: [Int: ActiveJob] = [:]
     /// Live-group snapshot from the previous poll, used to detect vanished groups.
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
     var prevLiveGroups: [String: WorkflowActionGroup] = [:]
     /// Group cache keyed by group ID; capped at `PollResultBuilder.groupCacheLimit`.
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
     var actionGroupCache: [String: WorkflowActionGroup] = [:]
     /// IDs of action groups whose failure hook has already fired.
     ///
@@ -49,13 +56,15 @@ public actor RunnerPoller {
     /// the hook for old completed groups still present in GitHub's last-completed feed.
     /// `OrderedSet` preserves insertion order so `trimSeenGroupIDs` evicts the
     /// oldest entries first (FIFO), rather than arbitrary ones as `Set` would.
+    /// Written by `applyFetchResult` (via `RunnerPoller+ApplyResult`).
     var seenGroupIDs: OrderedSet<String> = []
     /// Whether the GitHub API is currently rate-limiting this client.
-    var isRateLimited = false
+    /// Written by `applyFetchResult` and `applyError` (via `RunnerPoller+ApplyResult`).
+    private(set) var isRateLimited = false
     /// The exact moment the current rate-limit window expires, or `nil` when no
     /// rate-limit is active or the reset time is unknown.
-    /// Assigned in `applyFetchResult` and written to `state`. periphery:ignore
-    var rateLimitResetDate: Date?
+    /// Assigned in `applyFetchResult`/`applyError` and written to `state`. periphery:ignore
+    private(set) var rateLimitResetDate: Date?
     /// Owns the three structured `Task` handles for the poll loop.
     let pollLoop = PollLoopCoordinator()
     /// Observable read model — the source of truth for all views and AppDelegate observers.
