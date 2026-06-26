@@ -152,7 +152,11 @@ public final class OAuthService: OAuthServiceProtocol {
 
     /// Handles the OAuth redirect URL from AppDelegate, verifying state and exchanging the code.
     public func handleCallback(_ url: URL) {
-        log("OAuthService › handleCallback — url=\(url.absoluteString)", category: .transport)
+        // Log scheme+host only — the full URL contains the one-time `code` query parameter
+        // which is sensitive for a short window. Logging url.absoluteString would expose
+        // it to any process reading unified logs via `log stream`.
+        let safeURL = "\(url.scheme ?? "")://\(url.host ?? "")"
+        log("OAuthService › handleCallback — url=\(safeURL)", category: .transport)
         guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = comps.queryItems?.first(where: { $0.name == "code" })?.value
         else {
