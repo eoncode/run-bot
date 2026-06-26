@@ -286,18 +286,18 @@ struct AddRunnerSheet: View {
 
     /// Downloads, unpacks, configures a new runner, registers with `LocalRunnerStore`, and dismisses.
     ///
-    /// ## Actor isolation — read before changing this function
-    /// `AddRunnerSheet` is a plain `struct … View` with **no** `@MainActor` annotation on the
-    /// type itself. Swift only synthesises `@MainActor` isolation for a SwiftUI `View` when the
-    /// conformance is on an explicitly `@MainActor`-annotated type — it does NOT do so for
-    /// unannotated structs. Only `body` and helpers explicitly marked `@MainActor` (e.g.
-    /// `setStep`) run on the main actor.
+    /// ## Actor isolation
+    /// `register()` is `@MainActor` because every state mutation it performs
+    /// (`isRegistering`, `registrationStep`, `errorMessage`, `isPresented`, `onComplete`)
+    /// targets `@State` or `@Binding` properties that are `@MainActor`-isolated.
+    /// Under Swift 6.2 strict concurrency, writing those properties from a
+    /// non-isolated async context is a concurrency error.
     ///
-    /// `register()` carries **no** actor annotation. A `Task { await register() }` created from
-    /// a SwiftUI button action inherits the *caller's* actor isolation only if the callee is
-    /// itself actor-isolated. Because `register()` is unannotated, the Task runs on the
-    /// cooperative thread pool — **not** on `@MainActor`. This is the correct and intended
-    /// behaviour, not a bug.
+    /// Being on `@MainActor` does **not** block the main thread during `await` calls:
+    /// each `await ProcessRunner.runAsync(…)` suspends and releases the main actor
+    /// while the subprocess runs, then resumes on the main actor when complete.
+    /// `setStep(_:)` is also `@MainActor`, so no hop is required.
+    @MainActor
     func register() async {
         guard canRegister else { return }
         errorMessage = nil

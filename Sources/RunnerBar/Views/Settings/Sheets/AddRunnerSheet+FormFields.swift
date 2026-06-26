@@ -112,12 +112,8 @@ extension AddRunnerSheet {
                 .keyboardShortcut(.cancelAction)
                 .disabled(isRegistering)
             Button {
-                // Actor isolation note: `Task { await register() }` does NOT inherit
-                // @MainActor here. Swift's rule is that a Task inherits the *callee's*
-                // actor isolation — not the call site's. `register()` carries no actor
-                // annotation, so the Task runs on the cooperative thread pool regardless
-                // of the fact that this button action fires from SwiftUI's @MainActor
-                // body. See the full isolation rationale in register()'s doc comment.
+                // register() is @MainActor, so this Task inherits @MainActor isolation
+                // from the caller (SwiftUI button action) and from the callee.
                 Task { await register() }
             } label: {
                 if isRegistering {
@@ -345,13 +341,16 @@ extension AddRunnerSheet {
 
     /// Writes the LaunchAgent plist, registers with `LocalRunnerStore`, and dismisses the sheet.
     ///
-    /// `async` so that `localRunnerStore.add()` can be awaited directly — this guarantees
-    /// the actor has appended the runner before `isPresented = false` fires and `onComplete()`
-    /// enqueues its refresh(). Matches the fix already applied to the `register()` path.
+    /// `@MainActor` because all state mutations (`isPresented`, `onComplete`, `existingError`)
+    /// target `@State` or `@Binding` properties that are `@MainActor`-isolated.
+    /// All blocking work is delegated to `localRunnerStore.add()` which is awaited
+    /// directly, guaranteeing the actor has appended the runner before `isPresented = false`
+    /// fires and `onComplete()` enqueues its refresh().
     ///
     /// The `canImport` check at entry is a defensive safety net. The primary gate is the
     /// `.disabled(!canImport)` modifier on the Import button; this guard catches any
     /// programmatic calls that bypass the UI.
+    @MainActor
     func importExistingRunner() async {
         guard canImport else { return }
 
