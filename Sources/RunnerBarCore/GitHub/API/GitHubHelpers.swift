@@ -51,6 +51,9 @@ private let ansiRegex: NSRegularExpression? = try? NSRegularExpression(
 /// `urlSessionRaw` uses `application/vnd.github.v3.raw` and lets URLSession follow
 /// the GitHub 302→S3 redirect automatically, eliminating the need for a manual
 /// two-step redirect implementation.
+///
+/// Complexity: 3 (two guard branches).
+@concurrent
 public func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)", category: .transport)
@@ -62,7 +65,17 @@ public func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String)
     }
     let endpoint = "\(scope.apiPrefix)/actions/jobs/\(jobID)/logs"
     log("fetchStepLog › fetching \(endpoint) step=\(stepNumber)", category: .transport)
+    guard let raw = await fetchAndDecodeStepLog(endpoint: endpoint, jobID: jobID) else { return nil }
+    return parseStepLog(raw, stepNumber: stepNumber)
+}
 
+/// Fetches raw log data from `endpoint`, decodes it as UTF-8, and validates the response.
+/// Returns `nil` if the network call fails, the body is not valid UTF-8, the body is
+/// empty, or the body looks like a GitHub error JSON object.
+///
+/// Complexity: 4 (four guard/if branches).
+@concurrent
+private func fetchAndDecodeStepLog(endpoint: String, jobID: Int) async -> String? {
     guard let data = await urlSessionRaw(endpoint) else {
         log("fetchStepLog › urlSessionRaw returned nil for job \(jobID)", category: .transport)
         return nil
@@ -79,29 +92,17 @@ public func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String)
         log("fetchStepLog › error JSON returned: \(raw.prefix(120))", category: .transport)
         return nil
     }
-    return parseStepLog(raw, stepNumber: stepNumber)
+    return raw
 }
 
 /// Parses a raw log string into sections delimited by `##[group]` markers
 /// and returns the section matching `stepNumber`.
 /// Falls back to the full log if sections cannot be parsed or the index is out of range.
+///
+/// Complexity: 3 (two guard/if branches).
 private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
     let cleaned = stripAnsi(raw)
-    let lines = cleaned.components(separatedBy: "\n")
-    var sections: [String] = []
-    var current: [String] = []
-    var seenGroup = false
-    for line in lines {
-        if line.contains("##[group]") {
-            if seenGroup, !current.isEmpty { sections.append(current.joined(separator: "\n")) }
-            seenGroup = true
-            current = [line]
-        } else if seenGroup {
-            current.append(line)
-        }
-        // lines before the first ##[group] marker are preamble and intentionally skipped
-    }
-    if seenGroup, !current.isEmpty { sections.append(current.joined(separator: "\n")) }
+    let sections = buildLogSections(from: cleaned)
     log("parseStepLog › parsed \(sections.count) section(s) from log", category: .transport)
     if sections.isEmpty {
         log("parseStepLog › no group markers, returning full raw log", category: .transport)
@@ -119,6 +120,28 @@ private func parseStepLog(_ raw: String, stepNumber: Int) -> String? {
     let section = sections[index]
     log("parseStepLog › step \(stepNumber) → \(section.count)ch", category: .transport)
     return section
+}
+
+/// Splits a cleaned log string into sections delimited by `##[group]` markers.
+/// Lines before the first marker are preamble and are intentionally skipped.
+///
+/// Complexity: 4 (for loop + two if branches).
+private func buildLogSections(from cleaned: String) -> [String] {
+    let lines = cleaned.components(separatedBy: "\n")
+    var sections: [String] = []
+    var current: [String] = []
+    var seenGroup = false
+    for line in lines {
+        if line.contains("##[group]") {
+            if seenGroup, !current.isEmpty { sections.append(current.joined(separator: "\n")) }
+            seenGroup = true
+            current = [line]
+        } else if seenGroup {
+            current.append(line)
+        }
+    }
+    if seenGroup, !current.isEmpty { sections.append(current.joined(separator: "\n")) }
+    return sections
 }
 
 /// Strips ANSI escape sequences from a string using the pre-compiled `ansiRegex`.
