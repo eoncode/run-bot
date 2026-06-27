@@ -347,9 +347,7 @@ public enum PollResultBuilder {
   // MARK: - Group helpers
 
   /// Returns a copy of the cache re-keyed by `headSha` instead of group ID.
-  public static func makeShaKeyedCache(_ cache: [String: WorkflowActionGroup]) -> [String:
-    WorkflowActionGroup]
-  {
+  public static func makeShaKeyedCache(_ cache: [String: WorkflowActionGroup]) -> [String: WorkflowActionGroup] {
     Dictionary(
       cache.values.map { ($0.headSha, $0) },
       uniquingKeysWith: { lhs, rhs in lhs.id > rhs.id ? lhs : rhs }

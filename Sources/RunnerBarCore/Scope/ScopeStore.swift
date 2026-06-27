@@ -58,8 +58,7 @@ public final class ScopeStore {
   private func loadEntries() -> [ScopeEntry] {
     // Migration: convert legacy [String] key if present.
     if let legacy = store.stringArray(forKey: legacyKey),
-      !legacy.isEmpty
-    {
+      !legacy.isEmpty {
       log("ScopeStore › migrating \(legacy.count) legacy scope(s) to ScopeEntry", category: .scope)
       let migrated = legacy.map { ScopeEntry(scope: $0, isEnabled: true) }
       save(migrated)

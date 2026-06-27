@@ -75,7 +75,6 @@ public struct FailureHookRunnerUseCase: Sendable {
     scope: String,
     callsite: String = "unknown"
   ) async {
-    // swiftlint:disable:next line_length
     log(
       "FailureHookRunnerUseCase fireIfNeeded ENTER -- callsite=\(callsite) scope=\(scope) groupID=\(group.id) groupTitle=\(group.title) headSha=\(group.headSha) groupStatus=\(group.groupStatus)",
       category: .failureHook)
@@ -195,9 +194,10 @@ public struct FailureHookRunnerUseCase: Sendable {
     let repoLink = baseURL
     let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
     let escapedLog = singleQuoteEscape(logContent)
-    // swiftlint:disable:next line_length
     log(
-      "FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)' $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)' logContentBytes=\(escapedLog.count)",
+      "FailureHookRunnerUseCase resolveTokens -- $LOCAL_PATH='\(localRepoPath)' $BRANCH='\(branch)'"
+      + " $RUN_ID='\(failedRunID)' $WORKFLOW_NAME='\(workflowName)' $COMMIT_SHA='\(sha)'"
+      + " logContentBytes=\(escapedLog.count)",
       category: .failureHook)
     return
       command
@@ -311,7 +311,6 @@ public struct FailureHookRunnerUseCase: Sendable {
       for job in resp.jobs {
         guard seenIDs.insert(job.id).inserted else { continue }
         guard let jobConclusion = job.conclusion, jobConclusion.isHookConclusion else {
-          // swiftlint:disable:next line_length
           log(
             "FailureHookRunnerUseCase fetchFailedJobs -- jobID=\(job.id) name=\(job.name) conclusion=\(job.conclusion?.rawValue ?? "nil") -- skipping (not hook-triggering)",
             category: .failureHook)
