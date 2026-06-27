@@ -83,7 +83,9 @@ public struct FailureHookRunnerUseCase: Sendable {
       "FailureHookRunnerUseCase failureHookEnabled for scope=\(scope) -> \(hookEnabled)",
       category: .failureHook)
     guard hookEnabled else {
-      log("FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)", category: .failureHook)
+      log(
+        "FailureHookRunnerUseCase SKIP -- hook not enabled for scope=\(scope)",
+        category: .failureHook)
       return
     }
     // Branch filter — skip if a branch filter is set and doesn't match.
@@ -111,10 +113,15 @@ public struct FailureHookRunnerUseCase: Sendable {
         category: .failureHook)
     #endif
     let failure = Self.isFailure(group: group)
-    let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(separator: ", ")
-    log("FailureHookRunnerUseCase isFailure=\(failure) for groupID=\(group.id) runs=\(runSummary)", category: .failureHook)
+    let runSummary = group.runs.map { "\($0.id):\($0.conclusion?.rawValue ?? "nil")" }.joined(
+      separator: ", ")
+    log(
+      "FailureHookRunnerUseCase isFailure=\(failure) for groupID=\(group.id) runs=\(runSummary)",
+      category: .failureHook)
     guard failure else {
-      log("FailureHookRunnerUseCase SKIP -- group is not a failure, groupID=\(group.id)", category: .failureHook)
+      log(
+        "FailureHookRunnerUseCase SKIP -- group is not a failure, groupID=\(group.id)",
+        category: .failureHook)
       return
     }
     log(
@@ -125,13 +132,16 @@ public struct FailureHookRunnerUseCase: Sendable {
       "FailureHookRunnerUseCase -- fetchFailedJobs returned \(jobs.count) jobs: \(jobs.map { $0.job.name })",
       category: .failureHook)
     let localPath = await preferencesStore.localRepoPath(for: scope) ?? ""
-    let resolved = Self.resolveTokens(command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
+    let resolved = Self.resolveTokens(
+      command, group: group, scope: scope, jobs: jobs, localRepoPath: localPath)
     #if DEBUG
       log(
         "FailureHookRunnerUseCase -- resolved command (first 300): \(resolved.prefix(300))",
         category: .failureHook)
     #endif
-    log("FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)", category: .failureHook)
+    log(
+      "FailureHookRunnerUseCase -- calling terminalLauncher.open for groupID=\(group.id)",
+      category: .failureHook)
     // TerminalLauncherProtocol.open is @MainActor — hop to main actor.
     await MainActor.run {
       terminalLauncher.open(resolved)
@@ -178,7 +188,8 @@ public struct FailureHookRunnerUseCase: Sendable {
     let runLink = failedRun?.htmlUrl ?? "\(baseURL)/actions/runs/\(failedRunID)"
     let workflowName = failedRun?.name ?? group.runs.first?.name ?? ""
     let commitLink = "\(baseURL)/commit/\(sha)"
-    let encodedBranch = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
+    let encodedBranch =
+      branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
     let branchLink = "\(baseURL)/tree/\(encodedBranch)"
     let repoLink = baseURL
     let logContent = buildLogContent(group: group, scope: scope, jobs: jobs)
@@ -248,7 +259,9 @@ public struct FailureHookRunnerUseCase: Sendable {
   ///
   /// Complexity: 2 (one `if let` branch).
   private static func logEntry(for entry: FailedJobResult) -> String {
-    if let tail = entry.logTail, !tail.isEmpty { return tail }
+    if let tail = entry.logTail, !tail.isEmpty {
+      return tail
+    }
     return stepLines(for: entry.job).joined(separator: "\n")
   }
 
