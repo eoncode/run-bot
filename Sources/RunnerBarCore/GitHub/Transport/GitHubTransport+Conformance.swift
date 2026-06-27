@@ -63,18 +63,19 @@ extension GitHubTransport {
           category: .transport)
       case .httpError:
         log(
-          "apiPaginated › non-2xx error at \(urlString) — stopping pagination", category: .transport
-        )
+          "apiPaginated › non-2xx error at \(urlString) — stopping pagination",
+          category: .transport)
       case .rateLimited:
         log("apiPaginated › rate limited — \(count) items collected so far", category: .transport)
       case .permissionDenied:
         log(
-          "apiPaginated › permission denied at \(urlString) — stopping pagination and discarding \(count) collected items",
+          "apiPaginated › permission denied at \(urlString) — stopping pagination"
+            + " and discarding \(count) collected items",
           category: .transport)
       case .networkError:
         log(
-          "apiPaginated › network error at \(urlString) — stopping pagination", category: .transport
-        )
+          "apiPaginated › network error at \(urlString) — stopping pagination",
+          category: .transport)
       case .noToken:
         log(
           "apiPaginated › no GitHub token available — stopping pagination",
@@ -92,7 +93,8 @@ extension GitHubTransport {
           category: .transport)
       } else {
         log(
-          "apiPaginated › auth/permission failure mid-pagination — discarding \(state.allItems.count) collected items",
+          "apiPaginated › auth/permission failure mid-pagination"
+            + " — discarding \(state.allItems.count) collected items",
           category: .transport)
       }
       return nil
@@ -105,18 +107,21 @@ extension GitHubTransport {
         return nil
       }
       log(
-        "apiPaginated › pagination stopped by rate limit — returning \(state.allItems.count) partial items",
+        "apiPaginated › pagination stopped by rate limit"
+          + " — returning \(state.allItems.count) partial items",
         category: .transport)
     }
     if state.didEncounterNonPartialFailure {
       if !state.hadAtLeastOneSuccessfulPage {
         log(
-          "apiPaginated › pagination stopped by non-recoverable failure on first page — returning nil",
+          "apiPaginated › pagination stopped by non-recoverable failure on first page"
+            + " — returning nil",
           category: .transport)
         return nil
       }
       log(
-        "apiPaginated › pagination stopped by non-recoverable failure mid-pagination — returning \(state.allItems.count) partial items",
+        "apiPaginated › pagination stopped by non-recoverable failure mid-pagination"
+          + " — returning \(state.allItems.count) partial items",
         category: .transport)
     }
     guard state.hadAtLeastOneSuccessfulPage else {
@@ -156,7 +161,8 @@ extension GitHubTransport {
   /// Sends a POST to `endpoint`. Returns decoded response `Data`, or `nil` on failure.
   @concurrent
   @discardableResult
-  public func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
+  public func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async
+    -> Data? {
     let result = await execute(endpoint, timeout: timeout, logTag: "post") { req in
       var request = req
       request.httpMethod = "POST"
@@ -224,7 +230,8 @@ extension GitHubTransport {
     // equivalent does not. Org/enterprise callers must resolve to a repo scope first.
     guard case .repo = scope else {
       log(
-        "cancelRun › scope must be a repo (owner/name), got: \(scopeString)", category: .transport)
+        "cancelRun › scope must be a repo (owner/name), got: \(scopeString)",
+        category: .transport)
       return false
     }
     let endpoint = "\(scope.apiPrefix)/actions/runs/\(runID)/cancel"
@@ -239,14 +246,18 @@ extension GitHubTransport {
       return true
     case .httpError(let code):
       log(
-        "cancelRun › run=\(runID) scope=\(scopeString) failed — HTTP \(code)", category: .transport)
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — HTTP \(code)",
+        category: .transport)
       return false
     case .noToken:
-      log("cancelRun › run=\(runID) scope=\(scopeString) failed — no token", category: .transport)
+      log(
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — no token",
+        category: .transport)
       return false
     case .rateLimited:
       log(
-        "cancelRun › run=\(runID) scope=\(scopeString) failed — rate limited", category: .transport)
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — rate limited",
+        category: .transport)
       return false
     case .permissionDenied:
       log(
@@ -255,7 +266,8 @@ extension GitHubTransport {
       return false
     case .networkError(let error):
       log(
-        "cancelRun › run=\(runID) scope=\(scopeString) failed — network error: \(error.localizedDescription)",
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — network error:"
+          + " \(error.localizedDescription)",
         category: .transport)
       return false
     }
@@ -351,7 +363,9 @@ extension GitHubTransport {
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(runnerID)"
     log("deleteRunnerByID › DELETE \(endpoint) runnerID=\(runnerID)", category: .transport)
     let success = await delete(endpoint)
-    if !success { log("deleteRunnerByID › failed for runnerID=\(runnerID)", category: .transport) }
+    if !success {
+      log("deleteRunnerByID › failed for runnerID=\(runnerID)", category: .transport)
+    }
     return success
   }
 
@@ -386,7 +400,7 @@ extension GitHubTransport {
 
 // MARK: - PaginationAction
 
-/// The outcome of processing a single page result in ``PaginationState/apply(_:urlString:decoder:)``.
+/// The outcome of processing a single page result in `PaginationState.apply(_:decoder:)`.
 private enum PaginationAction {
   /// Fetch succeeded — advance to the given link header (caller resolves next URL).
   case advance(next: String?)
@@ -417,7 +431,7 @@ private enum PaginationAction {
 /// Accumulates per-page results and stop-conditions for ``GitHubTransport/apiPaginated(_:timeout:)``.
 ///
 /// Extracted from `apiPaginated` to reduce its cyclomatic complexity (SW-R1002).
-/// All mutation happens through ``apply(_:urlString:decoder:)``.
+/// All mutation happens through `apply(_:decoder:)`.
 private struct PaginationState {
   /// The URL to fetch on the next iteration, or `nil` when pagination is complete.
   var nextURL: String?
