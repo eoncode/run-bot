@@ -161,7 +161,8 @@ extension GitHubTransport {
   /// Sends a POST to `endpoint`. Returns decoded response `Data`, or `nil` on failure.
   @concurrent
   @discardableResult
-  public func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
+  public func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async
+    -> Data? {
     let result = await execute(endpoint, timeout: timeout, logTag: "post") { req in
       var request = req
       request.httpMethod = "POST"
@@ -249,7 +250,9 @@ extension GitHubTransport {
         category: .transport)
       return false
     case .noToken:
-      log("cancelRun › run=\(runID) scope=\(scopeString) failed — no token", category: .transport)
+      log(
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — no token",
+        category: .transport)
       return false
     case .rateLimited:
       log(
@@ -263,7 +266,8 @@ extension GitHubTransport {
       return false
     case .networkError(let error):
       log(
-        "cancelRun › run=\(runID) scope=\(scopeString) failed — network error: \(error.localizedDescription)",
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — network error:"
+          + " \(error.localizedDescription)",
         category: .transport)
       return false
     }
@@ -359,7 +363,9 @@ extension GitHubTransport {
     let endpoint = "\(scope.apiPrefix)/actions/runners/\(runnerID)"
     log("deleteRunnerByID › DELETE \(endpoint) runnerID=\(runnerID)", category: .transport)
     let success = await delete(endpoint)
-    if !success { log("deleteRunnerByID › failed for runnerID=\(runnerID)", category: .transport) }
+    if !success {
+      log("deleteRunnerByID › failed for runnerID=\(runnerID)", category: .transport)
+    }
     return success
   }
 
