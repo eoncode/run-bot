@@ -340,10 +340,10 @@ public actor LocalRunnerStore {
     private func applyRefreshResults(_ enriched: [RunnerModel]) async {
         log("LocalRunnerStore › applyRefreshResults — enriched.count=\(enriched.count), current runners.count=\(runners.count)", category: .runner)
         let dicts = buildMetricsDictionaries(from: runners)
-        let preserved = enriched
-            .map { enrichedWithMetrics(runner: $0, byApiId: dicts.byApiId, byAgentId: dicts.byAgentId, byName: dicts.byName) }
+        let preservedRunners = enriched
+            .map { preserved(runner: $0, byApiId: dicts.byApiId, byAgentId: dicts.byAgentId, byName: dicts.byName) }
             .sorted { $0.runnerName < $1.runnerName }
-        runners = preserved
+        runners = preservedRunners
         isScanning = false
         log("LocalRunnerStore › applyRefreshResults — DONE. runners.count=\(runners.count) isScanning=false", category: .runner)
         // Await directly — not fire-and-forget — so isLocalScanning cannot be
@@ -391,7 +391,7 @@ public actor LocalRunnerStore {
     /// Returns `runner` with metrics transplanted from the first matching dictionary entry.
     ///
     /// Match priority mirrors `applyMetrics`: apiId → agentId → name.
-    private func enrichedWithMetrics(
+    private func preserved(
         runner: RunnerModel,
         byApiId: [Int: RunnerMetrics],
         byAgentId: [Int: RunnerMetrics],
@@ -399,24 +399,24 @@ public actor LocalRunnerStore {
     ) -> RunnerModel {
         if let id = runner.apiId, let metrics = byApiId[id] {
             #if DEBUG
-            log("LocalRunnerStore › enrichedWithMetrics — '\(runner.runnerName)' via apiId=\(id)", category: .runner)
+            log("LocalRunnerStore › preserved — '\(runner.runnerName)' via apiId=\(id)", category: .runner)
             #endif
             return runner.copying(metrics: metrics)
         }
         if let id = runner.agentId, let metrics = byAgentId[id] {
             #if DEBUG
-            log("LocalRunnerStore › enrichedWithMetrics — '\(runner.runnerName)' via agentId=\(id)", category: .runner)
+            log("LocalRunnerStore › preserved — '\(runner.runnerName)' via agentId=\(id)", category: .runner)
             #endif
             return runner.copying(metrics: metrics)
         }
         if let metrics = byName[runner.runnerName] {
             #if DEBUG
-            log("LocalRunnerStore › enrichedWithMetrics — '\(runner.runnerName)' via name", category: .runner)
+            log("LocalRunnerStore › preserved — '\(runner.runnerName)' via name", category: .runner)
             #endif
             return runner.copying(metrics: metrics)
         }
         #if DEBUG
-        log("LocalRunnerStore › enrichedWithMetrics — no metrics to preserve for '\(runner.runnerName)'", category: .runner)
+        log("LocalRunnerStore › preserved — no metrics to preserve for '\(runner.runnerName)'", category: .runner)
         #endif
         return runner
     }
