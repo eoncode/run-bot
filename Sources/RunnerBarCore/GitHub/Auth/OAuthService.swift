@@ -184,35 +184,24 @@ public final class OAuthService: OAuthServiceProtocol {
     // MARK: - Token Exchange
 
     /// POSTs the authorization code to GitHub and saves the returned access token to Keychain.
+    ///
+    /// Complexity is kept low by delegating each concern to a focused helper:
+    /// - `makeTokenRequest(code:)` — builds the `URLRequest`
+    /// - `fetchTokenData(request:)` — performs the network call
+    /// - `handleTokenResponse(_:)` — validates the GitHub-level response
     private func exchangeCode(_ code: String) async {
         log("OAuthService › exchangeCode — POST to GitHub", category: .transport)
-        guard let url = URL(string: accessTokenURL) else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body = OAuthTokenRequest(
-            clientID: OAuthSecrets.clientID,
-            clientSecret: OAuthSecrets.clientSecret,
-            code: code
-        )
-        // OAuthTokenRequest contains only String fields — encode never throws in practice.
-        // Treat a nil result as a hard failure rather than using do/catch.
-        guard let httpBody = try? encoder.encode(body) else {
+        let req: URLRequest
+        do {
+            req = try makeTokenRequest(code: code)
+        } catch {
             log("OAuthService › exchangeCode: failed to encode request body — aborting", category: .transport)
             fireSignIn(false)
             return
         }
-        req.httpBody = httpBody
-        // Network and decode failures are separated into distinct do/catch blocks so that
-        // each failure logs its actual error description. The OAuth code is one-time use;
-        // losing error detail makes user-reported sign-in failures very hard to diagnose
-        // (TLS errors, proxy timeouts, and malformed responses would otherwise all produce
-        // the same "network/parse failure" message).
         let data: Data
         do {
-            let (responseData, _) = try await URLSession.shared.data(for: req)
-            data = responseData
+            data = try await fetchTokenData(request: req)
         } catch {
             // Security note: `clientSecret` is sent as a JSON POST body field, not as part
             // of the request URL. `URLError.localizedDescription` never includes HTTP request
@@ -236,14 +225,7 @@ public final class OAuthService: OAuthServiceProtocol {
             fireSignIn(false)
             return
         }
-        if let errorCode = response.error {
-            let desc = response.errorDescription ?? ""
-            log("OAuthService › exchangeCode: GitHub error=\(errorCode) \(desc)", category: .transport)
-            fireSignIn(false)
-            return
-        }
-        guard let token = response.accessToken, !token.isEmpty else {
-            log("OAuthService › exchangeCode: no access_token in response — keys=\(response.debugKeys)", category: .transport)
+        guard let token = handleTokenResponse(response) else {
             fireSignIn(false)
             return
         }
@@ -252,6 +234,59 @@ public final class OAuthService: OAuthServiceProtocol {
         log("OAuthService › exchangeCode — Keychain.save result=\(saved), calling fireSignIn(\(saved))", category: .transport)
         if !saved { log("OAuthService › exchangeCode: Keychain.save failed", category: .transport) }
         fireSignIn(saved)
+    }
+
+    // MARK: - Token Exchange Helpers
+
+    /// Builds the `URLRequest` for the GitHub token-exchange endpoint.
+    ///
+    /// - Parameter code: The one-time authorization code from the OAuth redirect.
+    /// - Returns: A fully configured `URLRequest` ready to be sent.
+    /// - Throws: `EncodingError` if the request body cannot be serialised.
+    private func makeTokenRequest(code: String) throws -> URLRequest {
+        guard let url = URL(string: accessTokenURL) else {
+            throw URLError(.badURL)
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = OAuthTokenRequest(
+            clientID: OAuthSecrets.clientID,
+            clientSecret: OAuthSecrets.clientSecret,
+            code: code
+        )
+        req.httpBody = try encoder.encode(body)
+        return req
+    }
+
+    /// Performs the network call for the token exchange.
+    ///
+    /// - Parameter request: The pre-built `URLRequest` to send.
+    /// - Returns: The raw response `Data`.
+    /// - Throws: Any `URLError` from the underlying `URLSession`.
+    private func fetchTokenData(request: URLRequest) async throws -> Data {
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return data
+    }
+
+    /// Validates the GitHub-level token response and extracts the access token.
+    ///
+    /// Logs and returns `nil` for both GitHub-reported errors and missing/empty tokens.
+    ///
+    /// - Parameter response: The decoded `OAuthTokenResponse`.
+    /// - Returns: The access token string on success; `nil` on failure.
+    private func handleTokenResponse(_ response: OAuthTokenResponse) -> String? {
+        if let errorCode = response.error {
+            let desc = response.errorDescription ?? ""
+            log("OAuthService › exchangeCode: GitHub error=\(errorCode) \(desc)", category: .transport)
+            return nil
+        }
+        guard let token = response.accessToken, !token.isEmpty else {
+            log("OAuthService › exchangeCode: no access_token in response — keys=\(response.debugKeys)", category: .transport)
+            return nil
+        }
+        return token
     }
 }
 
