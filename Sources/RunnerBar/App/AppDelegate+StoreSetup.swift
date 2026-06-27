@@ -17,23 +17,19 @@ extension AppDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Entry point after launch. Configures the GitHub API clients, migrates
-    /// per-scope preferences from the legacy flat-key format to the single-blob
-    /// actor, then builds the status-bar item and NSPopover panel. (#1538)
+    /// Entry point after launch. Configures the GitHub API clients, then builds
+    /// the status-bar item and NSPopover panel.
     ///
     /// ## Startup ordering
-    /// Migration MUST complete before `setupPanel()` so that `RunnerPoller`
-    /// observers spawned inside `setupPanel → setupSubscriptions` never read
-    /// `ScopePreferencesStore` before the v2 blobs exist. The sequence is:
+    /// The sequence is:
     ///
     /// 1. Configure transports (synchronous, no actor reads).
     /// 2. Configure `LocalRunnerStore` — must happen before any await so that
     ///    no lazy observation or indirect `.shared` access can fire against an
-    ///    unconfigured store during steps 3–4. (#1741)
-    /// 3. Await `migrateIfNeeded` — writes v2 blobs, removes legacy flat keys.
-    /// 4. Await `refreshDisplayNames` — hydrates `ScopeEntry.displayName` cache.
-    /// 5. `setupStatusItem` / `setupPanel` / `setupSignOutSubscription` — UI and
-    ///    observers start only after migration is complete.
+    ///    unconfigured store. (#1741)
+    /// 3. Await `refreshDisplayNames` — hydrates `ScopeEntry.displayName` cache.
+    /// 4. `setupStatusItem` / `setupPanel` / `setupSignOutSubscription` — UI and
+    ///    observers start only after display names are hydrated.
     ///
     /// ## statusIconLoop ordering
     /// `statusIconLoop` (Step 13) is assigned in this outer `Task {}` block,
@@ -75,17 +71,17 @@ extension AppDelegate {
         // Read knownScopes synchronously before the Task — ScopeStore.shared is
         // @MainActor and we are already on @MainActor here. (#1538)
         let knownScopes = ScopeStore.shared.entries.map(\.scope)
-        log("AppDelegate › applicationDidFinishLaunching — migration task starting for \(knownScopes.count) scopes")
+        log("AppDelegate › applicationDidFinishLaunching — startup task starting for \(knownScopes.count) scopes")
 
-        // Migrate, hydrate display names, THEN start UI and observers.
+        // Hydrate display names, THEN start UI and observers.
         // Plain Task{} inherits @MainActor from AppDelegate; all three setup
-        // calls below run on the main actor after the two awaits resolve. (#1538)
+        // calls below run on the main actor after the await resolves. (#1538)
         Task {
             // Step 2: configure LocalRunnerStore BEFORE the first await.
             //
-            // ⚠️  This call MUST precede migrateIfNeeded and refreshDisplayNames.
+            // ⚠️  This call MUST precede refreshDisplayNames.
             // A lazy observation dependency (or any indirect LocalRunnerStore.shared
-            // access) can fire during either of those awaits. If configure() has not
+            // access) can fire during that await. If configure() has not
             // been called yet, LocalRunnerStore.shared fatalErrors immediately.
             //
             // The matching call inside setupSubscriptions() is retained for
@@ -94,13 +90,10 @@ extension AppDelegate {
             LocalRunnerStore.configure(viewModel: runnerState)
             log("AppDelegate › applicationDidFinishLaunching — LocalRunnerStore configured")
 
-            // Step 3: migrate legacy flat keys → v2 blobs.
-            await ScopePreferencesStore.shared.migrateIfNeeded(knownScopes: knownScopes)
-
-            // Step 4: hydrate ScopeEntry.displayName from freshly-migrated blobs.
+            // Step 3: hydrate ScopeEntry.displayName from persisted prefs blobs.
             await ScopeStore.shared.refreshDisplayNames()
 
-            // Step 5: start UI and observers — guaranteed to see migrated prefs.
+            // Step 4: start UI and observers — guaranteed to see hydrated prefs.
             setupStatusItem()
             setupPanel()
             setupSignOutSubscription()

@@ -13,8 +13,6 @@ import Foundation
 /// change notifications on `UserDefaults`, so no main-actor coordination is required.
 ///
 /// Storage format: JSON-encoded `[String: String]` stored as `Data` under `indexKey`.
-/// One-time migration: if the key holds a legacy `NSPropertyList` dictionary (pre-Codable),
-/// it is decoded via `NSDictionary` cast and immediately re-persisted as JSON.
 public final class LocalRunnerIndex {
 
     // MARK: - Storage key
@@ -64,9 +62,7 @@ public final class LocalRunnerIndex {
     /// 1. `Data` key present → JSON-decode as `[String: String]`.
     ///    On `DecodingError`, logs and falls through to empty so malformed data
     ///    is surfaced in logs without crashing or losing other entries.
-    /// 2. Legacy `NSDictionary` present → cast and immediately re-persist as JSON
-    ///    (one-time migration from pre-Codable plist format).
-    /// 3. Key absent → start with empty index.
+    /// 2. Key absent → start with empty index.
     private func loadIndex() {
         if let data = defaults.data(forKey: Self.indexKey) {
             do {
@@ -75,19 +71,6 @@ public final class LocalRunnerIndex {
             } catch {
                 log("LocalRunnerIndex › loadIndex — JSON decode failed: \(error). Starting with empty index.", category: .runner)
                 runnerIndex = [:]
-            }
-        } else if let legacy = defaults.dictionary(forKey: Self.indexKey) as? [String: String] {
-            // Migration path: executes once after upgrading from the pre-Codable plist format.
-            // persistIndex() overwrites the same key as Data; if it succeeds, this branch
-            // becomes permanently unreachable on subsequent launches (the `if let data` branch
-            // fires instead). If encode fails (logged inside persistIndex), the plist value
-            // remains and migration retries on next launch — safe and visible in logs.
-            runnerIndex = legacy
-            persistIndex()
-            if defaults.data(forKey: Self.indexKey) != nil {
-                log("LocalRunnerIndex › loadIndex — migrated \(runnerIndex.count) legacy plist entry(ies) to JSON", category: .runner)
-            } else {
-                log("LocalRunnerIndex › loadIndex — migration encode failed; plist retained, will retry next launch", category: .runner)
             }
         } else {
             runnerIndex = [:]

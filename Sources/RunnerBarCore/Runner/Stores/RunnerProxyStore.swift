@@ -14,7 +14,6 @@ import Foundation
 ///
 /// Disk I/O is performed in `@concurrent` free functions so the actor's
 /// cooperative thread is never blocked by synchronous file I/O (P18).
-/// Follows the `RunnerConfigStore` migration in PR #1489 as template.
 ///
 /// File format (unchanged from previous implementation):
 /// - `.proxy`            — raw proxy URL followed by `"\n"`.
