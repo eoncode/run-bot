@@ -16,21 +16,17 @@ public enum LoginItem {
     /// Registers or unregisters launch-at-login based on `enabled`.
     /// Called from the login-item toggle in `SettingsView` via the two-argument
     /// `onChange(of:)` form, which supplies the new toggle value directly.
-    ///
-    /// - Returns: `true` if the operation succeeded, `false` if `SMAppService`
-    ///   threw an error. The caller is responsible for reverting UI state on `false`.
-    @discardableResult
-    public static func setEnabled(_ enabled: Bool) -> Bool {
+    /// Errors are logged to stderr but otherwise swallowed — failure is non-fatal
+    /// since the toggle will reflect the unchanged state via `LoginItem.isEnabled`.
+    public static func setEnabled(_ enabled: Bool) {
         do {
             if enabled {
                 try SMAppService.mainApp.register()
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            return true
         } catch {
             log("[RunnerBar] LoginItem.setEnabled(\(enabled)) failed: \(error)", category: .services)
-            return false
         }
     }
 }
