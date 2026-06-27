@@ -240,8 +240,13 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
-    /// Applies or removes the Login Item entry based on `enabled`.
-    func applyLaunchAtLogin(_ enabled: Bool) { LoginItem.setEnabled(enabled) }
+    /// Applies or removes the Login Item entry based on `enabled`, then
+    /// syncs `launchAtLogin` to the actual system state via `LoginItem.isEnabled`.
+    /// On success the value is unchanged; on failure the toggle snaps back automatically.
+    func applyLaunchAtLogin(_ enabled: Bool) {
+        LoginItem.setEnabled(enabled)
+        launchAtLogin = LoginItem.isEnabled
+    }
 
     /// Initiates the OAuth sign-in flow via the injected `oauthService`.
     ///

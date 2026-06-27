@@ -17,7 +17,7 @@ public enum LoginItem {
     /// Called from the login-item toggle in `SettingsView` via the two-argument
     /// `onChange(of:)` form, which supplies the new toggle value directly.
     /// Errors are logged to stderr but otherwise swallowed — failure is non-fatal
-    /// since the checkbox UI will simply reflect the unchanged state on next read.
+    /// since the toggle will reflect the unchanged state via `LoginItem.isEnabled`.
     public static func setEnabled(_ enabled: Bool) {
         do {
             if enabled {
