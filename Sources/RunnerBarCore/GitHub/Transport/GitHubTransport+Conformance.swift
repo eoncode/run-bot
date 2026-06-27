@@ -240,7 +240,18 @@ extension GitHubTransport {
       request.httpMethod = "POST"
       return request
     }
-    switch executeResult {
+    return cancelRunResult(executeResult, runID: runID, scopeString: scopeString)
+  }
+
+  /// Interprets an `ExecuteResult` from a cancel-run POST and returns the boolean outcome.
+  ///
+  /// Extracted from `cancelRun` to reduce its cyclomatic complexity (SW-R1002).
+  private func cancelRunResult(
+    _ result: ExecuteResult,
+    runID: Int,
+    scopeString: String
+  ) -> Bool {
+    switch result {
     case .success:
       log("cancelRun › run=\(runID) scope=\(scopeString) success=true", category: .transport)
       return true
