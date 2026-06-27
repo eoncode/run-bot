@@ -28,11 +28,11 @@ extension RunnerPoller {
         // setDisplayState writes the actor-local copies (self.runners / .jobs / .actions)
         // consumed by nextPollInterval() and other internal actor logic.
         setDisplayState(
+            isRateLimited: rateLimitSnapshot.isLimited,
+            rateLimitResetDate: rateLimitSnapshot.resetDate,
             runners: enrichedRunners,
             jobs: jobResult.display,
-            actions: groupResult.display,
-            isRateLimited: rateLimitSnapshot.isLimited,
-            rateLimitResetDate: rateLimitSnapshot.resetDate
+            actions: groupResult.display
         )
         // swiftlint:disable:next line_length
         log("RunnerPoller › fetch complete — actions=\(groupResult.display.count) jobs=\(jobResult.display.count) runners=\(enrichedRunners.count) isRateLimited=\(rateLimitSnapshot.isLimited) rateLimitResetDate=\(String(describing: rateLimitSnapshot.resetDate))", category: .runner)

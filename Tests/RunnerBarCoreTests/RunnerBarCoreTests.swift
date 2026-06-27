@@ -605,7 +605,6 @@ struct PollResultBuilderGroupStateTests {
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [completedGroup] },
                 scopeFromGroup: { $0.repo },
@@ -622,7 +621,6 @@ struct PollResultBuilderGroupStateTests {
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [liveGroup] },
                 scopeFromGroup: { $0.repo },
@@ -639,7 +637,6 @@ struct PollResultBuilderGroupStateTests {
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [failedGroup] },
                 scopeFromGroup: { $0.repo },
@@ -656,7 +653,6 @@ struct PollResultBuilderGroupStateTests {
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [successGroup] },
                 scopeFromGroup: { $0.repo },
@@ -673,13 +669,13 @@ struct PollResultBuilderGroupStateTests {
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [completedGroup.id],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [completedGroup] },
                 scopeFromGroup: { $0.repo },
                 fireFailureHook: { _, _ in await counter.increment() },
                 enrichJobs: { $0 }
-            )
+            ),
+            snapSeenGroupIDs: [completedGroup.id]
         )
         #expect(await counter.value == 0)
     }
@@ -691,7 +687,6 @@ struct PollResultBuilderGroupStateTests {
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [liveGroup.id: liveGroup],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [completedGroup] },
                 scopeFromGroup: { $0.repo },
@@ -726,7 +721,6 @@ struct PollResultBuilderGroupStateTests {
         let result = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [mixedGroup] },
                 scopeFromGroup: { $0.repo },
@@ -757,7 +751,6 @@ struct PollResultBuilderGroupStateTests {
         let poll1 = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [failedGroup] },
                 scopeFromGroup: { $0.repo },
@@ -784,13 +777,13 @@ struct PollResultBuilderGroupStateTests {
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [:],
             snapGroupCache: [:],
-            snapSeenGroupIDs: seenAfterEviction,
             deps: GroupStateDeps(
                 fetchGroups: { _ in [failedGroup] },
                 scopeFromGroup: { $0.repo },
                 fireFailureHook: { _, _ in await counter.increment() },
                 enrichJobs: { $0 }
-            )
+            ),
+            snapSeenGroupIDs: seenAfterEviction
         )
         #expect(await counter.value == 2, "hook must re-fire after FIFO eviction from seenGroupIDs")
     }
@@ -803,7 +796,6 @@ struct PollResultBuilderGroupStateTests {
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [liveVersion.id: liveVersion],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [completedVersion] },
                 scopeFromGroup: { $0.repo },
@@ -836,7 +828,6 @@ struct PollResultBuilderGroupStateTests {
         let poll1 = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [vanishedGroup.id: vanishedGroup],
             snapGroupCache: [:],
-            snapSeenGroupIDs: [],
             deps: GroupStateDeps(
                 fetchGroups: { _ in [] },
                 scopeFromGroup: { $0.repo },
@@ -858,13 +849,13 @@ struct PollResultBuilderGroupStateTests {
         _ = await PollResultBuilder.buildGroupState(
             snapPrevGroups: [vanishedGroup.id: vanishedGroup],
             snapGroupCache: evictedCache,
-            snapSeenGroupIDs: poll1.newSeenGroupIDs,
             deps: GroupStateDeps(
                 fetchGroups: { _ in [] },
                 scopeFromGroup: { $0.repo },
                 fireFailureHook: { _, _ in await counter.increment() },
                 enrichJobs: { $0 }
-            )
+            ),
+            snapSeenGroupIDs: poll1.newSeenGroupIDs
         )
         #expect(await counter.value == 1, "hook must not re-fire after cache eviction when seenGroupIDs still holds the ID")
     }

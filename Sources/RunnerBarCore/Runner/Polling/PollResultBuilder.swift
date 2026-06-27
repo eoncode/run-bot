@@ -82,7 +82,7 @@ public struct FreezeVanishedConfig: Sendable {
 /// All methods are static and operate only on data passed as parameters.
 /// Fetch / API side-effects are injected as closures so this type is
 /// independently unit-testable without a RunnerStore instance.
-public struct PollResultBuilder {
+public enum PollResultBuilder {
 
   // MARK: - Cache limits
 
@@ -178,8 +178,8 @@ public struct PollResultBuilder {
   public static func buildGroupState(
     snapPrevGroups: [String: WorkflowActionGroup],
     snapGroupCache: [String: WorkflowActionGroup],
-    snapSeenGroupIDs: OrderedSet<String> = OrderedSet(),
-    deps: GroupStateDeps
+    deps: GroupStateDeps,
+    snapSeenGroupIDs: OrderedSet<String> = OrderedSet()
   ) async -> GroupPollResult {
     log(
       "PollResultBuilder › buildGroupState — snapPrevGroups=\(snapPrevGroups.count) snapGroupCache=\(snapGroupCache.count) snapSeenGroupIDs=\(snapSeenGroupIDs.count)",
