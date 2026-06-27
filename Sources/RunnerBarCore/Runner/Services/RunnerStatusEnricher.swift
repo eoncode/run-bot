@@ -127,19 +127,18 @@ public struct RunnerStatusEnricher: RunnerStatusEnricherProtocol, Sendable {
 
     /// Enriches `runners` with GitHub API status, busy flag, labels, and runner group.
     ///
+    /// Delegates each phase to a private helper to keep cyclomatic complexity low:
+    /// 1. `buildScopeToRunnerIndices` — groups runner indices by scope URL.
+    /// 2. Concurrent scope fetches via `withTaskGroup`.
+    /// 3. `buildFallbackAPI` — merges all scope dicts into a cross-scope fallback.
+    /// 4. `applyEnrichmentPass` — second pass applying API data to each runner.
+    ///
     /// - Parameter runners: The locally-discovered runner list to enrich.
     /// - Returns: A new array with the same runners, each enriched where an API match was found.
     /// - Note: Runners whose `gitHubUrl` is `nil` are skipped and returned unchanged.
     public func enrich(runners: [RunnerModel]) async -> [RunnerModel] {
         // Step 1: collect unique scope URLs and the runners belonging to each.
-        var scopeToRunnerIndices: [String: [Int]] = [:]
-        for (idx, runner) in runners.enumerated() {
-            guard let url = runner.gitHubUrl else {
-                log("[Enricher] SKIP '\(runner.runnerName)' — gitHubUrl is nil", category: .runner)
-                continue
-            }
-            scopeToRunnerIndices[url.absoluteString, default: []].append(idx)
-        }
+        let scopeToRunnerIndices = buildScopeToRunnerIndices(runners)
 
         // Step 2: fetch all scopes concurrently.
         // Use (scopeURL, [RunnerPayload]) tuples so results stay scope-keyed.
@@ -158,36 +157,87 @@ public struct RunnerStatusEnricher: RunnerStatusEnricherProtocol, Sendable {
             }
         }
 
-        // Step 3: apply enrichment in a second pass.
-        // `fallbackAPI` is hoisted outside the loop — `apiByScope` is immutable
-        // after Step 2, so recomputing the merged dict on every iteration is O(N×S)
-        // work for no benefit. Compute once here: O(S × runners-per-scope).
-        //
-        // Collision note: when two scopes expose a runner with the same registered
-        // name AND that runner's gitHubUrl is nil (so the scoped lookup misses),
-        // the fallback dict's `first` wins. The winner is the first scope whose
-        // withTaskGroup task completes — non-deterministic but harmless in practice
-        // since both payloads describe the same physical runner. A warning is logged
-        // so collisions are visible in diagnostic output without any code change needed.
-        var seenInFallback: [String: String] = [:]  // name → first winning scopeURL
-        let fallbackAPI = apiByScope.reduce(into: [String: RunnerPayload]()) { result, entry in
+        // Step 3: build the cross-scope fallback dict then apply enrichment.
+        let fallbackAPI = buildFallbackAPI(from: apiByScope)
+        return applyEnrichmentPass(to: runners, apiByScope: apiByScope, fallbackAPI: fallbackAPI)
+    }
+
+    // MARK: - Private helpers
+
+    /// Groups runner indices by their scope URL string.
+    ///
+    /// Runners whose `gitHubUrl` is `nil` are skipped and a diagnostic log entry
+    /// is emitted. Extracted from `enrich` to reduce its cyclomatic complexity.
+    ///
+    /// - Parameter runners: The full runner list passed to `enrich`.
+    /// - Returns: A mapping from absolute scope URL string to the indices of runners
+    ///   that belong to that scope.
+    private func buildScopeToRunnerIndices(_ runners: [RunnerModel]) -> [String: [Int]] {
+        var scopeToRunnerIndices: [String: [Int]] = [:]
+        for (idx, runner) in runners.enumerated() {
+            guard let url = runner.gitHubUrl else {
+                log("[Enricher] SKIP '\(runner.runnerName)' — gitHubUrl is nil", category: .runner)
+                continue
+            }
+            scopeToRunnerIndices[url.absoluteString, default: []].append(idx)
+        }
+        return scopeToRunnerIndices
+    }
+
+    /// Merges all per-scope payload dictionaries into a single cross-scope fallback.
+    ///
+    /// When two scopes contain a runner registered under the same name, the first
+    /// writer wins and a warning is logged. Extracted from `enrich` to reduce its
+    /// cyclomatic complexity.
+    ///
+    /// - Parameter apiByScope: The fully-populated per-scope payload dictionaries
+    ///   produced after all concurrent `fetchRunnersForScope` calls complete.
+    /// - Returns: A flat `[name: RunnerPayload]` dictionary covering all scopes.
+    ///
+    /// - Note: `fallbackAPI` is computed once here — `apiByScope` is immutable at
+    ///   call time, so recomputing the merged dict inside the apply loop would be
+    ///   O(N×S) work for no benefit.
+    private func buildFallbackAPI(from apiByScope: [String: [String: RunnerPayload]]) -> [String: RunnerPayload] {
+        var seenInFallback: [String: String] = [:]
+        return apiByScope.reduce(into: [String: RunnerPayload]()) { result, entry in
             let (scopeURL, scopeDict) = entry
             for (name, payload) in scopeDict {
                 if result[name] != nil {
-                    log("[Enricher] ⚠️ fallback collision: runner '\(name)' appears in both '\(seenInFallback[name] ?? "?")' and '\(scopeURL)' — first-writer wins", category: .runner)
+                    log(
+                        "[Enricher] ⚠️ fallback collision: runner '\(name)' appears in both '\(seenInFallback[name] ?? "?")' and '\(scopeURL)' — first-writer wins",
+                        category: .runner
+                    )
                 } else {
                     result[name] = payload
                     seenInFallback[name] = scopeURL
                 }
             }
         }
+    }
+
+    /// Applies API payloads to each runner in `runners` and returns the enriched array.
+    ///
+    /// For each runner the lookup prefers the runner's own scope (`apiByScope`) before
+    /// falling back to the merged cross-scope dict (`fallbackAPI`). Runners with no
+    /// matching payload are returned unchanged and a diagnostic log entry is emitted.
+    /// Extracted from `enrich` to reduce its cyclomatic complexity.
+    ///
+    /// - Parameters:
+    ///   - runners: The original runner list passed to `enrich`.
+    ///   - apiByScope: Per-scope payload dictionaries keyed by scope URL string.
+    ///   - fallbackAPI: The merged cross-scope payload dictionary from `buildFallbackAPI`.
+    /// - Returns: The enriched runner array.
+    private func applyEnrichmentPass(
+        to runners: [RunnerModel],
+        apiByScope: [String: [String: RunnerPayload]],
+        fallbackAPI: [String: RunnerPayload]
+    ) -> [RunnerModel] {
         var result = runners
         for idx in result.indices {
             let name = result[idx].runnerName
             // Restrict lookup to the runner's own scope first to avoid cross-scope
             // name collisions, then fall back to a scan across all scopes.
             let scopedAPI = result[idx].gitHubUrl.flatMap { apiByScope[$0.absoluteString] } ?? [:]
-
             if let api = Self.findPayload(name: name, in: scopedAPI) ?? Self.findPayload(name: name, in: fallbackAPI) {
                 result[idx] = applyEnrichment(to: result[idx], from: api)
             } else {
@@ -197,8 +247,6 @@ public struct RunnerStatusEnricher: RunnerStatusEnricherProtocol, Sendable {
         }
         return result
     }
-
-    // MARK: - Private
 
     /// Looks up a `RunnerPayload` for `name` in `dict` using four strategies:
     /// exact match → case-insensitive match → whitespace-trimmed match →
