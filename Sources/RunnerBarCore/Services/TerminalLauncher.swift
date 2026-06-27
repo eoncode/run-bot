@@ -11,6 +11,8 @@ import Foundation
 /// Moved from `RunnerBar` to `RunnerBarCore` in #1623.
 public enum TerminalLauncher {
     /// Opens Terminal.app and runs `command` in a new window.
+    /// Must be called on the main thread — `NSAppleScript` is not thread-safe.
+    @MainActor
     public static func open(command: String) {
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")
