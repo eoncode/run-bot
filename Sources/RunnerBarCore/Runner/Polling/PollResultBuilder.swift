@@ -129,11 +129,11 @@ public enum PollResultBuilder {
     backfill: @Sendable (inout [Int: ActiveJob]) async -> Void
   ) async -> JobPollResult {
     let allFetched: [ActiveJob] = await fetchJobs()
-    let liveJobs: [ActiveJob] = allFetched.filter {
-      $0.conclusion == nil && $0.status != .completed
+    let liveJobs: [ActiveJob] = allFetched.filter { job in
+      job.conclusion == nil && job.status != .completed
     }
-    let freshDone: [ActiveJob] = allFetched.filter {
-      $0.conclusion != nil || $0.status == .completed
+    let freshDone: [ActiveJob] = allFetched.filter { job in
+      job.conclusion != nil || job.status == .completed
     }
     let liveIDs: Set<Int> = Set(liveJobs.map { $0.id })
     let now = Date()
@@ -530,7 +530,7 @@ extension Array {
   /// Elements are appended in source order. An optional predicate can skip
   /// individual elements (e.g. cached groups that are already live) without
   /// breaking the "fill until full" semantics.
-  fileprivate mutating func appendUpTo<S>(
+  internal mutating func appendUpTo<S>(
     _ limit: Int,
     from source: S,
     where shouldAppend: (S.Element) -> Bool = { _ in true }

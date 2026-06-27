@@ -270,8 +270,8 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
     let label = prLabel(from: representative)
     let rawTitle =
       representative.displayTitle
-      ?? representative.headCommit.map {
-        String($0.message.components(separatedBy: "\n").first ?? "")
+      ?? representative.headCommit.map { commit in
+        String(commit.message.components(separatedBy: "\n").first ?? "")
       }
       ?? String(sha.prefix(7))
     let title = String(rawTitle.prefix(40))
