@@ -63,18 +63,19 @@ extension GitHubTransport {
           category: .transport)
       case .httpError:
         log(
-          "apiPaginated › non-2xx error at \(urlString) — stopping pagination", category: .transport
-        )
+          "apiPaginated › non-2xx error at \(urlString) — stopping pagination",
+          category: .transport)
       case .rateLimited:
         log("apiPaginated › rate limited — \(count) items collected so far", category: .transport)
       case .permissionDenied:
         log(
-          "apiPaginated › permission denied at \(urlString) — stopping pagination and discarding \(count) collected items",
+          "apiPaginated › permission denied at \(urlString) — stopping pagination"
+            + " and discarding \(count) collected items",
           category: .transport)
       case .networkError:
         log(
-          "apiPaginated › network error at \(urlString) — stopping pagination", category: .transport
-        )
+          "apiPaginated › network error at \(urlString) — stopping pagination",
+          category: .transport)
       case .noToken:
         log(
           "apiPaginated › no GitHub token available — stopping pagination",
@@ -92,7 +93,8 @@ extension GitHubTransport {
           category: .transport)
       } else {
         log(
-          "apiPaginated › auth/permission failure mid-pagination — discarding \(state.allItems.count) collected items",
+          "apiPaginated › auth/permission failure mid-pagination"
+            + " — discarding \(state.allItems.count) collected items",
           category: .transport)
       }
       return nil
@@ -105,18 +107,21 @@ extension GitHubTransport {
         return nil
       }
       log(
-        "apiPaginated › pagination stopped by rate limit — returning \(state.allItems.count) partial items",
+        "apiPaginated › pagination stopped by rate limit"
+          + " — returning \(state.allItems.count) partial items",
         category: .transport)
     }
     if state.didEncounterNonPartialFailure {
       if !state.hadAtLeastOneSuccessfulPage {
         log(
-          "apiPaginated › pagination stopped by non-recoverable failure on first page — returning nil",
+          "apiPaginated › pagination stopped by non-recoverable failure on first page"
+            + " — returning nil",
           category: .transport)
         return nil
       }
       log(
-        "apiPaginated › pagination stopped by non-recoverable failure mid-pagination — returning \(state.allItems.count) partial items",
+        "apiPaginated › pagination stopped by non-recoverable failure mid-pagination"
+          + " — returning \(state.allItems.count) partial items",
         category: .transport)
     }
     guard state.hadAtLeastOneSuccessfulPage else {
@@ -224,7 +229,8 @@ extension GitHubTransport {
     // equivalent does not. Org/enterprise callers must resolve to a repo scope first.
     guard case .repo = scope else {
       log(
-        "cancelRun › scope must be a repo (owner/name), got: \(scopeString)", category: .transport)
+        "cancelRun › scope must be a repo (owner/name), got: \(scopeString)",
+        category: .transport)
       return false
     }
     let endpoint = "\(scope.apiPrefix)/actions/runs/\(runID)/cancel"
@@ -239,14 +245,20 @@ extension GitHubTransport {
       return true
     case .httpError(let code):
       log(
-        "cancelRun › run=\(runID) scope=\(scopeString) failed — HTTP \(code)", category: .transport)
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — HTTP \(code)",
+        category: .transport)
       return false
     case .noToken:
       log("cancelRun › run=\(runID) scope=\(scopeString) failed — no token", category: .transport)
       return false
     case .rateLimited:
       log(
-        "cancelRun › run=\(runID) scope=\(scopeString) failed — rate limited\", category: .transport)\n      return false\n    case .permissionDenied:\n      log(\n        \"cancelRun › run=\\(runID) scope=\\(scopeString) failed — permission denied\",
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — rate limited",
+        category: .transport)
+      return false
+    case .permissionDenied:
+      log(
+        "cancelRun › run=\(runID) scope=\(scopeString) failed — permission denied",
         category: .transport)
       return false
     case .networkError(let error):
