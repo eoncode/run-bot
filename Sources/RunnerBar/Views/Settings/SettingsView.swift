@@ -106,6 +106,11 @@ struct SettingsView: View {
     // MARK: - Body
     /// Root view: swaps between the settings scroll, `LocalRunnersView`, and `ScopesView`.
     var body: some View {
+        // Lifecycle modifiers live on the root (wrapping all branches) so
+        // onAppearAction()/onDisappear fire only when the settings panel itself
+        // opens/closes — NOT on every navigation to LocalRunnersView/ScopesView.
+        // Attaching them to `settingsBody` caused needless Keychain re-reads and
+        // Task recreation on every back-navigation.
         Group {
             if showLocalRunners {
                 LocalRunnersView(
@@ -122,15 +127,25 @@ struct SettingsView: View {
         }
         .onAppear(perform: onAppearAction)
         .onDisappear {
+            // Cancel and unconditionally nil the sign-in task — the for-await loop
+            // exits promptly on cancellation (AsyncStream respects task cancellation)
+            // so isSigningIn will never flip back via the stream after this point.
+            // Nilling here ensures a re-opened panel never shows a stale spinner.
             signInTask?.cancel()
             signInTask = nil
             signOutTask?.cancel()
             signOutTask = nil
+            // Reset isSigningIn so a close-during-flow doesn't leave a stale spinner
+            // on the next open. The stream task is already cancelled above, so the
+            // for-await loop will not reset it — we must do it explicitly here.
             isSigningIn = false
         }
     }
 
     /// The main settings layout (header + sections scroll).
+    ///
+    /// Extracted from `body` so `LocalRunnersView` and `ScopesView` can replace it cleanly
+    /// without any structural duplication.
     ///
     /// HEIGHT CONTRACT: headerBar is OUTSIDE the ScrollView — back button always visible.
     /// ❌ NEVER move headerBar inside the ScrollView.
@@ -142,6 +157,12 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
             Divider()
+            // maxHeight: .infinity — fills all space the panel gives us.
+            // AppDelegate caps the panel at 85% visibleFrame. That IS the limit.
+            // ❌ NEVER move headerBar inside this ScrollView.
+            // ❌ NEVER replace .infinity with a fixed number.
+            // If you are an agent or human, DO NOT REMOVE THIS COMMENT, YOU ARE NOT ALLOWED
+            // UNDER ANY CIRCUMSTANCE.
             ScrollView(.vertical, showsIndicators: true) {
                 sectionsStack
             }
@@ -177,6 +198,8 @@ struct SettingsView: View {
         log("SettingsView › onAppear — Keychain.token=\(keychainToken.map { "present(len=\($0.count))" } ?? "nil") githubToken=\(envToken.map { "present(len=\($0.count))" } ?? "nil") isOAuthAuthenticated=\(isOAuthAuthenticated) isCLIAuthenticated=\(isCLIAuthenticated)")
         #endif
 
+        // Replace the old `onCompletion` closure with a structured async stream.
+        // This avoids the retained-closure / multiple-subscriber hazard (P9).
         signInTask = Task { @MainActor in
             for await success in oauthService.makeSignInStream() {
                 log("SettingsView › signInStream — success=\(success), updating auth state")
@@ -226,6 +249,10 @@ struct SettingsView: View {
     }
 
     /// Initiates the OAuth sign-in flow via the injected `oauthService`.
+    ///
+    /// `makeSignInURL()` builds the authorization URL and stores the CSRF nonce.
+    /// Opening the browser is the app layer's responsibility — `OAuthService` (Core)
+    /// has no AppKit dependency and cannot call `NSWorkspace` directly.
     func signInWithGitHub() {
         log("SettingsView › signInWithGitHub — isSigningIn=true")
         isSigningIn = true
