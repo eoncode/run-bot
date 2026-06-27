@@ -386,7 +386,7 @@ extension GitHubTransport {
 
 // MARK: - PaginationAction
 
-/// The outcome of processing a single page result in ``PaginationState/apply(_:urlString:decoder:)``.
+/// The outcome of processing a single page result in ``PaginationState/apply(_:decoder:)``.
 private enum PaginationAction {
   /// Fetch succeeded — advance to the given link header (caller resolves next URL).
   case advance(next: String?)
@@ -417,7 +417,7 @@ private enum PaginationAction {
 /// Accumulates per-page results and stop-conditions for ``GitHubTransport/apiPaginated(_:timeout:)``.
 ///
 /// Extracted from `apiPaginated` to reduce its cyclomatic complexity (SW-R1002).
-/// All mutation happens through ``apply(_:urlString:decoder:)``.
+/// All mutation happens through ``apply(_:decoder:)``.
 private struct PaginationState {
   /// The URL to fetch on the next iteration, or `nil` when pagination is complete.
   var nextURL: String?
