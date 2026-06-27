@@ -51,8 +51,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     /// - Parameters:
     ///   - id: The unique GitHub job ID.
     ///   - name: The display name of the job.
-    ///   - htmlUrl: The GitHub web URL for this job run.
     ///   - status: Typed lifecycle status.
+    ///   - htmlUrl: The GitHub web URL for this job run.
     ///   - conclusion: Typed conclusion (`nil` while running).
     ///   - isDimmed: `true` for cached/history entries. Defaults to `false`.
     ///   - runnerName: The name of the runner executing this job.
@@ -65,8 +65,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     public init(
         id: Int,
         name: String,
-        htmlUrl: String? = nil,
         status: JobStatus,
+        htmlUrl: String? = nil,
         conclusion: JobConclusion? = nil,
         isDimmed: Bool = false,
         runnerName: String? = nil,
@@ -553,8 +553,8 @@ public func makeActiveJob(
     return ActiveJob(
         id: payload.id,
         name: payload.name,
-        htmlUrl: payload.htmlUrl,
         status: payload.status,
+        htmlUrl: payload.htmlUrl,
         conclusion: payload.conclusion,
         isDimmed: isDimmed,
         runnerName: payload.runnerName,
