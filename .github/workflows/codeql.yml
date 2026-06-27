@@ -44,7 +44,19 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: swift
-          build-mode: autobuild
+          # autobuild runs plain `swift build` without --arch arm64, which
+          # fails on this arm64 runner because main.swift has an #error guard
+          # that requires the arch to be set explicitly. Use manual mode and
+          # mirror the same invocation used by build.sh.
+          build-mode: manual
+
+      - name: Build for CodeQL
+        # Must match build.sh: release config, arm64 arch.
+        # -c release: consistent with production build and avoids debug-only
+        #   code paths that inflate the analysis surface.
+        # --arch arm64: required — the #error guard in main.swift fires if the
+        #   arch is not pinned, which is exactly what broke autobuild.
+        run: swift build -c release --arch arm64
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
