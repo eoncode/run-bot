@@ -523,7 +523,7 @@ public enum PollResultBuilder {
 // MARK: - Array fill helper
 
 /// Sequence-filling helpers used by `PollResultBuilder` to top up display arrays.
-extension Array {
+private extension Array {
   /// Appends elements from `source` until `self.count` reaches `limit`.
   ///
   /// Elements are appended in source order. An optional predicate can skip
@@ -539,7 +539,7 @@ extension Array {
   ///   without leaking it as `public` API. It is **not** intended for use outside
   ///   the polling pipeline; treat it as an implementation detail of
   ///   `buildJobDisplay` and `buildGroupDisplay`.
-  internal mutating func appendUpTo<S>(
+  mutating func appendUpTo<S>(
     _ limit: Int,
     from source: S,
     where shouldAppend: (S.Element) -> Bool = { _ in true }
