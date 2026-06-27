@@ -125,7 +125,7 @@ extension RunnerPoller {
       return results
     }
     for (i, metrics) in metricsResults {
-      indexed[i].runner = indexed[i].runner.copying(metrics: metrics)
+      indexed[i] = IndexedScopedRunner(scope: indexed[i].scope, runner: indexed[i].runner.copying(metrics: metrics))
     }
     return indexed
   }
