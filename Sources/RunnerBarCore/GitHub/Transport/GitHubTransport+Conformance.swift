@@ -151,7 +151,8 @@ extension GitHubTransport {
   /// Sends a POST to `endpoint`. Returns decoded response `Data`, or `nil` on failure.
   @concurrent
   @discardableResult
-  public func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data? {
+  public func post(_ endpoint: String, body: Data? = nil, timeout: TimeInterval = 30) async -> Data?
+  {
     let result = await execute(endpoint, timeout: timeout, logTag: "post") { req in
       var request = req
       request.httpMethod = "POST"
@@ -274,7 +275,8 @@ extension GitHubTransport {
   @concurrent
   @discardableResult
   public func patchRunnerLabels(scope scopeString: String, runnerID: Int, labels: [String]) async
-    -> [String]? {
+    -> [String]?
+  {
     guard let scope = Scope.parse(scopeString) else {
       log("patchRunnerLabels › invalid scope: \(scopeString)", category: .transport)
       return nil
