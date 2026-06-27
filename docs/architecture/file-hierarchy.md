@@ -169,10 +169,16 @@ runner-bar/
 │       │   │   ├── RunnerStatus.swift       — typed representation of the GitHub API runner status field
 │       │   │   └── WorkflowActionGroup.swift — workflow run group + type-safe GroupStatus
 │       │   ├── Polling/
+│       │   │   ├── IndexedScopedRunner.swift — immutable (scope, runner) carrier for two-phase fetch+enrich pipeline
+│       │   │   ├── ObservationRelay.swift   — bridges RunnerPoller actor state to @Observable for SwiftUI
 │       │   │   ├── PollLoopCoordinator.swift — owns the three Task handles driving RunnerPoller's poll loop
 │       │   │   ├── PollResultBuilder.swift  — builds poll-cycle state; group/job state dependencies
 │       │   │   ├── PollResults.swift        — value types carrying poll-cycle results (incl. JobPollResult)
 │       │   │   ├── RunnerPoller.swift       — core poll-loop actor (renamed from RunnerStore, Step 10)
+│       │   │   ├── RunnerPoller+ApplyResult.swift — applies enriched poll results back to RunnerPoller state
+│       │   │   ├── RunnerPoller+Backfill.swift — backfill logic for runners missing from a poll cycle
+│       │   │   ├── RunnerPoller+BackfillHelpers.swift — helper functions for the backfill extension
+│       │   │   ├── RunnerPoller+FetchAndEnrich.swift — two-phase concurrent fetch + metrics-enrich pipeline
 │       │   │   ├── RunnerPoller+InstallPathMap.swift — InstallPathMap lookups for runner enrichment
 │       │   │   ├── RunnerPoller+PollBridge.swift — RunnerPoller poll-bridge extension (Step 10)
 │       │   │   ├── RunnerPollerConformances.swift — protocol conformances for RunnerPoller deps (#1618)
@@ -181,6 +187,7 @@ runner-bar/
 │       │   ├── Protocols/
 │       │   │   └── RunnerViewModelProtocol.swift — push-receiver interface for LocalRunnerStore updates
 │       │   ├── Services/
+│       │   │   ├── DefaultRunnerLabelsService.swift — live RunnerLabelsService delegating to patchRunnerLabels
 │       │   │   ├── RunnerLabelsServiceProtocol.swift — runner labels service protocol (Phase 5, #1287/#1300)
 │       │   │   ├── RunnerLifecycleService.swift — manages macOS launchctl runner lifecycle
 │       │   │   ├── RunnerLifecycleServiceProtocol.swift — abstraction over launchctl start/stop/remove
@@ -209,7 +216,6 @@ runner-bar/
 │       │   └── ScopeStoreProtocol.swift     — abstracts the active-scopes store for test doubles
 │       │
 │       ├── Services/
-│       │   ├── DefaultRunnerLabelsService.swift — live RunnerLabelsService delegating to patchRunnerLabels
 │       │   ├── Keychain.swift               — Keychain read/write helpers
 │       │   ├── LogFetcher.swift             — downloads and unzips GitHub Actions logs
 │       │   ├── LoginItem.swift              — manages launch-at-login registration via SMAppService
