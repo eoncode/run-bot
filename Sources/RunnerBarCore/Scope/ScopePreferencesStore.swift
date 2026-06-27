@@ -336,29 +336,7 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
         // Do not write the flag when knownScopes is empty — see doc comment above.
         guard !knownScopes.isEmpty else { return }
         for scope in knownScopes {
-            var prefs = ScopePreferences()
-            if let val = store.string(forKey: "scope.\(scope).alias"), !val.isEmpty {
-                prefs.alias = val
-            }
-            if let val = store.object(forKey: "scope.\(scope).pollingInterval") as? Int {
-                prefs.pollingInterval = val
-            }
-            if store.object(forKey: "scope.\(scope).notifyOnSuccess") != nil {
-                prefs.notifyOnSuccess = store.bool(forKey: "scope.\(scope).notifyOnSuccess")
-            }
-            if store.object(forKey: "scope.\(scope).notifyOnFailure") != nil {
-                prefs.notifyOnFailure = store.bool(forKey: "scope.\(scope).notifyOnFailure")
-            }
-            prefs.failureHookEnabled = store.bool(forKey: "scope.\(scope).failureHookEnabled")
-            if let val = store.string(forKey: "scope.\(scope).failureHookCommand"), !val.isEmpty {
-                prefs.failureHookCommand = val
-            }
-            if let val = store.string(forKey: "scope.\(scope).localRepoPath"), !val.isEmpty {
-                prefs.localRepoPath = val
-            }
-            if let val = store.string(forKey: "scope.\(scope).failureHookBranch"), !val.isEmpty {
-                prefs.failureHookBranch = val
-            }
+            let prefs = migratedPreferences(for: scope)
             write(prefs, for: scope)
             for field in Self.legacyFields {
                 store.removeObject(forKey: "scope.\(scope).\(field)")
@@ -366,5 +344,35 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
         }
         store.set(true, forKey: Self.migrationKey)
         log("ScopePreferencesStore › migration v2 complete for \(knownScopes.count) scopes", category: .scope)
+    }
+
+    /// Reads all legacy flat keys for a scope and builds the new structured
+    /// `ScopePreferences` object. Extracted to keep `migrateIfNeeded` below
+    /// the SonarCloud cognitive-complexity threshold.
+    private func migratedPreferences(for scope: String) -> ScopePreferences {
+        var prefs = ScopePreferences()
+        if let val = store.string(forKey: "scope.\(scope).alias"), !val.isEmpty {
+            prefs.alias = val
+        }
+        if let val = store.object(forKey: "scope.\(scope).pollingInterval") as? Int {
+            prefs.pollingInterval = val
+        }
+        if store.object(forKey: "scope.\(scope).notifyOnSuccess") != nil {
+            prefs.notifyOnSuccess = store.bool(forKey: "scope.\(scope).notifyOnSuccess")
+        }
+        if store.object(forKey: "scope.\(scope).notifyOnFailure") != nil {
+            prefs.notifyOnFailure = store.bool(forKey: "scope.\(scope).notifyOnFailure")
+        }
+        prefs.failureHookEnabled = store.bool(forKey: "scope.\(scope).failureHookEnabled")
+        if let val = store.string(forKey: "scope.\(scope).failureHookCommand"), !val.isEmpty {
+            prefs.failureHookCommand = val
+        }
+        if let val = store.string(forKey: "scope.\(scope).localRepoPath"), !val.isEmpty {
+            prefs.localRepoPath = val
+        }
+        if let val = store.string(forKey: "scope.\(scope).failureHookBranch"), !val.isEmpty {
+            prefs.failureHookBranch = val
+        }
+        return prefs
     }
 }
