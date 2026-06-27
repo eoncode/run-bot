@@ -71,17 +71,17 @@ extension AppDelegate {
         // Read knownScopes synchronously before the Task — ScopeStore.shared is
         // @MainActor and we are already on @MainActor here. (#1538)
         let knownScopes = ScopeStore.shared.entries.map(\.scope)
-        log("AppDelegate › applicationDidFinishLaunching — migration task starting for \(knownScopes.count) scopes")
+        log("AppDelegate › applicationDidFinishLaunching — startup task starting for \(knownScopes.count) scopes")
 
-        // Migrate, hydrate display names, THEN start UI and observers.
+        // Hydrate display names, THEN start UI and observers.
         // Plain Task{} inherits @MainActor from AppDelegate; all three setup
-        // calls below run on the main actor after the two awaits resolve. (#1538)
+        // calls below run on the main actor after the await resolves. (#1538)
         Task {
             // Step 2: configure LocalRunnerStore BEFORE the first await.
             //
-            // ⚠️  This call MUST precede migrateIfNeeded and refreshDisplayNames.
+            // ⚠️  This call MUST precede refreshDisplayNames.
             // A lazy observation dependency (or any indirect LocalRunnerStore.shared
-            // access) can fire during either of those awaits. If configure() has not
+            // access) can fire during that await. If configure() has not
             // been called yet, LocalRunnerStore.shared fatalErrors immediately.
             //
             // The matching call inside setupSubscriptions() is retained for
@@ -90,13 +90,10 @@ extension AppDelegate {
             LocalRunnerStore.configure(viewModel: runnerState)
             log("AppDelegate › applicationDidFinishLaunching — LocalRunnerStore configured")
 
-            // Step 3: migrate legacy flat keys → v2 blobs.
-            await ScopePreferencesStore.shared.migrateIfNeeded(knownScopes: knownScopes)
-
-            // Step 4: hydrate ScopeEntry.displayName from freshly-migrated blobs.
+            // Step 3: hydrate ScopeEntry.displayName from persisted prefs blobs.
             await ScopeStore.shared.refreshDisplayNames()
 
-            // Step 5: start UI and observers — guaranteed to see migrated prefs.
+            // Step 4: start UI and observers — guaranteed to see hydrated prefs.
             setupStatusItem()
             setupPanel()
             setupSignOutSubscription()
