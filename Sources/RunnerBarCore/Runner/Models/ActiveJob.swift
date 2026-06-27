@@ -130,8 +130,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: newValue,
             runnerName: runnerName,
@@ -148,8 +148,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: newValue,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -172,8 +172,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -194,8 +194,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -216,8 +216,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: newValue,
@@ -238,8 +238,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -256,8 +256,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -274,8 +274,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -303,8 +303,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: .completed,
+            htmlUrl: htmlUrl,
             // .neutral: inconclusive fallback for jobs that vanished before the API
             // populated their conclusion field. Avoids .cancelled side-effects
             // (isHookConclusion=true, conclusionIcon=⊗).
