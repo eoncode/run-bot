@@ -503,33 +503,55 @@ public actor RunnerPoller {
             guard let cached = cache[cacheID] else { continue }
             guard cached.conclusion != nil else { continue }
             guard cached.steps.isEmpty || cached.steps.contains(where: { $0.status == .inProgress }) else { continue }
-            guard let scope = cached.scope else {
-                cache.removeValue(forKey: cacheID)
-                log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): scope is nil (pre-scope-injection entry)", category: .runner)
-                continue
-            }
-            guard scope.contains("/") else {
-                cache.removeValue(forKey: cacheID)
-                // swiftlint:disable:next line_length
-                log("RunnerPoller › backfillSteps — evicted jobID=\(cacheID): org-only scope '\(scope)' has no repo path; org-only jobs cannot be backfilled (no GitHub org/actions/jobs endpoint)", category: .runner)
-                continue
-            }
+            guard let scope = validRepoScope(for: cached, jobID: cacheID, cache: &cache) else { continue }
             guard let data = await ghAPI("repos/\(scope)/actions/jobs/\(cacheID)") else { continue }
-            do {
-                let payload = try decoder.decode(JobPayload.self, from: data)
-                let updated = await ISO8601DateParser.shared.makeJob(from: payload, isDimmed: true)
-                // Guard against an empty-steps API response clobbering valid cached steps.
-                // Early-queued jobs may return a payload with zero steps; in that case
-                // preserve the existing cache entry unchanged and retry on the next poll.
-                guard !updated.steps.isEmpty else {
-                    log("RunnerPoller › backfillSteps — jobID=\(cacheID) API returned 0 steps, keeping existing cache entry", category: .runner)
-                    continue
-                }
-                // Restore scope — not present in the API payload, must be carried forward.
-                cache[cacheID] = updated.copying(scope: cached.scope)
-            } catch {
-                log("RunnerPoller › backfillSteps — ⚠️ decode failed for jobID=\(cacheID): \(error)", category: .runner)
+            if let refreshed = await decodedBackfillJob(data, jobID: cacheID, existingScope: cached.scope) {
+                cache[cacheID] = refreshed
             }
+        }
+    }
+
+    /// Validates and returns the repo-scoped path for a cached job, evicting entries that
+    /// lack a scope or carry an org-only scope (neither can be backfilled via the API).
+    /// Returns `nil` in both eviction cases so the caller can `continue` immediately.
+    private func validRepoScope(
+        for job: ActiveJob,
+        jobID: Int,
+        cache: inout [Int: ActiveJob]
+    ) -> String? {
+        guard let scope = job.scope else {
+            cache.removeValue(forKey: jobID)
+            log("RunnerPoller › backfillSteps — evicted jobID=\(jobID): scope is nil (pre-scope-injection entry)", category: .runner)
+            return nil
+        }
+        guard scope.contains("/") else {
+            cache.removeValue(forKey: jobID)
+            // swiftlint:disable:next line_length
+            log("RunnerPoller › backfillSteps — evicted jobID=\(jobID): org-only scope '\(scope)' has no repo path; org-only jobs cannot be backfilled (no GitHub org/actions/jobs endpoint)", category: .runner)
+            return nil
+        }
+        return scope
+    }
+
+    /// Decodes a raw API response into an `ActiveJob` for replacing a backfill cache entry.
+    /// Restores the original scope (absent from the API payload) and guards against empty-steps
+    /// responses that would clobber valid cached step data. Returns `nil` on failure or 0 steps.
+    private func decodedBackfillJob(
+        _ rawData: Data,
+        jobID: Int,
+        existingScope: String?
+    ) async -> ActiveJob? {
+        do {
+            let payload = try decoder.decode(JobPayload.self, from: rawData)
+            let updated = await ISO8601DateParser.shared.makeJob(from: payload, isDimmed: true)
+            guard !updated.steps.isEmpty else {
+                log("RunnerPoller › backfillSteps — jobID=\(jobID) API returned 0 steps, keeping existing cache entry", category: .runner)
+                return nil
+            }
+            return updated.copying(scope: existingScope)
+        } catch {
+            log("RunnerPoller › backfillSteps — ⚠️ decode failed for jobID=\(jobID): \(error)", category: .runner)
+            return nil
         }
     }
 

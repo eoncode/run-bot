@@ -188,34 +188,7 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
       "repos/\(scope)/actions/runs?status=completed&per_page=\(GitHubConstants.maxPageSize)")
     let (ipData, qData, cData) = await (inProgressData, queuedData, completedData)
 
-    var runPayloads: [RunPayload] = []
-    var seenIDs = Set<Int>()
-
-    for data in [ipData, qData].compactMap({ $0 }) {
-      if let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
-        for run in resp.workflowRuns {
-          guard seenIDs.insert(run.id).inserted else { continue }
-          runPayloads.append(run)
-        }
-      }
-    }
-
-    var bySha: [String: [RunPayload]] = [:]
-    for run in runPayloads { bySha[run.headSha, default: []].append(run) }
-
-    // Phase 2: fetch recently completed runs and merge into ALL SHA groups.
-    // Fix #1041: completed-only SHAs (groups that finished between polls) are
-    // now included so they can be routed through the normal cache/display pipeline.
-    // De-duplication of old completed groups re-triggering the failure hook is
-    // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
-    if let data = cData,
-      let resp = try? decoder.decode(ActionRunsResponse.self, from: data)
-    {
-      for run in resp.workflowRuns {
-        guard seenIDs.insert(run.id).inserted else { continue }
-        bySha[run.headSha, default: []].append(run)
-      }
-    }
+    let bySha = collectRunPayloads(active: [ipData, qData], completed: cData)
 
     // Build groups concurrently — index-keyed to preserve insertion order.
     // `buildActionGroup` is extracted to a private async function so each
@@ -232,15 +205,54 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
       for await (i, actionGroup) in group { groups[i] = actionGroup }
     }
 
-    var result = groups.compactMap { $0 }
-    result.sort { lhs, rhs in
+    let result = sortedActionGroups(groups)
+    log("fetchActionGroups -- \(result.count) group(s) for \(scope)", category: .runner)
+    return result
+  }
+
+  /// Decodes active (in-progress/queued) and completed run payloads from raw API responses,
+  /// deduplicates by run ID, and returns them grouped by `headSha`.
+  ///
+  /// Active runs are processed first so that any completed run whose ID already appeared in
+  /// the active set is silently skipped. Fix #1041: completed-only SHAs are still included so
+  /// groups that finish between polls flow through the normal cache/display pipeline.
+  /// De-duplication of completed groups re-triggering the failure hook is handled upstream
+  /// by `PollResultBuilder.buildGroupState` via `seenGroupIDs`.
+  private func collectRunPayloads(
+    active: [Data?],
+    completed: Data?
+  ) -> [String: [RunPayload]] {
+    var seenIDs = Set<Int>()
+    var bySha: [String: [RunPayload]] = [:]
+
+    for data in active.compactMap({ $0 }) {
+      guard let resp = try? decoder.decode(ActionRunsResponse.self, from: data) else { continue }
+      for run in resp.workflowRuns {
+        guard seenIDs.insert(run.id).inserted else { continue }
+        bySha[run.headSha, default: []].append(run)
+      }
+    }
+
+    if let data = completed,
+      let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
+      for run in resp.workflowRuns {
+        guard seenIDs.insert(run.id).inserted else { continue }
+        bySha[run.headSha, default: []].append(run)
+      }
+    }
+    return bySha
+  }
+
+  /// Compacts and sorts an index-keyed array of optional action groups.
+  ///
+  /// Sort order: status priority ascending, then `createdAt` descending (newest first).
+  private func sortedActionGroups(_ groups: [WorkflowActionGroup?]) -> [WorkflowActionGroup] {
+    groups.compactMap { $0 }.sorted { lhs, rhs in
       if lhs.groupStatus.sortPriority != rhs.groupStatus.sortPriority {
         return lhs.groupStatus.sortPriority < rhs.groupStatus.sortPriority
       }
       return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
     }
-    log("fetchActionGroups -- \(result.count) group(s) for \(scope)", category: .runner)
-    return result
   }
 
   // MARK: - Private helpers
