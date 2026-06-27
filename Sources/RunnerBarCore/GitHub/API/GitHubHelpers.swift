@@ -53,6 +53,7 @@ private let ansiRegex: NSRegularExpression? = try? NSRegularExpression(
 /// two-step redirect implementation.
 ///
 /// Complexity: 3 (two guard branches).
+@concurrent
 public func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String) async -> String? {
     guard let scope = Scope.parse(scopeString) else {
         log("fetchStepLog › invalid scope: \(scopeString)", category: .transport)
@@ -73,6 +74,7 @@ public func fetchStepLog(jobID: Int, stepNumber: Int, scope scopeString: String)
 /// empty, or the body looks like a GitHub error JSON object.
 ///
 /// Complexity: 4 (four guard/if branches).
+@concurrent
 private func fetchAndDecodeStepLog(endpoint: String, jobID: Int) async -> String? {
     guard let data = await urlSessionRaw(endpoint) else {
         log("fetchStepLog › urlSessionRaw returned nil for job \(jobID)", category: .transport)
