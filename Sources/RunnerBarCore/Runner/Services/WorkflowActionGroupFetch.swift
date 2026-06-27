@@ -234,7 +234,8 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
     }
 
     if let data = completed,
-      let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
+      let resp = try? decoder.decode(ActionRunsResponse.self, from: data)
+    {
       for run in resp.workflowRuns {
         guard seenIDs.insert(run.id).inserted else { continue }
         bySha[run.headSha, default: []].append(run)
