@@ -133,8 +133,8 @@ struct WorkflowActionGroupFetcherTests {
       runs: [],
       jobs: [
         ActiveJob(
-          id: jobID, name: jobName, htmlUrl: nil,
-          status: .completed, conclusion: .success, isDimmed: false,
+          id: jobID, name: jobName, status: .completed, htmlUrl: nil,
+          conclusion: .success, isDimmed: false,
           runnerName: nil, scope: jobScope,
           startedAt: nil, completedAt: Date(), steps: steps
         )

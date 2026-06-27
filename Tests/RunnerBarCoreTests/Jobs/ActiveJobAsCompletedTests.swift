@@ -30,8 +30,8 @@ struct ActiveJobAsCompletedTests {
     ActiveJob(
       id: 42,
       name: "build",
-      htmlUrl: htmlUrl,
       status: .inProgress,
+      htmlUrl: htmlUrl,
       conclusion: conclusion,
       isDimmed: isDimmed,
       runnerName: runnerName,
@@ -128,8 +128,8 @@ struct ActiveJobAsCompletedTests {
     let job = ActiveJob(
       id: 99,
       name: "deploy",
-      htmlUrl: "https://github.com/org/repo/actions/runs/1",
       status: .inProgress,
+      htmlUrl: "https://github.com/org/repo/actions/runs/1",
       conclusion: .failure,
       isDimmed: false,
       runnerName: "my-runner",

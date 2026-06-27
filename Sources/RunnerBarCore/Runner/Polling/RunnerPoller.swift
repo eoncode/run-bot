@@ -354,9 +354,9 @@ public actor RunnerPoller {
         let groupResult = await buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
-            snapSeenGroupIDs: snapSeenGroupIDs,
             jobCache: jobResult.newCache,
-            scopes: scopesSnapshot
+            scopes: scopesSnapshot,
+            snapSeenGroupIDs: snapSeenGroupIDs
         )
         await applyFetchResult(
             enrichedRunners: enrichedRunners,
@@ -561,11 +561,11 @@ public actor RunnerPoller {
     /// mutation path for display properties, used exclusively by `applyFetchResult`
     /// and `applyError` (in `RunnerPoller+ApplyResult.swift`).
     func setDisplayState(
+        isRateLimited newIsRateLimited: Bool,
+        rateLimitResetDate newResetDate: Date?,
         runners newRunners: [Runner]? = nil,
         jobs newJobs: [ActiveJob]? = nil,
-        actions newActions: [WorkflowActionGroup]? = nil,
-        isRateLimited newIsRateLimited: Bool,
-        rateLimitResetDate newResetDate: Date?
+        actions newActions: [WorkflowActionGroup]? = nil
     ) {
         if let newRunners { runners = newRunners }
         if let newJobs { jobs = newJobs }

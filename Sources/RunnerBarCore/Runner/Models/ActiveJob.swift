@@ -51,8 +51,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     /// - Parameters:
     ///   - id: The unique GitHub job ID.
     ///   - name: The display name of the job.
-    ///   - htmlUrl: The GitHub web URL for this job run.
     ///   - status: Typed lifecycle status.
+    ///   - htmlUrl: The GitHub web URL for this job run.
     ///   - conclusion: Typed conclusion (`nil` while running).
     ///   - isDimmed: `true` for cached/history entries. Defaults to `false`.
     ///   - runnerName: The name of the runner executing this job.
@@ -65,8 +65,8 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
     public init(
         id: Int,
         name: String,
-        htmlUrl: String? = nil,
         status: JobStatus,
+        htmlUrl: String? = nil,
         conclusion: JobConclusion? = nil,
         isDimmed: Bool = false,
         runnerName: String? = nil,
@@ -122,20 +122,16 @@ public struct ActiveJob: Identifiable, Equatable, Sendable {
         let done = steps.filter { $0.conclusion != nil }.count
         return Double(done) / Double(steps.count)
     }
-}
 
-// MARK: - Copy helpers
-
-/// Helpers for deriving immutable `ActiveJob` copies.
-extension ActiveJob {
+    // MARK: - Copy helpers
     /// Returns a copy of this job with `isDimmed` replaced.
     /// Use this instead of mutating `isDimmed` directly — the field is `let`.
     public func copying(isDimmed newValue: Bool) -> ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: newValue,
             runnerName: runnerName,
@@ -152,8 +148,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: newValue,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -176,8 +172,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -198,8 +194,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -220,8 +216,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: newValue,
@@ -242,8 +238,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -260,8 +256,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -278,8 +274,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: status,
+            htmlUrl: htmlUrl,
             conclusion: conclusion,
             isDimmed: isDimmed,
             runnerName: runnerName,
@@ -307,8 +303,8 @@ extension ActiveJob {
         ActiveJob(
             id: id,
             name: name,
-            htmlUrl: htmlUrl,
             status: .completed,
+            htmlUrl: htmlUrl,
             // .neutral: inconclusive fallback for jobs that vanished before the API
             // populated their conclusion field. Avoids .cancelled side-effects
             // (isHookConclusion=true, conclusionIcon=⊗).
@@ -322,12 +318,8 @@ extension ActiveJob {
             steps: steps
         )
     }
-}
 
-// MARK: - RBStatus
-
-/// UI-status helpers derived from `conclusion` and `status` for display in the panel.
-extension ActiveJob {
+    // MARK: - RBStatus
     /// The canonical display status for this job, derived from `conclusion` and `status`.
     ///
     /// This is the single source of truth that replaces the duplicate
@@ -561,8 +553,8 @@ public func makeActiveJob(
     return ActiveJob(
         id: payload.id,
         name: payload.name,
-        htmlUrl: payload.htmlUrl,
         status: payload.status,
+        htmlUrl: payload.htmlUrl,
         conclusion: payload.conclusion,
         isDimmed: isDimmed,
         runnerName: payload.runnerName,

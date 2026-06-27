@@ -163,7 +163,7 @@ struct ObservationLoopTests {
         await signal.wait()
         return true
       }  // signal won
-      let first = await group.next()!
+      let first = await group.next() ?? false
       group.cancelAll()
       signal.cancel()  // finish stream so the losing wait() child can exit
       return first
@@ -200,7 +200,7 @@ struct ObservationLoopTests {
         await signal.wait()
         return true
       }
-      let first = await group.next()!
+      let first = await group.next() ?? false
       group.cancelAll()
       signal.cancel()  // finish stream so the losing wait() child can exit
       return first

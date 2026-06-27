@@ -89,14 +89,13 @@ extension RunnerPoller {
     func buildGroupState(
         snapPrevGroups: [String: WorkflowActionGroup],
         snapGroupCache: [String: WorkflowActionGroup],
-        snapSeenGroupIDs: OrderedSet<String>,
         jobCache: [Int: ActiveJob],
-        scopes: [String]
+        scopes: [String],
+        snapSeenGroupIDs: OrderedSet<String> = OrderedSet()
     ) async -> GroupPollResult {
         return await PollResultBuilder.buildGroupState(
             snapPrevGroups: snapPrevGroups,
             snapGroupCache: snapGroupCache,
-            snapSeenGroupIDs: snapSeenGroupIDs,
             deps: GroupStateDeps(
                 fetchGroups: { [weak self] shaKeyedCache in
                     // weak: see [weak self] in GroupStateDeps closures note above.
@@ -124,7 +123,8 @@ extension RunnerPoller {
                     // weak: see [weak self] in GroupStateDeps closures note above.
                     self?.enrichGroupJobs(jobs, jobCache: jobCache) ?? jobs
                 }
-            )
+            ),
+            snapSeenGroupIDs: snapSeenGroupIDs
         )
     }
 
