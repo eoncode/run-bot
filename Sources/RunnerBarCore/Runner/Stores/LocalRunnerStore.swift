@@ -357,10 +357,14 @@ public actor LocalRunnerStore {
 
     // MARK: - Metrics preservation helpers
 
-    /// Tuple holding the three lookup dictionaries used by `applyRefreshResults`.
+    /// Holds the three lookup dictionaries used by `applyRefreshResults` to transplant
+    /// in-flight metrics from old runner snapshots onto freshly enriched ones.
     private struct MetricsDictionaries {
+        /// Metrics keyed by GitHub REST API runner id (`apiId`). Highest-priority match.
         let byApiId: [Int: RunnerMetrics]
+        /// Metrics keyed by local AgentId from `.runner` JSON (`agentId`). Second-priority match.
         let byAgentId: [Int: RunnerMetrics]
+        /// Metrics keyed by runner display name. Last-resort match.
         let byName: [String: RunnerMetrics]
     }
 
@@ -379,7 +383,6 @@ public actor LocalRunnerStore {
             byName[runner.runnerName] = preservedMetrics                    // Priority 3: name (last resort)
         }
         #if DEBUG
-        // swiftlint:disable:next line_length
         log("LocalRunnerStore › buildMetricsDictionaries — byApiId=\(byApiId.keys.sorted()) byAgentId=\(byAgentId.keys.sorted()) byName=\(byName.keys.sorted())", category: .runner)
         #endif
         return MetricsDictionaries(byApiId: byApiId, byAgentId: byAgentId, byName: byName)
