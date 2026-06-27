@@ -7,18 +7,12 @@ import Foundation
 /// Actor that owns all `UserDefaults` read/write for per-scope preferences.
 ///
 /// Preferences are serialised as a single `ScopePreferences` JSON blob per scope
-/// under the key `scope.<scope>.preferences`. This replaces the legacy flat-key
-/// scheme (`scope.<scope>.<field>`) used by the caseless-enum predecessor.
+/// under the key `scope.<scope>.preferences`.
 ///
 /// ## Why one blob per scope?
 /// A single JSON blob means `cleanUp(scope:)` removes the blob key *and* any
 /// surviving legacy flat keys in one call. Adding a new field to `ScopePreferences`
 /// automatically includes it in cleanup without touching this file.
-///
-/// ## Migration
-/// Call `migrateIfNeeded(knownScopes:)` once from `AppDelegate.applicationDidFinishLaunching`
-/// before any reads occur. It reads the legacy flat keys, writes the blob, removes
-/// the flat keys, and sets a `scope.__migrated_v2` guard flag. Safe to call multiple times.
 ///
 /// ## Encoder/decoder (P17)
 /// `decoder` and `encoder` are plain `private let` stored properties — not `nonisolated`.
@@ -64,9 +58,9 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
 
   /// The complete set of flat-key suffixes used by the pre-migration scheme.
   ///
-  /// Kept as a single source of truth so both `migrateIfNeeded` and `cleanUp`
-  /// use the same list. If a new field is ever added here it will automatically
-  /// be cleaned up by both call sites.
+  /// Kept as a single source of truth so `cleanUp` can remove any orphaned
+  /// legacy flat keys left over from installs that ran before the migration.
+  /// If a new field is ever added here it will automatically be cleaned up.
   private static let legacyFields = [
     "alias", "pollingInterval", "notifyOnSuccess", "notifyOnFailure",
     "failureHookEnabled", "failureHookCommand", "localRepoPath", "failureHookBranch",
@@ -294,8 +288,8 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
   /// legacy flat keys.
   ///
   /// The legacy flat-key removal handles the edge case where a scope existed in the
-  /// old flat-key format but was removed from `ScopeStore` before `migrateIfNeeded`
-  /// ran — those keys would otherwise be orphaned indefinitely in `UserDefaults`.
+  /// old flat-key format but was removed from `ScopeStore` before migration completed —
+  /// those keys would otherwise be orphaned indefinitely in `UserDefaults`.
   /// For post-migration scopes the flat-key removals are no-ops.
   ///
   /// - Important: Always `await cleanUp(scope:)` **before** calling
@@ -308,89 +302,5 @@ public actor ScopePreferencesStore: ScopePreferencesStoreProtocol {
       store.removeObject(forKey: "scope.\(scope).\(field)")
     }
     log("ScopePreferencesStore › cleaned up all keys for scope: \(scope)", category: .scope)
-  }
-
-  // MARK: - Migration
-
-  /// `UserDefaults` boolean flag written after a successful v2 migration run.
-  private static let migrationKey = "scope.__migrated_v2"
-
-  /// Migrates legacy flat `UserDefaults` keys to the single-blob format.
-  ///
-  /// Reads each legacy `scope.<scope>.<field>` key, assembles a `ScopePreferences`
-  /// value, writes the blob, then removes the flat keys. Guarded by a
-  /// `scope.__migrated_v2` flag so it is safe to call multiple times.
-  ///
-  /// Call this from `AppDelegate.applicationDidFinishLaunching` (via
-  /// `AppDelegate+StoreSetup`) before any other reads occur. (Step 7)
-  ///
-  /// ## Guard-flag write and empty `knownScopes`
-  /// The flag is written only when `knownScopes` is non-empty. On a fresh install
-  /// `knownScopes` is always `[]` (nothing to migrate), so the flag stays unset
-  /// until scopes are actually added and the app is restarted — harmless, because
-  /// `read()` returns a default `ScopePreferences()` for any scope with no blob.
-  /// The guard prevents the following edge case on first post-upgrade launch:
-  /// if `ScopeStore`'s own `UserDefaults` blob fails to decode (e.g. corruption),
-  /// `knownScopes` would arrive as `[]`, the loop would be skipped entirely, and
-  /// writing the flag here would permanently mark migration as done before any
-  /// scope was actually migrated — orphaning all legacy flat keys with no retry.
-  ///
-  /// - Parameter knownScopes: The list of scope strings currently in `ScopeStore`.
-  ///   Only scopes present in this list at call time are migrated. This is
-  ///   intentional: scopes added after the migration flag is set start clean
-  ///   (no legacy flat keys). Scopes that existed in legacy flat-key format
-  ///   but were absent from `ScopeStore` at migration time (e.g. removed before
-  ///   first launch after upgrade) will leave inert orphan keys in `UserDefaults`.
-  ///   This is an accepted low-severity trade-off — the keys are harmless and
-  ///   will be removed if `cleanUp(scope:)` is ever called for them explicitly.
-  public func migrateIfNeeded(knownScopes: [String]) {
-    guard !store.bool(forKey: Self.migrationKey) else {
-      // Migration already ran. Scopes added after this point start clean
-      // (no legacy flat keys) so skipping them here is intentional.
-      return
-    }
-    // Do not write the flag when knownScopes is empty — see doc comment above.
-    guard !knownScopes.isEmpty else { return }
-    for scope in knownScopes {
-      let prefs = migratedPreferences(for: scope)
-      write(prefs, for: scope)
-      for field in Self.legacyFields {
-        store.removeObject(forKey: "scope.\(scope).\(field)")
-      }
-    }
-    store.set(true, forKey: Self.migrationKey)
-    log(
-      "ScopePreferencesStore › migration v2 complete for \(knownScopes.count) scopes",
-      category: .scope)
-  }
-
-  /// Reads all legacy flat keys for a scope and builds the new structured
-  /// `ScopePreferences` object. Extracted to keep `migrateIfNeeded` below
-  /// the SonarCloud cognitive-complexity threshold.
-  private func migratedPreferences(for scope: String) -> ScopePreferences {
-    var prefs = ScopePreferences()
-    if let val = store.string(forKey: "scope.\(scope).alias"), !val.isEmpty {
-      prefs.alias = val
-    }
-    if let val = store.object(forKey: "scope.\(scope).pollingInterval") as? Int {
-      prefs.pollingInterval = val
-    }
-    if store.object(forKey: "scope.\(scope).notifyOnSuccess") != nil {
-      prefs.notifyOnSuccess = store.bool(forKey: "scope.\(scope).notifyOnSuccess")
-    }
-    if store.object(forKey: "scope.\(scope).notifyOnFailure") != nil {
-      prefs.notifyOnFailure = store.bool(forKey: "scope.\(scope).notifyOnFailure")
-    }
-    prefs.failureHookEnabled = store.bool(forKey: "scope.\(scope).failureHookEnabled")
-    if let val = store.string(forKey: "scope.\(scope).failureHookCommand"), !val.isEmpty {
-      prefs.failureHookCommand = val
-    }
-    if let val = store.string(forKey: "scope.\(scope).localRepoPath"), !val.isEmpty {
-      prefs.localRepoPath = val
-    }
-    if let val = store.string(forKey: "scope.\(scope).failureHookBranch"), !val.isEmpty {
-      prefs.failureHookBranch = val
-    }
-    return prefs
   }
 }
