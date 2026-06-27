@@ -200,10 +200,7 @@ public enum ProcessRunner {
                     )
                 }
 
-                launchAndAwait(
-                    task: task,
-                    executableURL: executableURL,
-                    arguments: arguments,
+                let context = LaunchContext(
                     stdin: stdin,
                     outPipe: outPipe,
                     inputPipe: inputPipe,
@@ -212,6 +209,7 @@ public enum ProcessRunner {
                     continuation: continuation,
                     timeout: timeout
                 )
+                launchAndAwait(task: task, executableURL: executableURL, arguments: arguments, context: context)
             }
         } onCancel: {
             // Enclosing Task was cancelled (e.g. pollTask replaced by start()).
@@ -232,6 +230,21 @@ public enum ProcessRunner {
     }
 
     // MARK: - Private helpers
+
+    /// Bundles the pipe, queue, and continuation values passed to `launchAndAwait`.
+    ///
+    /// Grouping these into a struct keeps `launchAndAwait`'s parameter count within
+    /// the SwiftLint `function_parameter_count` limit (≤ 6) while preserving the
+    /// same explicit ownership and Sendable guarantees as the individual parameters.
+    private struct LaunchContext {
+        let stdin: Data?
+        let outPipe: Pipe
+        let inputPipe: Pipe?
+        let stdinQueue: DispatchQueue?
+        let timeoutTaskBox: OSAllocatedUnfairLock<Task<Void, Never>?>
+        let continuation: CheckedContinuation<Result, Never>
+        let timeout: TimeInterval
+    }
 
     /// Attaches a stdin pipe to `task` when stdin data is present.
     ///
@@ -315,6 +328,9 @@ public enum ProcessRunner {
     /// Executes the core launch sequence inside a `withCheckedContinuation` body.
     ///
     /// Extracted from `runAsync` to reduce its cyclomatic complexity (SW-R1002 / #1697).
+    /// Pipe/queue/continuation state is passed as a single `LaunchContext` value to
+    /// satisfy the SwiftLint `function_parameter_count` limit (≤ 6).
+    ///
     /// All branching that was previously inline in `runAsync`'s continuation body
     /// now lives here:
     ///
@@ -340,13 +356,7 @@ public enum ProcessRunner {
         task: Process,
         executableURL: URL,
         arguments: [String],
-        stdin: Data?,
-        outPipe: Pipe,
-        inputPipe: Pipe?,
-        stdinQueue: DispatchQueue?,
-        timeoutTaskBox: OSAllocatedUnfairLock<Task<Void, Never>?>,
-        continuation: CheckedContinuation<Result, Never>,
-        timeout: TimeInterval
+        context: LaunchContext
     ) {
         // Guard against the already-cancelled case: Swift invokes onCancel
         // *before* this operation closure when the task is cancelled at the
@@ -355,8 +365,8 @@ public enum ProcessRunner {
         // bail here before task.run() to honour cancellation rather than
         // launching the process normally.
         if Task.isCancelled {
-            outPipe.fileHandleForWriting.closeFile()
-            continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
+            context.outPipe.fileHandleForWriting.closeFile()
+            context.continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
             return
         }
 
@@ -370,9 +380,9 @@ public enum ProcessRunner {
             // inputPipe is closed explicitly here (mirrors outPipe) even though
             // ARC would close it on dealloc — being explicit documents intent
             // and avoids leaving a half-open pipe handle until the next ARC cycle.
-            outPipe.fileHandleForWriting.closeFile()
-            inputPipe?.fileHandleForWriting.closeFile()
-            continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
+            context.outPipe.fileHandleForWriting.closeFile()
+            context.inputPipe?.fileHandleForWriting.closeFile()
+            context.continuation.resume(returning: Result(data: nil, exitCode: Int32.max))
             return
         }
 
@@ -384,7 +394,7 @@ public enum ProcessRunner {
         // Explicit [inputPipe] capture: inputPipe is a Pipe reference retained
         // by this closure until stdinQueue drains. The capture list makes the
         // lifetime management visible rather than implicit.
-        if let stdinQueue, let inputPipe, let stdinData = stdin {
+        if let stdinQueue = context.stdinQueue, let inputPipe = context.inputPipe, let stdinData = context.stdin {
             stdinQueue.async { [inputPipe] in
                 inputPipe.fileHandleForWriting.write(stdinData)
                 inputPipe.fileHandleForWriting.closeFile()
@@ -410,6 +420,7 @@ public enum ProcessRunner {
         // In both cases guard task.isRunning is the invariant that prevents
         // a double-terminate. This race existed in the pre-refactor Box<T>
         // code as well (#1152).
+        let timeout = context.timeout
         let timeoutTask = Task.detached {
             do {
                 try await Task.sleep(for: .seconds(timeout))
@@ -420,6 +431,6 @@ public enum ProcessRunner {
                 // CancellationError from timeoutTask.cancel() — process already done.
             }
         }
-        timeoutTaskBox.withLock { $0 = timeoutTask }
+        context.timeoutTaskBox.withLock { $0 = timeoutTask }
     }
 }
