@@ -339,46 +339,11 @@ public actor LocalRunnerStore {
     /// to `true` between `isScanning = false` and the main-actor push.
     private func applyRefreshResults(_ enriched: [RunnerModel]) async {
         log("LocalRunnerStore › applyRefreshResults — enriched.count=\(enriched.count), current runners.count=\(runners.count)", category: .runner)
-
-        var metricsByApiId: [Int: RunnerMetrics] = [:]
-        var metricsByAgentId: [Int: RunnerMetrics] = [:]
-        var metricsByName: [String: RunnerMetrics] = [:]
-        for runner in runners {
-            guard runner.isBusy, let preservedMetrics = runner.metrics else { continue }
-            if let id = runner.apiId { metricsByApiId[id] = preservedMetrics }  // Priority 1: GitHub REST API id
-            if let id = runner.agentId { metricsByAgentId[id] = preservedMetrics }  // Priority 2: local AgentId
-            metricsByName[runner.runnerName] = preservedMetrics  // Priority 3: name (last resort)
-        }
-        #if DEBUG
-        // swiftlint:disable:next line_length
-        log("LocalRunnerStore › applyRefreshResults — preserved metrics: byApiId=\(metricsByApiId.keys.sorted()) byAgentId=\(metricsByAgentId.keys.sorted()) byName=\(metricsByName.keys.sorted())", category: .runner)
-        #endif
-
-        let preserved: [RunnerModel] = enriched.map { runner in
-            if let id = runner.apiId, let metrics = metricsByApiId[id] {
-                #if DEBUG
-                log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via apiId=\(id)", category: .runner)
-                #endif
-                return runner.copying(metrics: metrics)
-            }
-            if let id = runner.agentId, let metrics = metricsByAgentId[id] {
-                #if DEBUG
-                log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via agentId=\(id)", category: .runner)
-                #endif
-                return runner.copying(metrics: metrics)
-            }
-            if let metrics = metricsByName[runner.runnerName] {
-                #if DEBUG
-                log("LocalRunnerStore › applyRefreshResults — preserved metrics for '\(runner.runnerName)' via name", category: .runner)
-                #endif
-                return runner.copying(metrics: metrics)
-            }
-            #if DEBUG
-            log("LocalRunnerStore › applyRefreshResults — no metrics to preserve for '\(runner.runnerName)'", category: .runner)
-            #endif
-            return runner
-        }
-        runners = preserved.sorted { $0.runnerName < $1.runnerName }
+        let dicts = buildMetricsDictionaries(from: runners)
+        let preservedRunners = enriched
+            .map { preserved(runner: $0, byApiId: dicts.byApiId, byAgentId: dicts.byAgentId, byName: dicts.byName) }
+            .sorted { $0.runnerName < $1.runnerName }
+        runners = preservedRunners
         isScanning = false
         log("LocalRunnerStore › applyRefreshResults — DONE. runners.count=\(runners.count) isScanning=false", category: .runner)
         // Await directly — not fire-and-forget — so isLocalScanning cannot be
@@ -388,6 +353,72 @@ public actor LocalRunnerStore {
             viewModel.localRunners = snapshot
             viewModel.isLocalScanning = false
         }
+    }
+
+    // MARK: - Metrics preservation helpers
+
+    /// Holds the three lookup dictionaries used by `applyRefreshResults` to transplant
+    /// in-flight metrics from old runner snapshots onto freshly enriched ones.
+    private struct MetricsDictionaries {
+        /// Metrics keyed by GitHub REST API runner id (`apiId`). Highest-priority match.
+        let byApiId: [Int: RunnerMetrics]
+        /// Metrics keyed by local AgentId from `.runner` JSON (`agentId`). Second-priority match.
+        let byAgentId: [Int: RunnerMetrics]
+        /// Metrics keyed by runner display name. Last-resort match.
+        let byName: [String: RunnerMetrics]
+    }
+
+    /// Builds lookup dictionaries for in-flight metrics from `current` runners.
+    ///
+    /// Only runners that are both busy **and** have metrics are included — idle runners
+    /// have no metrics worth preserving across a refresh cycle.
+    private func buildMetricsDictionaries(from current: [RunnerModel]) -> MetricsDictionaries {
+        var byApiId: [Int: RunnerMetrics] = [:]
+        var byAgentId: [Int: RunnerMetrics] = [:]
+        var byName: [String: RunnerMetrics] = [:]
+        for runner in current {
+            guard runner.isBusy, let preservedMetrics = runner.metrics else { continue }
+            if let id = runner.apiId { byApiId[id] = preservedMetrics }     // Priority 1: GitHub REST API id
+            if let id = runner.agentId { byAgentId[id] = preservedMetrics } // Priority 2: local AgentId
+            byName[runner.runnerName] = preservedMetrics                    // Priority 3: name (last resort)
+        }
+        #if DEBUG
+        log("LocalRunnerStore › buildMetricsDictionaries — byApiId=\(byApiId.keys.sorted()) byAgentId=\(byAgentId.keys.sorted()) byName=\(byName.keys.sorted())", category: .runner)
+        #endif
+        return MetricsDictionaries(byApiId: byApiId, byAgentId: byAgentId, byName: byName)
+    }
+
+    /// Returns `runner` with metrics transplanted from the first matching dictionary entry.
+    ///
+    /// Match priority mirrors `applyMetrics`: apiId → agentId → name.
+    private func preserved(
+        runner: RunnerModel,
+        byApiId: [Int: RunnerMetrics],
+        byAgentId: [Int: RunnerMetrics],
+        byName: [String: RunnerMetrics]
+    ) -> RunnerModel {
+        if let id = runner.apiId, let metrics = byApiId[id] {
+            #if DEBUG
+            log("LocalRunnerStore › preserved — '\(runner.runnerName)' via apiId=\(id)", category: .runner)
+            #endif
+            return runner.copying(metrics: metrics)
+        }
+        if let id = runner.agentId, let metrics = byAgentId[id] {
+            #if DEBUG
+            log("LocalRunnerStore › preserved — '\(runner.runnerName)' via agentId=\(id)", category: .runner)
+            #endif
+            return runner.copying(metrics: metrics)
+        }
+        if let metrics = byName[runner.runnerName] {
+            #if DEBUG
+            log("LocalRunnerStore › preserved — '\(runner.runnerName)' via name", category: .runner)
+            #endif
+            return runner.copying(metrics: metrics)
+        }
+        #if DEBUG
+        log("LocalRunnerStore › preserved — no metrics to preserve for '\(runner.runnerName)'", category: .runner)
+        #endif
+        return runner
     }
 
     // MARK: - Push helpers
