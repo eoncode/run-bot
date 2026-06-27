@@ -109,8 +109,7 @@ private struct PRRef: Codable {
 private func prLabel(from run: RunPayload) -> String {
   if let pr = run.pullRequests?.first { return "#\(pr.number)" }
   if let branch = run.headBranch,
-    let range = branch.range(of: prNumberPattern, options: .regularExpression)
-  {
+    let range = branch.range(of: prNumberPattern, options: .regularExpression) {
     let digits = branch[range].filter { $0.isNumber }
     return "#\(digits)"
   }
@@ -170,9 +169,7 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
   ///   to `withTaskGroup` and already run on the task's executor, so they don't
   ///   need the annotation. See also: SE-0420 (``@_unsupportedInheritActorContext``).
   @concurrent
-  public func fetch(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async
-    -> [WorkflowActionGroup]
-  {
+  public func fetch(for scope: String, cache: [String: WorkflowActionGroup] = [:]) async -> [WorkflowActionGroup] {
     guard scope.contains("/") else {
       log("fetchActionGroups -- skipping org scope \(scope)", category: .runner)
       return []
@@ -209,8 +206,7 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
     // De-duplication of old completed groups re-triggering the failure hook is
     // handled upstream by PollResultBuilder.buildGroupState via seenGroupIDs.
     if let data = cData,
-      let resp = try? decoder.decode(ActionRunsResponse.self, from: data)
-    {
+      let resp = try? decoder.decode(ActionRunsResponse.self, from: data) {
       for run in resp.workflowRuns {
         guard seenIDs.insert(run.id).inserted else { continue }
         bySha[run.headSha, default: []].append(run)
@@ -331,8 +327,7 @@ public struct WorkflowActionGroupFetcher: Sendable, WorkflowActionGroupFetcherPr
       // is still marked in-progress (stale step data from a mid-poll snapshot).
       // Serving that cache entry would show a spinning step on an already-finished job.
       cached.jobs.allSatisfy({ $0.conclusion != nil }),
-      !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } })
-    {
+      !cached.jobs.contains(where: { $0.steps.contains { $0.status == JobStatus.inProgress } }) {
       return cached.jobs
     }
 
