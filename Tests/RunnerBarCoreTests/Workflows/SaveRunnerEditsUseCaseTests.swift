@@ -41,6 +41,7 @@ private func makeUseCase(
 @Suite("SaveRunnerEditsUseCase")
 struct SaveRunnerEditsUseCaseTests {
 
+  /// Verifies that executing with an unchanged draft returns `.success` without calling any downstream service or store.
   @Test("returns .success when no fields changed")
   func noChanges() async {
     let runner = makeRunner()
@@ -59,6 +60,7 @@ struct SaveRunnerEditsUseCaseTests {
     #expect(await !proxy.saveCalled)
   }
 
+  /// Verifies that a `nil` response from the labels API causes the whole commit to abort, returning a single `.failure` message and leaving config/proxy stores untouched.
   @Test("aborts entire commit when labels API returns nil")
   func labelsAPIFailureAborts() async {
     let runner = makeRunner()
@@ -84,6 +86,7 @@ struct SaveRunnerEditsUseCaseTests {
     #expect(await !proxy.saveCalled)
   }
 
+  /// Verifies that a config-store write failure is accumulated as a `.failure` message but execution still proceeds to the proxy-store step.
   @Test("accumulates JSON error but continues to proxy step")
   func jsonWriteFailureContinues() async {
     let runner = makeRunner()
@@ -107,6 +110,7 @@ struct SaveRunnerEditsUseCaseTests {
     #expect(await proxy.saveCalled)
   }
 
+  /// Verifies that a proxy-store write failure is independently accumulated as a `.failure` message even when the config-store step succeeds.
   @Test("accumulates proxy error independently of JSON success")
   func proxyWriteFailureAccumulated() async {
     let runner = makeRunner()
@@ -127,6 +131,7 @@ struct SaveRunnerEditsUseCaseTests {
     #expect(msgs.contains(where: { $0.contains("proxy") }))
   }
 
+  /// Verifies that the labels service is invoked with the correct `owner/repo` scope and integer runner ID derived from the runner model.
   @Test("calls labelsService with correct scope and runnerID")
   func labelsCalledWithCorrectArgs() async {
     let runner = makeRunner(agentId: 99, gitHubUrl: URL(string: "https://github.com/myorg/myrepo"))
@@ -147,6 +152,7 @@ struct SaveRunnerEditsUseCaseTests {
     #expect(await labels.lastLabels == ["gpu", "large"])
   }
 
+  /// Verifies that a `nil` `installPath` when JSON config changes are pending returns `.failure` without attempting to write to the config store.
   @Test("returns failure when installPath is nil and JSON changes pending")
   func missingInstallPathForJSON() async {
     let runner = makeRunner(installPath: nil)
@@ -165,6 +171,7 @@ struct SaveRunnerEditsUseCaseTests {
     #expect(msgs.contains(where: { $0.contains("Install path") }))
   }
 
+  /// Verifies that a `nil` `installPath` when proxy changes are pending returns `.failure` without attempting to write to the proxy store.
   @Test("returns failure when installPath is nil and proxy changes pending")
   func missingInstallPathForProxy() async {
     // Runner has no installPath; only a proxy field is changed so Step 2
@@ -190,6 +197,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// #1451 — Both JSON and proxy stores throw simultaneously.
   /// The use case must accumulate both errors (not short-circuit after the
   /// first failure), so the result must contain exactly two error messages.
+  /// Verifies that simultaneous failures in both the config store and the proxy store produce exactly two accumulated error messages in the `.failure` result.
   @Test("accumulates both errors when JSON and proxy stores both fail")
   func bothStoresFailAccumulatesTwoErrors() async {
     let runner = makeRunner()
@@ -221,6 +229,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// configStore.load() returning .decodeFailed must emit the
   /// "Cannot decode config at <path>/.runner" message and still continue
   /// to the proxy step — the decodeFailed switch arm must not be dead code.
+  /// Verifies that a config-store decode failure emits an error message containing the expected text and does not prevent the proxy step from executing.
   @Test("config decode failure emits correct message and proxy step still runs")
   func configDecodeFailureContinuesToProxy() async {
     let runner = makeRunner()
@@ -249,6 +258,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// configStore.load() failing on the read-modify-write step must accumulate a
   /// readFailed error and still continue to the proxy step — same fan-out
   /// behaviour as a save failure.
+  /// Verifies that a config-store load failure is accumulated as an error and execution still continues to the proxy step.
   @Test("config load failure is accumulated and proxy step still runs")
   func configLoadFailureContinuesToProxy() async {
     let runner = makeRunner()
@@ -277,6 +287,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// #1478 — configStore.save() throwing .malformedExistingFile must accumulate the
   /// correct error message. The malformed-file path is distinct from .writeFailed and
   /// must have its own branch in the exhaustive switch.
+  /// Verifies that a malformed-file error from the config store emits an error message with the expected description text.
   @Test("config save malformed-file error emits correct message")
   func configSaveMalformedFileEmitsError() async {
     let runner = makeRunner()
@@ -308,6 +319,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// #1478 — configStore.save() throwing .malformedExistingFile must still allow
   /// the proxy step (Step 3) to execute. The use-case accumulates errors and
   /// continues — config and proxy writes are independent paths.
+  /// Verifies that a malformed-file error from the config store does not prevent the proxy step from executing.
   @Test("config save malformed-file error still runs proxy step")
   func configSaveMalformedFileContinuesToProxy() async {
     let runner = makeRunner()
@@ -339,6 +351,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// #1452 — Changing only a non-label field must not trigger the labels API.
   /// The label guard must be narrow enough that an unrelated field change
   /// (workFolder) does not call `labelsService.patch`.
+  /// Verifies that changing a non-label field (e.g. `workFolder`) does not trigger a call to the labels service.
   @Test("non-label field change does not call labelsService")
   func nonLabelChangeDoesNotCallLabelsService() async {
     let runner = makeRunner()
@@ -361,6 +374,7 @@ struct SaveRunnerEditsUseCaseTests {
 
   /// #1480 — When agentId is nil, execute() must append the `.missingAgentId` message
   /// and must NOT call labelsService.patch.
+  /// Verifies that a `nil` `agentId` on the runner appends an appropriate error message and skips the labels API patch call.
   @Test("labels step — missing agentId appends correct error and skips patch")
   func labelsPrereqMissingAgentId() async {
     let runner = makeRunner(agentId: nil)
@@ -383,6 +397,7 @@ struct SaveRunnerEditsUseCaseTests {
 
   /// #1480 — When agentId is present but gitHubUrl is nil, execute() must append
   /// the `.missingGitHubUrl` message and must NOT call labelsService.patch.
+  /// Verifies that a `nil` `gitHubUrl` on the runner appends an appropriate error message and skips the labels API patch call.
   @Test("labels step — nil gitHubUrl appends correct error and skips patch")
   func labelsPrereqMissingGitHubUrl() async {
     let runner = makeRunner(gitHubUrl: nil)
@@ -405,6 +420,7 @@ struct SaveRunnerEditsUseCaseTests {
 
   /// #1480 — When gitHubUrl is present but is a bare-host URL (no org/repo path),
   /// execute() must append the `.invalidScope` message and must NOT call labelsService.patch.
+  /// Verifies that a bare-host `gitHubUrl` (no path segments) resolves to an invalid scope, appends an appropriate error, and skips the labels API patch call.
   @Test("labels step — bare-host gitHubUrl appends invalidScope error and skips patch")
   func labelsPrereqInvalidScope() async {
     let runner = makeRunner(gitHubUrl: URL(string: "https://github.com"))
@@ -430,6 +446,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// #1499 — configStore.save() throwing .ioReadFailedDuringSave must accumulate the
   /// correct error message. The I/O-unreadable path is distinct from .writeFailed and
   /// .malformedExistingFile and must have its own branch in the exhaustive switch.
+  /// Verifies that an IO-read-failed error from the config store emits an error message with the expected description text.
   @Test("config save IO-read-failed error emits correct message")
   func configSaveIOReadFailedEmitsError() async {
     let runner = makeRunner()
@@ -461,6 +478,7 @@ struct SaveRunnerEditsUseCaseTests {
   /// #1499 — configStore.save() throwing .ioReadFailedDuringSave must still allow
   /// the proxy step (Step 3) to execute. Error fan-out behaviour must be identical
   /// to the .malformedExistingFile path: accumulate and continue.
+  /// Verifies that an IO-read-failed error from the config store does not prevent the proxy step from executing.
   @Test("config save IO-read-failed error still runs proxy step")
   func configSaveIOReadFailedContinuesToProxy() async {
     let runner = makeRunner()

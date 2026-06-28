@@ -28,6 +28,7 @@ struct APICallCounterTests {
 
   // MARK: - Defaults
 
+  /// Verifies that a newly initialised `APICallCounter` reports a count of zero and exposes the correct hourly limit.
   @Test("fresh actor starts at count zero")
   func freshActorStartsAtZero() async {
     let counter = APICallCounter()
@@ -36,6 +37,7 @@ struct APICallCounterTests {
     #expect(snap.limit == APICallCounter.hourlyLimit)
   }
 
+  /// Verifies that `snapshot().fraction` is `0.0` on a fresh actor with no recorded calls.
   @Test("fresh actor fraction is zero")
   func freshActorFractionIsZero() async {
     let counter = APICallCounter()
@@ -45,6 +47,7 @@ struct APICallCounterTests {
 
   // MARK: - record()
 
+  /// Verifies that each sequential `record()` call increments the snapshot count by exactly one.
   @Test("record() increments count by one per call")
   func recordIncrementsCount() async {
     let counter = APICallCounter()
@@ -55,6 +58,7 @@ struct APICallCounterTests {
     #expect(snap.count == 3)
   }
 
+  /// Verifies that 20 concurrent `record()` calls from a `TaskGroup` all land in the actor without losing any increment.
   @Test("record() from concurrent tasks all land in the count")
   func recordConcurrentTasks() async {
     let counter = APICallCounter()
@@ -67,6 +71,7 @@ struct APICallCounterTests {
     #expect(snap.count == 20)
   }
 
+  /// Verifies that `record()` caps the internal buffer at `hourlyLimit` when the seeded timestamp count exceeds that limit.
   @Test("record() trims buffer to hourlyLimit when entries exceed it")
   func recordTrimsToHourlyLimit() async {
     let counter = APICallCounter()
@@ -82,24 +87,28 @@ struct APICallCounterTests {
 
   // MARK: - fraction clamping
 
+  /// Verifies that `fraction` returns `0.0` rather than `NaN` when `limit` is zero, preventing propagation of invalid float values.
   @Test("fraction returns 0.0 when limit is zero to prevent NaN propagation")
   func fractionWithZeroLimitIsZero() {
     let snap = APICallCounterSnapshot(count: 42, limit: 0)
     #expect(snap.fraction == 0.0)
   }
 
+  /// Verifies that `fraction` is clamped to `1.0` and never exceeds it, even when `count` is larger than `limit`.
   @Test("fraction is clamped to 1.0 when count exceeds limit")
   func fractionClampedToOne() {
     let snap = APICallCounterSnapshot(count: 9_999, limit: APICallCounter.hourlyLimit)
     #expect(snap.fraction == 1.0)
   }
 
+  /// Verifies that `fraction` is clamped to `0.0` and never goes negative when `count` is a negative value.
   @Test("fraction is clamped to 0.0 when count is negative")
   func fractionClampedToZeroForNegativeCount() {
     let snap = APICallCounterSnapshot(count: -1, limit: APICallCounter.hourlyLimit)
     #expect(snap.fraction == 0.0)
   }
 
+  /// Verifies that `fraction` is exactly `0.5` when `count` equals `hourlyLimit / 2`.
   @Test("fraction is exactly 0.5 at half the limit")
   func fractionAtHalf() {
     let snap = APICallCounterSnapshot(
@@ -107,6 +116,7 @@ struct APICallCounterTests {
     #expect(snap.fraction == 0.5)
   }
 
+  /// Verifies that `fraction` stays within `[0.0, 1.0]` across a representative spread of count values.
   @Test("fraction stays within [0, 1] for any count")
   func fractionBounded() {
     for count in [0, 1, 2_500, 5_000, 7_500, 10_000] {
@@ -118,6 +128,8 @@ struct APICallCounterTests {
 
   // MARK: - snapshot atomicity (P10)
 
+  /// Verifies the P10 single-hop atomicity contract: `count` and `limit` are captured together
+  /// in one actor hop, so the returned snapshot is internally self-consistent.
   @Test("snapshot returns consistent count + limit in a single hop")
   func snapshotIsConsistent() async {
     let counter = APICallCounter()
@@ -147,6 +159,7 @@ struct APICallCounterTests {
     }
   }
 
+  /// Verifies that `snapshot().limit` always matches the `APICallCounter.hourlyLimit` constant, regardless of recorded calls.
   @Test("snapshot limit always equals hourlyLimit constant")
   func snapshotLimitMatchesConstant() async {
     let counter = APICallCounter()
@@ -156,6 +169,7 @@ struct APICallCounterTests {
 
   // MARK: - Idle-gap regression
 
+  /// Verifies that `snapshot()` returns a count of zero after seeded timestamps have fully expired, covering the idle-gap regression from #1511.
   @Test("snapshot() returns zero after all timestamps expire without a record() call")
   func snapshotPurgesIdleStaleEntries() async {
     let counter = APICallCounter()
@@ -204,6 +218,7 @@ struct APICallCounterTests {
 
   // MARK: - APICallCounterSnapshot struct
 
+  /// Verifies that two `APICallCounterSnapshot` instances with identical fields compare equal, and differ when any field differs.
   @Test("APICallCounterSnapshot is Equatable")
   func snapshotEquatable() {
     let a = APICallCounterSnapshot(count: 42, limit: 5_000)
@@ -239,6 +254,7 @@ struct APICallCounterTests {
   @Suite("Transport increment guard", .serialized)
   struct TransportIncrementGuard {
 
+    /// Verifies that `ghAPI()` increments the shared `apiCallCounter` by one when the injected transport closure returns non-nil data.
     @Test("ghAPI() increments counter when transport returns non-nil data")
     func ghAPIIncrementsCounterOnNonNilResult() async {
       await apiCallCounter.reset()
@@ -249,6 +265,7 @@ struct APICallCounterTests {
       configureGHAPI { _ in nil }
     }
 
+    /// Verifies that `ghAPIPaginated()` increments the shared `apiCallCounter` by one when the injected transport closure returns non-nil data.
     @Test("ghAPIPaginated() increments counter when transport returns non-nil data")
     func ghAPIPaginatedIncrementsCounterOnNonNilResult() async {
       await apiCallCounter.reset()
@@ -259,6 +276,7 @@ struct APICallCounterTests {
       configureGHAPIPaginated { _, _ in nil }
     }
 
+    /// Verifies that `ghAPI()` does not increment the shared `apiCallCounter` when the injected transport closure returns nil.
     @Test("ghAPI() does not increment counter when transport returns nil")
     func ghAPISkipsCounterOnNilResult() async {
       await apiCallCounter.reset()
@@ -269,6 +287,7 @@ struct APICallCounterTests {
       configureGHAPI { _ in nil }
     }
 
+    /// Verifies that `ghAPIPaginated()` does not increment the shared `apiCallCounter` when the injected transport closure returns nil.
     @Test("ghAPIPaginated() does not increment counter when transport returns nil")
     func ghAPIPaginatedSkipsCounterOnNilResult() async {
       await apiCallCounter.reset()
