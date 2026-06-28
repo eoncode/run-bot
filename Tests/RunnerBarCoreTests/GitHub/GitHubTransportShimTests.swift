@@ -22,6 +22,7 @@ struct GitHubTransportShimTests {
   // MARK: - configureGHAPI / ghAPI
 
   /// Injected `GHAPITransport` is called and its return value propagated.
+  /// Verifies that `ghAPI()` routes calls through the transport instance currently registered via `configureGitHubTransport`.
   @Test func ghAPICallsConfiguredTransport() async {
     let expected = "{\"id\":1}".data(using: .utf8)
     configureGHAPI { _ in expected }
@@ -30,6 +31,7 @@ struct GitHubTransportShimTests {
   }
 
   /// Reconfiguring `GHAPITransport` replaces the previous closure — latest value wins.
+  /// Verifies that calling `configureGitHubTransport` a second time replaces the previous transport so subsequent `ghAPI()` calls use the new instance.
   @Test func ghAPIReconfigureReplacesTransport() async {
     let first = "first".data(using: .utf8)
     let second = "second".data(using: .utf8)
@@ -42,6 +44,7 @@ struct GitHubTransportShimTests {
   // MARK: - configureGHRaw / ghRaw
 
   /// Injected `GHRawTransport` is called and its return value propagated.
+  /// Verifies that `ghRaw()` routes calls through the transport instance currently registered via `configureGitHubTransport`.
   @Test func ghRawCallsConfiguredTransport() async {
     let expected = Data([0x01, 0x02, 0x03])
     configureGHRaw { _ in expected }
@@ -50,6 +53,7 @@ struct GitHubTransportShimTests {
   }
 
   /// Reconfiguring `GHRawTransport` replaces the previous closure — latest value wins.
+  /// Verifies that calling `configureGitHubTransport` a second time replaces the previous transport so subsequent `ghRaw()` calls use the new instance.
   @Test func ghRawReconfigureReplacesTransport() async {
     let first = Data([0xAA])
     let second = Data([0xBB])
@@ -62,12 +66,14 @@ struct GitHubTransportShimTests {
   // MARK: - configureGHToken / githubTokenCore
 
   /// Injected `GHTokenProvider` is called and its return value propagated.
+  /// Verifies that `githubTokenCore()` returns the token string supplied to `configureGitHubTokenProvider`.
   @Test func githubTokenCoreReturnsConfiguredToken() {
     configureGHToken { "test-token-abc" }
     #expect(githubTokenCore() == "test-token-abc")
   }
 
   /// Reconfiguring the token provider replaces the previous closure — latest value wins.
+  /// Verifies that calling `configureGitHubTokenProvider` a second time replaces the previous provider so `githubTokenCore()` returns the new token.
   @Test func githubTokenCoreReconfigureReplacesProvider() {
     configureGHToken { "old-token" }
     configureGHToken { "new-token" }
@@ -75,6 +81,7 @@ struct GitHubTransportShimTests {
   }
 
   /// A token provider returning `nil` propagates `nil` correctly.
+  /// Verifies that `githubTokenCore()` returns `nil` when the configured provider returns `nil`.
   @Test func githubTokenCoreReturnsNilWhenProviderReturnsNil() {
     configureGHToken { nil }
     #expect(githubTokenCore() == nil)
