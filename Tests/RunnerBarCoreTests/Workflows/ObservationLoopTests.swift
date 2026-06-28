@@ -86,6 +86,7 @@ final class Signal {
 @MainActor
 struct ObservationLoopTests {
 
+  /// Verifies that `onChange` fires exactly once when the observed property (`count`) is mutated.
   @Test("onChange fires when observed property changes")
   func firesOnChange() async {
     let counter = ObservableCounter()
@@ -106,6 +107,7 @@ struct ObservationLoopTests {
     _ = loop
   }
 
+  /// Verifies that `onChange` fires a second time after a second mutation, confirming that `withObservationTracking` re-registration is working correctly.
   @Test("onChange fires again on second mutation — re-registration works")
   func firesOnSecondMutation() async {
     let counter = ObservableCounter()
@@ -130,6 +132,7 @@ struct ObservationLoopTests {
     _ = loop
   }
 
+  /// Verifies that `onChange` does not fire after the `ObservationLoop` is deallocated — the `isolated deinit` guard must prevent re-registration from enqueueing any further callbacks.
   @Test("onChange does not fire after loop is deallocated")
   func doesNotFireAfterDealloc() async {
     let counter = ObservableCounter()
@@ -173,6 +176,7 @@ struct ObservationLoopTests {
     #expect(raceResult == false, "onChange fired after dealloc — isolated deinit guard broken")
   }
 
+  /// Verifies that `onChange` does not fire when an untracked property (`label`) is mutated — only properties accessed inside the `observe` closure are tracked.
   @Test("onChange does not fire when an untracked property changes")
   func doesNotFireForUntrackedProperty() async {
     let counter = ObservableCounter()
