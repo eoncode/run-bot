@@ -1,6 +1,6 @@
 <img width="120" alt="img" src="logo.svg">
 
-# RunnerBar 
+# RunBot 
 
 > GitHub Actions, local runners, and AI failure recovery — in your macOS menu bar.
 
@@ -14,11 +14,11 @@
 
 **CI Checks**
 
-![UI Tests](https://github.com/eoncode/runner-bar/actions/workflows/ui-tests.yml/badge.svg)
-![Unit Tests](https://github.com/eoncode/runner-bar/actions/workflows/swift-test.yml/badge.svg)
-![SwiftLint](https://github.com/eoncode/runner-bar/actions/workflows/swiftlint.yml/badge.svg)
-![Periphery](https://github.com/eoncode/runner-bar/actions/workflows/periphery.yml/badge.svg)
-[![CodeQL](https://github.com/eoncode/runner-bar/actions/workflows/codeql.yml/badge.svg)](https://github.com/eoncode/runner-bar/actions/workflows/codeql.yml)
+![UI Tests](https://github.com/eoncode/run-bot/actions/workflows/ui-tests.yml/badge.svg)
+![Unit Tests](https://github.com/eoncode/run-bot/actions/workflows/swift-test.yml/badge.svg)
+![SwiftLint](https://github.com/eoncode/run-bot/actions/workflows/swiftlint.yml/badge.svg)
+![Periphery](https://github.com/eoncode/run-bot/actions/workflows/periphery.yml/badge.svg)
+[![CodeQL](https://github.com/eoncode/run-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/eoncode/run-bot/actions/workflows/codeql.yml)
 
 **AI Reviewers**
 
@@ -28,16 +28,16 @@
 
 **Code Quality**
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=bugs)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=bugs)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=eoncode_run-bot&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=eoncode_run-bot)
 
 ---
 
@@ -67,7 +67,7 @@
 ## Install
 
 ```bash
-curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
+curl -fsSL https://eoncode.github.io/run-bot/install.sh | bash
 ```
 
 ---
@@ -85,7 +85,7 @@ curl -fsSL https://eoncode.github.io/runner-bar/install.sh | bash
 
 ## Concurrency
 
-RunnerBar uses Swift 6.2 strict concurrency, so data-race safety is guaranteed by the compiler rather than by convention. UI runs on the main actor and background work is isolated in dedicated actors, all coordinated through structured `async`/`await`.
+RunBot uses Swift 6.2 strict concurrency, so data-race safety is guaranteed by the compiler rather than by convention. UI runs on the main actor and background work is isolated in dedicated actors, all coordinated through structured `async`/`await`.
 
 → [`docs/architecture/concurrency-overview.md`](docs/architecture/concurrency-overview.md)
 
@@ -93,7 +93,7 @@ RunnerBar uses Swift 6.2 strict concurrency, so data-race safety is guaranteed b
 
 ## Module Separation
 
-Logic is kept independent of the app runtime: the `RunnerBarCore` library holds the platform-agnostic business logic, and the `RunnerBar` executable holds the macOS app shell. The compiler enforces the boundary, which keeps Core reusable and unit-testable with plain `swift test`.
+Logic is kept independent of the app runtime: the `RunBotCore` library holds the platform-agnostic business logic, and the `RunBot` executable holds the macOS app shell. The compiler enforces the boundary, which keeps Core reusable and unit-testable with plain `swift test`.
 
 → [`docs/architecture/library-rationale.md`](docs/architecture/library-rationale.md)
 
@@ -110,6 +110,6 @@ State is immutable by default and flows one way: domain models are value types, 
 **Test a branch:**
 ```bash
 git fetch && git checkout feature/your-branch && git pull
-bash build.sh && pkill RunnerBar; sleep 1 && open dist/RunnerBar.app
+bash build.sh && pkill RunBot; sleep 1 && open dist/RunBot.app
 ```
   
