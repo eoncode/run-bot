@@ -1,6 +1,6 @@
-# RunnerBar 
-
 <img width="120" alt="img" src="logo.svg">
+
+# RunnerBar 
 
 **Platform & Stack**
 
