@@ -128,7 +128,8 @@ struct APICallCounterTests {
 
   // MARK: - snapshot atomicity (P10)
 
-  /// Verifies that two consecutive `snapshot()` calls return identical values, confirming the P10 atomic-read contract.
+  /// Verifies the P10 single-hop atomicity contract: `count` and `limit` are captured together
+  /// in one actor hop, so the returned snapshot is internally self-consistent.
   @Test("snapshot returns consistent count + limit in a single hop")
   func snapshotIsConsistent() async {
     let counter = APICallCounter()
