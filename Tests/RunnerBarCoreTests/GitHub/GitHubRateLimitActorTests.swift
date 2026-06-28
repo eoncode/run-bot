@@ -34,6 +34,7 @@ struct RateLimitActorTests {
 
   // MARK: - Basic set / clear
 
+  /// Verifies that `set(resetAt:)` arms `isLimited` and populates `resetDate` within 1 second of the requested reset timestamp.
   @Test("set arms the flag and schedules a reset date")
   func setArmsFlag() async {
     let actor = RateLimitActor()
@@ -54,6 +55,7 @@ struct RateLimitActorTests {
     }
   }
 
+  /// Verifies that `clear()` sets `isLimited` to `false` and nils out `resetDate` after a prior `set(resetAt:)` call.
   @Test("clear disarms the flag and removes the reset date")
   func clearDisarms() async {
     let actor = RateLimitActor()
@@ -65,6 +67,7 @@ struct RateLimitActorTests {
     #expect(snap.resetDate == nil)
   }
 
+  /// Verifies that a newly initialised `RateLimitActor` starts with `isLimited == false` and `resetDate == nil`.
   @Test("fresh actor starts with isLimited = false and nil resetDate")
   func freshActorDefaults() async {
     let actor = RateLimitActor()
@@ -74,6 +77,7 @@ struct RateLimitActorTests {
     #expect(snap.resetDate == nil)
   }
 
+  /// Verifies that passing `nil` to `set(resetAt:)` still arms `isLimited` and produces a non-nil `resetDate` via the default delay fallback.
   @Test("set with nil resetAt uses a default delay and still arms")
   func setWithNilResetAt() async {
     let actor = RateLimitActor()
@@ -86,6 +90,7 @@ struct RateLimitActorTests {
 
   // MARK: - Clamping
 
+  /// Verifies that a `resetAt` timestamp fewer than 5 seconds in the future is clamped up to the 5 s minimum delay floor.
   @Test("set clamps delay to 5 s minimum")
   func clampMinimum() async {
     let actor = RateLimitActor()
@@ -107,6 +112,7 @@ struct RateLimitActorTests {
     }
   }
 
+  /// Verifies that a `resetAt` timestamp more than 7200 seconds in the future is clamped down to the 7200 s maximum delay ceiling.
   @Test("set clamps delay to 7200 s maximum")
   func clampMaximum() async {
     let actor = RateLimitActor()
@@ -144,6 +150,7 @@ struct RateLimitActorTests {
   ///
   /// TODO: Upgrade to a deterministic race test once `RateLimitActor` supports
   /// injectable `Clock` conformance. Track in follow-up issue.
+  /// Verifies that a second `set()` cancels the prior window's reset task and that window-2's armed state survives a brief yield.
   @Test("set after set cancels prior window and preserves new window state")
   func set_after_set_cancels_prior_window() async throws {
     let actor = RateLimitActor()
@@ -171,6 +178,7 @@ struct RateLimitActorTests {
   /// (now + 10 ... now + 40), keeping the test off the clamp-floor path.
   /// Uses the captured `now` timestamp for assertions to avoid wall-clock
   /// drift in slow CI environments.
+  /// Verifies that four rapid `set()` calls in a loop leave only the last window's `resetDate` intact, with all earlier windows discarded.
   @Test("rapid successive sets keep only the latest window")
   func rapidSuccessiveSets() async {
     let actor = RateLimitActor()
@@ -199,6 +207,7 @@ struct RateLimitActorTests {
 
   // MARK: - Snapshot atomicity
 
+  /// Verifies that `snapshot()` returns a consistent `isLimited` + `resetDate` pair both after `set()` and after a subsequent `clear()`.
   @Test("snapshot returns consistent isLimited + resetDate pair")
   func snapshotConsistency() async {
     let actor = RateLimitActor()
@@ -217,6 +226,7 @@ struct RateLimitActorTests {
 
   // MARK: - Multiple set calls without intermediate clear
 
+  /// Verifies that calling `set()` twice without `clear()` overwrites the previous window and leaves the actor in the state set by the second call.
   @Test("set after set without clear overwrites gracefully")
   func setAfterSetWithoutClear() async {
     let actor = RateLimitActor()
