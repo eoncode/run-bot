@@ -10,7 +10,13 @@ import Testing
 /// Tests for the module-level configure/read transport shim functions in
 /// `GitHubTransportShim.swift`, exercising the `TransportBox`-backed behaviour
 /// via the public `configure*` and internal `gh*` entry points.
-@Suite("GitHubTransportShim")
+///
+/// `.serialized` is required because all tests share the same module-level
+/// `TransportBox` singletons. Without serialization, concurrent tests race to
+/// overwrite each other's configured transport, producing non-deterministic
+/// failures (e.g. `ghAPICallsConfiguredTransport` reading a 6-byte payload
+/// written by `ghAPIReconfigureReplacesTransport`).
+@Suite("GitHubTransportShim", .serialized)
 struct GitHubTransportShimTests {
 
   // MARK: - configureGHAPI / ghAPI
