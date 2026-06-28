@@ -158,6 +158,7 @@ struct ScopeEditSheetTests {
 
   // MARK: Single-write contract
 
+  /// Verifies that `confirmSave` calls `setPreferences` exactly once per invocation — no duplicate writes.
   @Test("confirmSave writes exactly once")
   func confirmSaveWritesExactlyOnce() async {
     let fake = FakeScopePreferencesStore()
@@ -166,6 +167,7 @@ struct ScopeEditSheetTests {
     #expect(await fake.writeLog.count == 1)
   }
 
+  /// Verifies that `confirmSave` writes to the scope key that was passed in, not to any other key.
   @Test("confirmSave targets the correct scope")
   func confirmSaveTargetsCorrectScope() async {
     let fake = FakeScopePreferencesStore()
@@ -174,6 +176,7 @@ struct ScopeEditSheetTests {
     #expect(await fake.writeLog.first?.scope == "eoncode/runner-bar")
   }
 
+  /// Verifies that a single `confirmSave` call persists every field of `ScopePreferences` atomically in one write.
   @Test("confirmSave persists all fields in a single write")
   func confirmSavePersistsAllFields() async {
     let fake = FakeScopePreferencesStore()
@@ -195,6 +198,7 @@ struct ScopeEditSheetTests {
 
   // MARK: No spurious writes
 
+  /// Verifies that calling `preferences(for:)` does not produce any entry in the write log.
   @Test("reading preferences does not produce a write")
   func readingDoesNotWrite() async {
     let fake = FakeScopePreferencesStore()
@@ -203,6 +207,7 @@ struct ScopeEditSheetTests {
     #expect(await fake.writeLog.isEmpty)
   }
 
+  /// Verifies that saving preferences for one scope does not modify the stored value for any other scope.
   @Test("confirmSave for one scope does not touch another scope")
   func saveDoesNotCrossContaminateScopes() async {
     let fake = FakeScopePreferencesStore()
@@ -214,6 +219,7 @@ struct ScopeEditSheetTests {
 
   // MARK: Round-trip
 
+  /// Verifies that `preferences(for:)` returns exactly the value that was written by `confirmSave`.
   @Test("preferences(for:) returns the value written by confirmSave")
   func roundTrip() async {
     let fake = FakeScopePreferencesStore()
@@ -224,6 +230,7 @@ struct ScopeEditSheetTests {
     #expect(readBack.failureHookEnabled == false)
   }
 
+  /// Verifies that a second `confirmSave` for the same scope overwrites the first value, and that the write log records both calls.
   @Test("second confirmSave overwrites the first")
   func secondSaveOverwritesFirst() async {
     let fake = FakeScopePreferencesStore()
