@@ -53,6 +53,7 @@ struct GitHubTokenCacheTests {
   // MARK: - githubToken() — nil path
 
   /// Returns nil when neither env var is set and the Keychain is empty.
+  /// Verifies that `githubToken()` returns `nil` when no environment variable or keychain source provides a token.
   @Test func githubToken_noSource_returnsNil() {
     invalidateTokenCache()  // flush any cache from other suites
     defer { invalidateTokenCache() }
@@ -64,6 +65,7 @@ struct GitHubTokenCacheTests {
   // MARK: - githubToken() — GH_TOKEN
 
   /// Resolves a token from GH_TOKEN when Keychain is empty.
+  /// Verifies that `githubToken()` reads the token from the `GH_TOKEN` environment variable when it is set.
   @Test func githubToken_ghTokenEnvVar_returnsToken() {
     invalidateTokenCache()
     defer { invalidateTokenCache() }
@@ -77,6 +79,7 @@ struct GitHubTokenCacheTests {
   // MARK: - githubToken() — GITHUB_TOKEN fallback
 
   /// Falls back to GITHUB_TOKEN when GH_TOKEN is absent.
+  /// Verifies that `githubToken()` falls back to the `GITHUB_TOKEN` environment variable when `GH_TOKEN` is absent.
   @Test func githubToken_githubTokenEnvVarFallback_returnsToken() {
     invalidateTokenCache()
     defer { invalidateTokenCache() }
@@ -88,6 +91,7 @@ struct GitHubTokenCacheTests {
   }
 
   /// Prefers GH_TOKEN over GITHUB_TOKEN when both are set.
+  /// Verifies that `GH_TOKEN` takes precedence over `GITHUB_TOKEN` when both environment variables are set.
   @Test func githubToken_bothEnvVarsSet_prefersGhToken() {
     invalidateTokenCache()
     defer { invalidateTokenCache() }
@@ -103,6 +107,7 @@ struct GitHubTokenCacheTests {
   // MARK: - githubToken() — cache
 
   /// Returns the cached value on a second call without re-reading the environment.
+  /// Verifies that a second call to `githubToken()` returns the cached value without re-reading the environment.
   @Test func githubToken_secondCall_returnsFromCache() {
     invalidateTokenCache()
     defer { invalidateTokenCache() }
@@ -118,6 +123,7 @@ struct GitHubTokenCacheTests {
   // MARK: - invalidateTokenCache()
 
   /// Clears a populated cache so the next call re-resolves from source.
+  /// Verifies that `invalidateTokenCache()` clears the cached token so the next call re-reads from the environment.
   @Test func invalidateTokenCache_clearsCache() {
     invalidateTokenCache()
     defer { invalidateTokenCache() }
@@ -132,6 +138,7 @@ struct GitHubTokenCacheTests {
   }
 
   /// Safe to call when the cache is already nil — does not crash.
+  /// Verifies that calling `invalidateTokenCache()` when the cache is already `nil` is a no-op and does not crash.
   @Test func invalidateTokenCache_whenAlreadyNil_isNoop() {
     invalidateTokenCache()
     defer { invalidateTokenCache() }
