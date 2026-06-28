@@ -6,7 +6,7 @@ A short description of every source file in the project.
 
 ```
 runner-bar/
-├── Package.swift                            — SPM manifest; defines RunnerBar + RunnerBarCore targets and their dependencies
+├── Package.swift                            — SPM manifest; defines RunBot + RunBotCore targets and their dependencies
 ├── project.yml                              — XcodeGen project definition
 ├── build.sh                                 — local build helper script
 ├── deploy.sh                                — deployment/release helper script
@@ -55,7 +55,7 @@ runner-bar/
 │
 ├── Sources/
 │   │
-│   ├── RunnerBar/                           (AppKit/SwiftUI app target — UI + lifecycle)
+│   ├── RunBot/                           (AppKit/SwiftUI app target — UI + lifecycle)
 │   │   │
 │   │   ├── main.swift                       — entry point; instantiates AppDelegate and starts the run loop
 │   │   │
@@ -117,7 +117,7 @@ runner-bar/
 │   │           ├── LogCopyButton.swift      — shared top-bar copy button (idle/loading/done/failed states)
 │   │           └── StepLogView.swift        — step-log viewer with a strict layout/sizing contract
 │   │
-│   └── RunnerBarCore/                       (pure-logic target — no UI dependencies)
+│   └── RunBotCore/                       (pure-logic target — no UI dependencies)
 │       │
 │       ├── FailureHook/
 │       │   ├── FailureHookRunner.swift      — production shim for FailureHookRunnerUseCase
@@ -239,7 +239,7 @@ runner-bar/
 │           └── SystemStats.swift            — snapshot of CPU and memory metrics
 │
 └── Tests/
-    ├── RunnerBarCoreTests/
+    ├── RunBotCoreTests/
     │   ├── APICallCounter+TestSeam.swift    — test-only seeding/reset extensions on APICallCounter
     │   ├── APICallCounterTests.swift        — unit tests for APICallCounter and its snapshot
     │   ├── ActiveJobAsCompletedTests.swift  — tests for ActiveJob.asCompleted(at:)
@@ -252,7 +252,7 @@ runner-bar/
     │   ├── LogFetcherTests.swift            — unit tests for LogFetcher
     │   ├── ObservationLoopTests.swift       — unit tests for ObservationLoop invariants
     │   ├── OrgRunnerMetricsResolutionTests.swift — regression tests for org-scoped runner metrics (#1209/#1192)
-    │   ├── RunnerBarCoreTests.swift         — top-level RunnerBarCore test suite
+    │   ├── RunBotCoreTests.swift         — top-level RunBotCore test suite
     │   ├── SaveRunnerEditsUseCaseTests.swift — unit tests for SaveRunnerEditsUseCase (Phase 5, #1300)
     │   ├── ScopeEditSheetTests.swift        — atomic-save contract tests for the ScopeEditSheet rewrite (#1540)
     │   ├── StepLogViewScopeResolutionTests.swift — tests for StepLogView.loadLog() scope resolution (#1517)
@@ -260,6 +260,6 @@ runner-bar/
     │   └── TestSupport/
     │       ├── TestDoubles.swift            — shared test doubles (#1447)
     │       └── TestFixtures.swift           — shared test fixtures (#1446)
-    └── RunnerBarUITests/
-        └── RunnerBarUITests.swift           — UI tests using real mouse interaction; run via xcodebuild on the self-hosted runner
+    └── RunBotUITests/
+        └── RunBotUITests.swift           — UI tests using real mouse interaction; run via xcodebuild on the self-hosted runner
 ```
