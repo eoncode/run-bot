@@ -2,6 +2,8 @@
 
 # RunnerBar 
 
+> GitHub Actions, local runners, and AI failure recovery — in your macOS menu bar.
+
 **Platform & Stack**
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple&logoColor=white)
@@ -36,11 +38,6 @@
 [![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
 [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
 [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=eoncode_runner-bar&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=eoncode_runner-bar)
-
-
-> GitHub Actions, local runners, and AI failure recovery — in your macOS menu bar.
-
-<img src="scrnsht.png" width="100%" alt="RunnerBar screenshot" />
 
 ---
 
