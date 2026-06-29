@@ -1,0 +1,63 @@
+// UpdateCheckerTests.swift
+// RunBotCoreTests
+import Testing
+@testable import RunBotCore
+
+// MARK: - UpdateCheckerTests
+
+@Suite("UpdateChecker")
+struct UpdateCheckerTests {
+
+    // MARK: - Straightforward newer
+
+    @Test func newerPatch() {
+        #expect(UpdateChecker.isNewer("0.7.1", than: "0.7.0") == true)
+    }
+
+    @Test func newerMinor() {
+        #expect(UpdateChecker.isNewer("0.8.0", than: "0.7.9") == true)
+    }
+
+    @Test func newerMajor() {
+        #expect(UpdateChecker.isNewer("1.0.0", than: "0.9.9") == true)
+    }
+
+    // MARK: - Two-digit component (the lexicographic trap)
+
+    /// Lexicographic comparison would give "1.10.0" < "1.9.0" — numeric must return true.
+    @Test func twoDigitMinorComponent() {
+        #expect(UpdateChecker.isNewer("1.10.0", than: "1.9.0") == true)
+    }
+
+    // MARK: - Stable vs beta of same version
+
+    /// A stable release supersedes a beta of the same base version.
+    @Test func stableBeatsOwnBeta() {
+        #expect(UpdateChecker.isNewer("0.7.1", than: "0.7.1-beta.3") == true)
+    }
+
+    /// A beta is NOT newer than the stable of the same version.
+    @Test func betaNotNewerThanStable() {
+        #expect(UpdateChecker.isNewer("0.7.1-beta.1", than: "0.7.1") == false)
+    }
+
+    // MARK: - Already up to date
+
+    @Test func sameVersion() {
+        #expect(UpdateChecker.isNewer("0.7.0", than: "0.7.0") == false)
+    }
+
+    // MARK: - Older
+
+    @Test func olderVersion() {
+        #expect(UpdateChecker.isNewer("0.6.9", than: "0.7.0") == false)
+    }
+
+    @Test func olderMinor() {
+        #expect(UpdateChecker.isNewer("0.7.0", than: "0.8.0") == false)
+    }
+
+    @Test func olderMajor() {
+        #expect(UpdateChecker.isNewer("0.9.9", than: "1.0.0") == false)
+    }
+}
