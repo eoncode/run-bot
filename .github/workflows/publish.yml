@@ -46,6 +46,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0   # full history required for tag computation
+          fetch-tags: true # tag computation inspects existing version tags
 
       # ── Compute next tag ───────────────────────────────────────────────────
       # Tag scheme:
