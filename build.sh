@@ -9,8 +9,8 @@ if [[ -z "${1:-}" ]]; then
   exit 1
 fi
 VERSION="$1"
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "✗ Invalid version '${VERSION}'. Expected semver (e.g. 1.2.3)" >&2
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+  echo "✗ Invalid version '${VERSION}'. Expected semver (e.g. 1.2.3 or 1.2.3-beta.1)" >&2
   exit 1
 fi
 
