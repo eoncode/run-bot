@@ -2,6 +2,35 @@
 // RunBotCore
 import Foundation
 
+// MARK: - UpdateCheckResult
+
+/// The result of a `UpdateChecker.checkForUpdate(betaChannel:)` call.
+public enum UpdateCheckResult: Sendable {
+    /// The running version is already the latest available.
+    case upToDate
+    /// A newer release is available.
+    ///
+    /// - Parameter version: The tag name of the newer release
+    ///   (e.g. `"v0.7.1"` or `"v0.7.1-beta.2"`).
+    case updateAvailable(version: String)
+    /// The check could not be completed (network error, missing key, etc.).
+    ///
+    /// - Parameter error: The underlying error. Call sites may inspect this
+    ///   for diagnostics but must treat it as non-fatal — update checks are
+    ///   best-effort and must never crash the app.
+    case failed(Error)
+}
+
+// MARK: - UpdateCheckError
+
+/// Errors specific to the update-check flow that do not wrap a lower-level error.
+public enum UpdateCheckError: Error, Sendable {
+    /// `RBVersionString` was absent from `Info.plist`.
+    case missingVersionKey
+    /// The releases API returned no usable release for the requested channel.
+    case noReleasesFound
+}
+
 /// Checks GitHub Releases for a newer version of RunBot.
 ///
 /// Hits `GET /repos/runbot-hq/run-bot/releases` (the full list, not /latest)
@@ -162,10 +191,9 @@ public enum UpdateChecker {
     ///
     /// - Parameter betaChannel: When `true`, considers pre-release builds.
     ///   When `false`, only stable (non-prerelease) releases are considered.
-    /// - Returns: The tag name string (e.g. `"v0.7.1"` or `"v0.7.1-beta.2"`)
-    ///   if a newer version is available, or `nil` if already up to date or
-    ///   if the check fails (network error, decode error, etc.).
-    public static func checkForUpdate(betaChannel: Bool) async -> String? {
+    /// - Returns: An `UpdateCheckResult` describing whether an update is
+    ///   available, the app is already up to date, or the check failed.
+    public static func checkForUpdate(betaChannel: Bool) async -> UpdateCheckResult {
         // Read RBVersionString (not CFBundleShortVersionString) because macOS strips
         // pre-release suffixes from CFBundleShortVersionString for display purposes.
         // A user running "0.7.1-beta.1" would appear as "0.7.1" via the standard key,
@@ -185,8 +213,8 @@ public enum UpdateChecker {
         // suppressing the beta-to-beta update. RBVersionString is the source of truth.
         // If this guard returns nil the update check silently no-ops (best-effort).
         guard let current = Bundle.main
-            .infoDictionary?["RBVersionString"] as? String else { return nil }
-        guard let latest = await latestMatchingRelease(betaChannel: betaChannel) else { return nil }
+            .infoDictionary?["RBVersionString"] as? String else { return .failed(UpdateCheckError.missingVersionKey) }
+        guard let latest = await latestMatchingRelease(betaChannel: betaChannel) else { return .failed(UpdateCheckError.noReleasesFound) }
 
         let latestVersion = latest.tagName.trimmingCharacters(in: .init(charactersIn: "v"))
         let currentVersion = current
@@ -200,7 +228,9 @@ public enum UpdateChecker {
         // numeric compare is used here for safety.
         // Beta tags ("0.7.1-beta.2") are handled by splitting on "-" first:
         // the stable version "0.7.1" is always considered newer than "0.7.1-beta.N".
-        return isNewer(latestVersion, than: currentVersion) ? latest.tagName : nil
+        return isNewer(latestVersion, than: currentVersion)
+            ? .updateAvailable(version: latest.tagName)
+            : .upToDate
     }
 
     /// Returns `true` if `candidate` is a strictly newer semver than `current`.
