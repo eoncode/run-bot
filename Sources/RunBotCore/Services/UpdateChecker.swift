@@ -7,6 +7,9 @@ import Foundation
 /// Hits `GET /repos/runbot-hq/run-bot/releases` (the full list, not /latest)
 /// so it can filter by channel. The `prerelease` field on each release is set
 /// by the `--prerelease` flag in `publish.yml` at release creation time.
+///
+/// Implemented as a caseless `enum` (not `struct` or `class`) to prevent
+/// accidental instantiation — all functionality is exposed via `static` methods.
 public enum UpdateChecker {
 
     /// The GitHub Releases API URL string for this repository.

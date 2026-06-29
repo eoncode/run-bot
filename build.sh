@@ -4,6 +4,9 @@ set -e
 APP_NAME="RunBot"
 OUT_DIR="dist"
 
+# VERSION must be supplied explicitly — no default is intentional.
+# A silent fallback (e.g. ${1:-0.7.0}) would let CI publish a stale
+# version if the workflow forgets to pass the input. Fail loudly instead.
 if [[ -z "${1:-}" ]]; then
   echo "✗ Usage: bash build.sh <version>  e.g. bash build.sh 0.8.0" >&2
   exit 1
