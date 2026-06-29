@@ -35,7 +35,6 @@ cp "Resources/Info.plist" \
    "$OUT_DIR/$APP_NAME.app/Contents/"
 
 echo "→ Ad-hoc signing..."
-echo "→ Ad-hoc signing..."
 codesign --force --deep --sign - "$OUT_DIR/$APP_NAME.app"
 
 echo "→ Zipping..."
