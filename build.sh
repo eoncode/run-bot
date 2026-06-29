@@ -2,8 +2,17 @@
 set -e
 
 APP_NAME="RunBot"
-VERSION="${1:-0.7.0}"
 OUT_DIR="dist"
+
+if [[ -z "${1:-}" ]]; then
+  echo "✗ Usage: bash build.sh <version>  e.g. bash build.sh 0.8.0" >&2
+  exit 1
+fi
+VERSION="$1"
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "✗ Invalid version '${VERSION}'. Expected semver (e.g. 1.2.3)" >&2
+  exit 1
+fi
 
 # ── ⚠️  DO NOT CHANGE THE ARCH OR BUILD PATH BELOW ────────────────────────
 # This project targets Apple Silicon (arm64) ONLY.
