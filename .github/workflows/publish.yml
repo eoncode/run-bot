@@ -206,6 +206,9 @@ jobs:
           fi
           echo "Zip verified: RunBot.app/Contents/MacOS/RunBot is present."
           echo "zip_path=$ZIP" >> "$GITHUB_OUTPUT"
+        # Note: `id:` intentionally placed after `run:` here. GitHub Actions
+        # parses it correctly regardless of position within the step block.
+        # The zip_path output is consumed by the "Create GitHub Release" step below.
         id: verify
 
       # ── Tag + push ────────────────────────────────────────────────────────
@@ -236,19 +239,20 @@ jobs:
           CHANNEL="${{ steps.tag.outputs.channel }}"
           ZIP="${{ steps.verify.outputs.zip_path }}"
 
+          # Build the flags array explicitly to avoid unquoted-variable word-splitting.
+          # An empty string in $PRERELEASE_FLAG / $LATEST_FLAG would expand safely
+          # most of the time, but an array is the idiomatic and unambiguous idiom.
+          FLAGS=()
           if [[ "$CHANNEL" == "beta" ]]; then
-            PRERELEASE_FLAG="--prerelease"
-            LATEST_FLAG=""
+            FLAGS+=(--prerelease)
           else
-            PRERELEASE_FLAG=""
-            LATEST_FLAG="--latest"
+            FLAGS+=(--latest)
           fi
 
           gh release create "$TAG" \
             "$ZIP" \
             --title "$TAG" \
             --generate-notes \
-            $PRERELEASE_FLAG \
-            $LATEST_FLAG
+            "${FLAGS[@]}"
 
           echo "GitHub Release $TAG created (channel: $CHANNEL)."

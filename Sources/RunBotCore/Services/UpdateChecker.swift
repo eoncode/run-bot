@@ -112,25 +112,41 @@ public enum UpdateChecker {
         return request
     }
 
-    /// Fetches and decodes the releases list, then returns the first release
+    /// Fetches and decodes the releases list, then returns the highest-semver release
     /// matching the `betaChannel` filter, or `nil` on any failure.
     ///
     /// The GitHub Releases API returns releases sorted by **published date**
-    /// (newest first), not by semver. In normal operation this is equivalent
-    /// because releases are published in version order. If a release is
-    /// ever published out of order (e.g. a hotfix to an older branch),
-    /// `.first(where:)` may return the wrong result. A future improvement
-    /// would sort the array by semver before filtering. For now, the
-    /// published-date ordering is relied upon and documented here so the
-    /// assumption is explicit.
+    /// (newest first), not by semver. Relying on that order is fragile: a hotfix
+    /// to an older branch published after a newer release would silently become
+    /// the "latest" candidate. To eliminate the assumption, the full decoded list
+    /// is sorted by semver before filtering — the list is already in memory
+    /// (perPage: 20) so the overhead is negligible.
+    ///
+    /// `betaChannel=true` intentionally accepts both stable and pre-release releases.
+    /// A stable release always beats a beta of the same base (0.7.1 > 0.7.1-beta.N),
+    /// so a beta-channel user is correctly offered 0.7.1 when it ships, even though
+    /// stable builds are included in the candidate set.
     private static func latestMatchingRelease(betaChannel: Bool) async -> Release? {
         guard let request = buildRequest(perPage: 20) else { return nil }
+        // The URLResponse is intentionally discarded. A 403 (rate-limited) or 404
+        // returns non-nil data containing a JSON error body; JSONDecoder then fails
+        // to decode it as [Release] and the whole check silently no-ops — which is
+        // the correct graceful-degradation behaviour. A rate-limit therefore looks
+        // identical to "already up to date", which is acceptable: update checks are
+        // best-effort and must never surface errors to the user.
         guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
         guard let releases = try? JSONDecoder().decode([Release].self, from: data) else { return nil }
-        // Releases are in published-date order (newest first) per the API.
+        // Sort by semver descending so .first(where:) always picks the highest version,
+        // regardless of the order GitHub published the releases.
+        let sorted = releases.sorted {
+            isNewer(
+                $0.tagName.trimmingCharacters(in: .init(charactersIn: "v")),
+                than: $1.tagName.trimmingCharacters(in: .init(charactersIn: "v"))
+            )
+        }
         // betaChannel=true: accept any release (stable or pre-release).
-        // betaChannel=false: skip pre-releases, take the first stable one.
-        return releases.first(where: { betaChannel ? true : !$0.prerelease })
+        // betaChannel=false: skip pre-releases, take the highest stable one.
+        return sorted.first(where: { betaChannel ? true : !$0.prerelease })
     }
 
     /// Checks for an available update.
