@@ -301,6 +301,29 @@ extension AppDelegate: NSPopoverDelegate {
         await store.start()
         log("AppDelegate › startup — runnerStore poll loop started")
 
+        // ── Update cache rehydration ───────────────────────────────────────────────────
+        // Runs before the network check so a user who force-quit between download and
+        // install tap can see the Install & Relaunch button immediately, even offline.
+        // Version guard: only rehydrate if the cached version is actually newer than
+        // what is currently installed — prevents re-showing Install for a version
+        // already on disk (e.g. helper failed mid-delete and the zip was not cleaned up).
+        let cachedPath    = UserDefaults.standard.string(forKey: AutoUpdaterDefaults.cachedUpdateZipPath)
+        let cachedVersion = UserDefaults.standard.string(forKey: AutoUpdaterDefaults.cachedUpdateVersion)
+        if let path = cachedPath,
+           let version = cachedVersion,
+           FileManager.default.fileExists(atPath: path),
+           Bundle.main.isOlderThan(version: version) {
+            runnerState.updateZipURL = URL(fileURLWithPath: path)
+            runnerState.cachedUpdateVersion = version
+        } else {
+            // Version is no longer newer — new app is already installed (or keys are
+            // stale). Clear both keys here, in the new process, where isOlderThan
+            // correctly returns false. Cleaner than clearing before exit(0) in the
+            // outgoing process.
+            UserDefaults.standard.removeObject(forKey: AutoUpdaterDefaults.cachedUpdateZipPath)
+            UserDefaults.standard.removeObject(forKey: AutoUpdaterDefaults.cachedUpdateVersion)
+        }
+
         // ── Update check ───────────────────────────────────────────────────────────────
         let beta = AppPreferencesStore.shared.betaChannel
         switch await UpdateChecker.checkForUpdate(betaChannel: beta) {

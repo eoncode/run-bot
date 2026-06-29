@@ -263,7 +263,9 @@ internal extension SettingsView {
                 .controlSize(.small)
             } else if runnerState.updateZipURL == nil {
                 HStack(spacing: 4) {
-                    ProgressView("Downloading update…").scaleEffect(RBMetrics.updateProgressScale)
+                    ProgressView("Downloading update…")
+                        .labelsHidden()
+                        .scaleEffect(RBMetrics.updateProgressScale)
                     Text("Downloading…").font(.caption2).foregroundColor(Color.rbTextSecondary)
                 }
             } else {
