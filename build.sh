@@ -2,7 +2,7 @@
 set -e
 
 APP_NAME="RunBot"
-VERSION="0.7.0"
+VERSION="${1:-0.7.0}"
 OUT_DIR="dist"
 
 # ── ⚠️  DO NOT CHANGE THE ARCH OR BUILD PATH BELOW ────────────────────────
