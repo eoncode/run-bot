@@ -2,6 +2,45 @@
 // RunBotCore
 import Foundation
 
+// MARK: - ReleaseAsset
+
+/// A single asset attached to a GitHub Release (e.g. `RunBot.zip`).
+///
+/// Only `name` and `browserDownloadURL` are decoded; the rest of the
+/// GitHub asset payload is intentionally ignored to keep the model minimal.
+public struct ReleaseAsset: Decodable, Sendable {
+    /// The filename of the asset as it appears on the release page
+    /// (e.g. `"RunBot.zip"`).
+    public let name: String
+    /// The direct download URL for this asset.
+    ///
+    /// This is always an `https://objects.githubusercontent.com/…` URL;
+    /// it does not require authentication for public repositories.
+    public let browserDownloadURL: URL
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case browserDownloadURL = "browser_download_url"
+    }
+}
+
+// MARK: - AvailableRelease
+
+/// A decoded GitHub Release, carrying the tag name, channel flag, and asset list.
+///
+/// Exposed `public` so `AutoUpdater` (same module) and call sites in the app
+/// layer can pattern-match on the `.updateAvailable` case without re-fetching.
+public struct AvailableRelease: Sendable {
+    /// The git tag of this release (e.g. `"v0.8.0"` or `"v0.8.0-beta.1"`).
+    public let tagName: String
+    /// The list of binary assets attached to this release.
+    ///
+    /// `AutoUpdater` searches this list for the asset named `"RunBot.zip"`.
+    /// When the asset is absent, `RunnerState.updateAssetMissing` is set to
+    /// `true` and the UI falls back to a browser-based Download button.
+    public let assets: [ReleaseAsset]
+}
+
 // MARK: - UpdateCheckResult
 
 /// The result of a `UpdateChecker.checkForUpdate(betaChannel:)` call.
@@ -10,9 +49,11 @@ public enum UpdateCheckResult: Sendable {
     case upToDate
     /// A newer release is available.
     ///
-    /// - Parameter version: The tag name of the newer release
-    ///   (e.g. `"v0.7.1"` or `"v0.7.1-beta.2"`).
-    case updateAvailable(version: String)
+    /// - Parameter release: The full `AvailableRelease` for the newer version,
+    ///   including its `tagName` and `assets` list. Callers should pass this
+    ///   directly to `AutoUpdater.handle(_:)` rather than extracting only the
+    ///   tag name — the asset list is needed to locate the download URL.
+    case updateAvailable(release: AvailableRelease)
     /// The check could not be completed (network error, missing key, etc.).
     ///
     /// - Parameter error: The underlying error. Call sites may inspect this
@@ -60,6 +101,13 @@ public enum UpdateChecker {
         let tagName: String
         /// `true` when this release was published with `--prerelease`.
         let prerelease: Bool
+        /// The binary assets attached to this release.
+        ///
+        /// Decoded so `AutoUpdater` can locate `RunBot.zip` by name without
+        /// a second network round-trip. Defaults to `[]` on older releases
+        /// whose JSON pre-dates asset publishing — the `JSONDecoder` default
+        /// for a missing key is used; no custom `init(from:)` needed.
+        let assets: [ReleaseAsset]
 
         /// Maps snake_case JSON keys to Swift property names.
         enum CodingKeys: String, CodingKey {
@@ -67,6 +115,8 @@ public enum UpdateChecker {
             case tagName = "tag_name"
             /// Maps to the `prerelease` field in the GitHub API response.
             case prerelease
+            /// Maps to the `assets` array in the GitHub API response.
+            case assets
         }
     }
 
@@ -229,7 +279,7 @@ public enum UpdateChecker {
         // Beta tags ("0.7.1-beta.2") are handled by splitting on "-" first:
         // the stable version "0.7.1" is always considered newer than "0.7.1-beta.N".
         return isNewer(latestVersion, than: currentVersion)
-            ? .updateAvailable(version: latest.tagName)
+            ? .updateAvailable(release: AvailableRelease(tagName: latest.tagName, assets: latest.assets))
             : .upToDate
     }
 

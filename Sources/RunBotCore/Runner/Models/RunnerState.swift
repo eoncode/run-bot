@@ -20,6 +20,9 @@ import Observation
 /// `availableUpdate` is likewise `public var`: it is written once on launch by
 /// `AppDelegate+PanelSetup` (app layer, different module) — `internal(set)` would
 /// block that assignment. In practice only the startup Task writes it.
+/// The auto-update download properties (`updateZipURL`, `cachedUpdateVersion`,
+/// `updateAssetMissing`, `updateActionFailed`) are `public internal(set)` — only
+/// `AutoUpdater` (same `RunBotCore` module) writes them via `await MainActor.run`.
 /// Views and app-layer code are read-only consumers of all properties.
 @Observable
 @MainActor
@@ -94,6 +97,42 @@ public final class RunnerState {
     public func setAvailableUpdate(_ version: String?) {
         availableUpdate = version
     }
+
+    // MARK: - Auto-update download state (pushed by AutoUpdater)
+
+    /// Local file URL of the cached `RunBot-update.zip`, or `nil` while the
+    /// download is in progress or has not started yet.
+    ///
+    /// Set by `AutoUpdater.downloadUpdate` after the zip is verified and moved
+    /// to the caches directory. Rehydrated from `UserDefaults` on startup if
+    /// the cached version is still newer than the installed version.
+    ///
+    /// The Install & Relaunch button is shown only when this is non-`nil`.
+    public internal(set) var updateZipURL: URL?
+
+    /// Version string of the cached update zip (e.g. `"v0.8.0"`), or `nil`
+    /// if no download has been cached yet.
+    ///
+    /// Used by the startup sequence to skip a redundant re-download when the
+    /// same version is already cached locally.
+    public internal(set) var cachedUpdateVersion: String?
+
+    /// `true` when the latest release exists but its `RunBot.zip` asset is
+    /// absent (e.g. a draft or a release that predates asset publishing).
+    ///
+    /// When `true` the UI falls back to a **Download** button that opens the
+    /// releases page in the browser instead of triggering an in-app install.
+    public internal(set) var updateAssetMissing: Bool = false
+
+    /// `true` when a download **or** an install attempt has failed.
+    ///
+    /// A single flag covers both failure modes so the UI branch stays simple:
+    /// the Download fallback button is shown whenever
+    /// `updateAssetMissing || updateActionFailed`.
+    ///
+    /// Set in `AutoUpdater.downloadUpdate` (download failure) and in
+    /// `AutoUpdater.installAndRelaunch` (install failure).
+    public internal(set) var updateActionFailed: Bool = false
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
     /// Observed by `AppDelegate`'s `statusIconLoop` via `ObservationLoop`.
