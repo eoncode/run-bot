@@ -63,6 +63,11 @@ public final class RunnerState {
     /// See `localRunners` for the access-level rationale.
     public var isLocalScanning: Bool = false
 
+    /// The latest available version string if a newer version exists, or `nil` if
+    /// up to date. Set once on launch by the startup Task in AppDelegate+PanelSetup.
+    /// `internal(set)` — only the startup Task writes this; views read it.
+    public internal(set) var availableUpdate: String? = nil
+
     /// The overall connectivity state of the runner fleet, derived from `runners`.
     /// Observed by `AppDelegate`'s `statusIconLoop` via `ObservationLoop`.
     public var aggregateStatus: AggregateStatus {
