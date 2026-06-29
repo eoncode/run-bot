@@ -288,6 +288,15 @@ extension AppDelegate: NSPopoverDelegate {
             }
             await store.start()
             log("AppDelegate › startup — runnerStore poll loop started")
+
+            // ── Update check ───────────────────────────────────────────────────────────────
+            let beta = AppPreferencesStore.shared.betaChannel
+            if let newVersion = await UpdateChecker.checkForUpdate(betaChannel: beta) {
+                self.runnerState.availableUpdate = newVersion
+                log("AppDelegate › startup — update available: \(newVersion) (betaChannel=\(beta))")
+            } else {
+                log("AppDelegate › startup — no update available (betaChannel=\(beta))")
+            }
         }
 
         // Scope changes (add / remove / enable toggle) restart RunnerPoller so it polls
