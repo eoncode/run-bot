@@ -9,12 +9,15 @@ import Foundation
 /// by the `--prerelease` flag in `publish.yml` at release creation time.
 public enum UpdateChecker {
 
-    /// GitHub Releases API endpoint for this repository.
+    /// The GitHub Releases API URL string for this repository.
     ///
-    /// Uses the non-optional `URL(_:StaticString)` initialiser (SE-0392,
-    /// Swift 5.9+) — the compiler verifies the literal at build time so
-    /// this can never produce `nil` at runtime.
-    private static let releasesURL = URL("https://api.github.com/repos/runbot-hq/run-bot/releases")
+    /// Kept as a plain `String` constant so there is no dependency on a
+    /// particular `URL` initialiser overload. `buildRequest(perPage:)` converts
+    /// it to a `URL` via `URL(string:)` and returns `nil` on failure, so a
+    /// typo here degrades gracefully (update check silently no-ops) rather
+    /// than crashing at startup.
+    private static let releasesURLString =
+        "https://api.github.com/repos/runbot-hq/run-bot/releases"
 
     /// A minimal Codable model for a GitHub Release API response object.
     private struct Release: Decodable {
@@ -59,10 +62,11 @@ public enum UpdateChecker {
 
     /// Builds a `URLRequest` for the releases endpoint with the given page size.
     ///
-    /// Returns `nil` if `URLComponents` cannot produce a valid URL (should never
-    /// happen in practice given the compile-time-verified base URL).
+    /// Returns `nil` if `URL(string:)` or `URLComponents` cannot produce a
+    /// valid URL — update checks are best-effort and must never crash the app.
     private static func buildRequest(perPage: Int) -> URLRequest? {
-        guard var components = URLComponents(url: releasesURL, resolvingAgainstBaseURL: false)
+        guard let baseURL = URL(string: releasesURLString) else { return nil }
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
         else { return nil }
         components.queryItems = [URLQueryItem(name: "per_page", value: String(perPage))]
         guard let requestURL = components.url else { return nil }
