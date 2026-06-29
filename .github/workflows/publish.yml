@@ -29,6 +29,21 @@ on:
           - "false"
           - "true"
 
+# cancel-in-progress: true is intentional and safe here.
+#
+# The duplicate-tag guard (step 2) runs *before* "Tag and push" (step 6),
+# so in the common case a cancelled run has not yet pushed a tag and
+# leaves nothing behind. The only window where an orphaned tag could exist
+# is if a run is cancelled *after* step 6 but *before* step 7 (Create
+# GitHub Release). That window is narrow (~seconds) and recoverable:
+#   git tag -d <tag> && git push origin --delete <tag>
+# then re-run publish.sh. See docs/RELEASING.md § Rollback procedure.
+#
+# Why keep cancel-in-progress: true at all? A mis-fire of publish.sh
+# followed immediately by the real push would otherwise queue two full
+# builds; the first would win the duplicate-tag guard and create the
+# release, leaving the second to fail noisily on the guard. Cancelling
+# the first on arrival of the second is the cleaner outcome.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: true

@@ -110,7 +110,14 @@ public enum AutoUpdater {
             // final server reply (not an intermediate redirect).
             let (tempURL, response) = try await URLSession.shared.download(from: url)
 
-            // Treat non-200 as a failure rather than silently caching a bad file.
+            // `!= 200` is intentionally strict here — not `!(200...299)`.
+            //
+            // GitHub's asset download URLs (objects.githubusercontent.com) always
+            // return 200 on success. 206 Partial Content cannot occur because we
+            // send no Range header. 304 Not Modified cannot occur because we send
+            // no If-None-Match / If-Modified-Since header. Widening to 200...299
+            // would silently cache a partial or unmodified response as a valid
+            // zip — a stricter check is safer here.
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                 throw URLError(.badServerResponse)
             }
@@ -241,7 +248,7 @@ public enum AutoUpdater {
     /// ## Flow
     /// 1. Unzip the cached zip into a temporary directory via `/usr/bin/ditto`.
     /// 2. Locate `RunBot.app` inside the unzipped contents.
-    /// 3. Replace the running bundle via `ditto --rsrc` (bundle-over-bundle safe).
+    /// 3. Replace the running bundle via `ditto` (bundle-over-bundle safe).
     /// 4. Relaunch the new binary with `/usr/bin/open`.
     /// 5. Terminate this process via `NSApp.terminate`.
     ///
