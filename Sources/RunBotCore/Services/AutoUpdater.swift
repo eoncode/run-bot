@@ -222,9 +222,30 @@ public enum AutoUpdater {
     /// and the browser-fallback Download button becomes visible.
     ///
     /// - Parameter state: The shared `RunnerState` used to report failure.
+    /// Double-tap guard — `@MainActor`-isolated so access is data-race free under
+    /// Swift 6 strict concurrency. Set to `true` before install begins; cleared
+    /// only in the failure path. On success `NSApp.terminate` fires immediately
+    /// so the flag never needs resetting.
+    @MainActor private static var isInstalling: Bool = false
+
+    /// Installs the downloaded update zip and relaunches the app.
+    ///
+    /// Replaces the running `RunBot.app` bundle in-place, then calls
+    /// `NSApp.terminate` so macOS can relaunch the new binary cleanly.
+    /// On any failure the function sets `state.updateActionFailed = true` and
+    /// returns without terminating — the user is left with the running version.
+    ///
+    /// - Parameter state: The shared `RunnerState` used to drive UI state and
+    ///   to supply the downloaded zip URL via `state.updateZipURL`.
     @MainActor
     public static func installAndRelaunch(state: RunnerState) async {
+        // Double-tap guard — prevents two concurrent install attempts if the
+        // user taps "Install & Relaunch" twice before NSApp.terminate fires.
+        guard !isInstalling else { return }
+        isInstalling = true
+
         guard let zipURL = state.updateZipURL else {
+            isInstalling = false
             state.updateActionFailed = true
             return
         }
@@ -238,6 +259,7 @@ public enum AutoUpdater {
         do {
             try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         } catch {
+            isInstalling = false
             state.updateActionFailed = true
             return
         }
@@ -246,6 +268,7 @@ public enum AutoUpdater {
         let dittoResult = await runCommand("/usr/bin/ditto",
                                            args: ["-xk", zipURL.path, tmpDir.path])
         guard dittoResult else {
+            isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
             return
@@ -256,6 +279,7 @@ public enum AutoUpdater {
             at: tmpDir,
             includingPropertiesForKeys: nil
         ))?.first(where: { $0.lastPathComponent == "RunBot.app" }) else {
+            isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
             return
@@ -267,6 +291,7 @@ public enum AutoUpdater {
         let cpResult = await runCommand("/bin/cp",
                                         args: ["-Rf", appInZip.path, bundlePath])
         guard cpResult else {
+            isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
             return
