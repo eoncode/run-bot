@@ -94,7 +94,9 @@ public enum UpdateChecker {
         guard let latest = await latestMatchingRelease(betaChannel: betaChannel) else { return nil }
 
         let latestVersion = latest.tagName.trimmingCharacters(in: .init(charactersIn: "v"))
-        let currentVersion = current.trimmingCharacters(in: .whitespaces)
+        let currentVersion = current
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: .init(charactersIn: "v"))
 
         // NOTE: Component-wise semver comparison.
         // Lexicographic string comparison fails once any component reaches
