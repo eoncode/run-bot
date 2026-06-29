@@ -105,6 +105,9 @@ public enum AutoUpdater {
         do {
             // URLSession.download(from:) streams to a temp file automatically;
             // we move it to the caches directory so it persists across restarts.
+            // Redirects are followed transparently — the response here is the
+            // terminal response after all redirects, so statusCode reflects the
+            // final server reply (not an intermediate redirect).
             let (tempURL, response) = try await URLSession.shared.download(from: url)
 
             // Treat non-200 as a failure rather than silently caching a bad file.
@@ -169,13 +172,25 @@ public enum AutoUpdater {
 
     // MARK: - Background scheduler
 
+    /// Retains the `NSBackgroundActivityScheduler` for the lifetime of the app.
+    ///
+    /// `NSBackgroundActivityScheduler` is **not** retained by the system after
+    /// `schedule { }` is called — unlike `Timer`, the caller must hold a strong
+    /// reference. Without this property the scheduler is deallocated immediately
+    /// after `scheduleBackgroundCheck` returns and the background check silently
+    /// never fires.
+    ///
+    /// `@MainActor` matches `scheduleBackgroundCheck`'s isolation so the
+    /// assignment is data-race free under Swift 6 strict concurrency.
+    @MainActor private static var backgroundScheduler: NSBackgroundActivityScheduler?
+
     /// Registers an `NSBackgroundActivityScheduler` that fires a full
     /// update check every `AutoUpdaterDefaults.checkInterval` seconds.
     ///
     /// Call once from `AppDelegate` after the startup sequence completes.
-    /// The scheduler is owned by the system and does not need to be stored;
-    /// it fires on a background queue and bridges back to `MainActor` for
-    /// any `RunnerState` mutations.
+    /// The scheduler is stored in `backgroundScheduler` above so it is not
+    /// deallocated before it fires; it runs on a background queue and bridges
+    /// back to `MainActor` for any `RunnerState` mutations.
     ///
     /// - Parameter state: The shared `RunnerState` instance to update.
     @MainActor
@@ -197,12 +212,25 @@ public enum AutoUpdater {
                 await MainActor.run {
                     if case .updateAvailable(let release) = result {
                         state.setAvailableUpdate(release.tagName)
+                        // Fire-and-forget: handle starts the download task and
+                        // returns immediately without awaiting the download.
+                        // completion(.finished) below is correct — it tells the
+                        // system this scheduler invocation is done, which is true:
+                        // the download continues on its own detached Task.
+                        // Do NOT change this to `await AutoUpdater.handle(…)` —
+                        // that would hold the system completion until the download
+                        // finishes, unnecessarily blocking scheduler rescheduling.
                         Task { await AutoUpdater.handle(release, state: state) }
                     }
                 }
                 completion(.finished)
             }
         }
+
+        // Retain the scheduler so it is not deallocated before it fires.
+        // NSBackgroundActivityScheduler is not system-owned after schedule { };
+        // releasing it here would cause the background check to silently stop.
+        backgroundScheduler = scheduler
     }
 
     // MARK: - Install & Relaunch
@@ -213,7 +241,7 @@ public enum AutoUpdater {
     /// ## Flow
     /// 1. Unzip the cached zip into a temporary directory via `/usr/bin/ditto`.
     /// 2. Locate `RunBot.app` inside the unzipped contents.
-    /// 3. Copy it over the running bundle path via `/bin/cp -R`.
+    /// 3. Replace the running bundle via `ditto --rsrc` (bundle-over-bundle safe).
     /// 4. Relaunch the new binary with `/usr/bin/open`.
     /// 5. Terminate this process via `NSApp.terminate`.
     ///
@@ -251,7 +279,7 @@ public enum AutoUpdater {
         }
 
         let fm = FileManager.default
-        let bundlePath = Bundle.main.bundlePath  // e.g. …/RunBot.app
+        let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath)  // e.g. …/RunBot.app
 
         // ── 1. Unzip to a temp directory ────────────────────────────────────
         let tmpDir = fm.temporaryDirectory
@@ -286,11 +314,17 @@ public enum AutoUpdater {
         }
 
         // ── 3. Replace the running bundle ───────────────────────────────────
-        // cp -R replaces the destination atomically enough for our purposes;
-        // the running process keeps its open file descriptors until it exits.
-        let cpResult = await runCommand("/bin/cp",
-                                        args: ["-Rf", appInZip.path, bundlePath])
-        guard cpResult else {
+        // Use `ditto` (already available) rather than `cp -Rf` for the
+        // bundle-replacement step.
+        //
+        // `cp -Rf src.app dst.app` where dst.app already exists as a directory
+        // copies src.app *inside* dst.app, producing dst.app/src.app — a nested
+        // bundle that will not launch. `ditto` copies the *contents* of the
+        // source over the destination, correctly replacing the bundle in-place
+        // and preserving resource forks and symlinks.
+        let replaceResult = await runCommand("/usr/bin/ditto",
+                                             args: [appInZip.path, bundleURL.path])
+        guard replaceResult else {
             isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
@@ -307,7 +341,7 @@ public enum AutoUpdater {
         // We do NOT await — NSApp.terminate must fire immediately after.
         let relaunchTask = Process()
         relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        relaunchTask.arguments = ["-n", bundlePath]
+        relaunchTask.arguments = ["-n", bundleURL.path]
         try? relaunchTask.run()
 
         NSApp.terminate(nil)
@@ -318,8 +352,8 @@ public enum AutoUpdater {
     /// Runs a command synchronously on a background thread and returns `true`
     /// on exit code 0, `false` otherwise.
     ///
-    /// Used for `ditto` (unzip) and `cp` (replace bundle) which are short-lived
-    /// and do not need streaming output.
+    /// Used for `ditto` (unzip and bundle replacement) which is short-lived
+    /// and does not need streaming output.
     private static func runCommand(_ executable: String, args: [String]) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
