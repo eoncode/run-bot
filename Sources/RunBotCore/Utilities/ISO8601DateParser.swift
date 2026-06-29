@@ -30,6 +30,9 @@ public actor ISO8601DateParser {
     }
 
     /// Builds an `ActiveJob` from a decoded `JobPayload` using the actor-owned formatter.
+    ///
+    /// Centralising job construction here keeps `makeActiveJob(from:iso:isDimmed:)`
+    /// as the single source of truth while hiding the formatter from callers.
     public func makeJob(from payload: JobPayload, isDimmed: Bool = false) -> ActiveJob {
         makeActiveJob(from: payload, iso: iso, isDimmed: isDimmed)
     }
