@@ -56,10 +56,17 @@ jobs:
       # Algorithm:
       #   1. Find the latest stable tag (vX.Y.Z, no pre-release suffix).
       #   2. Determine channel from GITHUB_REF_NAME.
-      #   3. For beta:   find the highest existing beta.N for this stable base
-      #                  and increment N (first beta → beta.1).
-      #   4. For stable: bump PATCH by 1 unless no beta tags exist for that
-      #                  base, in which case use the base itself.
+      #   3. For beta:   beta tags are based on the CURRENT stable base (not +1 patch).
+      #                  This differs from the original issue spec which described
+      #                  "latest stable + 1 patch" as the beta base. That approach was
+      #                  intentionally NOT implemented: incrementing the base for betas
+      #                  would mean beta and stable diverge unless the stable release
+      #                  always matches the beta's incremented base exactly. Instead,
+      #                  betas sit on the same base as the current stable, and the stable
+      #                  release bumps PATCH when it ships — giving the correct ordering:
+      #                  v0.7.0-beta.1 → v0.7.0-beta.2 → v0.7.1 (stable bump on release).
+      #                  Do not change this to +1 patch without updating the stable logic.
+      #   4. For stable: bump PATCH by 1 (with rollover at 10).
       #
       # Rollover logic: when PATCH reaches 9 it rolls over to 0 and MINOR
       # increments; when MINOR reaches 9 it rolls over to 0 and MAJOR
