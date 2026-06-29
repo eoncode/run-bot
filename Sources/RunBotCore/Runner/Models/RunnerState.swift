@@ -67,9 +67,15 @@ public final class RunnerState {
     public var isLocalScanning: Bool = false
 
     /// The latest available version string if a newer version exists, or `nil` if
-    /// up to date. Set once on launch by the startup Task in `AppDelegate+PanelSetup`
-    /// (app layer — different module from `RunBotCore`), which requires a `public` setter.
-    /// In practice only that one call site writes this; views are read-only consumers.
+    /// up to date. Set once on launch by the startup Task in `AppDelegate+PanelSetup`.
+    ///
+    /// **Why `public var` and not `public internal(set) var`:**
+    /// The startup Task that writes this property lives in the `RunBot` module (app layer),
+    /// which is a *different* module from `RunBotCore` where `RunnerState` is defined.
+    /// `internal(set)` restricts the setter to the *defining* module (`RunBotCore`) only —
+    /// it would make this property read-only from `RunBot`, causing a compile error at the
+    /// only write site. `public var` is the correct and only option here.
+    /// This is not an invitation for external mutation — only the startup Task writes it.
     public var availableUpdate: String?
 
     /// The overall connectivity state of the runner fleet, derived from `runners`.
