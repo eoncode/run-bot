@@ -9,6 +9,7 @@ import Foundation
 /// by the `--prerelease` flag in `publish.yml` at release creation time.
 public struct UpdateChecker {
 
+    /// GitHub Releases API endpoint for this repository.
     private static let releasesURL = URL(
         string: "https://api.github.com/repos/runbot-hq/run-bot/releases"
     )!
@@ -22,7 +23,9 @@ public struct UpdateChecker {
 
         /// Maps snake_case JSON keys to Swift property names.
         enum CodingKeys: String, CodingKey {
+            /// Maps to the `tag_name` field in the GitHub API response.
             case tagName = "tag_name"
+            /// Maps to the `prerelease` field in the GitHub API response.
             case prerelease
         }
     }
@@ -91,7 +94,6 @@ public struct UpdateChecker {
             // Beta tags ("0.7.1-beta.2") are handled by splitting on "-" first:
             // the stable version "0.7.1" is always considered newer than "0.7.1-beta.N".
             return isNewer(latestVersion, than: currentVersion) ? latest.tagName : nil
-
         } catch {
             // Network failures and decode errors are silently swallowed —
             // update checks are best-effort and must never crash the app.
