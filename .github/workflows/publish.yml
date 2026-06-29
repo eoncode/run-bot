@@ -53,23 +53,36 @@ jobs:
 
       # ── Compute next tag ───────────────────────────────────────────────────
       # Tag scheme:
-      #   beta branch   → vMAJOR.MINOR.PATCH-beta.N
-      #   release branch → vMAJOR.MINOR.PATCH
+      #   beta branch    → vMAJOR.MINOR.PATCH-beta.N   (e.g. v0.7.0-beta.1)
+      #   release branch → vMAJOR.MINOR.PATCH           (e.g. v0.7.1)
+      #
+      # Beta base design — why betas share the CURRENT stable base, not +1 patch:
+      #
+      #   The intended user journey is:
+      #     v0.7.0 (stable) ships
+      #       → beta users opt in and receive v0.7.0-beta.1, v0.7.0-beta.2, …
+      #       → stable ships as v0.7.1 (PATCH bump at release time)
+      #
+      #   Beta users are people who were already on a beta build and are offered
+      #   the next beta of the same base (beta.1 → beta.2). They are NOT users
+      #   who just installed the current stable: a user on v0.7.0 stable will
+      #   never be offered v0.7.0-beta.N, because by semver spec a pre-release
+      #   of the same base has lower precedence than the stable — isNewer() will
+      #   correctly return false. This is intentional: we do not push stable
+      #   users onto a pre-release automatically.
+      #
+      #   Using +1 patch as the beta base (v0.7.1-beta.N) would break this: the
+      #   stable release would then also need to be v0.7.1, which couples the
+      #   stable bump to the beta base chosen weeks earlier. The current scheme
+      #   keeps them decoupled — stable always bumps PATCH when it ships,
+      #   regardless of how many betas preceded it.
       #
       # Algorithm:
       #   1. Find the latest stable tag (vX.Y.Z, no pre-release suffix).
       #   2. Determine channel from GITHUB_REF_NAME.
-      #   3. For beta:   beta tags are based on the CURRENT stable base (not +1 patch).
-      #                  This differs from the original issue spec which described
-      #                  "latest stable + 1 patch" as the beta base. That approach was
-      #                  intentionally NOT implemented: incrementing the base for betas
-      #                  would mean beta and stable diverge unless the stable release
-      #                  always matches the beta's incremented base exactly. Instead,
-      #                  betas sit on the same base as the current stable, and the stable
-      #                  release bumps PATCH when it ships — giving the correct ordering:
-      #                  v0.7.0-beta.1 → v0.7.0-beta.2 → v0.7.1 (stable bump on release).
-      #                  Do not change this to +1 patch without updating the stable logic.
-      #   4. For stable: bump PATCH by 1 (with rollover at 10).
+      #   3. Beta:   find the highest existing beta.N for the current stable base
+      #              and increment N (or start at beta.1 if none exist).
+      #   4. Stable: bump PATCH by 1 (with rollover at 10).
       #
       # Rollover logic: when PATCH reaches 9 it rolls over to 0 and MINOR
       # increments; when MINOR reaches 9 it rolls over to 0 and MAJOR

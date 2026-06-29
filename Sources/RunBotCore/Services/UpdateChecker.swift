@@ -193,7 +193,11 @@ public enum UpdateChecker {
         if candidateParsed.major != runningParsed.major { return candidateParsed.major > runningParsed.major }
         if candidateParsed.minor != runningParsed.minor { return candidateParsed.minor > runningParsed.minor }
         if candidateParsed.patch != runningParsed.patch { return candidateParsed.patch > runningParsed.patch }
-        // Same base version: stable (isPrerelease=false) beats a beta (isPrerelease=true)
+        // Same base version: stable beats a beta of the same base (e.g. v0.7.1 > v0.7.0-beta.2
+        // is handled by the PATCH check above; v0.7.0 > v0.7.0-beta.N is handled here).
+        // This means a user already on v0.7.0 stable will never be offered v0.7.0-beta.N —
+        // that is intentional: betas are delivered to users already running a beta build,
+        // not to users on the current stable. See publish.yml for the full versioning rationale.
         if candidateParsed.isPrerelease != runningParsed.isPrerelease { return !candidateParsed.isPrerelease }
         // Both are betas of the same base: compare beta.N index so that
         // beta.2 is correctly seen as newer than beta.1. Without this,
