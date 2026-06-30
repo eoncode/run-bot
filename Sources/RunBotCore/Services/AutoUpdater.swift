@@ -1,6 +1,7 @@
 // AutoUpdater.swift
 // RunBotCore
 import AppKit
+import CryptoKit
 import Foundation
 
 // MARK: - AutoUpdater
@@ -119,50 +120,39 @@ public enum AutoUpdater {
         isDownloading = true
 
         let downloadURL = asset.browserDownloadURL
-        let tagName = release.tagName
+        let checksumURL = release.checksumURL
+        let tagName     = release.tagName
 
         Task.detached(priority: .background) {
-            await downloadUpdate(from: downloadURL, version: tagName, state: state)
+            await downloadUpdate(from: downloadURL, checksumURL: checksumURL, version: tagName, state: state)
         }
     }
 
     // MARK: - Download
 
-    /// Downloads the zip to the caches directory, then updates `RunnerState`
-    /// and `UserDefaults` on success.
+    /// Downloads the zip and its SHA-256 sidecar in parallel, verifies integrity,
+    /// then updates `RunnerState` and `UserDefaults` on success.
     ///
-    /// On any failure, `runnerState.updateActionFailed` is set to `true` so the
-    /// UI can offer the browser-based fallback.
+    /// The zip and checksum are fetched concurrently via `async let` (Pillar 4).
+    /// SHA-256 digest computation is performed in a `@concurrent` free function
+    /// so the blocking `Data(contentsOf:)` read stays off the cooperative thread
+    /// pool executor (Pillar 5).
     ///
-    /// ## ⚠️ NO ZIP INTEGRITY CHECK — THIS IS INTENTIONAL, TRACKED IN #1795 ⚠️
-    ///
-    /// This function does NOT verify the downloaded zip in any way. There is no
-    /// SHA-256 checksum comparison, no GPG signature check, no `codesign --verify`
-    /// call, and no zip-structure sanity check. The file is moved to disk as-is.
-    ///
-    /// This is a DELIBERATE, DOCUMENTED deferral — not an oversight.
-    ///
-    /// **Why deferred:** Integrity checking requires publishing a checksum file
-    /// alongside the zip in publish.yml (SHA-256 sidecar or a signed manifest),
-    /// which is a non-trivial CI change with its own review cycle. Doing it
-    /// half-heartedly here (e.g. checking zip magic bytes only) creates false
-    /// confidence. The correct solution is tracked in full in issue #1795.
-    ///
-    /// **What is already in place for #1795:** `AvailableRelease.checksumURL`
-    /// is already decoded from the GitHub Releases JSON, so #1795 can add
-    /// verification without any model change — just the download + compare logic.
-    ///
-    /// **REVIEWER: Do NOT request adding `codesign --verify` or a checksum here.
-    /// It belongs in #1795. Adding a partial check here without the publish.yml
-    /// sidecar would silently fail for every real release and block all updates.
-    /// This is a known gap, not a forgotten one.**
+    /// On any failure — network error, HTTP non-200, checksum fetch failure, or
+    /// digest mismatch — `runnerState.updateActionFailed` is set to `true` so
+    /// the UI can offer the browser-based fallback. The partially-written zip
+    /// is deleted before returning.
     ///
     /// - Parameters:
     ///   - url: The direct download URL for the `RunBot.zip` asset.
+    ///   - checksumURL: The URL of the `RunBot.zip.sha256` sidecar asset.
+    ///     A `nil` value (sidecar absent from release) is treated as a hard
+    ///     failure — the download is aborted and `updateActionFailed` is set.
     ///   - version: The tag name of the release being downloaded.
     ///   - state: The shared `RunnerState` to update on the `MainActor`.
     private static func downloadUpdate(
         from url: URL,
+        checksumURL: URL?,
         version: String,
         state: RunnerState
     ) async {
@@ -184,12 +174,19 @@ public enum AutoUpdater {
             sessionConfig.timeoutIntervalForResource = 300
             let session = URLSession(configuration: sessionConfig)
 
-            // URLSession.download(from:) streams to a temp file automatically;
-            // we move it to the caches directory so it persists across restarts.
-            // Redirects are followed transparently — the response here is the
-            // terminal response after all redirects, so statusCode reflects the
-            // final server reply (not an intermediate redirect).
-            let (tempURL, response) = try await session.download(from: url)
+            // Absent sidecar is a hard failure — publish.yml always uploads it.
+            guard let checksumURL else {
+                throw URLError(.resourceUnavailable)
+            }
+
+            // ── Parallel fetch: zip + checksum sidecar (Pillar 4) ────────────
+            // Both requests are independent; fetching them concurrently saves
+            // one full round-trip on the critical path. `async let` bindings
+            // are the canonical Pillar 4 pattern for parallel independent fetches.
+            async let zipDownload      = session.download(from: url)
+            async let checksumDownload = session.data(from: checksumURL)
+            let ((tempURL, zipResponse), (checksumData, _)) =
+                try await (zipDownload, checksumDownload)
 
             // ⚠️ `!= 200` IS INTENTIONALLY STRICT — DO NOT WIDEN TO `!(200...299)` ⚠️
             //
@@ -211,7 +208,7 @@ public enum AutoUpdater {
             // `guard let` rather than `if let`: a nil cast (non-HTTP response)
             // is treated as an explicit failure rather than a silent pass-through
             // that would move a potentially corrupt temp file into the cache.
-            guard let http = response as? HTTPURLResponse else {
+            guard let http = zipResponse as? HTTPURLResponse else {
                 try? FileManager.default.removeItem(at: tempURL)
                 throw URLError(.badServerResponse)
             }
@@ -225,6 +222,26 @@ public enum AutoUpdater {
             // Remove any stale file from a previous interrupted download.
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: tempURL, to: destination)
+
+            // ── SHA-256 integrity verification (Pillar 5) ────────────────────
+            // Parse the expected hex digest from the sidecar.
+            // `shasum -a 256` format: "<hex>  <filename>" — take the first
+            // whitespace-delimited token to handle both formats produced by
+            // `shasum` (two spaces) and `sha256sum` (one space + asterisk).
+            //
+            // String(bytes:encoding:) is the failable initialiser preferred by
+            // SwiftLint's optional_data_string_conversion rule. Falling back to
+            // "" on decode failure causes `verifyChecksum` to throw a mismatch,
+            // which is the correct failure mode — a corrupt sidecar is treated
+            // the same as a wrong checksum.
+            let rawChecksum = String(bytes: checksumData, encoding: .utf8) ?? ""
+            let expectedHex = rawChecksum
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: .whitespaces).first ?? ""
+
+            // Blocking disk read lives in a `@concurrent` async free function so
+            // it does not block the cooperative thread pool executor (Pillar 5).
+            try await verifyChecksum(zipURL: destination, expectedHex: expectedHex)
 
             // Persist to UserDefaults so the install survives a relaunch.
             let defaults = UserDefaults.standard
@@ -296,5 +313,31 @@ public enum AutoUpdater {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: AutoUpdaterDefaults.cachedUpdateVersion)
         defaults.removeObject(forKey: AutoUpdaterDefaults.cachedUpdateZipPath)
+    }
+}
+
+// MARK: - SHA-256 verification
+
+/// Reads `zipURL` from disk and verifies its SHA-256 digest against `expectedHex`.
+///
+/// Implemented as a `@concurrent` async free function so the synchronous
+/// `Data(contentsOf:)` read runs on the cooperative thread pool's concurrent
+/// executor rather than blocking an actor serial executor (Pillar 5).
+/// `@concurrent` requires `async` — the function suspends to hop executors
+/// before performing the blocking read.
+///
+/// Throws `URLError(.cannotDecodeContentData)` on digest mismatch, or
+/// propagates any `Data(contentsOf:)` error on read failure.
+///
+/// - Parameters:
+///   - zipURL: The local file URL of the downloaded zip to verify.
+///   - expectedHex: The lowercase hex SHA-256 digest string from the sidecar file.
+@concurrent
+private func verifyChecksum(zipURL: URL, expectedHex: String) async throws {
+    let zipData   = try Data(contentsOf: zipURL)  // blocking read — correct here per Pillar 5
+    let digest    = SHA256.hash(data: zipData)
+    let actualHex = digest.map { String(format: "%02x", $0) }.joined()
+    guard actualHex == expectedHex else {
+        throw URLError(.cannotDecodeContentData)
     }
 }

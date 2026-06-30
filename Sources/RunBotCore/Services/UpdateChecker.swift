@@ -42,11 +42,19 @@ public struct AvailableRelease: Sendable {
     /// When the asset is absent, `RunnerState.updateAssetMissing` is set to
     /// `true` and the UI falls back to a browser-based Download button.
     public let assets: [ReleaseAsset]
-    /// Always `nil` in v1 — checksum verification is deferred to #1795.
-    /// This field exists so #1795 can add verification without a model change.
-    /// It will be populated from `latest.assets` at the `AvailableRelease(...)`
-    /// construction site in `checkForUpdate`, NOT decoded from a top-level JSON
-    /// field (the GitHub Releases API has no such field at the release level).
+    /// The URL of the `RunBot.zip.sha256` checksum sidecar asset for this release.
+    ///
+    /// Populated from `latest.assets` at the `AvailableRelease(…)` construction
+    /// site in `checkForUpdate` — NOT decoded from a top-level JSON field
+    /// (the GitHub Releases API has no such field at the release level).
+    /// `AutoUpdater.downloadUpdate` fetches this URL in parallel with the zip
+    /// and verifies the SHA-256 digest before caching the zip.
+    ///
+    /// A `nil` value means `publish.yml` did not attach the sidecar, which is
+    /// treated as a hard failure in `downloadUpdate` — the download is aborted
+    /// and `updateActionFailed` is set so the browser-fallback Download button
+    /// becomes visible.
+    ///
     /// REVIEWER: Do NOT add JSON decoding for this field here.
     public let checksumURL: URL?
 }
@@ -123,6 +131,14 @@ public enum UpdateChecker {
     /// for `releasesURLString` to find every usage.
     private static let releasesURLString =
         "https://api.github.com/repos/runbot-hq/run-bot/releases"
+
+    /// The expected filename of the SHA-256 checksum sidecar asset.
+    ///
+    /// `publish.yml` uploads this file alongside `RunBot.zip` for every release.
+    /// Keeping it as a constant prevents a typo from silently causing every
+    /// release to skip integrity verification and fall back to the browser-
+    /// download path.
+    private static let expectedChecksumAssetName = "RunBot.zip.sha256"
 
     /// A minimal Codable model for a GitHub Release API response object.
     ///
@@ -361,10 +377,13 @@ public enum UpdateChecker {
             return .upToDate
         }
 
+        // Locate the zip asset and its SHA-256 sidecar from the already-decoded
+        // assets array — no additional network call needed.
+        let checksumAsset = latest.assets.first(where: { $0.name == expectedChecksumAssetName })
         let release = AvailableRelease(
             tagName: latest.tagName,
             assets: latest.assets,
-            checksumURL: nil  // populated by #1795 from latest.assets, not from JSON
+            checksumURL: checksumAsset?.browserDownloadURL
         )
         return .updateAvailable(release: release)
     }
