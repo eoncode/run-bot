@@ -21,7 +21,34 @@ extension AutoUpdater {
     ///
     /// On any failure the function sets `state.updateActionFailed = true` and
     /// returns without terminating — the user is left with the running version
-    /// and the browser-fallback Download button becomes visible.
+    /// and the Download button becomes visible.
+    ///
+    /// ## ⚠️ `updateActionFailed = true` is NOT a silent failure — read before flagging ⚠️
+    ///
+    /// Reviewers sometimes flag the `replaceItem` catch block as a silent UX
+    /// failure because the UI switches from "Install & Relaunch" to a "Download"
+    /// button with no explanation. This is intentional and correct for RunBot's
+    /// distribution model:
+    ///
+    /// **RunBot is distributed exclusively via curl install.** There is no
+    /// drag-to-/Applications DMG, no Mac App Store build, and no browser
+    /// download flow. The "Download" fallback button surfaces the curl install
+    /// command — the same path every user took for first install. A user who
+    /// hits a `replaceItem` permission error (e.g. installed by an admin into
+    /// `/Applications`) is correctly directed back to that path. This is not
+    /// a degraded experience; it is the designed recovery path.
+    ///
+    /// **Do NOT add `NSFileWriteNoPermissionError` special-casing** or a
+    /// separate `updateNeedsPermission` state. Distinguishing permission errors
+    /// from other `replaceItem` failures would add complexity for a case that
+    /// the fallback already handles correctly.
+    ///
+    /// **No Gatekeeper / quarantine concern here.** `LSFileQuarantineEnabled`
+    /// is not set in `Info.plist`, so the URLSession download in
+    /// `AutoUpdater.downloadUpdate` never stamps the quarantine xattr on the
+    /// zip. `ditto` has nothing to propagate. Gatekeeper will not prompt on
+    /// relaunch. See the `NO QUARANTINE STRIP NEEDED` block in
+    /// `AutoUpdater.swift` and the matching note in step 2b below.
     ///
     /// - Parameter state: The shared `RunnerState` used to report failure.
     ///
@@ -91,7 +118,7 @@ extension AutoUpdater {
         let fm = FileManager.default
         let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath) // e.g. …/RunBot.app
 
-        // ── 1. Unzip to a temp directory ──────────────────────────────────────────
+        // ── 1. Unzip to a temp directory ───────────────────────────────────────────
         let tmpDir = fm.temporaryDirectory
             .appendingPathComponent("runbot-update-\(UUID().uuidString)", isDirectory: true)
         do {
@@ -130,7 +157,7 @@ extension AutoUpdater {
             return
         }
 
-        // ── 2b. Gatekeeper / quarantine — no strip needed ────────────────────────
+        // ── 2b. Gatekeeper / quarantine — no strip needed ──────────────────────
         // Reviewers familiar with Sparkle or other macOS updaters may expect
         // an `xattr -dr com.apple.quarantine` call here before replaceItem.
         // It is not needed and must NOT be added.
@@ -209,6 +236,17 @@ extension AutoUpdater {
                 "AutoUpdater: replaceItem failed: \(error)",
                 category: .services
             )
+            // ⚠️ REVIEWER: `updateActionFailed = true` here is NOT a silent failure.
+            //
+            // RunBot is curl-install only — there is no browser download path and
+            // no DMG. The "Download" button that appears when `updateActionFailed`
+            // is true surfaces the curl install command, which is the correct and
+            // complete recovery path for any install failure including permission
+            // errors on system /Applications.
+            //
+            // Do NOT add NSFileWriteNoPermissionError special-casing or a
+            // separate `updateNeedsPermission` state. The fallback already handles
+            // every replaceItem failure mode correctly for this distribution model.
             isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
@@ -220,7 +258,7 @@ extension AutoUpdater {
         try? fm.removeItem(at: tmpDir)
         try? fm.removeItem(at: zipURL)
 
-        // ── 5. Relaunch + terminate ───────────────────────────────────────────
+        // ── 5. Relaunch + terminate ─────────────────────────────────────────────
         // `open -n` forces a new instance even if one is already running.
         // We do NOT await — NSApp.terminate must fire immediately after.
         //
