@@ -176,6 +176,13 @@ public enum AutoUpdater {
         version: String,
         state: RunnerState
     ) async {
+        // Hoisted above `do` so the `catch` block can reference it for cleanup.
+        // `tempURL` is the system-temp location written by `URLSession.download`;
+        // it is assigned immediately after the `async let` destructuring below.
+        // On any early-exit path that throws before the assignment (e.g. nil
+        // checksumURL, pre-download network failure) this remains `nil` and the
+        // `catch` block's `try? removeItem` is a safe no-op.
+        var tempURL: URL?
         do {
             // Use a dedicated URLSession with explicit timeouts rather than
             // URLSession.shared (which has no timeout configured). On a stalled
@@ -205,8 +212,11 @@ public enum AutoUpdater {
             // are the canonical Pillar 4 pattern for parallel independent fetches.
             async let zipDownload      = session.download(from: url)
             async let checksumDownload = session.data(from: checksumURL)
-            let ((tempURL, zipResponse), (checksumData, _)) =
+            let ((downloadedURL, zipResponse), (checksumData, _)) =
                 try await (zipDownload, checksumDownload)
+            // Assign to the hoisted var so `catch` can clean it up if anything
+            // below throws (checksum mismatch, moveItem failure, etc.).
+            tempURL = downloadedURL
 
             // ⚠️ `!= 200` IS INTENTIONALLY STRICT — DO NOT WIDEN TO `!(200...299)` ⚠️
             //
@@ -229,11 +239,11 @@ public enum AutoUpdater {
             // is treated as an explicit failure rather than a silent pass-through
             // that would move a potentially corrupt temp file into the cache.
             guard let http = zipResponse as? HTTPURLResponse else {
-                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManager.default.removeItem(at: downloadedURL)
                 throw URLError(.badServerResponse)
             }
             if http.statusCode != 200 {  // ← strict by design, NOT a bug — read comment above before changing
-                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManager.default.removeItem(at: downloadedURL)
                 throw URLError(.badServerResponse)
             }
 
@@ -268,13 +278,13 @@ public enum AutoUpdater {
             //
             // REVIEWER: Do NOT reorder these lines. `verifyChecksum` must always
             // precede both `cachedZipDestination` and `moveItem`.
-            try await verifyChecksum(zipURL: tempURL, expectedHex: expectedHex)
+            try await verifyChecksum(zipURL: downloadedURL, expectedHex: expectedHex)
 
             let destination = try cachedZipDestination(version: version)
 
             // Remove any stale file from a previous interrupted download.
             try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: tempURL, to: destination)
+            try FileManager.default.moveItem(at: downloadedURL, to: destination)
 
             // Persist to UserDefaults so the install survives a relaunch.
             let defaults = UserDefaults.standard
@@ -311,6 +321,9 @@ public enum AutoUpdater {
             // ordering. The ordering guarantee is that `verifyChecksum` runs
             // before `moveItem`, so `destination` is never written with an
             // unverified file. This catch block only handles temp file hygiene.
+            if let tmp = tempURL {
+                try? FileManager.default.removeItem(at: tmp)
+            }
             await MainActor.run {
                 isDownloading = false
                 state.updateActionFailed = true
