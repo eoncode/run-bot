@@ -113,6 +113,14 @@ extension AutoUpdater {
                         //      version hasn't changed) and the isDownloading guard
                         //      drops the handle() call until the first download
                         //      finishes.
+                        //   4. If two concurrent check Tasks fire simultaneously
+                        //      (e.g. at the DEBUG 60 s interval while a slow
+                        //      URLSession.shared fetch is still in-flight), both
+                        //      calls to setAvailableUpdate are serialised on the
+                        //      MainActor — last write wins, same version, no state
+                        //      corruption is possible. The check fetch itself is
+                        //      intentionally unguarded; only the download path
+                        //      requires the isDownloading guard.
                         Task { await AutoUpdater.handle(release, state: state) }
                     }
                 }
