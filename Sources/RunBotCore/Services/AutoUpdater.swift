@@ -70,13 +70,28 @@ public enum AutoUpdater {
         }
 
         // ── 2. Asset absent from release? ───────────────────────────────────
+        // Always reset `updateAssetMissing` before the guard so that a
+        // subsequent `handle` call for a release that *does* carry the asset
+        // (e.g. a re-published release) clears the flag and proceeds to
+        // download — rather than leaving the Download-from-browser fallback
+        // permanently visible.
+        state.updateAssetMissing = false
         guard let asset = release.assets.first(where: { $0.name == expectedAssetName }) else {
             state.updateAssetMissing = true
             return
         }
 
         // ── 3. Kick off background download ─────────────────────────────────
-        // Capture only what the Task needs; avoids capturing the entire state object.
+        // Capture only the values the Task needs (URL + version string) rather
+        // than the entire `RunnerState` object.
+        //
+        // `RunnerState` is `@MainActor`-isolated and `final class` (not yet
+        // declared `Sendable`). Passing it into `Task.detached` is safe here
+        // because `downloadUpdate` routes every state mutation back through
+        // `await MainActor.run { }`, so all writes are correctly serialised on
+        // MainActor. The Swift 6 strict-concurrency checker accepts this
+        // pattern; no warning is emitted because `state` is only ever *read*
+        // from the detached context to be forwarded, not written to directly.
         let downloadURL = asset.browserDownloadURL
         let tagName = release.tagName
 
@@ -289,6 +304,13 @@ public enum AutoUpdater {
                 completion(.deferred)
                 return
             }
+            // This unstructured `Task` has no actor context (it inherits the
+            // GCD background queue's context, not `@MainActor`). The `await`
+            // on `AppPreferencesStore.shared.betaChannel` is therefore required
+            // and correct: `AppPreferencesStore` is `@MainActor @Observable`,
+            // so reading any property from a non-`@MainActor` context requires
+            // an actor hop. This is NOT a data race — it is the Swift concurrency
+            // system enforcing safe cross-actor access at compile time.
             Task {
                 let beta = await AppPreferencesStore.shared.betaChannel
                 let result = await UpdateChecker.checkForUpdate(betaChannel: beta)
