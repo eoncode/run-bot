@@ -117,6 +117,19 @@ public final class RunnerState {
     /// same version is already cached locally.
     public internal(set) var cachedUpdateVersion: String?
 
+    /// Rehydrates cached download state from `UserDefaults` on startup.
+    ///
+    /// Called by `AppDelegate+PanelSetup` after verifying that the cached zip
+    /// still exists on disk and the cached version is newer than the installed
+    /// app. Using an explicit method (rather than direct property assignment)
+    /// keeps both write sites inside `RunBotCore` — `updateZipURL` and
+    /// `cachedUpdateVersion` are `public internal(set)` and cannot be set
+    /// directly from the `RunBot` app target.
+    public func rehydrateCachedUpdate(zipURL: URL, version: String) {
+        updateZipURL = zipURL
+        cachedUpdateVersion = version
+    }
+
     /// `true` when the latest release exists but its `RunBot.zip` asset is
     /// absent (e.g. a draft or a release that predates asset publishing).
     ///

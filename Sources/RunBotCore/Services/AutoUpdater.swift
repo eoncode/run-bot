@@ -225,14 +225,18 @@ public enum AutoUpdater {
         scheduler.tolerance = AutoUpdaterDefaults.checkInterval * 0.2
         scheduler.qualityOfService = .background
 
-        scheduler.schedule { completion in
-            // Honour the system's power-saving signal. When `shouldDefer` is
-            // true, macOS is asking background tasks to pause (e.g. low battery,
-            // high CPU load). Calling `.deferred` tells the scheduler to try again
-            // at the next interval rather than proceeding now. This is the
-            // documented pattern for NSBackgroundActivityScheduler (see #1794
+        scheduler.schedule { [weak scheduler] completion in
+            // Honour the system's power-saving signal. `scheduler.shouldDefer`
+            // returns true when macOS is asking background tasks to pause (e.g.
+            // low battery, high CPU load). Calling `.deferred` tells the scheduler
+            // to try again at the next interval rather than proceeding now. This is
+            // the documented pattern for NSBackgroundActivityScheduler (see #1794
             // Architecture notes, Pillar 5).
-            guard !completion.shouldDefer else {
+            // Note: `shouldDefer` is a property on the *scheduler*, not on the
+            // `completion` handler — the handler is just a `(Result) -> Void`.
+            // Weak capture avoids retaining the scheduler beyond its intended
+            // lifetime; if it has been deallocated, treat as deferred.
+            guard scheduler?.shouldDefer == false else {
                 completion(.deferred)
                 return
             }

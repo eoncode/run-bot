@@ -313,8 +313,7 @@ extension AppDelegate: NSPopoverDelegate {
            let version = cachedVersion,
            FileManager.default.fileExists(atPath: path),
            Bundle.main.isOlderThan(version: version) {
-            runnerState.updateZipURL = URL(fileURLWithPath: path)
-            runnerState.cachedUpdateVersion = version
+            runnerState.rehydrateCachedUpdate(zipURL: URL(fileURLWithPath: path), version: version)
         } else {
             // Version is no longer newer — new app is already installed (or keys are
             // stale). Clear both keys here, in the new process, where isOlderThan
