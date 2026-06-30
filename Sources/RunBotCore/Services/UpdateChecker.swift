@@ -212,7 +212,14 @@ public enum UpdateChecker {
         /// Components that cannot be parsed default to `0`. `betaIndex` defaults to `nil`.
         init(_ version: String) {
             let parts = version.split(separator: "-", maxSplits: 1)
-            let core = String(parts[0])
+            // Guard against an empty `parts` array. `String.split` with
+            // `omittingEmptySubsequences: true` (the default) returns `[]` for
+            // an empty string, so `parts[0]` would crash. This can happen if
+            // `isNewer` is called with `"v"` as the candidate (after the
+            // `dropFirst()` strip in the caller produces `""`), or if any future
+            // caller passes an empty string directly. Defaulting `core` to `""`
+            // produces major/minor/patch = 0, which degrades gracefully.
+            let core = parts.isEmpty ? "" : String(parts[0])
             isPrerelease = parts.count > 1
             let nums = core.split(separator: ".").compactMap { Int($0) }
             major = nums.isEmpty ? 0 : nums[0]

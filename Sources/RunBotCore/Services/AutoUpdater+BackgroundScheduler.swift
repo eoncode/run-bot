@@ -91,7 +91,8 @@ extension AutoUpdater {
                 let beta = await AppPreferencesStore.shared.betaChannel
                 let result = await UpdateChecker.checkForUpdate(betaChannel: beta)
                 await MainActor.run {
-                    if case .updateAvailable(let release) = result {
+                    switch result {
+                    case .updateAvailable(let release):
                         state.setAvailableUpdate(release.tagName)
                         // Fire-and-forget handle() call — intentional.
                         //
@@ -127,6 +128,30 @@ extension AutoUpdater {
                         // is required and Swift 6 strict concurrency emits no warning for
                         // this pattern.
                         Task { await AutoUpdater.handle(release, state: state) }
+
+                    case .upToDate:
+                        // The latest release is no longer newer than the running
+                        // version — either the update was installed, or the release
+                        // was retracted. Clear the stale update row unconditionally
+                        // so Settings → About doesn’t show an install prompt for a
+                        // version that no longer exists on GitHub.
+                        state.setAvailableUpdate(nil)
+
+                    case .failed:
+                        // A transient failure (network blip, GitHub rate-limit) must
+                        // NOT clear a downloaded, ready-to-install update. Only clear
+                        // if there is no cached zip on disk — meaning the row was
+                        // shown from a check result alone and the zip was never
+                        // downloaded (or was deleted by the OS under storage pressure).
+                        let zipPath = UserDefaults.standard.string(
+                            forKey: AutoUpdaterDefaults.cachedUpdateZipPath
+                        )
+                        let zipExists = zipPath.map {
+                            FileManager.default.fileExists(atPath: $0)
+                        } ?? false
+                        if !zipExists {
+                            state.setAvailableUpdate(nil)
+                        }
                     }
                 }
             }
