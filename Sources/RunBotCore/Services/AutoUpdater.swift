@@ -88,6 +88,16 @@ public enum AutoUpdater {
                 // launch where the zip is already cached and valid, causing the UI
                 // to show the Download fallback instead of Install & Relaunch.
                 state.updateActionFailed = false
+                // Note: `updateAssetMissing` is intentionally NOT reset here.
+                // A cached zip and a missing asset are mutually exclusive for the
+                // same `release.tagName`: a zip can only be cached if a prior
+                // handle() call found the asset and downloaded it successfully.
+                // If the asset was absent, no download ran and no zip was ever
+                // written — so this branch is unreachable when `updateAssetMissing`
+                // is true for the same tag. The reset lives in step 2 below, which
+                // is the only code path where the flag is relevant.
+                // REVIEWER: the absence of `updateAssetMissing = false` here is
+                // deliberate — see step 2 for the full mutual-exclusion argument.
                 return
             }
             // Cached path no longer exists on disk — clear stale defaults and
@@ -97,11 +107,26 @@ public enum AutoUpdater {
         }
 
         // ── 2. Asset absent from release? ───────────────────────────────────
-        // Always reset `updateAssetMissing` before the guard so that a
-        // subsequent `handle` call for a release that *does* carry the asset
-        // (e.g. a re-published release) clears the flag and proceeds to
-        // download — rather than leaving the Download-from-browser fallback
-        // permanently visible.
+        // `updateAssetMissing` is reset here rather than in the cache-hit block
+        // above (step 1) for one reason: the two states are mutually exclusive
+        // for any given `release.tagName`. A zip can only be cached if a prior
+        // handle() call found the asset and successfully downloaded it. If the
+        // asset was absent, no download ever ran, so no zip was ever cached.
+        // You cannot enter the cache-hit branch with `updateAssetMissing == true`
+        // for the same tag — there is nothing to clear there.
+        //
+        // Resetting here (before the guard) handles the one real scenario where
+        // the flag needs clearing: a re-published release that now carries the
+        // asset after a prior run set the flag. Placing the reset before the
+        // guard ensures a subsequent handle() call for a release that *does*
+        // carry the asset clears the flag and proceeds to download — rather
+        // than leaving the Download-from-browser fallback permanently visible.
+        //
+        // REVIEWER: Do NOT move this reset into the cache-hit block. The
+        // mutual-exclusion argument above is the proof that it is not needed
+        // there. If you believe this is wrong, trace any code path that could
+        // produce a cached zip for a tag whose asset was absent — you will
+        // find no such path exists.
         state.updateAssetMissing = false
         guard let asset = release.assets.first(where: { $0.name == expectedAssetName }) else {
             state.updateAssetMissing = true
