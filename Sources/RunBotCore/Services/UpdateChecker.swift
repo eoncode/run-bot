@@ -260,6 +260,14 @@ public enum UpdateChecker {
         var request = URLRequest(url: requestURL)
         // GitHub API requires a User-Agent header.
         request.setValue("RunBot", forHTTPHeaderField: "User-Agent")
+        // ⚠️ No Authorization header is sent — requests are unauthenticated.
+        // GitHub's unauthenticated REST API limit is 60 requests/hour per IP.
+        // The production 24 h check interval makes exhaustion practically
+        // impossible for a single user. However, the DEBUG 60 s interval can
+        // deplete the budget in ~1 hour on a shared NAT (office, co-working
+        // space) where multiple RunBot instances share the same egress IP.
+        // This is a known v1 trade-off. Adding an optional GITHUB_TOKEN
+        // preference to raise the limit to 5,000 req/hr is a v2 concern.
         // Recommended by GitHub REST API docs to ensure a stable v3 response shape.
         // Without this the API still responds correctly today, but the content type
         // is not guaranteed to remain stable across API versions.

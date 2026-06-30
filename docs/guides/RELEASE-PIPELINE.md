@@ -45,8 +45,10 @@ preceded it.
 ## In-App Update Check
 
 At launch, `UpdateChecker` hits `GET /repos/.../releases`, sorts by semver
-(not publish date), filters by `betaChannel` preference, and writes the
-result once to `RunnerState.availableUpdate`. Settings → About reads that
+(not publish date), filters by `betaChannel` preference, and returns an
+`UpdateCheckResult`. `AutoUpdater.handle()` writes `RunnerState.availableUpdate`
+via `setAvailableUpdate()` — called on each check (launch-time and every
+24-hour background tick). Settings → About reads that
 and shows the update row if non-nil.
 
 > For the full operator reference — rollback procedure, branch rules,

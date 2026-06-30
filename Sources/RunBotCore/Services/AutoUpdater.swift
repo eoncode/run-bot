@@ -91,7 +91,8 @@ public enum AutoUpdater {
                 return
             }
             // Cached path no longer exists on disk — clear stale defaults and
-            // fall through to a fresh download.
+            // fall through to a fresh download. `updateActionFailed` is cleared
+            // in step 3 before the new download starts, so this path is covered.
             clearCachedDefaults()
         }
 

@@ -8,6 +8,8 @@
 # add a deploy-pages step to publish.yml instead of running this script.
 #
 # Do not run this manually.
+echo "error: deploy.sh is deprecated and must not be run. See publish.yml instead." >&2
+exit 1
 set -e
 
 VERSION=$(cat dist/version.txt)
