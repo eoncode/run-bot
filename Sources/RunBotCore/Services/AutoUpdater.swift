@@ -93,6 +93,19 @@ public enum AutoUpdater {
     /// On any failure, `runnerState.updateActionFailed` is set to `true` so the
     /// UI can offer the browser-based fallback.
     ///
+    /// ## Integrity verification — v1 status
+    ///
+    /// **No integrity check is performed in v1.** The zip is moved to the
+    /// caches directory as-is, without any verification.
+    ///
+    /// Both SHA-256 checksum verification and code-signing identity verification
+    /// (`codesign --verify`) are **fully deferred to issue #1795**. Neither is
+    /// present in this function. `AvailableRelease.checksumURL` is already
+    /// decoded so #1795 can add verification logic without a model change.
+    ///
+    /// Do not add a `codesign --verify` call here, and do not claim integrity
+    /// verification anywhere in the UI or docs, until #1795 is implemented.
+    ///
     /// - Parameters:
     ///   - url: The direct download URL for the `RunBot.zip` asset.
     ///   - version: The tag name of the release being downloaded.
@@ -213,6 +226,16 @@ public enum AutoUpdater {
         scheduler.qualityOfService = .background
 
         scheduler.schedule { completion in
+            // Honour the system's power-saving signal. When `shouldDefer` is
+            // true, macOS is asking background tasks to pause (e.g. low battery,
+            // high CPU load). Calling `.deferred` tells the scheduler to try again
+            // at the next interval rather than proceeding now. This is the
+            // documented pattern for NSBackgroundActivityScheduler (see #1794
+            // Architecture notes, Pillar 5).
+            guard !completion.shouldDefer else {
+                completion(.deferred)
+                return
+            }
             Task {
                 let beta = await AppPreferencesStore.shared.betaChannel
                 let result = await UpdateChecker.checkForUpdate(betaChannel: beta)
@@ -269,6 +292,15 @@ public enum AutoUpdater {
     /// `NSApp.terminate` so macOS can relaunch the new binary cleanly.
     /// On any failure the function sets `state.updateActionFailed = true` and
     /// returns without terminating — the user is left with the running version.
+    ///
+    /// ## Why `NSApp.terminate(nil)` and not `exit(0)`
+    ///
+    /// This is a deliberate, documented decision — see the decisions table in
+    /// issue #1794. RunBot is non-sandboxed with no `applicationWillTerminate`
+    /// side-effects that conflict with the handoff. `NSApp.terminate` is the
+    /// idiomatic AppKit shutdown path and is safe here. `exit(0)` belongs to
+    /// the helper-process self-update pattern, which was explicitly rejected
+    /// for RunBot. Do not change this without revisiting #1794.
     ///
     /// - Parameter state: The shared `RunnerState` used to drive UI state and
     ///   to supply the downloaded zip URL via `state.updateZipURL`.
@@ -346,6 +378,14 @@ public enum AutoUpdater {
         // ── 5. Relaunch + terminate ──────────────────────────────────────────
         // `open -n` forces a new instance even if one is already running.
         // We do NOT await — NSApp.terminate must fire immediately after.
+        //
+        // NSApp.terminate(nil) is used here rather than exit(0) deliberately.
+        // exit(0) is the helper-process self-update pattern; RunBot is a full
+        // AppKit app with no applicationWillTerminate side-effects that conflict
+        // with the handoff. NSApp.terminate is the idiomatic shutdown path.
+        // This decision is documented in the "Why NSApp.terminate" section of
+        // installAndRelaunch's doc comment and in issue #1794. Do not change
+        // this to exit(0) without revisiting #1794.
         let relaunchTask = Process()
         relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         relaunchTask.arguments = ["-n", bundleURL.path]
@@ -361,6 +401,17 @@ public enum AutoUpdater {
     ///
     /// Used for `ditto` (unzip and bundle replacement) which is short-lived
     /// and does not need streaming output.
+    ///
+    /// ## Why `waitUntilExit()` on a GCD thread (not `terminationHandler`)
+    ///
+    /// The spec (issue #1794, Architecture notes, Pillar 5) describes a
+    /// `terminationHandler` + `withCheckedContinuation` pattern that avoids
+    /// any blocking call. This implementation dispatches to a GCD background
+    /// thread and calls `waitUntilExit()` there instead. Both patterns keep
+    /// the Swift executor free — the difference is that `waitUntilExit()` holds
+    /// one GCD thread for the duration of `ditto`'s run (~1–2 s). For this
+    /// use-case the practical impact is negligible. Refactoring to
+    /// `terminationHandler` is a future improvement, not a correctness fix.
     private static func runCommand(_ executable: String, args: [String]) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {

@@ -42,6 +42,13 @@ public struct AvailableRelease: Sendable {
     /// When the asset is absent, `RunnerState.updateAssetMissing` is set to
     /// `true` and the UI falls back to a browser-based Download button.
     public let assets: [ReleaseAsset]
+    /// The URL of the SHA-256 checksum sidecar file for this release, if present.
+    ///
+    /// `nil` in v1 — checksum verification is deferred to issue #1795. This
+    /// field is decoded now so that #1795 can implement verification logic
+    /// without requiring a model change. `AutoUpdater.downloadUpdate` must not
+    /// use this field until #1795 is implemented.
+    public let checksumURL: URL?
 }
 
 // MARK: - UpdateCheckResult
@@ -282,7 +289,16 @@ public enum UpdateChecker {
         // Beta tags ("0.7.1-beta.2") are handled by splitting on "-" first:
         // the stable version "0.7.1" is always considered newer than "0.7.1-beta.N".
         return isNewer(latestVersion, than: currentVersion)
-            ? .updateAvailable(release: AvailableRelease(tagName: latest.tagName, assets: latest.assets))
+            ? .updateAvailable(release: AvailableRelease(
+                tagName: latest.tagName,
+                assets: latest.assets,
+                // checksumURL: nil in v1 — SHA-256 sidecar verification is
+                // deferred to #1795. When #1795 lands, derive this from
+                // `latest.assets` by locating the asset named
+                // "RunBot.zip.sha256" (or equivalent sidecar filename agreed
+                // in #1795) and passing its `browserDownloadURL`.
+                checksumURL: nil
+            ))
             : .upToDate
     }
 
