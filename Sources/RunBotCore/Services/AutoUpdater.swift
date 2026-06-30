@@ -265,26 +265,27 @@ public enum AutoUpdater {
         scheduler.tolerance = AutoUpdaterDefaults.checkInterval * 0.2
         scheduler.qualityOfService = .background
 
-        // `NSBackgroundActivityScheduler` is not `Sendable`. The weak capture
-        // below is safe: `.shouldDefer` is only read inside this callback, which
-        // AppKit guarantees fires on the same background serial queue. The
-        // `nonisolated(unsafe)` local copy asserts that invariant to the compiler.
-        // Do NOT change to a strong capture — that would prevent the scheduler
-        // from being released when `backgroundScheduler` is set to nil.
-        // `NSBackgroundActivityScheduler` is not `Sendable`. Declare a
-        // `nonisolated(unsafe)` weak reference *before* the closure so the
-        // capture is on a Sendable-annotated variable, silencing the Swift 6
-        // SendableClosureCaptures diagnostic. Safe: `weakScheduler` is only
-        // read inside AppKit's background serial queue callback.
-        nonisolated(unsafe) weak var weakScheduler = scheduler
+        // `NSBackgroundActivityScheduler` is not `Sendable`. Capture a
+        // `nonisolated(unsafe) let` copy before the closure so the capture is
+        // on a Sendable-annotated binding, silencing the Swift 6
+        // SendableClosureCaptures diagnostic (P17 / Pillar 6,
+        // docs/architecture/concurrency-overview.md).
+        //
+        // `weak` is not used here: `backgroundScheduler` already retains the
+        // scheduler for the app's lifetime, so a weak reference would add no
+        // safety and would trigger [#WeakMutability] because the binding is
+        // never reassigned. Reading `scheduler.shouldDefer` via a `let` copy
+        // is safe — AppKit guarantees this callback fires on the same
+        // background serial queue that owns the scheduler.
+        nonisolated(unsafe) let schedulerRef = scheduler
         scheduler.schedule { completion in
-            let s = weakScheduler
-            // Honour the system's power-saving signal. `s.shouldDefer` returns
-            // true when macOS is asking background tasks to pause (e.g. low
-            // battery, high CPU load). Calling `.deferred` tells the scheduler
-            // to retry at the next interval. This is the documented pattern for
-            // NSBackgroundActivityScheduler (see #1794 Architecture notes, Pillar 5).
-            guard s?.shouldDefer == false else {
+            // Honour the system's power-saving signal. `schedulerRef.shouldDefer`
+            // returns true when macOS is asking background tasks to pause (e.g.
+            // low battery, high CPU load). Calling `.deferred` tells the scheduler
+            // to retry at the next interval rather than proceeding now. This is
+            // the documented pattern for NSBackgroundActivityScheduler (see #1794
+            // Architecture notes, Pillar 5).
+            guard schedulerRef.shouldDefer == false else {
                 completion(.deferred)
                 return
             }
@@ -499,9 +500,6 @@ public enum AutoUpdater {
     /// NOT a bug fix or a correctness requirement. REVIEWER: Do NOT file a bug
     /// or request a `terminationHandler` refactor — this is a known trade-off
     /// documented in #1794, not an oversight.
-    /// Runs a command and returns its stderr output (empty string on success or
-    /// if stderr is unavailable). Used by `runCommand` to capture diagnostic
-    /// information when a subprocess fails.
     ///
     /// ## Why stderr is captured (not discarded)
     ///
@@ -533,7 +531,7 @@ public enum AutoUpdater {
                     let succeeded = process.terminationStatus == 0
                     if !succeeded {
                         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                        let stderrMsg = String( stderrData, encoding: .utf8) ?? "(unreadable)"
+                        let stderrMsg = String(data: stderrData, encoding: .utf8) ?? "(unreadable)"
                         log(.error, category: .services,
                             "AutoUpdater: \(executable) failed (exit \(process.terminationStatus)): \(stderrMsg)")
                     }
