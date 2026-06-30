@@ -62,7 +62,7 @@ extension AutoUpdater {
                     let succeeded = process.terminationStatus == 0
                     if !succeeded {
                         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                        let stderrMsg = String( stderrData, encoding: .utf8) ?? "(unreadable)"
+                        let stderrMsg = String(data: stderrData, encoding: .utf8) ?? "(unreadable)"
                         log(
                             "AutoUpdater: \(executable) failed (exit \(process.terminationStatus)): \(stderrMsg)",
                             category: .services
