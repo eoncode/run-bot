@@ -125,6 +125,22 @@ public enum AutoUpdater {
         guard !isDownloading else { return }
         isDownloading = true
 
+        // ── 3c. Clear stale rehydrated zip ──────────────────────────────────
+        // If performStartupSequence found a cached zip for an older version V1
+        // and called rehydrateCachedUpdate, state.updateZipURL is already set
+        // to the V1 path. Without clearing it here, the UI would immediately
+        // render "Install & Relaunch" (updateZipURL non-nil) while the banner
+        // names the newer V2 being downloaded — and tapping the button would
+        // install V1 instead.
+        //
+        // Clearing both properties forces the UI into its ProgressView
+        // (spinner) state while V2 downloads, exactly as intended.
+        //
+        // handle() is @MainActor so direct mutation is safe here — no
+        // MainActor.run wrapper needed (Pillar 2).
+        state.updateZipURL = nil
+        state.cachedUpdateVersion = nil
+
         let downloadURL = asset.browserDownloadURL
         let checksumURL = release.checksumURL
         let tagName     = release.tagName
