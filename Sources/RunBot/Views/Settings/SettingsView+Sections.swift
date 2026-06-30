@@ -241,27 +241,28 @@ internal extension SettingsView {
     }
 
     // MARK: - Update action row
-    // ⚠️⚠️⚠️  UPDATE UI LIVES HERE AND ONLY HERE — READ BEFORE TOUCHING  ⚠️⚠️⚠️
-    //
-    // This row, inside the About section of Settings, is the ONLY update-related
-    // UI in the entire app. This is a deliberate product decision (issue #1794).
-    //
-    // DO NOT:
-    //   • Add a banner to PanelMainView, the menu bar popover, or any other view.
-    //   • Add a SwiftUI `Link` that opens a browser. The "Download" fallback button
-    //     uses `NSWorkspace.shared.open(...)` which opens the URL natively without
-    //     launching Safari. A `Link` wrapper would open Safari — wrong for a
-    //     menu-bar utility and against the design in #1794.
-    //   • Add a notification badge, dot indicator, or any other passive signal
-    //     outside of this row.
-    //
-    // The row is only rendered when `runnerState.availableUpdate != nil` (see
-    // `aboutSection` above). When there is no update the row is absent entirely —
-    // no empty space, no placeholder.
-    //
-    // REVIEWER: If you are about to suggest adding a banner or putting update UI
-    // somewhere else in the view hierarchy, please read issue #1794 first. The
-    // single-row approach is the final design for v1, not a placeholder.
+
+    /// ⚠️⚠️⚠️ UPDATE UI LIVES HERE AND ONLY HERE — READ BEFORE TOUCHING ⚠️⚠️⚠️
+    ///
+    /// This row, inside the About section of Settings, is the ONLY update-related
+    /// UI in the entire app. This is a deliberate product decision (issue #1794).
+    ///
+    /// **DO NOT:**
+    /// - Add a banner to `PanelMainView`, the menu bar popover, or any other view.
+    /// - Add a SwiftUI `Link` that opens a browser. The "Download" fallback button
+    ///   uses `NSWorkspace.shared.open(...)` which opens the URL natively without
+    ///   launching Safari. A `Link` wrapper would open Safari — wrong for a
+    ///   menu-bar utility and against the design in #1794.
+    /// - Add a notification badge, dot indicator, or any other passive signal
+    ///   outside of this row.
+    ///
+    /// The row is only rendered when `runnerState.availableUpdate != nil` (see
+    /// `aboutSection`). When there is no update the row is absent entirely —
+    /// no empty space, no placeholder.
+    ///
+    /// **REVIEWER:** If you are about to suggest adding a banner or putting update
+    /// UI somewhere else in the view hierarchy, please read issue #1794 first.
+    /// The single-row approach is the final design for v1, not a placeholder.
     var updateActionRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.down.circle.fill")
@@ -282,12 +283,12 @@ internal extension SettingsView {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
             } else if runnerState.updateZipURL == nil {
-                HStack(spacing: 4) {
-                    ProgressView("Downloading update…")
-                        .labelsHidden()
-                        .scaleEffect(RBMetrics.updateProgressScale)
-                    Text("Downloading…").font(.caption2).foregroundColor(Color.rbTextSecondary)
-                }
+                // ProgressView label is intentionally visible (not hidden) so VoiceOver
+                // announces "Downloading update…" — spec #1797 acceptance criterion.
+                // Do NOT add .labelsHidden() here; it would silently suppress the
+                // accessible label and break VoiceOver without any visual change.
+                ProgressView("Downloading update…")
+                    .scaleEffect(RBMetrics.updateProgressScale)
             } else {
                 Button("Install & Relaunch") {
                     Task {

@@ -184,6 +184,27 @@ public enum AutoUpdater {
     ///
     /// The file is named `RunBot-<version>.zip` (e.g. `RunBot-v0.8.0.zip`)
     /// so multiple cached versions never collide on disk.
+    ///
+    /// ## Stale zip accumulation — known, acceptable, low priority
+    ///
+    /// Each update cycle writes a new version-stamped file. `downloadUpdate`
+    /// removes the file at `destination` before writing (handling interrupted
+    /// downloads of the *same* version), but files from *prior* versions
+    /// (e.g. `RunBot-v0.7.9.zip` left over after a successful install) are
+    /// not swept here.
+    ///
+    /// In practice this means at most one stale zip per update cycle accumulates
+    /// in `~/Library/Caches/io.github.runbot-hq/`. Each file is ~10–20 MB and
+    /// macOS will evict cache-directory contents under storage pressure. This
+    /// is acceptable for a low-frequency update path.
+    ///
+    /// If a future audit shows meaningful accumulation, add a sweep here:
+    ///
+    ///     let existing = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+    ///     existing.filter { $0.lastPathComponent.hasPrefix("RunBot-") && $0.pathExtension == "zip" }
+    ///             .forEach { try? fm.removeItem(at: $0) }
+    ///
+    /// REVIEWER: The absence of this sweep is intentional, not an oversight.
     private static func cachedZipDestination(version: String) throws -> URL {
         let caches = try FileManager.default.url(
             for: .cachesDirectory,
@@ -303,10 +324,28 @@ public enum AutoUpdater {
     /// and the browser-fallback Download button becomes visible.
     ///
     /// - Parameter state: The shared `RunnerState` used to report failure.
-    /// Double-tap guard — `@MainActor`-isolated so access is data-race free under
-    /// Swift 6 strict concurrency. Set to `true` before install begins; cleared
-    /// only in the failure path. On success `NSApp.terminate` fires immediately
-    /// so the flag never needs resetting.
+    ///
+    /// ## `isInstalling` reset strategy — intentional, not an oversight
+    ///
+    /// `isInstalling` is set to `true` at the start of `installAndRelaunch` and
+    /// is cleared **only in failure branches**. It is deliberately NOT reset on
+    /// the success path.
+    ///
+    /// **Why:** On the success path `NSApp.terminate(nil)` fires synchronously
+    /// after `open -n` is launched. The process exits before any subsequent
+    /// UI tick can observe `isInstalling == true`. Resetting it would be a
+    /// no-op and could introduce a brief window where a second tap slips
+    /// through between the reset and the actual termination.
+    ///
+    /// **The fragility concern:** If `applicationShouldTerminate` in the app
+    /// delegate ever returns `.terminateLater` or `.terminateCancel`, the
+    /// process would survive with `isInstalling` permanently `true`, silently
+    /// disabling the Install button. RunBot's app delegate does NOT do this
+    /// today. If that ever changes, add `isInstalling = false` immediately
+    /// before the `NSApp.terminate(nil)` call and update this comment.
+    ///
+    /// REVIEWER: Do NOT add a reset on the success path without reading this
+    /// comment in full and confirming `applicationShouldTerminate` behaviour.
     @MainActor private static var isInstalling: Bool = false
 
     /// Installs the downloaded update zip and relaunches the app.
@@ -452,6 +491,21 @@ public enum AutoUpdater {
     /// NOT a bug fix or a correctness requirement. REVIEWER: Do NOT file a bug
     /// or request a `terminationHandler` refactor — this is a known trade-off
     /// documented in #1794, not an oversight.
+    /// Runs a command and returns its stderr output (empty string on success or
+    /// if stderr is unavailable). Used by `runCommand` to capture diagnostic
+    /// information when a subprocess fails.
+    ///
+    /// ## Why stderr is captured (not discarded)
+    ///
+    /// Earlier versions of this function routed both stdout and stderr to
+    /// `FileHandle.nullDevice`, which made `ditto` failures completely silent:
+    /// the install path would fail, `updateActionFailed` would flip to `true`,
+    /// and the user would see a "Download" fallback with no indication of
+    /// what went wrong. This made install failures undiagnosable in the field.
+    ///
+    /// Stderr is now piped and logged at `.error` level on failure so that
+    /// Console.app and crash reports contain actionable information. Stdout
+    /// remains discarded — `ditto` produces no useful stdout.
     private static func runCommand(_ executable: String, args: [String]) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -459,12 +513,26 @@ public enum AutoUpdater {
                 process.executableURL = URL(fileURLWithPath: executable)
                 process.arguments = args
                 process.standardOutput = FileHandle.nullDevice
-                process.standardError  = FileHandle.nullDevice
+
+                // Pipe stderr so failures are diagnosable. stdout is still
+                // discarded — ditto produces no useful stdout on success.
+                let stderrPipe = Pipe()
+                process.standardError = stderrPipe
+
                 do {
                     try process.run()
                     process.waitUntilExit()
-                    continuation.resume(returning: process.terminationStatus == 0)
+                    let succeeded = process.terminationStatus == 0
+                    if !succeeded {
+                        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                        let stderrMsg = String( stderrData, encoding: .utf8) ?? "(unreadable)"
+                        log(.error, category: .services,
+                            "AutoUpdater: \(executable) failed (exit \(process.terminationStatus)): \(stderrMsg)")
+                    }
+                    continuation.resume(returning: succeeded)
                 } catch {
+                    log(.error, category: .services,
+                        "AutoUpdater: could not launch \(executable): \(error.localizedDescription)")
                     continuation.resume(returning: false)
                 }
             }

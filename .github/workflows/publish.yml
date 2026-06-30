@@ -53,6 +53,10 @@ permissions:
 
 jobs:
   publish:
+    # macos-26 is our self-hosted runner (macOS 26 / Tahoe beta machine).
+    # This is NOT a GitHub-hosted runner label — github-hosted macOS tops out
+    # at macos-15 as of mid-2026. Do not change this to a github-hosted label
+    # without provisioning the build environment separately.
     runs-on: macos-26
 
     steps:
