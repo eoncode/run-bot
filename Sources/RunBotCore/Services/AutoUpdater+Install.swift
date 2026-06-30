@@ -1,5 +1,6 @@
 // AutoUpdater+Install.swift
 // RunBotCore
+
 import AppKit
 import Foundation
 
@@ -88,9 +89,9 @@ extension AutoUpdater {
         }
 
         let fm = FileManager.default
-        let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath)  // e.g. …/RunBot.app
+        let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath) // e.g. …/RunBot.app
 
-        // ── 1. Unzip to a temp directory ────────────────────────────────────────────
+        // ── 1. Unzip to a temp directory ────────────────────────────────────────
         let tmpDir = fm.temporaryDirectory
             .appendingPathComponent("runbot-update-\(UUID().uuidString)", isDirectory: true)
         do {
@@ -102,8 +103,7 @@ extension AutoUpdater {
         }
 
         // ditto preserves symlinks and resource forks; superior to `unzip` for .app bundles.
-        let dittoResult = await runCommand("/usr/bin/ditto",
-                                           args: ["-xk", zipURL.path, tmpDir.path])
+        let dittoResult = await runCommand("/usr/bin/ditto", args: ["-xk", zipURL.path, tmpDir.path])
         guard dittoResult else {
             isInstalling = false
             state.updateActionFailed = true
@@ -111,7 +111,7 @@ extension AutoUpdater {
             return
         }
 
-        // ── 2. Find RunBot.app inside the unzipped contents ───────────────────────
+        // ── 2. Find RunBot.app inside the unzipped contents ─────────────────────
         // `contentsOfDirectory` is intentionally shallow (non-recursive).
         // The verify step in publish.yml anchors the grep pattern so that
         // RunBot.app must sit at the archive root — a nested path such as
@@ -130,7 +130,7 @@ extension AutoUpdater {
             return
         }
 
-        // ── 3. Replace the running bundle — atomic swap via replaceItem ────
+        // ── 3. Replace the running bundle — atomic swap via replaceItem ──────────
         // `FileManager.replaceItem` moves the old bundle aside as a named
         // backup, moves the new bundle into place, then deletes the backup —
         // all at the filesystem level. If the process is killed mid-swap,
@@ -152,22 +152,37 @@ extension AutoUpdater {
         // is authoritative). Falls back to `bundleURL` if nil (should not occur
         // in normal operation, but belt-and-braces).
         //
-        // Note: `replaceItem` takes `AutoreleasingUnsafeMutablePointer<NSURL?>?`,
+        // Note: `replaceItem` takes `AutoreleasingUnsafeMutablePointer?`,
         // so the out-variable must be declared as `NSURL?`, not `URL?`.
         // The value is bridged to `URL` at the use site via `as URL?`.
         //
         // Preconditions that are always true here:
-        //   • `bundleURL` (dst) exists — it is `Bundle.main.bundlePath`.
-        //   • `appInZip` (src) exists — step 2 just located it in `tmpDir`.
-        //   • `appInZip` is a real extracted directory, not a path in a zip.
-        //   • `tmpDir` is on the same volume as the system temp dir; the
-        //     destination (/Applications or ~/Applications) may be on the
-        //     same APFS volume, making the rename a metadata-only operation.
+        // • `bundleURL` (dst) exists — it is `Bundle.main.bundlePath`.
+        // • `appInZip` (src) exists — step 2 just located it in `tmpDir`.
+        // • `appInZip` is a real extracted directory, not a path in a zip.
+        // • `tmpDir` is on the same volume as the system temp dir; the
+        //   destination (/Applications or ~/Applications) may be on the
+        //   same APFS volume, making the rename a metadata-only operation.
         //
         // The backup item (`RunBot.app.bak`) is written to the same directory
         // as `bundleURL` during the swap and removed on success. On an
         // interrupted swap, macOS removes it on the next volume mount.
         // We do not need to manage it manually.
+        //
+        // ⚠️ Permission caveat — /Applications vs ~/Applications:
+        // RunBot is designed to be installed in `~/Applications`, where the
+        // current user has write access and `replaceItem` succeeds without
+        // any authorisation prompt. If a user installs RunBot into the
+        // system-level `/Applications` directory, this process will NOT have
+        // write permission there, and `replaceItem` will throw. The catch
+        // below sets `updateActionFailed = true`, which surfaces the browser
+        // Download fallback — but with no explanation to the user about why
+        // Install & Relaunch silently failed. Future maintainers: if users
+        // report the Install button doing nothing and falling back to Download
+        // on a machine where RunBot lives in /Applications, this is the reason.
+        // A fix would be to inspect the error, detect a permission failure
+        // (e.g. EPERM / EACCES), and surface a dedicated message pointing
+        // the user to ~/Applications. Tracked as a known limitation (#1792).
         //
         // Closes #1796.
         var resultingNSURL: NSURL?
@@ -186,12 +201,12 @@ extension AutoUpdater {
             return
         }
 
-        // ── 4. Clear cached defaults so next launch starts clean ───────────────
+        // ── 4. Clear cached defaults so next launch starts clean ─────────────────
         clearCachedDefaults()
         try? fm.removeItem(at: tmpDir)
         try? fm.removeItem(at: zipURL)
 
-        // ── 5. Relaunch + terminate ───────────────────────────────────────────────
+        // ── 5. Relaunch + terminate ──────────────────────────────────────────────
         // `open -n` forces a new instance even if one is already running.
         // We do NOT await — NSApp.terminate must fire immediately after.
         //
@@ -253,7 +268,6 @@ extension AutoUpdater {
         // above and closes the stale-URL half of the terminateCancel risk
         // documented in the `isInstalling` comment.
         state.updateZipURL = nil
-
-        NSApp.terminate(nil)  // ← intentional AppKit shutdown — NOT exit(0), read comment above
+        NSApp.terminate(nil) // ← intentional AppKit shutdown — NOT exit(0), read comment above
     }
 }
