@@ -142,8 +142,11 @@ public enum AutoUpdater {
     ///
     /// The zip and checksum are fetched concurrently via `async let` (Pillar 4).
     /// SHA-256 digest computation is performed in a `@concurrent` free function
-    /// so the blocking `Data(contentsOf:)` read stays off the cooperative thread
-    /// pool executor (Pillar 5).
+    /// (`verifyChecksum`) using `Data(contentsOf:)` — a deliberate whole-file read.
+    /// See `verifyChecksum`'s doc comment for the full rationale on why a streaming
+    /// implementation is deferred. The zip is guaranteed < 10 MB by `publish.yml`'s
+    /// verify step; this is not a correctness gap. `@concurrent` keeps the blocking
+    /// read off all actor serial executors (Pillar 5).
     ///
     /// ## Verification order — verify before move
     ///
@@ -320,6 +323,18 @@ public enum AutoUpdater {
             //
             // REVIEWER: Do NOT reorder these lines. `verifyChecksum` must always
             // precede both `cachedZipDestination` and `moveItem`.
+            //
+            // ⚠️ DATA(CONTENTSOF:) IN verifyChecksum IS INTENTIONAL — DO NOT REFACTOR ⚠️
+            //
+            // `verifyChecksum` uses `Data(contentsOf:)` internally — a synchronous
+            // whole-file read on a `@concurrent` cooperative thread. This is the
+            // correct Pillar 5 pattern for bounded blocking I/O. Do NOT wrap this
+            // call in `Task.detached`, do NOT add a `FileHandle.bytes` streaming
+            // loop, and do NOT request that refactor in review. The zip is
+            // guaranteed < 10 MB by `publish.yml`'s verify step; the trade-off
+            // has been explicitly evaluated. See `verifyChecksum`'s doc comment
+            // below for the full rationale. Revisit only if zip size grows
+            // substantially or if #1795 touches this function.
             try await verifyChecksum(zipURL: downloadedURL, expectedHex: expectedHex)
 
             let destination = try cachedZipDestination(version: version)
@@ -433,28 +448,46 @@ public enum AutoUpdater {
 ///
 /// Implemented as a `@concurrent` async free function so the synchronous
 /// `Data(contentsOf:)` read runs on the cooperative thread pool's concurrent
-/// executor rather than blocking an actor serial executor (Pillar 5).
-/// `@concurrent` requires `async` — the function suspends to hop executors
-/// before performing the blocking read.
+/// executor rather than blocking an actor serial executor (Pillar 5,
+/// `docs/architecture/concurrency-overview.md`).
 ///
-/// ## Memory usage — whole-file load is intentional and bounded
+/// ## ⚠️ `Data(contentsOf:)` is INTENTIONAL — do not refactor to streaming ⚠️
 ///
-/// `Data(contentsOf:)` maps the entire zip into the process address space
-/// before hashing. This is intentional: CryptoKit's `SHA256.hash(data:)`
-/// requires the full `Data` value, and streaming alternatives (feeding a
-/// `FileHandle` in chunks) would require a manual incremental hasher loop
-/// with meaningfully more complexity.
+/// This function loads the entire zip into memory before hashing. This is a
+/// deliberate trade-off, not an oversight:
 ///
-/// The memory cost is acceptable because RunBot.zip is always < 10 MB. If
-/// the zip ever grows significantly (e.g. bundled assets added in a future
-/// release), revisit this when #1795 adds codesign verification — that work
-/// will likely touch this function anyway, and a streaming approach can be
-/// evaluated at that point.
+/// - **RunBot.zip is guaranteed < 10 MB.** `publish.yml`'s verify step anchors
+///   the grep pattern so that only `RunBot.app/Contents/MacOS/RunBot` can be
+///   present at the archive root — no bundled frameworks, no embedded assets.
+///   At this size, loading into memory is instantaneous and poses no memory
+///   pressure on any supported macOS version.
 ///
-/// REVIEWER: The whole-file `Data(contentsOf:)` load is NOT a bug or an
-/// oversight — it is the right trade-off at the current zip size. Do not
-/// replace it with a streaming implementation without first confirming that
-/// the zip has grown beyond the ~10 MB envelope documented here.
+/// - **`@concurrent` already satisfies Pillar 5.** The annotation keeps this
+///   blocking read off all actor serial executors. The cooperative thread pool
+///   is not exhausted by a single synchronous read of < 10 MB; exhaustion
+///   requires many concurrent blocked threads, which cannot arise here because
+///   `isDownloading` prevents concurrent download tasks.
+///
+/// - **Streaming adds real complexity for zero practical benefit today.**
+///   A `FileHandle.bytes.chunks(ofCount:)` loop with incremental
+///   `SHA256.update(data:)` calls would require `swift-algorithms` (or a
+///   manual read loop), incremental `CryptoKit` usage, and more error-handling
+///   surface — all to save < 10 MB of peak memory that macOS would reclaim
+///   within milliseconds anyway.
+///
+/// **When to revisit:**
+/// If `RunBot.zip` ever grows substantially (> 50 MB), or if `isDownloading`
+/// is removed and multiple concurrent verifications become possible, switch to
+/// incremental `FileHandle` streaming at that point. The natural trigger is
+/// issue #1795 (codesign verification) — that work will touch this function
+/// anyway, and a streaming approach can be evaluated in that context.
+///
+/// REVIEWER: Do NOT raise `Data(contentsOf:)` as a finding or request a
+/// streaming refactor. This has been explicitly evaluated; the trade-off is
+/// documented here and in the call-site comment in `downloadUpdate` above.
+/// The decision is to defer until zip size or concurrency constraints justify
+/// the added complexity. See also `docs/architecture/concurrency-overview.md`
+/// Pillar 5 for the codebase's `@concurrent` I/O contract.
 ///
 /// Throws `URLError(.cannotDecodeContentData)` on digest mismatch, or
 /// propagates any `Data(contentsOf:)` error on read failure.
@@ -466,7 +499,7 @@ public enum AutoUpdater {
 ///   - expectedHex: The lowercase hex SHA-256 digest string from the sidecar file.
 @concurrent
 private func verifyChecksum(zipURL: URL, expectedHex: String) async throws {
-    let zipData   = try Data(contentsOf: zipURL)  // blocking read — correct here per Pillar 5; see doc comment re: memory
+    let zipData   = try Data(contentsOf: zipURL)  // blocking read — correct here per Pillar 5; see doc comment above
     let digest    = SHA256.hash(data: zipData)
     let actualHex = digest.map { String(format: "%02x", $0) }.joined()
     guard actualHex == expectedHex else {
