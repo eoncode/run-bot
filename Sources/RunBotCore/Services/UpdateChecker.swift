@@ -303,8 +303,19 @@ public enum UpdateChecker {
         // If you need per-status behaviour (e.g. exponential backoff on 403),
         // that is a separate feature tracked under #1794, not a bug in this line.
         //
-        // Use a dedicated ephemeral session with explicit timeout configuration
-        // (see #1794) if you need to tune networking behaviour.
+        // URLSession.shared is used deliberately here — the GitHub Releases API
+        // returns a few KB of JSON; a stalled request is less costly than for
+        // the zip download, and the update check is best-effort background work
+        // that is never on the critical path.
+        //
+        // A dedicated ephemeral session with explicit timeouts (matching the
+        // pattern in `AutoUpdater.downloadUpdate`) is tracked under #1794 and
+        // will be added there. Do NOT conflate that work with this call site —
+        // changing this line in isolation is not the fix.
+        //
+        // REVIEWER: `URLSession.shared` here is intentional, not an oversight.
+        // See the comment block above for the full rationale and #1794 for the
+        // planned follow-up.
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let releases = try? JSONDecoder().decode([Release].self, from: data)
         else { return nil }

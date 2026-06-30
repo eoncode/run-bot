@@ -255,9 +255,19 @@ public enum AutoUpdater {
 
             // ── Verify before move ───────────────────────────────────────────
             // Checksum is verified against `tempURL` (the URLSession temp file)
-            // BEFORE moving it to `destination`. If verification throws, the
-            // unverified file is deleted from temp and never reaches the cache.
-            // See the `downloadUpdate` doc comment for the full rationale.
+            // BEFORE `destination` is computed or `moveItem` is called.
+            //
+            // This ordering is intentional and load-bearing:
+            //   • If `verifyChecksum` throws, the `catch` block fires and the
+            //     unverified file is cleaned up from temp. `destination` is
+            //     never created, so the cache directory remains clean.
+            //   • If we moved first and then verified, a checksum failure would
+            //     leave a corrupt/tampered file at `destination`. On the next
+            //     launch `performStartupSequence` would find the file, skip the
+            //     download, and silently offer a bad update for install.
+            //
+            // REVIEWER: Do NOT reorder these lines. `verifyChecksum` must always
+            // precede both `cachedZipDestination` and `moveItem`.
             try await verifyChecksum(zipURL: tempURL, expectedHex: expectedHex)
 
             let destination = try cachedZipDestination(version: version)
@@ -278,11 +288,29 @@ public enum AutoUpdater {
                 isDownloading = false
             }
         } catch {
-            // Clean up the temp file if it still exists (e.g. checksum failure
-            // before moveItem, or a mid-download network error). The system will
-            // also evict it eventually, but explicit deletion is faster and
-            // avoids accumulation in the temp directory on repeated failures.
-            // This is a best-effort cleanup — errors are intentionally swallowed.
+            // Best-effort temp file cleanup. Three failure scenarios and what
+            // `tempURL` looks like in each:
+            //
+            //   1. Network / HTTP error — `session.download` threw before writing
+            //      anything, or wrote a partial file. `tempURL` may or may not
+            //      exist depending on how far the download progressed.
+            //
+            //   2. Checksum failure — `verifyChecksum` threw after the zip was
+            //      fully written to `tempURL`. `tempURL` exists and holds the
+            //      bad file. It must be removed so it is not left in the system
+            //      temp directory.
+            //
+            //   3. `moveItem` failure — `tempURL` still exists (the move failed);
+            //      `destination` was never written.
+            //
+            // In all three cases the right action is the same: attempt to delete
+            // `tempURL`. If it is already gone (case 1, partial download evicted
+            // by the OS) the `try?` swallows the ENOENT silently.
+            //
+            // NOTE: This cleanup is NOT the safety net for the verify-before-move
+            // ordering. The ordering guarantee is that `verifyChecksum` runs
+            // before `moveItem`, so `destination` is never written with an
+            // unverified file. This catch block only handles temp file hygiene.
             await MainActor.run {
                 isDownloading = false
                 state.updateActionFailed = true
