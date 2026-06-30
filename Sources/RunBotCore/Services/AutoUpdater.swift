@@ -611,6 +611,16 @@ public enum AutoUpdater {
             return
         }
 
+        // Clear `updateZipURL` before terminating so that if
+        // `applicationShouldTerminate` returns `.terminateCancel` and the
+        // process survives, the next "Install & Relaunch" tap does not find a
+        // non-nil URL pointing to an already-deleted file, enter `ditto` with
+        // a missing source path, fail silently, and permanently lock the UI.
+        // This mirrors the `updateZipURL = nil` in the `open -n` failure branch
+        // above and closes the stale-URL half of the terminateCancel risk
+        // documented in the `isInstalling` comment.
+        state.updateZipURL = nil
+
         NSApp.terminate(nil)  // ← intentional AppKit shutdown — NOT exit(0), read comment above
     }
 }

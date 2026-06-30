@@ -228,14 +228,20 @@ public enum UpdateChecker {
     /// to an older branch published after a newer release would silently become
     /// the "latest" candidate. To eliminate the assumption, the full decoded list
     /// is sorted by semver before filtering — the list is already in memory
-    /// (perPage: 20) so the overhead is negligible.
+    /// (perPage: 100) so the overhead is negligible.
     ///
     /// `betaChannel=true` intentionally accepts both stable and pre-release releases.
     /// A stable release always beats a beta of the same base (0.7.1 > 0.7.1-beta.N),
     /// so a beta-channel user is correctly offered 0.7.1 when it ships, even though
     /// stable builds are included in the candidate set.
+    ///
+    /// Per-page is set to 100 (the GitHub API maximum) so that all releases fit in
+    /// a single response. With per_page=20, once the repo accumulates >20 releases
+    /// the most recent stable could be pushed off page 1, silently returning no
+    /// update to betaChannel=false users. The JSON payload is lightweight (<10 KB
+    /// for 100 releases) so the extra bytes are negligible.
     private static func latestMatchingRelease(betaChannel: Bool) async -> Release? {
-        guard let request = buildRequest(perPage: 20) else { return nil }
+        guard let request = buildRequest(perPage: 100) else { return nil }
         // ⚠️ `URLResponse` IS INTENTIONALLY DISCARDED — THE 403 SILENT NO-OP IS BY DESIGN ⚠️
         //
         // This is NOT a missing error-handling branch. Here is exactly what happens
@@ -262,156 +268,4 @@ public enum UpdateChecker {
         // If you need per-status behaviour (e.g. exponential backoff on 403),
         // that is a separate feature tracked under #1794, not a bug in this line.
         //
-        // Use a dedicated ephemeral session with explicit timeouts rather than
-        // URLSession.shared (which has no timeout configured). This check runs
-        // on the startup path inside performStartupSequence — a stalled connection
-        // (mobile hotspot, corporate proxy, flaky Wi-Fi) would block the await
-        // indefinitely, delaying the background scheduler registration that follows.
-        //
-        // timeoutIntervalForRequest:  15 s — max wait for the first byte; covers
-        //   DNS hangs, TLS stalls, and unresponsive CDN edge nodes. 15 s is
-        //   generous for a lightweight JSON response (< 10 KB).
-        // timeoutIntervalForResource: 30 s — max total fetch time. The releases
-        //   JSON is small; 30 s guarantees eventual failure rather than an
-        //   eternal hang, even on a very slow connection.
-        //
-        // This mirrors the session configuration in downloadUpdate, which documents
-        // the same rationale for the binary download path.
-        let sessionConfig = URLSessionConfiguration.ephemeral
-        sessionConfig.timeoutIntervalForRequest  = 15
-        sessionConfig.timeoutIntervalForResource = 30
-        let session = URLSession(configuration: sessionConfig)
-        guard let (data, _) = try? await session.data(for: request) else { return nil }
-        guard let releases = try? JSONDecoder().decode([Release].self, from: data) else { return nil }
-        // Sort by semver descending so .first(where:) always picks the highest version,
-        // regardless of the order GitHub published the releases.
-        //
-        // isNewer is a strict weak ordering for this project's tag universe:
-        //   - irreflexive: isNewer(a, than: a) == false ✓
-        //   - asymmetric and transitive for all stable and -beta.N tags ✓
-        // Tags with unrecognised pre-release suffixes (e.g. -rc.1) have a nil
-        // betaIndex and are treated as equal to each other; their relative order
-        // is then undefined. This is intentional — only stable and -beta.N tags
-        // are produced by publish.yml. If new suffix formats are introduced, extend
-        // ParsedVersion.betaIndex before extending the tag scheme.
-        let sorted = releases.sorted {
-            isNewer(
-                $0.tagName.trimmingCharacters(in: .init(charactersIn: "v")),
-                than: $1.tagName.trimmingCharacters(in: .init(charactersIn: "v"))
-            )
-        }
-        // betaChannel=true: accept any release (stable or pre-release).
-        // betaChannel=false: skip pre-releases, take the highest stable one.
-        return sorted.first(where: { betaChannel ? true : !$0.prerelease })
-    }
-
-    /// Checks for an available update.
-    ///
-    /// - Parameter betaChannel: When `true`, considers pre-release builds.
-    ///   When `false`, only stable (non-prerelease) releases are considered.
-    /// - Returns: An `UpdateCheckResult` describing whether an update is
-    ///   available, the app is already up to date, or the check failed.
-    public static func checkForUpdate(betaChannel: Bool) async -> UpdateCheckResult {
-        // Read RBVersionString (not CFBundleShortVersionString) because macOS strips
-        // pre-release suffixes from CFBundleShortVersionString for display purposes.
-        // A user running "0.7.1-beta.1" would appear as "0.7.1" via the standard key,
-        // causing the beta-to-beta comparison to silently return false and suppress
-        // the update prompt. RBVersionString is patched by publish.yml with the full
-        // version string (e.g. "0.7.1-beta.2") via PlistBuddy at build time.
-        // RBVersionString is set to the development default ("0.7.0") in Info.plist and
-        // patched by publish.yml at CI build time with the full semver including any
-        // pre-release suffix (e.g. "0.7.1-beta.2"). In a local dev build it always
-        // reads the static development default, which is correct: a local build will see
-        // any newer stable or beta release as an available update, but it will never be
-        // erroneously suppressed because the key is always present.
-        //
-        // There is intentionally no fallback to CFBundleShortVersionString: macOS strips
-        // pre-release suffixes from that key, so a device running "0.7.1-beta.1" would
-        // appear as "0.7.1" and isNewer("0.7.1-beta.2", than: "0.7.1") == false, silently
-        // suppressing the beta-to-beta update. RBVersionString is the source of truth.
-        //
-        // No fallback to CFBundleShortVersionString — intentional.
-        // See the comment block above for the full rationale. A build without
-        // RBVersionString is a dev build; silently no-oping is correct behaviour.
-        // Do NOT add a fallback here without re-reading the comment above and
-        // confirming the pre-release suffix stripping behaviour still applies.
-        guard let current = Bundle.main
-            .infoDictionary?["RBVersionString"] as? String else { return .failed(UpdateCheckError.missingVersionKey) }
-        guard let latest = await latestMatchingRelease(betaChannel: betaChannel) else { return .failed(UpdateCheckError.noReleasesFound) }
-
-        let latestVersion = latest.tagName.trimmingCharacters(in: .init(charactersIn: "v"))
-        let currentVersion = current
-            .trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: .init(charactersIn: "v"))
-
-        // NOTE: Component-wise semver comparison.
-        // Lexicographic string comparison fails once any component reaches
-        // two digits (e.g. "1.10.0" < "1.9.0" lexicographically).
-        // The rollover-at-10 rule prevents this in practice, but a proper
-        // numeric compare is used here for safety.
-        // Beta tags ("0.7.1-beta.2") are handled by splitting on "-" first:
-        // the stable version "0.7.1" is always considered newer than "0.7.1-beta.N".
-        return isNewer(latestVersion, than: currentVersion)
-            ? .updateAvailable(release: AvailableRelease(
-                tagName: latest.tagName,
-                assets: latest.assets,
-                // checksumURL: nil in v1 — SHA-256 sidecar verification is
-                // deferred to #1795. When #1795 lands, derive this from
-                // `latest.assets` by locating the asset named
-                // "RunBot.zip.sha256" (or equivalent sidecar filename agreed
-                // in #1795) and passing its `browserDownloadURL`.
-                checksumURL: nil
-            ))
-            : .upToDate
-    }
-
-    /// Returns `true` if `candidate` is a strictly newer semver than `current`.
-    ///
-    /// Handles pre-release suffixes: `"0.7.1"` is newer than `"0.7.1-beta.2"`
-    /// because a stable release supersedes any beta of the same base version.
-    ///
-    /// ## Strict weak ordering — known tag formats only
-    ///
-    /// This function is used as a `sorted {}` comparator in
-    /// `latestMatchingRelease`. It satisfies strict weak ordering
-    /// (irreflexive, asymmetric, transitive) for stable and `-beta.N` tags —
-    /// the only formats produced by `publish.yml`.
-    ///
-    /// Tags with unrecognised pre-release suffixes (e.g. `-rc.1`) have a nil
-    /// `betaIndex` and compare equal to each other; their relative order via
-    /// `sorted {}` is then implementation-defined. This is acceptable because
-    /// `publish.yml` never produces such tags. If new suffix formats are
-    /// introduced, extend `ParsedVersion.betaIndex` before extending the tag
-    /// scheme.
-    ///
-    /// REVIEWER: Do NOT flag this as a sort-comparator correctness issue.
-    /// The ordering guarantee is scoped to the tag universe that `publish.yml`
-    /// produces. See the `latestMatchingRelease` call site for context.
-    internal static func isNewer(_ candidate: String, than current: String) -> Bool {
-        let candidateParsed = ParsedVersion(candidate)
-        let runningParsed = ParsedVersion(current)
-
-        if candidateParsed.major != runningParsed.major { return candidateParsed.major > runningParsed.major }
-        if candidateParsed.minor != runningParsed.minor { return candidateParsed.minor > runningParsed.minor }
-        if candidateParsed.patch != runningParsed.patch { return candidateParsed.patch > runningParsed.patch }
-        // Same base version: stable beats a beta of the same base (e.g. v0.7.1 > v0.7.0-beta.2
-        // is handled by the PATCH check above; v0.7.0 > v0.7.0-beta.N is handled here).
-        // This means a user already on v0.7.0 stable will never be offered v0.7.0-beta.N —
-        // that is intentional: betas are delivered to users already running a beta build,
-        // not to users on the current stable. See publish.yml for the full versioning rationale.
-        //
-        // NOTE: `!candidateParsed.isPrerelease` is boolean negation on a Bool property,
-        // NOT optional force-unwrapping. DeepSource has flagged this line as "force
-        // unwrap should be avoided" — that is a false positive. There is no Optional
-        // in this expression. Do NOT add a guard/if-let here to "fix" it.
-        if candidateParsed.isPrerelease != runningParsed.isPrerelease { return !candidateParsed.isPrerelease }
-        // Both are betas of the same base: compare beta.N index so that
-        // beta.2 is correctly seen as newer than beta.1. Without this,
-        // two betas with identical major/minor/patch return false and
-        // users on beta.1 are never offered the beta.2 update.
-        if let ci = candidateParsed.betaIndex, let ri = runningParsed.betaIndex {
-            return ci > ri
-        }
-        return false
-    }
-}
+        // Use a dedicated ephemeral session with exp
