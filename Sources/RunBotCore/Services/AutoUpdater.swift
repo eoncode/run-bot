@@ -200,6 +200,14 @@ public enum AutoUpdater {
             sessionConfig.timeoutIntervalForRequest  = 30
             sessionConfig.timeoutIntervalForResource = 300
             let session = URLSession(configuration: sessionConfig)
+            // Invalidate the session when this scope exits — on both the success
+            // path and all throw paths — so its TCP connection pool and internal
+            // delegate queue are released promptly. Without this, each call to
+            // downloadUpdate() leaks one URLSession for the lifetime of the process.
+            // `finishTasksAndInvalidate` (not `invalidateAndCancel`) is used because
+            // the async let tasks below have already been awaited to completion by
+            // the time defer fires; there are no in-flight tasks left to cancel.
+            defer { session.finishTasksAndInvalidate() }
 
             // Absent sidecar is a hard failure — publish.yml always uploads it.
             guard let checksumURL else {
@@ -268,13 +276,13 @@ public enum AutoUpdater {
             // BEFORE `destination` is computed or `moveItem` is called.
             //
             // This ordering is intentional and load-bearing:
-            //   • If `verifyChecksum` throws, the `catch` block fires and the
-            //     unverified file is cleaned up from temp. `destination` is
-            //     never created, so the cache directory remains clean.
-            //   • If we moved first and then verified, a checksum failure would
-            //     leave a corrupt/tampered file at `destination`. On the next
-            //     launch `performStartupSequence` would find the file, skip the
-            //     download, and silently offer a bad update for install.
+            //   •  If `verifyChecksum` throws, the `catch` block fires and the
+            //      unverified file is cleaned up from temp. `destination` is
+            //      never created, so the cache directory remains clean.
+            //   •  If we moved first and then verified, a checksum failure would
+            //      leave a corrupt/tampered file at `destination`. On the next
+            //      launch `performStartupSequence` would find the file, skip the
+            //      download, and silently offer a bad update for install.
             //
             // REVIEWER: Do NOT reorder these lines. `verifyChecksum` must always
             // precede both `cachedZipDestination` and `moveItem`.
