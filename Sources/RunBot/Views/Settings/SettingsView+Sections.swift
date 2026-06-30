@@ -276,9 +276,10 @@ internal extension SettingsView {
             Spacer()
             if runnerState.updateAssetMissing || runnerState.updateActionFailed {
                 Button("Download") {
-                    NSWorkspace.shared.open(
-                        URL(string: "https://github.com/runbot-hq/run-bot/releases/latest")!
-                    )
+                    guard let url = URL(string: "https://github.com/runbot-hq/run-bot/releases/latest") else {
+                        return
+                    }
+                    NSWorkspace.shared.open(url)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
