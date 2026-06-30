@@ -193,7 +193,15 @@ public enum AutoUpdater {
             // REVIEWER: Do NOT change this to `!(200...299)`. If GitHub's CDN ever
             // returns a non-200 success code, that is the moment to widen the check
             // with a comment explaining which code and why — not before.
-            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            //
+            // `guard let` rather than `if let`: a nil cast (non-HTTP response)
+            // is treated as an explicit failure rather than a silent pass-through
+            // that would move a potentially corrupt temp file into the cache.
+            guard let http = response as? HTTPURLResponse else {
+                try? FileManager.default.removeItem(at: tempURL)
+                throw URLError(.badServerResponse)
+            }
+            if http.statusCode != 200 {
                 try? FileManager.default.removeItem(at: tempURL)
                 throw URLError(.badServerResponse)
             }
