@@ -78,4 +78,16 @@ struct UpdateCheckerTests {
     @Test func olderMajor() {
         #expect(UpdateChecker.isNewer("0.9.9", than: "1.0.0") == false)
     }
+
+    // MARK: - v-prefix handling
+
+    /// GitHub Releases API always returns tag names with a leading 'v'.
+    /// Verifies that ParsedVersion.init strips the prefix before comparing.
+    @Test func vPrefixedCandidate() {
+        #expect(UpdateChecker.isNewer("v0.8.0", than: "0.7.0") == true)
+    }
+
+    @Test func vPrefixedCurrent() {
+        #expect(UpdateChecker.isNewer("0.8.0", than: "v0.7.0") == true)
+    }
 }
