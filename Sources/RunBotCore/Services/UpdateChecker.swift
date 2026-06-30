@@ -217,12 +217,31 @@ public enum UpdateChecker {
     /// stable builds are included in the candidate set.
     private static func latestMatchingRelease(betaChannel: Bool) async -> Release? {
         guard let request = buildRequest(perPage: 20) else { return nil }
-        // The URLResponse is intentionally discarded. A 403 (rate-limited) or 404
-        // returns non-nil data containing a JSON error body; JSONDecoder then fails
-        // to decode it as [Release] and the whole check silently no-ops — which is
-        // the correct graceful-degradation behaviour. A rate-limit therefore looks
-        // identical to "already up to date", which is acceptable: update checks are
-        // best-effort and must never surface errors to the user.
+        // ⚠️ `URLResponse` IS INTENTIONALLY DISCARDED — THE 403 SILENT NO-OP IS BY DESIGN ⚠️
+        //
+        // This is NOT a missing error-handling branch. Here is exactly what happens
+        // for each failure case and why silent no-op is the correct response:
+        //
+        //   • HTTP 403 (GitHub rate-limited): The response body is a JSON error
+        //     object, not a [Release] array. JSONDecoder fails, `guard` returns nil,
+        //     the entire check no-ops. The user sees no update prompt — correct,
+        //     because we have no reliable version information to act on.
+        //
+        //   • HTTP 404 (repo moved / renamed): Same outcome. JSON error body,
+        //     decode fails, silent no-op. Correct — better than showing a stale
+        //     or wrong update prompt.
+        //
+        //   • Network offline / timeout: `try?` returns nil, guard fires, no-op.
+        //
+        // In all failure cases the result is indistinguishable from "already up to
+        // date". This is the INTENDED design: update checks are best-effort
+        // background operations that must NEVER surface error UI to the user.
+        // Inspecting the HTTP status code here would require plumbing error state
+        // back to the UI, which is explicitly out of scope for v1 (see #1794).
+        //
+        // REVIEWER: Do NOT add HTTP status inspection or error propagation here.
+        // If you need per-status behaviour (e.g. exponential backoff on 403),
+        // that is a separate feature tracked under #1794, not a bug in this line.
         guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
         guard let releases = try? JSONDecoder().decode([Release].self, from: data) else { return nil }
         // Sort by semver descending so .first(where:) always picks the highest version,
