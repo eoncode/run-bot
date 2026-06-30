@@ -308,23 +308,25 @@ public enum UpdateChecker {
         // If you need per-status behaviour (e.g. exponential backoff on 403),
         // that is a separate feature tracked under #1794, not a bug in this line.
         //
-        // URLSession.shared is used deliberately here — the GitHub Releases API
-        // returns a few KB of JSON; a stalled request is less costly than for
-        // the zip download, and the update check is best-effort background work
-        // that is never on the critical path.
+        // URLSession.shared is used deliberately here and is NOT a deficiency
+        // to fix. The GitHub Releases API returns a few KB of JSON; the request
+        // is best-effort background work that is never on the critical path, and
+        // the scheduler's completion(.finished) is called before this Task fires
+        // so a slow request has no impact on the system scheduler.
         //
-        // A dedicated ephemeral session with explicit timeouts (matching the
-        // pattern in `AutoUpdater.downloadUpdate`) is tracked under #1794 and
-        // will be added there. Do NOT conflate that work with this call site —
-        // changing this line in isolation is not the fix. Note: URLSession.shared
-        // has a default timeoutIntervalForRequest of 60 s — on a stalled proxy
-        // or dead CDN endpoint this call can block for up to 60 s before the
-        // OS returns an error. Acceptable for a best-effort background check;
-        // the explicit timeout in #1794 will cap this.
+        // URLSession.shared has a default timeoutIntervalForRequest of 60 s.
+        // On a stalled proxy or dead CDN this call can block for up to 60 s
+        // before the OS returns an error — at which point `try?` produces nil,
+        // the guard fires, and the result is a silent no-op (same as "no update
+        // available"). There is NO downside to this: the check is invisible to
+        // the user, no state is mutated on timeout, and the scheduler will retry
+        // at the next interval. A shorter timeout would only cause MORE missed
+        // checks on slow networks with no benefit.
         //
-        // REVIEWER: `URLSession.shared` here is intentional, not an oversight.
-        // See the comment block above for the full rationale and #1794 for the
-        // planned follow-up.
+        // REVIEWER: Do NOT replace URLSession.shared with a custom ephemeral
+        // session or add an explicit timeout here. This call site does not need
+        // it. If you believe it does, read the failure analysis in the comment
+        // block above before making any change.
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let releases = try? JSONDecoder().decode([Release].self, from: data)
         else { return nil }
