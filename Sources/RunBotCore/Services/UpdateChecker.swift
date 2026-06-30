@@ -310,16 +310,16 @@ public enum UpdateChecker {
     /// Exposed `internal` (not `private`) so `Bundle+Version.isOlderThan`
     /// can reuse the same comparison logic without duplicating it.
     static func isNewer(_ candidate: String, than current: String) -> Bool {
-        let c = ParsedVersion(candidate.hasPrefix("v") ? String(candidate.dropFirst()) : candidate)
-        let s = ParsedVersion(current.hasPrefix("v")   ? String(current.dropFirst())   : current)
+        let cv = ParsedVersion(candidate.hasPrefix("v") ? String(candidate.dropFirst()) : candidate)
+        let sv = ParsedVersion(current.hasPrefix("v")   ? String(current.dropFirst())   : current)
 
-        if c.major != s.major { return c.major > s.major }
-        if c.minor != s.minor { return c.minor > s.minor }
-        if c.patch != s.patch { return c.patch > s.patch }
+        if cv.major != sv.major { return cv.major > sv.major }
+        if cv.minor != sv.minor { return cv.minor > sv.minor }
+        if cv.patch != sv.patch { return cv.patch > sv.patch }
 
         // Same X.Y.Z — stable beats pre-release, then compare beta index.
-        if c.isPrerelease != s.isPrerelease { return !c.isPrerelease }
-        if let ci = c.betaIndex, let si = s.betaIndex { return ci > si }
+        if cv.isPrerelease != sv.isPrerelease { return !cv.isPrerelease }
+        if let ci = cv.betaIndex, let si = sv.betaIndex { return ci > si }
         return false
     }
 
