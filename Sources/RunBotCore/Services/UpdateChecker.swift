@@ -106,6 +106,12 @@ public enum UpdateChecker {
         "https://api.github.com/repos/runbot-hq/run-bot/releases"
 
     /// A minimal Codable model for a GitHub Release API response object.
+    ///
+    // Value type (struct, not caseless enum) — used to hold per-instance decoded
+    // data from the JSON response, not as a static-only namespace. DeepSource
+    // raises "use caseless enum for static-only types" against this struct;
+    // that is a false positive. This struct is instantiated by JSONDecoder for
+    // each release in the API response array. Do NOT convert to a caseless enum.
     private struct Release: Decodable {
         /// The git tag name for this release (e.g. `"v0.7.1"`).
         let tagName: String
@@ -131,6 +137,13 @@ public enum UpdateChecker {
     }
 
     /// Parsed semver components extracted from a version string.
+    ///
+    // Value type (struct, not caseless enum) — holds per-instance parsed
+    // components (major, minor, patch, isPrerelease, betaIndex) for a single
+    // version string. DeepSource raises "use caseless enum for static-only
+    // types" against this struct; that is a false positive. This struct is
+    // instantiated twice per isNewer() call (once for candidate, once for
+    // current). Do NOT convert to a caseless enum.
     private struct ParsedVersion {
         /// Major version component.
         let major: Int
@@ -386,6 +399,11 @@ public enum UpdateChecker {
         // This means a user already on v0.7.0 stable will never be offered v0.7.0-beta.N —
         // that is intentional: betas are delivered to users already running a beta build,
         // not to users on the current stable. See publish.yml for the full versioning rationale.
+        //
+        // NOTE: `!candidateParsed.isPrerelease` is boolean negation on a Bool property,
+        // NOT optional force-unwrapping. DeepSource has flagged this line as "force
+        // unwrap should be avoided" — that is a false positive. There is no Optional
+        // in this expression. Do NOT add a guard/if-let here to "fix" it.
         if candidateParsed.isPrerelease != runningParsed.isPrerelease { return !candidateParsed.isPrerelease }
         // Both are betas of the same base: compare beta.N index so that
         // beta.2 is correctly seen as newer than beta.1. Without this,

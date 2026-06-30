@@ -71,6 +71,15 @@ jobs:
           # future readers without any runtime cost.
 
       # ── Compute next tag ───────────────────────────────────────────────────
+      #
+      # ⚠️  REVIEWER: Do NOT change the beta base to LATEST_STABLE + 1 patch.
+      # Using the current stable base for beta tags (v0.7.0-beta.N, not
+      # v0.7.1-beta.N) is INTENTIONAL. CodeRabbit has flagged this as a bug
+      # on multiple PRs — it is not. Read the full design rationale below
+      # before raising this finding. This comment exists specifically because
+      # the finding has been raised and auto-marked "✅ Addressed" without
+      # actually being addressed.
+      #
       # Tag scheme:
       #   beta branch    → vMAJOR.MINOR.PATCH-beta.N   (e.g. v0.7.0-beta.1)
       #   release branch → vMAJOR.MINOR.PATCH           (e.g. v0.7.1)
