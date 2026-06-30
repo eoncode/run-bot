@@ -124,4 +124,24 @@ extension AutoUpdater {
         // releasing it here would cause the background check to silently stop.
         backgroundScheduler = scheduler
     }
+
+    // MARK: - Teardown
+
+    /// Stops and invalidates the background update-check scheduler.
+    ///
+    /// Call this to cleanly tear down the scheduler — for example in tests
+    /// that need to prevent background activity from firing after the test
+    /// completes, or in any future code path that needs to cancel background
+    /// checks at runtime.
+    ///
+    /// `NSBackgroundActivityScheduler.invalidate()` is the documented shutdown
+    /// API. Without it a repeating scheduler cannot be stopped; it will
+    /// continue to fire until the process exits. After invalidation the
+    /// `backgroundScheduler` property is nilled so a subsequent call to
+    /// `scheduleBackgroundCheck` can install a fresh scheduler safely.
+    @MainActor
+    public static func cancelBackgroundCheck() {
+        backgroundScheduler?.invalidate()
+        backgroundScheduler = nil
+    }
 }

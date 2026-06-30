@@ -271,11 +271,9 @@ public enum AutoUpdater {
             // is treated as an explicit failure rather than a silent pass-through
             // that would move a potentially corrupt temp file into the cache.
             guard let http = zipResponse as? HTTPURLResponse else {
-                try? FileManager.default.removeItem(at: downloadedURL)
                 throw URLError(.badServerResponse)
             }
             if http.statusCode != 200 {  // ← strict by design, NOT a bug — read comment above before changing
-                try? FileManager.default.removeItem(at: downloadedURL)
                 throw URLError(.badServerResponse)
             }
 

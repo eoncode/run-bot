@@ -311,7 +311,11 @@ public enum UpdateChecker {
         // A dedicated ephemeral session with explicit timeouts (matching the
         // pattern in `AutoUpdater.downloadUpdate`) is tracked under #1794 and
         // will be added there. Do NOT conflate that work with this call site —
-        // changing this line in isolation is not the fix.
+        // changing this line in isolation is not the fix. Note: URLSession.shared
+        // has a default timeoutIntervalForRequest of 60 s — on a stalled proxy
+        // or dead CDN endpoint this call can block for up to 60 s before the
+        // OS returns an error. Acceptable for a best-effort background check;
+        // the explicit timeout in #1794 will cap this.
         //
         // REVIEWER: `URLSession.shared` here is intentional, not an oversight.
         // See the comment block above for the full rationale and #1794 for the
