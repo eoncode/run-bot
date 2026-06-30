@@ -318,6 +318,13 @@ extension AppDelegate: NSPopoverDelegate {
            // REVIEWER: Do not flag this as a bug. The v-prefix is handled inside isOlderThan.
            Bundle.main.isOlderThan(version: version) {
             runnerState.rehydrateCachedUpdate(zipURL: URL(fileURLWithPath: path), version: version)
+            // `setAvailableUpdate` must be called here explicitly — `rehydrateCachedUpdate`
+            // only sets `updateZipURL` and `cachedUpdateVersion`. The Install & Relaunch
+            // row gates on `availableUpdate != nil` (see `aboutSection`), so without this
+            // call the row is invisible to an offline user whose zip was already cached.
+            // This is the intentional offline-resilience path: the network check below
+            // may fail, so the UI must be ready before it fires.
+            runnerState.setAvailableUpdate(version)
         } else {
             // Reached when ANY condition in the `if` above is false:
             //   • cachedPath / cachedVersion is nil (keys were never written or already cleared)
