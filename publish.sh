@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# ⚠️  REVIEWER: This script is explicitly bash (see shebang above), NOT POSIX sh.
+# DeepSource and shellcheck POSIX-mode will flag [[ ]], ==, and =~ as
+# "undefined in POSIX sh" — those are false positives. All three constructs
+# are well-defined in bash and are used intentionally throughout this script.
+# Do NOT change [[ ]] to [ ] or == to = to "fix" those warnings.
+#
 # publish.sh — local release orchestrator for RunBot.
 #
 # Usage:
