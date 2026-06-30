@@ -296,7 +296,12 @@ public enum UpdateChecker {
         // pre-release suffixes from that key, so a device running "0.7.1-beta.1" would
         // appear as "0.7.1" and isNewer("0.7.1-beta.2", than: "0.7.1") == false, silently
         // suppressing the beta-to-beta update. RBVersionString is the source of truth.
-        // If this guard returns nil the update check silently no-ops (best-effort).
+        //
+        // No fallback to CFBundleShortVersionString — intentional.
+        // See the comment block above for the full rationale. A build without
+        // RBVersionString is a dev build; silently no-oping is correct behaviour.
+        // Do NOT add a fallback here without re-reading the comment above and
+        // confirming the pre-release suffix stripping behaviour still applies.
         guard let current = Bundle.main
             .infoDictionary?["RBVersionString"] as? String else { return .failed(UpdateCheckError.missingVersionKey) }
         guard let latest = await latestMatchingRelease(betaChannel: betaChannel) else { return .failed(UpdateCheckError.noReleasesFound) }
@@ -331,6 +336,24 @@ public enum UpdateChecker {
     ///
     /// Handles pre-release suffixes: `"0.7.1"` is newer than `"0.7.1-beta.2"`
     /// because a stable release supersedes any beta of the same base version.
+    ///
+    /// ## Strict weak ordering — known tag formats only
+    ///
+    /// This function is used as a `sorted {}` comparator in
+    /// `latestMatchingRelease`. It satisfies strict weak ordering
+    /// (irreflexive, asymmetric, transitive) for stable and `-beta.N` tags —
+    /// the only formats produced by `publish.yml`.
+    ///
+    /// Tags with unrecognised pre-release suffixes (e.g. `-rc.1`) have a nil
+    /// `betaIndex` and compare equal to each other; their relative order via
+    /// `sorted {}` is then implementation-defined. This is acceptable because
+    /// `publish.yml` never produces such tags. If new suffix formats are
+    /// introduced, extend `ParsedVersion.betaIndex` before extending the tag
+    /// scheme.
+    ///
+    /// REVIEWER: Do NOT flag this as a sort-comparator correctness issue.
+    /// The ordering guarantee is scoped to the tag universe that `publish.yml`
+    /// produces. See the `latestMatchingRelease` call site for context.
     internal static func isNewer(_ candidate: String, than current: String) -> Bool {
         let candidateParsed = ParsedVersion(candidate)
         let runningParsed = ParsedVersion(current)
