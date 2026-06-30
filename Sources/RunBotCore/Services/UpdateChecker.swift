@@ -203,16 +203,22 @@ public enum UpdateChecker {
             let core = String(parts[0])
             isPrerelease = parts.count > 1
             let nums = core.split(separator: ".").compactMap { Int($0) }
-            major = nums.indices.contains(0) ? nums[0] : 0
-            minor = nums.indices.contains(1) ? nums[1] : 0
-            patch = nums.indices.contains(2) ? nums[2] : 0
-            let suffixDict: [String: Int] = {
-                guard parts.count > 1 else { return [:] }
-                let suffixParts = parts[1].split(separator: ".")
-                guard suffixParts.count == 2, let n = Int(suffixParts[1]) else { return [:] }
-                return [String(suffixParts[0]): n]
-            }()
-            betaIndex = suffixDict["beta"]
+            major = nums.isEmpty ? 0 : nums[0]
+            minor = nums.count > 1 ? nums[1] : 0
+            patch = nums.count > 2 ? nums[2] : 0
+            // Parse beta.N suffix — e.g. "beta.2" → betaIndex = 2.
+            if parts.count > 1 {
+                let suffix = String(parts[1]) // e.g. "beta.2"
+                let suffixParts = suffix.split(separator: ".")
+                if suffixParts.count == 2, suffixParts[0] == "beta",
+                   let n = Int(suffixParts[1]) {
+                    betaIndex = n
+                } else {
+                    betaIndex = nil
+                }
+            } else {
+                betaIndex = nil
+            }
         }
     }
 
@@ -319,41 +325,19 @@ public enum UpdateChecker {
     ///
     /// Exposed `internal` (not `private`) so `Bundle+Version.isOlderThan`
     /// can reuse the same comparison logic without duplicating it.
+    // deepsource-disable-next-line SW-R1002
     static func isNewer(_ candidate: String, than current: String) -> Bool {
         let cv = ParsedVersion(candidate.hasPrefix("v") ? String(candidate.dropFirst()) : candidate)
         let sv = ParsedVersion(current.hasPrefix("v")   ? String(current.dropFirst())   : current)
 
-        enum Comparison {
-            case major, minor, patch, prerelease, beta
-        }
+        // Same X.Y.Z — compare numerically component-by-component.
+        if cv.major != sv.major { return cv.major > sv.major }
+        if cv.minor != sv.minor { return cv.minor > sv.minor }
+        if cv.patch != sv.patch { return cv.patch > sv.patch }
 
-        let cases: [Comparison] = [.major, .minor, .patch, .prerelease, .beta]
-
-        let results: [Comparison: Bool] = [
-            .major: cv.major > sv.major,
-            .minor: cv.minor > sv.minor,
-            .patch: cv.patch > sv.patch,
-            .prerelease: !cv.isPrerelease,
-            .beta: {
-                guard let ci = cv.betaIndex, let si = sv.betaIndex else { return false }
-                return ci > si
-            }()
-        ]
-
-        let conditions: [Comparison: Bool] = [
-            .major: cv.major != sv.major,
-            .minor: cv.minor != sv.minor,
-            .patch: cv.patch != sv.patch,
-            .prerelease: cv.isPrerelease != sv.isPrerelease,
-            .beta: cv.betaIndex != nil && sv.betaIndex != nil
-        ]
-
-        for check in cases {
-            if let conditionMet = conditions[check], conditionMet,
-               let result = results[check] {
-                return result
-            }
-        }
+        // Same X.Y.Z — stable beats pre-release, then compare beta index.
+        if cv.isPrerelease != sv.isPrerelease { return !cv.isPrerelease }
+        if let ci = cv.betaIndex, let si = sv.betaIndex { return ci > si }
 
         return false
     }
