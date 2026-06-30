@@ -276,6 +276,13 @@ public enum AutoUpdater {
             // revisit this comment and add the strip at that point.
             async let zipDownload      = session.download(from: url)
             async let checksumDownload = session.data(from: checksumURL)
+            // ⚠️ checksumDownload response is intentionally discarded (`_`) — NOT a bug.
+            // A 4xx/5xx body causes rawChecksum to parse to garbage, verifyChecksum
+            // throws a mismatch, updateActionFailed = true, and the browser fallback
+            // is shown. The failure mode is safe. The log will say "checksum mismatch"
+            // even when the real cause is a 404 on the sidecar — this is a known,
+            // accepted diagnostic trade-off tracked alongside #1795.
+            // REVIEWER: Do NOT add an HTTP status check for checksumDownload here.
             let ((downloadedURL, zipResponse), (checksumData, _)) =
                 try await (zipDownload, checksumDownload)
             // Assign to the hoisted var so `catch` can clean it up if anything

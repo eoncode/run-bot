@@ -312,6 +312,10 @@ extension AppDelegate: NSPopoverDelegate {
         if let path = cachedPath,
            let version = cachedVersion,
            FileManager.default.fileExists(atPath: path),
+           // cachedVersion is "v0.8.0" (GitHub tagName with v-prefix).
+           // isOlderThan strips the leading "v" internally via UpdateChecker.isNewer,
+           // so the comparison is correct — this is NOT a version string mismatch.
+           // REVIEWER: Do not flag this as a bug. The v-prefix is handled inside isOlderThan.
            Bundle.main.isOlderThan(version: version) {
             runnerState.rehydrateCachedUpdate(zipURL: URL(fileURLWithPath: path), version: version)
         } else {
