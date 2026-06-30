@@ -93,8 +93,9 @@ extension AutoUpdater {
                 await MainActor.run {
                     switch result {
                     case .updateAvailable(let release):
-                        state.setAvailableUpdate(release.tagName)
                         // Fire-and-forget handle() call — intentional.
+                        // `setAvailableUpdate` is called inside `handle()` itself —
+                        // do not call it here. See AutoUpdater.handle() for rationale.
                         //
                         // `handle` is not awaited here because the scheduler
                         // callback has already called completion(.finished) above;
@@ -109,11 +110,10 @@ extension AutoUpdater {
                         //      (downloadURL, version, state) by capture — it does
                         //      not rely on the Task handle for lifetime management.
                         //   3. At the DEBUG 60 s interval, if a download takes
-                        //      longer than 60 s the next scheduler fire calls
-                        //      setAvailableUpdate again (harmless no-op if the
-                        //      version hasn't changed) and the isDownloading guard
-                        //      drops the handle() call until the first download
-                        //      finishes.
+                        //      longer than 60 s the next scheduler fire, handle()
+                        //      calls setAvailableUpdate (harmless no-op if the
+                        //      version hasn’t changed) and the isDownloading guard
+                        //      drops the download until the first Task finishes.
                         //   4. If two concurrent check Tasks fire simultaneously
                         //      (e.g. at the DEBUG 60 s interval while a slow
                         //      URLSession.shared fetch is still in-flight), both

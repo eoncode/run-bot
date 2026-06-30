@@ -65,6 +65,13 @@ public enum AutoUpdater {
     ///   - state: The shared `RunnerState` instance to update.
     @MainActor
     public static func handle(_ release: AvailableRelease, state: RunnerState) async {
+        // Set the visible version label first so the Install & Relaunch row is
+        // never in a state where `updateZipURL` is non-nil but `availableUpdate`
+        // is nil (which would render as "Update available: " with an empty label).
+        // Moved here from call sites so the contract is enforced at the single
+        // authoritative entry point rather than relying on caller discipline.
+        state.setAvailableUpdate(release.tagName)
+
         // ── 1. Already cached? ──────────────────────────────────────────────
         let defaults = UserDefaults.standard
         let cachedVersion = defaults.string(forKey: AutoUpdaterDefaults.cachedUpdateVersion)
@@ -511,9 +518,17 @@ public enum AutoUpdater {
         )
         let dir = caches.appendingPathComponent("io.github.runbot-hq", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // Sanitise the version tag: strip any characters that are invalid in
-        // a filename (shouldn't arise with semver tags, but belt-and-braces).
-        let safe = version.replacingOccurrences(of: "/", with: "-")
+        // Sanitise the version tag to a safe filename component. `release.tagName`
+        // is a raw GitHub API string — while `publish.yml` enforces semver tags,
+        // `handle()` is public and any future caller could pass an arbitrary value.
+        // Allow only alphanumerics, `.`, `-`, and `_`; replace everything else
+        // with `-`. This covers path-traversal characters (`/`, `..`), whitespace,
+        // newlines, and any other unexpected bytes without silently truncating the
+        // tag, making the resulting filename both safe and still human-readable.
+        let allowedSet = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+        let safe = version.unicodeScalars.map {
+            allowedSet.contains($0) ? String($0) : "-"
+        }.joined()
         return dir.appendingPathComponent("RunBot-\(safe).zip")
     }
 

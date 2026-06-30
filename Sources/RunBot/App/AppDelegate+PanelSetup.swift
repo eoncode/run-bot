@@ -337,9 +337,8 @@ extension AppDelegate: NSPopoverDelegate {
         let beta = AppPreferencesStore.shared.betaChannel
         switch await UpdateChecker.checkForUpdate(betaChannel: beta) {
         case .updateAvailable(let release):
-            // Store the human-readable version for the legacy "update available" banner
-            // while AutoUpdater takes ownership of the download pipeline.
-            runnerState.setAvailableUpdate(release.tagName)
+            // `setAvailableUpdate` is now called inside `AutoUpdater.handle()` —
+            // do not call it here. See AutoUpdater.handle() for rationale.
             log("AppDelegate › startup — update available: \(release.tagName) (betaChannel=\(beta))")
             await AutoUpdater.handle(release, state: runnerState)
         case .upToDate:
