@@ -271,14 +271,14 @@ public enum AutoUpdater {
         // `nonisolated(unsafe)` local copy asserts that invariant to the compiler.
         // Do NOT change to a strong capture — that would prevent the scheduler
         // from being released when `backgroundScheduler` is set to nil.
-        scheduler.schedule { [weak scheduler] completion in
-            // `NSBackgroundActivityScheduler` is not `Sendable`; the weak capture
-            // is safe because `.shouldDefer` is only read inside this callback,
-            // which AppKit guarantees fires on the same background serial queue.
-            // `nonisolated(unsafe)` asserts that invariant to the Swift 6 checker.
-            // Do NOT remove — without it Swift 6 strict concurrency emits a
-            // SendableClosureCaptures warning on the `scheduler` capture.
-            nonisolated(unsafe) let s = scheduler
+        // `NSBackgroundActivityScheduler` is not `Sendable`. Declare a
+        // `nonisolated(unsafe)` weak reference *before* the closure so the
+        // capture is on a Sendable-annotated variable, silencing the Swift 6
+        // SendableClosureCaptures diagnostic. Safe: `weakScheduler` is only
+        // read inside AppKit's background serial queue callback.
+        nonisolated(unsafe) weak var weakScheduler = scheduler
+        scheduler.schedule { completion in
+            let s = weakScheduler
             // Honour the system's power-saving signal. `s.shouldDefer` returns
             // true when macOS is asking background tasks to pause (e.g. low
             // battery, high CPU load). Calling `.deferred` tells the scheduler
