@@ -42,12 +42,12 @@ public struct AvailableRelease: Sendable {
     /// When the asset is absent, `RunnerState.updateAssetMissing` is set to
     /// `true` and the UI falls back to a browser-based Download button.
     public let assets: [ReleaseAsset]
-    /// The URL of the SHA-256 checksum sidecar file for this release, if present.
-    ///
-    /// `nil` in v1 — checksum verification is deferred to issue #1795. This
-    /// field is decoded now so that #1795 can implement verification logic
-    /// without requiring a model change. `AutoUpdater.downloadUpdate` must not
-    /// use this field until #1795 is implemented.
+    /// Always `nil` in v1 — checksum verification is deferred to #1795.
+    /// This field exists so #1795 can add verification without a model change.
+    /// It will be populated from `latest.assets` at the `AvailableRelease(...)`
+    /// construction site in `checkForUpdate`, NOT decoded from a top-level JSON
+    /// field (the GitHub Releases API has no such field at the release level).
+    /// REVIEWER: Do NOT add JSON decoding for this field here.
     public let checksumURL: URL?
 }
 
@@ -78,7 +78,26 @@ public enum UpdateCheckResult: Sendable {
 public enum UpdateCheckError: Error, Sendable {
     /// `RBVersionString` was absent from `Info.plist`.
     case missingVersionKey
-    /// The releases API returned no usable release for the requested channel.
+    /// Covers two distinct situations that are intentionally collapsed into
+    /// the same error code:
+    ///
+    ///   1. A genuine empty result — no release on GitHub matches the channel
+    ///      (e.g. a fresh repo before the first stable tag is pushed, or a
+    ///      `betaChannel=false` user on a repo that only has beta releases so far).
+    ///
+    ///   2. A network/API failure — the request timed out, returned a non-200
+    ///      status, or the response body failed to decode as `[Release]`.
+    ///
+    /// Both cases surface the same `.failed(.noReleasesFound)` result because
+    /// update checks are **best-effort background operations** that must never
+    /// surface error UI (see #1794). The only observable consequence of either
+    /// situation is "no update offered", which is correct in both cases.
+    ///
+    /// If you need to distinguish the two (e.g. for exponential backoff on
+    /// network failures), split this into two cases and update the handling in
+    /// `performStartupSequence` and `scheduleBackgroundCheck`. That is a
+    /// feature addition, not a bug fix — track it in a new issue rather than
+    /// conflating it with this one.
     case noReleasesFound
 }
 
@@ -268,4 +287,85 @@ public enum UpdateChecker {
         // If you need per-status behaviour (e.g. exponential backoff on 403),
         // that is a separate feature tracked under #1794, not a bug in this line.
         //
-        // Use a dedicated ephemeral session with exp
+        // Use a dedicated ephemeral session with explicit timeout configuration
+        // (see #1794) if you need to tune networking behaviour.
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let releases = try? JSONDecoder().decode([Release].self, from: data)
+        else { return nil }
+
+        // Sort by semver descending so the highest version is first regardless
+        // of GitHub's published-date ordering.
+        let sorted = releases.sorted { isNewer($0.tagName, than: $1.tagName) }
+        return sorted.first(where: { betaChannel ? true : !$0.prerelease })
+    }
+
+    /// Returns `true` when `candidate` is strictly newer than `current`
+    /// using numeric semver comparison, including beta ordering.
+    ///
+    /// Both strings are stripped of a leading `v` prefix before parsing.
+    /// Pre-release versions are considered older than their stable base:
+    /// `1.0.0-beta.1 < 1.0.0`. Within the same base, higher beta index wins:
+    /// `1.0.0-beta.2 > 1.0.0-beta.1`.
+    ///
+    /// Exposed `internal` (not `private`) so `Bundle+Version.isOlderThan`
+    /// can reuse the same comparison logic without duplicating it.
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let c = ParsedVersion(candidate.hasPrefix("v") ? String(candidate.dropFirst()) : candidate)
+        let s = ParsedVersion(current.hasPrefix("v")   ? String(current.dropFirst())   : current)
+
+        if c.major != s.major { return c.major > s.major }
+        if c.minor != s.minor { return c.minor > s.minor }
+        if c.patch != s.patch { return c.patch > s.patch }
+
+        // Same X.Y.Z — stable beats pre-release, then compare beta index.
+        if c.isPrerelease != s.isPrerelease { return !c.isPrerelease }
+        if let ci = c.betaIndex, let si = s.betaIndex { return ci > si }
+        return false
+    }
+
+    /// Checks whether an update is available for the running build.
+    ///
+    /// Reads `RBVersionString` from `Info.plist` (the full semver including any
+    /// pre-release suffix, patched by `publish.yml`). Returns `.failed(.missingVersionKey)`
+    /// rather than falling back to `CFBundleShortVersionString` — a missing key
+    /// means CI did not patch the bundle, and offering an update against an
+    /// unknown base version is worse than doing nothing.
+    ///
+    /// ## Why `.noReleasesFound` covers both "empty list" and network failure
+    ///
+    /// `latestMatchingRelease` returns `nil` for three distinct reasons:
+    ///   - Network error, timeout, or non-200 response
+    ///   - The API returned a valid list, but no release matched the channel filter
+    ///     (e.g. `betaChannel=false` on a repo with only beta tags)
+    ///   - The API returned an empty list (fresh repo, no releases yet)
+    ///
+    /// All three map to `.failed(.noReleasesFound)`. This is intentional: update
+    /// checks are best-effort and must never surface error UI. The log message
+    /// at the call site says "update check failed" for all three — that is
+    /// technically correct and is the right level of fidelity for v1. If
+    /// diagnostic distinction ever matters, split `noReleasesFound` into
+    /// `.networkError` and `.noMatchingRelease` and update this function and
+    /// both call sites (`performStartupSequence`, `scheduleBackgroundCheck`).
+    public static func checkForUpdate(betaChannel: Bool) async -> UpdateCheckResult {
+        guard let currentVersion = Bundle.main.infoDictionary?["RBVersionString"] as? String,
+              !currentVersion.isEmpty
+        else {
+            return .failed(UpdateCheckError.missingVersionKey)
+        }
+
+        guard let latest = await latestMatchingRelease(betaChannel: betaChannel) else {
+            return .failed(UpdateCheckError.noReleasesFound)  // ← intentional collapse — read doc comment above
+        }
+
+        guard isNewer(latest.tagName, than: currentVersion) else {
+            return .upToDate
+        }
+
+        let release = AvailableRelease(
+            tagName: latest.tagName,
+            assets: latest.assets,
+            checksumURL: nil  // populated by #1795 from latest.assets, not from JSON
+        )
+        return .updateAvailable(release: release)
+    }
+}

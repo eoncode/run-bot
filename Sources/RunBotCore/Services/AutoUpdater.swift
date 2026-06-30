@@ -97,6 +97,7 @@ public enum AutoUpdater {
         // MainActor. The Swift 6 strict-concurrency checker accepts this
         // pattern; no warning is emitted because `state` is only ever *read*
         // from the detached context to be forwarded, not written to directly.
+        //
         // ── 3b. In-flight guard ──────────────────────────────────────────────
         // Prevent a second concurrent download of the same zip. This can
         // happen if the background scheduler fires while a Task.detached
@@ -108,9 +109,12 @@ public enum AutoUpdater {
         // is atomic with respect to all other `handle()` callers.
         //
         // ⚠️ ORDERING IS INTENTIONAL — do not move this guard above the cache-hit
-        // block. A cache-hit never spawns Task.detached, so the in-flight guard
-        // is irrelevant to that path. The guard lives here, after the cache-hit
-        // early return, to cover only the download path it is designed for.
+        // or asset-missing blocks (steps 1 and 2). Those two early-exit paths
+        // return *before* Task.detached is ever reached — they never start a
+        // download — so the in-flight guard is irrelevant to them. Placing it
+        // first would guard code paths it was not designed for and would
+        // incorrectly block a cache-hit rehydration if a background download
+        // happened to be in flight for a different version.
         guard !isDownloading else { return }
         isDownloading = true
 
