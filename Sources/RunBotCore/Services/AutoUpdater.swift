@@ -396,7 +396,7 @@ public enum AutoUpdater {
     /// ## Flow
     /// 1. Unzip the cached zip into a temporary directory via `/usr/bin/ditto`.
     /// 2. Locate `RunBot.app` inside the unzipped contents.
-    /// 3. Replace the running bundle via `ditto` (bundle-over-bundle safe).
+    /// 3. Replace the running bundle via `FileManager.replaceItem` (atomic swap, closes #1796).
     /// 4. Relaunch the new binary with `/usr/bin/open`.
     /// 5. Terminate this process via `NSApp.terminate`.
     ///
@@ -512,42 +512,42 @@ public enum AutoUpdater {
             return
         }
 
-        // ── 3. Replace the running bundle ───────────────────────────────────
-        // Use `ditto` (already available) rather than `cp -Rf` for the
-        // bundle-replacement step.
+        // ── 3. Replace the running bundle — atomic swap via replaceItem ────
+        // `FileManager.replaceItem` moves the old bundle aside as a named
+        // backup, moves the new bundle into place, then deletes the backup —
+        // all at the filesystem level. If the process is killed mid-swap,
+        // macOS guarantees the bundle directory is either fully old or fully
+        // new. A half-written bundle (the failure mode of the previous
+        // `ditto` in-place overwrite) is not possible.
         //
-        // `cp -Rf src.app dst.app` where dst.app already exists as a directory
-        // copies src.app *inside* dst.app, producing dst.app/src.app — a nested
-        // bundle that will not launch. `ditto` copies the *contents* of the
-        // source over the destination, correctly replacing the bundle in-place
-        // and preserving resource forks and symlinks.
+        // Why not `ditto` here (we still use it in step 1 for unzip):
+        // `ditto src.app dst.app` copies *contents* of src over dst in-place.
+        // A SIGKILL mid-copy leaves dst partially overwritten with no rollback.
+        // `replaceItem` uses a rename-based swap at the VFS layer instead.
         //
-        // ⚠️ PARTIAL-WRITE RISK — TRACKED IN #1796 ⚠️
+        // Preconditions that are always true here:
+        //   • `bundleURL` (dst) exists — it is `Bundle.main.bundlePath`.
+        //   • `appInZip` (src) exists — step 2 just located it in `tmpDir`.
+        //   • `appInZip` is a real extracted directory, not a path in a zip.
+        //   • `tmpDir` is on the same volume as the system temp dir; the
+        //     destination (/Applications or ~/Applications) may be on the
+        //     same APFS volume, making the rename a metadata-only operation.
         //
-        // This `ditto` call writes over the live bundle in-place. A SIGKILL
-        // (system low-memory or thermal event) mid-copy leaves the bundle
-        // partially overwritten with no rollback path. The zip and UserDefaults
-        // keys are cleared in step 4, so neither old nor new version would be
-        // recoverable without a manual reinstall.
+        // The backup item (`RunBot.app.bak`) is written to the same directory
+        // as `bundleURL` during the swap and removed on success. On an
+        // interrupted swap, macOS removes it on the next volume mount.
+        // We do not need to manage it manually.
         //
-        // The correct fix is FileManager.replaceItem(at:withItemAt:backupItemName:
-        // options:) — an atomic swap that the OS executes as a rename at the
-        // filesystem level, so the running app either sees the old bundle or the
-        // new one. This matches Sparkle's approach and eliminates the partial-
-        // write window entirely.
-        //
-        // Not done here because `replaceItem` requires writing to a staging path
-        // first and handling backup semantics — a small but non-trivial refactor
-        // that deserves its own PR and test coverage. Tracked in #1796.
-        //
-        // In practice the window is narrow (RunBot.zip is < 10 MB and ditto on
-        // a local temp dir is fast), but "narrow" is not "zero" for a live-app
-        // replacement, so this comment exists to document the known gap.
-        //
-        // REVIEWER: Do NOT remove this comment without also filing or closing #1796.
-        let replaceResult = await runCommand("/usr/bin/ditto",
-                                             args: [appInZip.path, bundleURL.path])
-        guard replaceResult else {
+        // Closes #1796.
+        do {
+            try fm.replaceItem(
+                at: bundleURL,
+                withItemAt: appInZip,
+                backupItemName: "RunBot.app.bak",
+                options: [],
+                resultingItemURL: nil
+            )
+        } catch {
             isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
