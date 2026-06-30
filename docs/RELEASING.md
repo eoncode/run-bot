@@ -32,14 +32,21 @@ zipping, and creating the GitHub Release — is handled by CI automatically.
      monotonic build number derived from the total commit count.
    - Runs `bash build.sh "$version"` with `CI=true` (skips local relaunch).
    - Verifies `dist/RunBot.zip` contains `RunBot.app/Contents/MacOS/RunBot`.
+   - Generates a `RunBot.zip.sha256` sidecar via `shasum -a 256` and
+     uploads it alongside the zip. **This step is load-bearing:** `AutoUpdater`
+     treats a missing sidecar as a hard failure — every user's in-app update
+     will fall back to the curl install command if the sidecar is absent from
+     the release assets.
    - Creates an annotated git tag and pushes it.
-   - Creates the GitHub Release with the zip attached.
+   - Creates the GitHub Release with both the zip and the `.sha256` sidecar
+     attached.
 
    > **Dry-run via `workflow_dispatch`:** When triggering manually from the
    > Actions UI, select the **`beta`** or **`release`** branch in the branch
-   > selector to simulate the correct channel. Triggering from `main` always
-   > exercises the stable path regardless of channel intent — it is useful
-   > only as a build smoke-test, not a full beta simulation.
+   > selector to simulate the correct channel. Triggering from `main` (or any
+   > other branch) will fail immediately: `publish.yml` validates
+   > `GITHUB_REF_NAME` and aborts with an error if it is not `"beta"` or
+   > `"release"`. There is no silent stable-path fallback.
 
 ---
 

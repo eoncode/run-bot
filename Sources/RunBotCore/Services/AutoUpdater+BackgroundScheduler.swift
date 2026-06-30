@@ -119,7 +119,13 @@ extension AutoUpdater {
             }
         }
 
-        // Retain the scheduler so it is not deallocated before it fires.
+        // Invalidate any previous scheduler before replacing it — Apple's
+        // NSBackgroundActivityScheduler API requires invalidate() before release.
+        // cancelBackgroundCheck() follows this pattern; replicate it here so
+        // that a second call to scheduleBackgroundCheck (e.g. in tests) doesn't
+        // drop the old scheduler without cleaning up its internal GCD state.
+        backgroundScheduler?.invalidate()
+        // Retain the new scheduler so it is not deallocated before it fires.
         // NSBackgroundActivityScheduler is not system-owned after schedule { };
         // releasing it here would cause the background check to silently stop.
         backgroundScheduler = scheduler
