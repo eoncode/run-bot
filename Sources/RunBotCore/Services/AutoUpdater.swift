@@ -265,20 +265,19 @@ public enum AutoUpdater {
         scheduler.tolerance = AutoUpdaterDefaults.checkInterval * 0.2
         scheduler.qualityOfService = .background
 
-        // `NSBackgroundActivityScheduler` is not `Sendable`. The weak capture
-        // below is safe: `.shouldDefer` is only read inside this callback, which
-        // AppKit guarantees fires on the same background serial queue. The
-        // `nonisolated(unsafe)` local copy asserts that invariant to the compiler.
+        // `NSBackgroundActivityScheduler` is not `Sendable`, so capturing it in
+        // the `@Sendable` schedule callback triggers a Swift 6 strict-concurrency
+        // warning. The capture is safe in practice: `.shouldDefer` is only read
+        // inside this callback, which AppKit guarantees fires on the same
+        // background serial queue the scheduler was created on.
+        //
+        // We box the weak reference in `UncheckedSendableBox` to assert that
+        // safety to the compiler without suppressing unrelated warnings.
         // Do NOT change to a strong capture — that would prevent the scheduler
         // from being released when `backgroundScheduler` is set to nil.
-        scheduler.schedule { [weak scheduler] completion in
-            // `NSBackgroundActivityScheduler` is not `Sendable`; the weak capture
-            // is safe because `.shouldDefer` is only read inside this callback,
-            // which AppKit guarantees fires on the same background serial queue.
-            // `nonisolated(unsafe)` asserts that invariant to the Swift 6 checker.
-            // Do NOT remove — without it Swift 6 strict concurrency emits a
-            // SendableClosureCaptures warning on the `scheduler` capture.
-            nonisolated(unsafe) let s = scheduler
+        let schedulerBox = UncheckedSendableBox(scheduler)
+        scheduler.schedule { completion in
+            let s = schedulerBox.value
             // Honour the system's power-saving signal. `s.shouldDefer` returns
             // true when macOS is asking background tasks to pause (e.g. low
             // battery, high CPU load). Calling `.deferred` tells the scheduler
