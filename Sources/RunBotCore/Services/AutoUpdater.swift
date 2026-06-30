@@ -218,6 +218,30 @@ public enum AutoUpdater {
             // Both requests are independent; fetching them concurrently saves
             // one full round-trip on the critical path. `async let` bindings
             // are the canonical Pillar 4 pattern for parallel independent fetches.
+            //
+            // ⚠️ NO QUARANTINE STRIP NEEDED — DO NOT ADD `xattr -dr com.apple.quarantine` ⚠️
+            //
+            // Reviewers familiar with Sparkle or other macOS updaters may expect
+            // a quarantine-strip step after this download. It is not needed here.
+            //
+            // `com.apple.quarantine` is applied to downloaded files only by
+            // processes that have opted in via LSFileQuarantineEnabled = YES in
+            // their Info.plist. RunBot's Info.plist does NOT set this key
+            // (omitting it defaults to NO for non-sandboxed apps). Therefore
+            // this URLSession download does NOT apply the quarantine xattr to
+            // the zip, and the extracted RunBot.app will not be quarantined.
+            // Gatekeeper will not prompt or block on relaunch.
+            //
+            // The curl install script runs `xattr -dr com.apple.quarantine`
+            // as a belt-and-braces measure for zips that a user may have
+            // downloaded via a browser (which IS LSFileQuarantineEnabled).
+            // That scenario cannot arise here — the zip is always fetched by
+            // this URLSession, never by a browser. The strip is unnecessary.
+            //
+            // REVIEWER: Do NOT add an xattr strip step here or in
+            // AutoUpdater+Install.swift. See Info.plist for the LSFileQuarantineEnabled
+            // rationale. If LSFileQuarantineEnabled is ever added to Info.plist,
+            // revisit this comment and add the strip at that point.
             async let zipDownload      = session.download(from: url)
             async let checksumDownload = session.data(from: checksumURL)
             let ((downloadedURL, zipResponse), (checksumData, _)) =

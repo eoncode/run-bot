@@ -91,7 +91,7 @@ extension AutoUpdater {
         let fm = FileManager.default
         let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath) // e.g. …/RunBot.app
 
-        // ── 1. Unzip to a temp directory ────────────────────────────────────────
+        // ── 1. Unzip to a temp directory ──────────────────────────────────────────
         let tmpDir = fm.temporaryDirectory
             .appendingPathComponent("runbot-update-\(UUID().uuidString)", isDirectory: true)
         do {
@@ -111,7 +111,7 @@ extension AutoUpdater {
             return
         }
 
-        // ── 2. Find RunBot.app inside the unzipped contents ─────────────────────
+        // ── 2. Find RunBot.app inside the unzipped contents ───────────────────────
         // `contentsOfDirectory` is intentionally shallow (non-recursive).
         // The verify step in publish.yml anchors the grep pattern so that
         // RunBot.app must sit at the archive root — a nested path such as
@@ -130,7 +130,32 @@ extension AutoUpdater {
             return
         }
 
-        // ── 3. Replace the running bundle — atomic swap via replaceItem ──────────
+        // ── 2b. Gatekeeper / quarantine — no strip needed ────────────────────────
+        // Reviewers familiar with Sparkle or other macOS updaters may expect
+        // an `xattr -dr com.apple.quarantine` call here before replaceItem.
+        // It is not needed and must NOT be added.
+        //
+        // Why: `com.apple.quarantine` is only applied to files downloaded by
+        // processes that have opted in via LSFileQuarantineEnabled = YES in
+        // their Info.plist. RunBot's Info.plist deliberately omits this key
+        // (which defaults to NO for non-sandboxed apps). The URLSession
+        // download in AutoUpdater.downloadUpdate therefore does NOT stamp
+        // the quarantine xattr on the zip, and ditto (step 1) has nothing
+        // to propagate. The extracted RunBot.app in tmpDir carries no
+        // quarantine xattr and Gatekeeper will not prompt or block on relaunch.
+        //
+        // The curl install script runs `xattr -dr com.apple.quarantine` as a
+        // precaution for zips that a user may have downloaded via a browser
+        // (which IS LSFileQuarantineEnabled). That scenario cannot arise in
+        // this code path — the zip is always fetched by AutoUpdater's
+        // URLSession, never by a browser.
+        //
+        // REVIEWER: Do NOT add a quarantine-strip step here. If
+        // LSFileQuarantineEnabled is ever added to Info.plist, revisit this
+        // comment at that point and add the strip before replaceItem.
+        // See also the matching comment in AutoUpdater.swift § Parallel fetch.
+
+        // ── 3. Replace the running bundle — atomic swap via replaceItem ─────────
         // `FileManager.replaceItem` moves the old bundle aside as a named
         // backup, moves the new bundle into place, then deletes the backup —
         // all at the filesystem level. If the process is killed mid-swap,
@@ -161,28 +186,13 @@ extension AutoUpdater {
         // • `appInZip` (src) exists — step 2 just located it in `tmpDir`.
         // • `appInZip` is a real extracted directory, not a path in a zip.
         // • `tmpDir` is on the same volume as the system temp dir; the
-        //   destination (/Applications or ~/Applications) may be on the
-        //   same APFS volume, making the rename a metadata-only operation.
+        //   destination (~/Applications) may be on the same APFS volume,
+        //   making the rename a metadata-only operation.
         //
         // The backup item (`RunBot.app.bak`) is written to the same directory
         // as `bundleURL` during the swap and removed on success. On an
         // interrupted swap, macOS removes it on the next volume mount.
         // We do not need to manage it manually.
-        //
-        // ⚠️ Permission caveat — /Applications vs ~/Applications:
-        // RunBot is designed to be installed in `~/Applications`, where the
-        // current user has write access and `replaceItem` succeeds without
-        // any authorisation prompt. If a user installs RunBot into the
-        // system-level `/Applications` directory, this process will NOT have
-        // write permission there, and `replaceItem` will throw. The catch
-        // below sets `updateActionFailed = true`, which surfaces the browser
-        // Download fallback — but with no explanation to the user about why
-        // Install & Relaunch silently failed. Future maintainers: if users
-        // report the Install button doing nothing and falling back to Download
-        // on a machine where RunBot lives in /Applications, this is the reason.
-        // A fix would be to inspect the error, detect a permission failure
-        // (e.g. EPERM / EACCES), and surface a dedicated message pointing
-        // the user to ~/Applications. Tracked as a known limitation (#1792).
         //
         // Closes #1796.
         var resultingNSURL: NSURL?
@@ -195,18 +205,22 @@ extension AutoUpdater {
                 resultingItemURL: &resultingNSURL
             )
         } catch {
+            log(
+                "AutoUpdater: replaceItem failed: \(error)",
+                category: .services
+            )
             isInstalling = false
             state.updateActionFailed = true
             try? fm.removeItem(at: tmpDir)
             return
         }
 
-        // ── 4. Clear cached defaults so next launch starts clean ─────────────────
+        // ── 4. Clear cached defaults so next launch starts clean ────────────────
         clearCachedDefaults()
         try? fm.removeItem(at: tmpDir)
         try? fm.removeItem(at: zipURL)
 
-        // ── 5. Relaunch + terminate ──────────────────────────────────────────────
+        // ── 5. Relaunch + terminate ───────────────────────────────────────────
         // `open -n` forces a new instance even if one is already running.
         // We do NOT await — NSApp.terminate must fire immediately after.
         //

@@ -27,6 +27,22 @@
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <!-- LSFileQuarantineEnabled is intentionally absent (defaults to NO for
+         non-sandboxed apps). Do NOT add it.
+
+         LSFileQuarantineEnabled = YES would cause URLSession downloads made
+         by this process to receive the com.apple.quarantine extended attribute.
+         That xattr is then preserved by ditto into the extracted RunBot.app,
+         causing Gatekeeper to prompt or block on the first post-update launch.
+
+         The auto-update flow in AutoUpdater.swift relies on this key being
+         absent: the downloaded zip is quarantine-free, ditto propagates
+         nothing, and Gatekeeper is silent. The curl install script handles
+         quarantine separately for browser-downloaded zips; that concern does
+         not apply here.
+
+         See AutoUpdater.swift § Parallel fetch and
+         AutoUpdater+Install.swift § 2b for the full rationale. -->
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
