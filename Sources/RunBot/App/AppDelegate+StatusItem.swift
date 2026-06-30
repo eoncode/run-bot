@@ -50,6 +50,10 @@ extension AppDelegate {
     /// `logo.svg`).  Falls back to the SF Symbol chain when the asset is missing,
     /// preserving the original triple-fallback behaviour for safety.
     ///
+    /// - Note: `status` is used only by the SF Symbol fallback chain (steps 2–3).
+    ///   `MenuBarLogo` is a static brand image and is status-agnostic; `status`
+    ///   is intentionally ignored in the happy path.
+    ///
     /// Fallback chain:
     /// 1. `NSImage(named: "MenuBarLogo")` — bundled logo asset (template image).
     /// 2. `status.symbolName`             — correct SF Symbol for the current status.
