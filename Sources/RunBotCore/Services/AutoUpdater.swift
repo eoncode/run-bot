@@ -135,6 +135,15 @@ public enum AutoUpdater {
         // first would guard code paths it was not designed for and would
         // incorrectly block a cache-hit rehydration if a background download
         // happened to be in flight for a different version.
+        //
+        // Clear any stale failure flag before the in-flight guard — not after.
+        // If isDownloading is already true we return early and must NOT clear
+        // the flag: the in-flight task is still responsible for it and will
+        // reset it on completion. Clearing here (before the guard) ensures
+        // that a fresh download path always starts with a clean slate, so the
+        // UI shows the spinner rather than a stale Download fallback button
+        // left over from a prior session's checksum failure or install error.
+        state.updateActionFailed = false
         guard !isDownloading else { return }
         isDownloading = true
 
