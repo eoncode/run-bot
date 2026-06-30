@@ -93,6 +93,26 @@ extension AutoUpdater {
                 await MainActor.run {
                     if case .updateAvailable(let release) = result {
                         state.setAvailableUpdate(release.tagName)
+                        // Fire-and-forget handle() call — intentional.
+                        //
+                        // `handle` is not awaited here because the scheduler
+                        // callback has already called completion(.finished) above;
+                        // the download runs independently on a Task.detached thread.
+                        //
+                        // No strong reference is held to the spawned Task. This is
+                        // safe because:
+                        //   1. `isDownloading` (in handle()) prevents a second
+                        //      concurrent download if the scheduler fires again
+                        //      before this Task completes.
+                        //   2. The download Task retains all values it needs
+                        //      (downloadURL, version, state) by capture — it does
+                        //      not rely on the Task handle for lifetime management.
+                        //   3. At the DEBUG 60 s interval, if a download takes
+                        //      longer than 60 s the next scheduler fire calls
+                        //      setAvailableUpdate again (harmless no-op if the
+                        //      version hasn't changed) and the isDownloading guard
+                        //      drops the handle() call until the first download
+                        //      finishes.
                         Task { await AutoUpdater.handle(release, state: state) }
                     }
                 }

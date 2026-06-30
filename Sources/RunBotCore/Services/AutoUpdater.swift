@@ -100,11 +100,17 @@ public enum AutoUpdater {
         // from the detached context to be forwarded, not written to directly.
         //
         // ── 3b. In-flight guard ──────────────────────────────────────────────
-        // Prevent a second concurrent download of the same zip. This can
-        // happen if the background scheduler fires while a Task.detached
-        // download is already running — both would race to write the same
+        // In-flight guard — drops any handle() call (same version OR different
+        // version) while a Task.detached download is already running.
+        //
+        // Same-version case: prevents two Tasks racing to write the same
         // destination file, with the try? removeItem between them creating a
         // window where neither write wins cleanly.
+        //
+        // Different-version case: the in-progress download completes first;
+        // the dropped call is silently discarded. The background scheduler
+        // will re-offer the update on the next fire, at which point
+        // isDownloading is false and the new download proceeds normally.
         //
         // `isDownloading` is `@MainActor`-isolated, so this read-modify-write
         // is atomic with respect to all other `handle()` callers.
@@ -131,17 +137,31 @@ public enum AutoUpdater {
     // MARK: - Download
 
     /// Downloads the zip and its SHA-256 sidecar in parallel, verifies integrity,
-    /// then updates `RunnerState` and `UserDefaults` on success.
+    /// then moves the verified zip to the cache and updates `RunnerState` and
+    /// `UserDefaults` on success.
     ///
     /// The zip and checksum are fetched concurrently via `async let` (Pillar 4).
     /// SHA-256 digest computation is performed in a `@concurrent` free function
     /// so the blocking `Data(contentsOf:)` read stays off the cooperative thread
     /// pool executor (Pillar 5).
     ///
+    /// ## Verification order — verify before move
+    ///
+    /// `verifyChecksum` is called on `tempURL` (the system temp location written
+    /// by `URLSession.download`) **before** `moveItem` copies the file to
+    /// `destination` in the caches directory. This guarantees that an unverified
+    /// or corrupt zip never reaches the cache:
+    ///
+    /// - If verification passes → zip is moved to cache → `UserDefaults` written
+    ///   → `RunnerState` updated → Install & Relaunch button appears.
+    /// - If verification fails → `tempURL` is deleted → `catch` sets
+    ///   `updateActionFailed = true` → Download fallback button appears.
+    ///   `destination` is never written, so `performStartupSequence` will
+    ///   not find a file there on the next launch.
+    ///
     /// On any failure — network error, HTTP non-200, checksum fetch failure, or
     /// digest mismatch — `runnerState.updateActionFailed` is set to `true` so
-    /// the UI can offer the browser-based fallback. The partially-written zip
-    /// is deleted before returning.
+    /// the UI can offer the browser-based fallback.
     ///
     /// - Parameters:
     ///   - url: The direct download URL for the `RunBot.zip` asset.
@@ -217,12 +237,6 @@ public enum AutoUpdater {
                 throw URLError(.badServerResponse)
             }
 
-            let destination = try cachedZipDestination(version: version)
-
-            // Remove any stale file from a previous interrupted download.
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: tempURL, to: destination)
-
             // ── SHA-256 integrity verification (Pillar 5) ────────────────────
             // Parse the expected hex digest from the sidecar.
             // `shasum -a 256` format: "<hex>  <filename>" — take the first
@@ -239,9 +253,18 @@ public enum AutoUpdater {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .whitespaces).first ?? ""
 
-            // Blocking disk read lives in a `@concurrent` async free function so
-            // it does not block the cooperative thread pool executor (Pillar 5).
-            try await verifyChecksum(zipURL: destination, expectedHex: expectedHex)
+            // ── Verify before move ───────────────────────────────────────────
+            // Checksum is verified against `tempURL` (the URLSession temp file)
+            // BEFORE moving it to `destination`. If verification throws, the
+            // unverified file is deleted from temp and never reaches the cache.
+            // See the `downloadUpdate` doc comment for the full rationale.
+            try await verifyChecksum(zipURL: tempURL, expectedHex: expectedHex)
+
+            let destination = try cachedZipDestination(version: version)
+
+            // Remove any stale file from a previous interrupted download.
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: tempURL, to: destination)
 
             // Persist to UserDefaults so the install survives a relaunch.
             let defaults = UserDefaults.standard
@@ -255,6 +278,11 @@ public enum AutoUpdater {
                 isDownloading = false
             }
         } catch {
+            // Clean up the temp file if it still exists (e.g. checksum failure
+            // before moveItem, or a mid-download network error). The system will
+            // also evict it eventually, but explicit deletion is faster and
+            // avoids accumulation in the temp directory on repeated failures.
+            // This is a best-effort cleanup — errors are intentionally swallowed.
             await MainActor.run {
                 isDownloading = false
                 state.updateActionFailed = true
@@ -330,7 +358,9 @@ public enum AutoUpdater {
 /// propagates any `Data(contentsOf:)` error on read failure.
 ///
 /// - Parameters:
-///   - zipURL: The local file URL of the downloaded zip to verify.
+///   - zipURL: The local file URL of the zip to verify. Called with `tempURL`
+///     (the URLSession temp location) so verification happens before the file
+///     is moved to the caches directory.
 ///   - expectedHex: The lowercase hex SHA-256 digest string from the sidecar file.
 @concurrent
 private func verifyChecksum(zipURL: URL, expectedHex: String) async throws {

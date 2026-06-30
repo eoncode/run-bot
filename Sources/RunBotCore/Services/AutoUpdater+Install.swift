@@ -143,6 +143,15 @@ extension AutoUpdater {
         // A SIGKILL mid-copy leaves dst partially overwritten with no rollback.
         // `replaceItem` uses a rename-based swap at the VFS layer instead.
         //
+        // resultingItemURL: On a same-volume APFS rename the returned URL equals
+        // `bundleURL`. On a cross-volume copy-and-delete (rare — temp dir and
+        // /Applications on different volumes) macOS may return a different URL.
+        // We capture it and use it as the relaunch path so `open -n` always
+        // points to the actual post-swap location rather than the pre-swap
+        // `bundleURL` (which is the right path in practice, but `resultingURL`
+        // is authoritative). Falls back to `bundleURL` if nil (should not occur
+        // in normal operation, but belt-and-braces).
+        //
         // Preconditions that are always true here:
         //   • `bundleURL` (dst) exists — it is `Bundle.main.bundlePath`.
         //   • `appInZip` (src) exists — step 2 just located it in `tmpDir`.
@@ -157,13 +166,14 @@ extension AutoUpdater {
         // We do not need to manage it manually.
         //
         // Closes #1796.
+        var resultingURL: URL?
         do {
             try fm.replaceItem(
                 at: bundleURL,
                 withItemAt: appInZip,
                 backupItemName: "RunBot.app.bak",
                 options: [],
-                resultingItemURL: nil
+                resultingItemURL: &resultingURL
             )
         } catch {
             isInstalling = false
@@ -181,6 +191,11 @@ extension AutoUpdater {
         // `open -n` forces a new instance even if one is already running.
         // We do NOT await — NSApp.terminate must fire immediately after.
         //
+        // Use `resultingURL` from `replaceItem` as the authoritative post-swap
+        // bundle path. On same-volume APFS this equals `bundleURL`; on a
+        // cross-volume swap macOS may return a different URL. Falls back to
+        // `bundleURL` if `resultingURL` is nil (should not occur in practice).
+        //
         // ⚠️ `NSApp.terminate(nil)` IS INTENTIONAL — DO NOT CHANGE TO `exit(0)` ⚠️
         //
         // This is NOT a mistake. `exit(0)` is the correct call for a detached
@@ -197,9 +212,10 @@ extension AutoUpdater {
         // This decision was explicitly discussed and chosen in issue #1794
         // ("Why NSApp.terminate" section). REVIEWER: Do NOT change this to
         // `exit(0)` without re-reading #1794 and opening a discussion there first.
+        let launchPath = (resultingURL ?? bundleURL).path
         let relaunchTask = Process()
         relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        relaunchTask.arguments = ["-n", bundleURL.path]
+        relaunchTask.arguments = ["-n", launchPath]
         do {
             try relaunchTask.run()
         } catch {
