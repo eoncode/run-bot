@@ -92,6 +92,18 @@ public enum AutoUpdater {
         // MainActor. The Swift 6 strict-concurrency checker accepts this
         // pattern; no warning is emitted because `state` is only ever *read*
         // from the detached context to be forwarded, not written to directly.
+        // ── 3b. In-flight guard ──────────────────────────────────────────────
+        // Prevent a second concurrent download of the same zip. This can
+        // happen if the background scheduler fires while a Task.detached
+        // download is already running — both would race to write the same
+        // destination file, with the try? removeItem between them creating a
+        // window where neither write wins cleanly.
+        //
+        // `isDownloading` is `@MainActor`-isolated, so this read-modify-write
+        // is atomic with respect to all other `handle()` callers.
+        guard !isDownloading else { return }
+        isDownloading = true
+
         let downloadURL = asset.browserDownloadURL
         let tagName = release.tagName
 
@@ -201,9 +213,11 @@ public enum AutoUpdater {
             await MainActor.run {
                 state.updateZipURL = destination
                 state.cachedUpdateVersion = version
+                isDownloading = false
             }
         } catch {
             await MainActor.run {
+                isDownloading = false
                 state.updateActionFailed = true
             }
         }
@@ -402,6 +416,15 @@ public enum AutoUpdater {
     /// comment in full and confirming `applicationShouldTerminate` behaviour.
     @MainActor private static var isInstalling: Bool = false
 
+    /// Guards against concurrent downloads of the same release.
+    ///
+    /// `handle()` is `@MainActor`, so reads and writes to this flag are
+    /// serialised on the main actor — no additional locking is needed.
+    /// Set to `true` just before `Task.detached` is spawned; reset to `false`
+    /// inside `downloadUpdate` on both the success and failure paths (via
+    /// `MainActor.run`).
+    @MainActor private static var isDownloading: Bool = false
+
     /// Installs the downloaded update zip and relaunches the app.
     ///
     /// Replaces the running `RunBot.app` bundle in-place, then calls
@@ -526,6 +549,13 @@ public enum AutoUpdater {
                 "AutoUpdater: open -n failed, aborting relaunch: \(error.localizedDescription)",
                 category: .services
             )
+            // Clear `updateZipURL` so the next "Install & Relaunch" tap does
+            // not re-enter `installAndRelaunch` with a URL pointing to a file
+            // that was already deleted by `clearCachedDefaults()` + the
+            // `removeItem(at: zipURL)` call three lines above. Without this,
+            // the state machine would find `updateZipURL` non-nil, attempt
+            // `ditto` on a missing path, and fail silently every subsequent tap.
+            state.updateZipURL = nil
             isInstalling = false
             state.updateActionFailed = true
             return
