@@ -509,7 +509,7 @@ public enum AutoUpdater {
     /// and the user would see a "Download" fallback with no indication of
     /// what went wrong. This made install failures undiagnosable in the field.
     ///
-    /// Stderr is now piped and logged at `.error` level on failure so that
+    /// Stderr is now piped and logged at error level on failure so that
     /// Console.app and crash reports contain actionable information. Stdout
     /// remains discarded — `ditto` produces no useful stdout.
     private static func runCommand(_ executable: String, args: [String]) async -> Bool {
@@ -532,13 +532,17 @@ public enum AutoUpdater {
                     if !succeeded {
                         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                         let stderrMsg = String(data: stderrData, encoding: .utf8) ?? "(unreadable)"
-                        log(.error, category: .services,
-                            "AutoUpdater: \(executable) failed (exit \(process.terminationStatus)): \(stderrMsg)")
+                        log(
+                            "AutoUpdater: \(executable) failed (exit \(process.terminationStatus)): \(stderrMsg)",
+                            category: .services
+                        )
                     }
                     continuation.resume(returning: succeeded)
                 } catch {
-                    log(.error, category: .services,
-                        "AutoUpdater: could not launch \(executable): \(error.localizedDescription)")
+                    log(
+                        "AutoUpdater: could not launch \(executable): \(error.localizedDescription)",
+                        category: .services
+                    )
                     continuation.resume(returning: false)
                 }
             }
