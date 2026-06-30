@@ -315,6 +315,7 @@ public enum UpdateChecker {
         return sorted.first(where: { betaChannel ? true : !$0.prerelease })
     }
 
+    // deepsource-disable-next-line SW-R1002
     /// Returns `true` when `candidate` is strictly newer than `current`
     /// using numeric semver comparison, including beta ordering.
     ///
@@ -325,7 +326,6 @@ public enum UpdateChecker {
     ///
     /// Exposed `internal` (not `private`) so `Bundle+Version.isOlderThan`
     /// can reuse the same comparison logic without duplicating it.
-    // deepsource-disable-next-line SW-R1002
     static func isNewer(_ candidate: String, than current: String) -> Bool {
         let cv = ParsedVersion(candidate.hasPrefix("v") ? String(candidate.dropFirst()) : candidate)
         let sv = ParsedVersion(current.hasPrefix("v")   ? String(current.dropFirst())   : current)
