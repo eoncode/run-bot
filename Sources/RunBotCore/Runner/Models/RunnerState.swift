@@ -82,11 +82,15 @@ public final class RunnerState {
     /// write site and keeps ad-hoc mutation visible in code review.
     public private(set) var availableUpdate: String?
 
-    /// Sets `availableUpdate`. Called exactly once, from the startup Task in
-    /// `AppDelegate+PanelSetup`, after `UpdateChecker.checkForUpdate` resolves.
+    /// Sets `availableUpdate`.
     ///
-    /// Using an explicit method (rather than direct property assignment) makes the
-    /// single authorised write site obvious and prevents ad-hoc mutation elsewhere.
+    /// Called from `AutoUpdater.handle(_:state:)` on every `.updateAvailable` result
+    /// (including the launch-time check in `AppDelegate+PanelSetup`) and from
+    /// `AutoUpdater.scheduleBackgroundCheck` to clear a stale row on `.upToDate`
+    /// or `.failed` results (when no zip is cached).
+    ///
+    /// Using an explicit method (rather than direct property assignment) keeps
+    /// every write site visible in code review and prevents ad-hoc mutation elsewhere.
     ///
     /// There is intentionally no `@MainActor` on `availableUpdate` itself: the property
     /// is written here (always called from the main actor in `AppDelegate`) and read by

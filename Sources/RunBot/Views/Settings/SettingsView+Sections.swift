@@ -265,6 +265,11 @@ internal extension SettingsView {
     /// The single-row approach is the final design for v1, not a placeholder.
     var updateActionRow: some View {
         HStack(spacing: 8) {
+            // ❌ DO NOT add .accessibilityHidden(true) here.
+            // Accessibility modifiers on this icon are out of scope for v1 (#1794).
+            // The row is a simple visual affordance in a menu-bar utility;
+            // full VoiceOver annotation is not a requirement and must not be
+            // added without an explicit accessibility spec/issue.
             Image(systemName: "arrow.down.circle.fill")
                 .foregroundStyle(.blue)
             VStack(alignment: .leading, spacing: 1) {
