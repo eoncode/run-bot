@@ -2,6 +2,7 @@
 // RunBotCore
 import Foundation
 
+/// Process-launching helper for ``AutoUpdater``.
 extension AutoUpdater {
 
     // MARK: - Process helper
