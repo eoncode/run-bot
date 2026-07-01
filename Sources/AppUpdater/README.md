@@ -1,9 +1,9 @@
 # AppUpdater
 
-A host-agnostic Swift library target that drives an in-app auto-update flow
-for macOS apps distributed outside the Mac App Store. Zero dependency on
-RunBotCore or any host code — all host-specific values are injected by the
-caller.
+A host-agnostic Swift library that drives an in-app auto-update flow
+for macOS apps distributed outside the Mac App Store. Zero host-specific
+dependencies — all host values (repo slug, asset name, scheduler identifier,
+beta-channel preference, UI state model) are injected by the caller.
 
 ## Flow
 
@@ -51,8 +51,9 @@ await updater.installAndRelaunch(state: myState)
 
 - The release archive carries exactly one `.app` at its root.
 - Each release attaches a `<assetName>.sha256` sidecar. A missing sidecar is a hard failure.
-- On any download/install failure the host’s failure flag is set so the app can surface a
-  browser-download fallback. This is a designed recovery path, not a silent failure.
+- On any download or install failure the host’s failure state is set via `setUpdateFailed()`
+  so the host UI can surface an appropriate fallback. This is a designed recovery path,
+  not a silent failure.
 
 ## Persisted state
 
