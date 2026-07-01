@@ -377,8 +377,17 @@ public final class AppUpdater {
         state.setAvailableUpdate(release.tagName)
 
         // ── 3b. Move to downloading state ───────────────────────────────────────────────────────
-        // clearCachedDefaults() BEFORE setDownloadStarted() — load-bearing ordering;
-        // see full rationale in the handle() doc comment above.
+        // clearCachedDefaults() MUST run before setDownloadStarted(). If the
+        // process is force-quit in the window between these two calls, the
+        // invariant we need to preserve is: UserDefaults must not contain a
+        // cached-zip path that points at a file which was never fully
+        // downloaded. Running clearCachedDefaults() first guarantees that a
+        // crash here leaves UserDefaults clean; a subsequent launch finds no
+        // cached path and triggers a fresh check. The reverse order would leave
+        // a stale path in defaults pointing at nothing, causing
+        // rehydrateCachedUpdateIfNewer() to silently clear it on next launch
+        // rather than offering the install — a recoverable but confusing state.
+        // Do NOT reorder these two calls or insert an `await` between them.
         clearCachedDefaults()
         state.setDownloadStarted()
 
