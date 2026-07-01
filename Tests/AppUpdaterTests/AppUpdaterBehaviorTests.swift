@@ -153,7 +153,7 @@ struct AppUpdaterBehaviorTests {
     }
 
     /// When a cached zip exists on disk but its version is not newer than
-    /// `currentVersion` — meaning the update was already installed — 
+    /// `currentVersion` — meaning the update was already installed —
     /// `rehydrateCachedUpdateIfNewer` must skip rehydration, leave the
     /// available-update label unset, and clear both scoped keys so the
     /// already-applied update is not offered again.
@@ -180,5 +180,165 @@ struct AppUpdaterBehaviorTests {
         #expect(state.availableUpdates.isEmpty)
         #expect(defaults.string(forKey: keys.cachedUpdateVersion) == nil)
         #expect(defaults.string(forKey: keys.cachedUpdateZipPath) == nil)
+    }
+}
+
+// MARK: - AppUpdaterCheckAndHandleTests
+
+/// Exercises `AppUpdater.checkForUpdate(betaChannel:)` in isolation using
+/// `MockReleaseProvider` — no network, no disk I/O.
+///
+/// All tests share `currentVersion = "1.0.0"` on the updater and a
+/// `"v2.0.0"` tag on the available release (clearly newer).
+@MainActor
+@Suite("AppUpdater.checkAndHandle")
+struct AppUpdaterCheckAndHandleTests {
+
+    private let newerTag = "v2.0.0"
+    private let olderTag = "v0.9.0"
+    private let currentVersion = "1.0.0"
+
+    /// Builds an `AppUpdater` wired to `provider` and an isolated
+    /// `UserDefaults` suite.
+    private func makeUpdater(
+        domain: String,
+        defaults: UserDefaults,
+        provider: some ReleaseProvider,
+        betaChannel: Bool = false
+    ) -> AppUpdater {
+        AppUpdater(
+            repo: "example/repo",
+            currentVersion: currentVersion,
+            assetName: { _ in "RunBot.zip" },
+            schedulerIdentifier: domain,
+            userDefaults: defaults,
+            betaChannelProvider: { betaChannel },
+            releaseProvider: provider
+        )
+    }
+
+    /// Minimal `AvailableRelease` fixture — no assets, no checksum URL.
+    /// Sufficient for `checkForUpdate` tests which only inspect the tag.
+    private func release(tag: String) -> AvailableRelease {
+        AvailableRelease(tagName: tag, assets: [], checksumURL: nil)
+    }
+
+    // MARK: - 1. Provider returns nil → .failed
+
+    /// When the provider returns `nil` (simulates network failure / empty
+    /// releases list), `checkForUpdate` must return `.failed(.noReleasesFound)`
+    /// and leave `isDownloading` false.
+    @Test func providerReturnsNil_failedNoReleasesFound() async throws {
+        let domain = "test.check.nil.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let provider = MockReleaseProvider(releaseToReturn: nil)
+        let updater = makeUpdater(domain: domain, defaults: defaults, provider: provider)
+
+        let result = await updater.checkForUpdate(betaChannel: false)
+
+        guard case .failed(let error) = result,
+              let checkError = error as? UpdateCheckError,
+              checkError == .noReleasesFound else {
+            Issue.record("Expected .failed(.noReleasesFound), got \(result)")
+            return
+        }
+        #expect(updater.isDownloading == false)
+    }
+
+    // MARK: - 2. Provider returns release that is NOT newer → .upToDate
+
+    /// When the provider returns a release whose tag is older than
+    /// `currentVersion`, `checkForUpdate` must return `.upToDate`.
+    @Test func providerReturnsOlderVersion_upToDate() async throws {
+        let domain = "test.check.older.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let provider = MockReleaseProvider(releaseToReturn: release(tag: olderTag))
+        let updater = makeUpdater(domain: domain, defaults: defaults, provider: provider)
+
+        let result = await updater.checkForUpdate(betaChannel: false)
+
+        guard case .upToDate = result else {
+            Issue.record("Expected .upToDate, got \(result)")
+            return
+        }
+    }
+
+    // MARK: - 3. Provider returns newer release → .updateAvailable
+
+    /// When the provider returns a release newer than `currentVersion`,
+    /// `checkForUpdate` must return `.updateAvailable` with that release.
+    @Test func providerReturnsNewerVersion_updateAvailable() async throws {
+        let domain = "test.check.newer.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let provider = MockReleaseProvider(releaseToReturn: release(tag: newerTag))
+        let updater = makeUpdater(domain: domain, defaults: defaults, provider: provider)
+
+        let result = await updater.checkForUpdate(betaChannel: false)
+
+        guard case .updateAvailable(let r) = result else {
+            Issue.record("Expected .updateAvailable, got \(result)")
+            return
+        }
+        #expect(r.tagName == newerTag)
+    }
+
+    // MARK: - 4. betaChannel=false forwarded to provider
+
+    /// `checkForUpdate(betaChannel: false)` must pass `false` through to
+    /// `provider.fetchLatestRelease`.
+    @Test func betaChannelFalse_passedToProvider() async throws {
+        let domain = "test.check.beta.false.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let provider = MockReleaseProvider(releaseToReturn: nil)
+        let updater = makeUpdater(domain: domain, defaults: defaults, provider: provider)
+
+        _ = await updater.checkForUpdate(betaChannel: false)
+
+        let captured = await provider.capturedBetaChannel
+        #expect(captured == false)
+    }
+
+    // MARK: - 5. betaChannel=true forwarded to provider
+
+    /// `checkForUpdate(betaChannel: true)` must pass `true` through to
+    /// `provider.fetchLatestRelease`.
+    @Test func betaChannelTrue_passedToProvider() async throws {
+        let domain = "test.check.beta.true.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let provider = MockReleaseProvider(releaseToReturn: nil)
+        let updater = makeUpdater(domain: domain, defaults: defaults, provider: provider)
+
+        _ = await updater.checkForUpdate(betaChannel: true)
+
+        let captured = await provider.capturedBetaChannel
+        #expect(captured == true)
+    }
+
+    // MARK: - 6. fetchLatestRelease called exactly once per checkForUpdate
+
+    /// `checkForUpdate` must call `fetchLatestRelease` exactly once —
+    /// no retry, no double-fetch.
+    @Test func callCount_exactlyOnePerCheck() async throws {
+        let domain = "test.check.callcount.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+
+        let provider = MockReleaseProvider(releaseToReturn: nil)
+        let updater = makeUpdater(domain: domain, defaults: defaults, provider: provider)
+
+        _ = await updater.checkForUpdate(betaChannel: false)
+
+        let count = await provider.callCount
+        #expect(count == 1)
     }
 }
