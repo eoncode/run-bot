@@ -89,13 +89,13 @@ struct SettingsView: View {
     ///     Must be supplied explicitly — `RunnerState` has no singleton.
     init(
         onBack: @escaping () -> Void,
-        localRunnerStore: LocalRunnerStore = .shared,
         oauthService: any OAuthServiceProtocol,
-        settings: AppPreferencesStore = .shared,
-        notifications: NotificationPreferences = .shared,
         lifecycleService: any RunnerLifecycleServiceProtocol,
         runnerState: RunnerState,
-        autoUpdater: AppUpdater
+        autoUpdater: AppUpdater,
+        localRunnerStore: LocalRunnerStore = .shared,
+        settings: AppPreferencesStore = .shared,
+        notifications: NotificationPreferences = .shared
     ) {
         self.onBack = onBack
         self.localRunnerStore = localRunnerStore
