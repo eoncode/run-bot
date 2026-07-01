@@ -34,8 +34,16 @@ import Foundation
 /// spinner is shown is a host-app UI detail; `AppUpdater` tracks in-flight
 /// downloads with its own instance flag. The host only needs the four mutation
 /// hooks below to render a correct UI.
+/// ## Why the protocol also refines `Sendable`
+///
+/// `AppUpdater.scheduleBackgroundCheck` captures the host-state existential in an
+/// escaping `NSBackgroundActivityScheduler` closure that runs on a background
+/// GCD queue. Refining `Sendable` makes `any UpdateStateProviding` safe to carry
+/// across that boundary. This costs conformers nothing: every conformer is a
+/// reference type isolated to `@MainActor` (the whole protocol is), and
+/// global-actor-isolated classes are implicitly `Sendable`.
 @MainActor
-public protocol UpdateStateProviding: AnyObject {
+public protocol UpdateStateProviding: AnyObject, Sendable {
 
     /// Local file URL of the cached, verified update zip, or `nil` while no
     /// download is ready (in progress, not started, or failed).
