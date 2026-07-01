@@ -23,6 +23,7 @@ let package = Package(
             dependencies: [],
             path: "Sources/AppUpdater",
             exclude: ["README.md"],
+            platforms: [.macOS(.v26)],
             swiftSettings: [
                 .enableUpcomingFeature("NonisolatedNonsendingByDefault")
             ]
@@ -63,6 +64,7 @@ let package = Package(
                 "AppUpdater"
             ],
             path: "Tests/AppUpdaterTests",
+            platforms: [.macOS(.v26)],
             swiftSettings: [
                 .enableUpcomingFeature("NonisolatedNonsendingByDefault")
             ]
