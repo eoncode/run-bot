@@ -50,7 +50,7 @@ public final class AppUpdater {
     // MARK: - Injected configuration
 
     /// `"owner/name"` GitHub repository slug polled for releases.
-    let repo: String
+    public let repo: String
 
     /// The running app's version (full semver incl. any pre-release suffix).
     /// The library never reads `Bundle` — the host supplies this.

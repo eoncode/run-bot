@@ -36,6 +36,6 @@ public protocol ReleaseProvider: Sendable {
     func fetchLatestRelease(
         repo: String,
         betaChannel: Bool,
-        assetName: (String) -> String
+        assetName: @Sendable (String) -> String
     ) async -> AvailableRelease?
 }
