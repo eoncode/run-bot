@@ -126,20 +126,23 @@ public final class RunnerState {
     ///
     /// Called by `AppUpdater.rehydrateCachedUpdateIfNewer` after verifying the
     /// cached zip still exists on disk and its version is newer than the running
-    /// app. Clears any stale `updateActionFailed` flag from a prior session so a
-    /// ready-to-install cached update is not masked by the browser fallback.
+    /// app. Clears any stale `updateActionFailed` / `updateAssetMissing` flags
+    /// from a prior session so a ready-to-install cached update is not masked by
+    /// the browser fallback.
     public func rehydrateCachedUpdate(zipURL: URL, version: String) {
         updateZipURL = zipURL
         cachedUpdateVersion = version
         updateActionFailed = false
+        updateAssetMissing = false
     }
 
     /// Moves to the "downloading" state: clears any cached zip URL / version and
-    /// the failure flag so the host shows a spinner while the new zip downloads.
+    /// both fallback flags so the host shows a spinner while the new zip downloads.
     public func setDownloadStarted() {
         updateZipURL = nil
         cachedUpdateVersion = nil
         updateActionFailed = false
+        updateAssetMissing = false
     }
 
     /// Records a completed, integrity-verified download. The zip is cached at
@@ -157,8 +160,18 @@ public final class RunnerState {
         updateActionFailed = true
     }
 
+    /// Flags that the discovered release carries no matching asset, so the
+    /// browser-download fallback is shown.
+    public func setAssetMissing() {
+        updateAssetMissing = true
+    }
+
     /// `true` when the latest release exists but its `RunBot.zip` asset is absent.
     ///
+    /// Set via `setAssetMissing()` when `AppUpdater.handle(_:state:)` finds no
+    /// matching asset; cleared by `setDownloadStarted()` (a fresh download began,
+    /// so the asset is now present) and `rehydrateCachedUpdate(zipURL:version:)`
+    /// (a cached zip exists, which is mutually exclusive with a missing asset).
     /// When `true` the UI falls back to a **Download** button that opens the
     /// releases page in the browser instead of triggering an in-app install.
     public internal(set) var updateAssetMissing: Bool = false

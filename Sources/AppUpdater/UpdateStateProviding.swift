@@ -53,10 +53,16 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
     /// when nothing is cached.
     var cachedUpdateVersion: String? { get }
 
-    /// `true` when a download **or** install attempt failed, or the release
-    /// carried no matching asset. The host shows its browser-download fallback
-    /// whenever this is `true`.
+    /// `true` when a download **or** install attempt failed. The host shows its
+    /// browser-download fallback whenever this is `true`.
     var updateActionFailed: Bool { get }
+
+    /// `true` when the discovered release exists but carries no matching asset
+    /// to download. Tracked separately from `updateActionFailed` so the host can
+    /// distinguish "release published without a binary" from "download/install
+    /// failed" — both drive the same browser-download fallback today, but the
+    /// distinct signal lets the host surface a more precise reason later.
+    var updateAssetMissing: Bool { get }
 
     /// Records the version label of an available update (or clears it with
     /// `nil`). Called on every `.updateAvailable` result and to clear a stale
@@ -65,7 +71,8 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
 
     /// Signals that a fresh background download has begun. Implementations
     /// should move to a "downloading" state: clear any cached zip URL / version
-    /// and clear `updateActionFailed` so a spinner is shown.
+    /// and clear both `updateActionFailed` and `updateAssetMissing` so a spinner
+    /// is shown.
     func setDownloadStarted()
 
     /// Signals that a download completed and was integrity-verified. The zip is
@@ -77,9 +84,16 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
     /// should set `updateActionFailed` so the browser-download fallback shows.
     func setUpdateFailed()
 
+    /// Signals that the discovered release carries no matching downloadable
+    /// asset. Implementations should set `updateAssetMissing` so the
+    /// browser-download fallback shows. Distinct from `setUpdateFailed()`:
+    /// nothing was attempted and failed — there was simply nothing to download.
+    func setAssetMissing()
+
     /// Rehydrates cached download state on launch: the zip at `zipURL` for
     /// `version` was previously downloaded and still exists on disk.
     /// Implementations should set `updateZipURL`/`cachedUpdateVersion` and
-    /// clear any stale `updateActionFailed` flag from a prior session.
+    /// clear any stale `updateActionFailed` / `updateAssetMissing` flags from a
+    /// prior session.
     func rehydrateCachedUpdate(zipURL: URL, version: String)
 }

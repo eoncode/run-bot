@@ -91,9 +91,10 @@ struct AppUpdaterBehaviorTests {
 
     // MARK: - Missing asset
 
-    /// A release with no matching zip asset flips the host failure state (browser
-    /// fallback) and starts no download.
-    @Test func missingAssetFailsWithoutDownloading() async throws {
+    /// A release with no matching zip asset flips the asset-missing state (browser
+    /// fallback) and starts no download. The asset-missing path is distinct from
+    /// the failure path: `setAssetMissing()` is called, `setUpdateFailed()` is not.
+    @Test func missingAssetSetsAssetMissingWithoutDownloading() async throws {
         let domain = "test.noasset.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
@@ -108,7 +109,10 @@ struct AppUpdaterBehaviorTests {
 
         await updater.handle(release, state: state)
 
-        #expect(state.updateFailedCount == 1)
+        #expect(state.assetMissingCount == 1)
+        #expect(state.updateAssetMissing == true)
+        // Asset-missing is signalled separately from a download/install failure.
+        #expect(state.updateFailedCount == 0)
         #expect(state.downloadStartedCount == 0)
         #expect(updater.isDownloading == false)
     }

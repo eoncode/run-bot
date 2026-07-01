@@ -216,9 +216,15 @@ public final class AppUpdater {
         }
 
         // ── 2. Asset absent from release? ───────────────────────────────────
+        // A missing asset is signalled via `setAssetMissing()`, NOT
+        // `setUpdateFailed()`: nothing was attempted and failed — the release
+        // simply carries no binary. This mirrors the pre-refactor semantics
+        // where the asset-absent path set only `updateAssetMissing`. Both flags
+        // drive the same browser-download fallback, but keeping them distinct
+        // preserves the more precise reason for the host UI.
         let wantedAsset = assetName(release.tagName)
         guard let asset = release.assets.first(where: { $0.name == wantedAsset }) else {
-            state.setUpdateFailed()
+            state.setAssetMissing()
             return
         }
 

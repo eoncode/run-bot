@@ -17,12 +17,14 @@ final class MockUpdateState: UpdateStateProviding {
     private(set) var updateZipURL: URL?
     private(set) var cachedUpdateVersion: String?
     private(set) var updateActionFailed: Bool = false
+    private(set) var updateAssetMissing: Bool = false
 
     // Recorded interactions.
     private(set) var availableUpdates: [String?] = []
     private(set) var downloadStartedCount = 0
     private(set) var downloadCompleteCount = 0
     private(set) var updateFailedCount = 0
+    private(set) var assetMissingCount = 0
     private(set) var rehydrateCount = 0
 
     func setAvailableUpdate(_ version: String?) {
@@ -34,6 +36,7 @@ final class MockUpdateState: UpdateStateProviding {
         updateZipURL = nil
         cachedUpdateVersion = nil
         updateActionFailed = false
+        updateAssetMissing = false
     }
 
     func setDownloadComplete(zipURL: URL, version: String) {
@@ -48,10 +51,16 @@ final class MockUpdateState: UpdateStateProviding {
         updateActionFailed = true
     }
 
+    func setAssetMissing() {
+        assetMissingCount += 1
+        updateAssetMissing = true
+    }
+
     func rehydrateCachedUpdate(zipURL: URL, version: String) {
         rehydrateCount += 1
         updateZipURL = zipURL
         cachedUpdateVersion = version
         updateActionFailed = false
+        updateAssetMissing = false
     }
 }
