@@ -313,8 +313,35 @@ public final class AppUpdater {
     /// affordance is visible immediately — even offline, before any network
     /// check runs. Otherwise stale keys are cleared.
     ///
+    /// ## Stale zip purge
+    ///
+    /// `purgeStaleZips(keeping:)` is called unconditionally at the top of this
+    /// function, before the guard, so orphaned zips from the previous session
+    /// are swept regardless of whether rehydration succeeds or fails. The
+    /// `keepURL` is derived from `UserDefaults` before the guard block so the
+    /// live zip (if any) is never deleted even when rehydration returns early.
+    ///
+    /// REVIEWER: Do NOT move the `purgeStaleZips` call inside the guard's
+    /// success branch. The orphans this sweep targets — specifically the open-n
+    /// failure path where UserDefaults are cleared before the zip is deleted —
+    /// are present precisely when the guard fails (no valid path in UserDefaults).
+    /// Moving it inside the success branch would silently miss every orphan.
+    ///
     /// Call this before `checkAndHandle` on startup.
     public func rehydrateCachedUpdateIfNewer(state: any UpdateStateProviding) {
+        // Derive the live zip URL from UserDefaults before the guard so
+        // purgeStaleZips knows which file to preserve regardless of which
+        // branch is taken below.
+        let liveZipURL = defaults.string(forKey: keys.cachedUpdateZipPath)
+            .map { URL(fileURLWithPath: $0) }
+
+        // Purge stale zips unconditionally. Covers:
+        // - Normal install cycles (prior version's zip left on disk)
+        // - open -n failure path (UserDefaults cleared, zip orphaned)
+        // - Any future edge case leaving zips without a UserDefaults pointer
+        // The live zip (liveZipURL) is preserved if present.
+        purgeStaleZips(keeping: liveZipURL)
+
         guard let path = defaults.string(forKey: keys.cachedUpdateZipPath),
               let version = defaults.string(forKey: keys.cachedUpdateVersion),
               FileManager.default.fileExists(atPath: path),
