@@ -41,6 +41,9 @@ let updater = AppUpdater(
     assetName: { _ in "YourApp.zip" },               // SHA-256 sidecar expected at "<assetName>.sha256"
     schedulerIdentifier: "com.your-org.update-check" // also scopes UserDefaults keys
 )
+// If you distribute a Developer ID-signed app, also set:
+// updater.skipCodeSignValidation = false
+// See the Trust model section below for details.
 ```
 
 ### 3. Drive it from your app delegate
@@ -134,11 +137,15 @@ updater.skipCodeSignValidation = false // enable identity check for Developer ID
 ## Distribution assumptions
 
 - The release archive carries exactly one `.app` at its root.
-- Each release attaches a `<assetName>.sha256` sidecar. A missing or empty sidecar
-  is a hard failure — verification is skipped for neither.
-- On any download or install failure `setUpdateFailed()` is called. The host should
-  direct the user to re-run the original `curl` install command — **not** open a
-  browser download. Downloading via a browser stamps the `.app` with
+- Each release attaches a `<assetName>.sha256` sidecar.
+- **Missing zip asset or missing sidecar** (checksumURL is nil on the
+  `AvailableRelease`) → `state.setAssetMissing()` is called. This is the cue
+  to direct the user to the curl-install fallback — not a generic retry.
+  `setDownloadStarted()` is never called in this path.
+- **Download or verification failure** (network error, HTTP non-200, checksum
+  mismatch, empty sidecar body) → `state.setUpdateFailed()` is called. The host
+  should direct the user to re-run the original `curl` install command — **not**
+  open a browser download. Downloading via a browser stamps the `.app` with
   `com.apple.quarantine`, which triggers Gatekeeper and breaks the install.
 
 ## Persisted state
@@ -172,6 +179,19 @@ releases sort after the 100th entry by semver. Recommended mitigations:
 - Or tag hotfixes with a version that sorts into the top 100 by semver.
 
 Pagination support is a future enhancement if there is demand.
+
+### `beta.N` pre-release labels only
+
+`UpdateChecker.isNewer` supports pre-release ordering **only for `beta.N` labels**
+(e.g. `v0.8.0-beta.2` > `v0.8.0-beta.1`). Any other pre-release suffix —
+`rc.1`, `alpha.1`, or an arbitrary string — is parsed with a nil beta index.
+When both versions share the same `major.minor.patch` and at least one has a
+non-`beta.N` pre-release label, `isNewer` returns `false`.
+
+The current publish pipeline only generates `beta.N` tags, so this is not a
+problem in practice. If you add an RC channel, extend `ParsedVersion` in
+`UpdateChecker.swift` to recognise the new suffix before relying on `isNewer`
+for ordering.
 
 ## Alternatives
 
