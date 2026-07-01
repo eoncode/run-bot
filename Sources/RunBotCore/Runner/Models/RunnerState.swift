@@ -36,7 +36,7 @@ public final class RunnerState {
     /// `LocalRunnerStore`.
     ///
     /// See `runners` for the access-level rationale.
-    public var localRunners: [LocalRunner] = []
+    public var localRunners: [RunnerModel] = []
 
     /// `true` while `LocalRunnerStore` is performing an async scan for locally
     /// installed runner services.
