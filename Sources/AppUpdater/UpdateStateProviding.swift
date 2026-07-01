@@ -76,31 +76,42 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
     /// is shown.
     func setDownloadStarted()
 
-    /// Clears stale cached-download state without signalling that a new download
-    /// is starting.
+    /// Clears stale in-memory cached-download state without signalling that a
+    /// new download is starting and without surfacing any failure UI.
     ///
-    /// Called in two situations:
-    /// 1. Before a new download begins — to remove a stale cached zip URL and
-    ///    version from a prior session without implying a spinner should show.
-    /// 2. After `replaceItem` succeeds but `open -n` fails — the new binary is
-    ///    on disk so the zip is spent; cached state should be cleared without
-    ///    surfacing the curl-install fallback.
+    /// ## When `AppUpdater` calls this
     ///
-    /// ## Safe default: no-op
+    /// This method has exactly **one** call site inside the library:
+    /// `AppUpdater+Install.swift § replaceAndRelaunch`, in the branch where
+    /// `replaceItem` succeeds but the subsequent `open -n` relaunch throws.
+    /// At that point:
+    ///   - The new `.app` is already on disk (`replaceItem` succeeded).
+    ///   - `clearCachedDefaults()` has already run — `UserDefaults` keys wiped.
+    ///   - The zip file has already been deleted.
     ///
-    /// The default implementation is intentionally a **no-op**. This is the
-    /// correct safe default for a protocol method that conformers may not
-    /// implement: a spurious no-op is always safe; a spurious
-    /// `setDownloadStarted()` would trigger download-UI side-effects (e.g. a
-    /// spinner) in any conformer that wires that method to visible UI.
+    /// `setUpdateFailed()` would be wrong here (it surfaces the curl-install
+    /// fallback, implying the user needs to reinstall — they don't). This method
+    /// exists to clear the stale in-memory zip URL/version without triggering
+    /// any failure UI, so the host reaches a neutral state. The user can relaunch
+    /// manually.
     ///
-    /// **Conformers that need field clears here must override this method.**
-    /// A typical override clears `updateZipURL`, `cachedUpdateVersion`,
-    /// `updateActionFailed`, and `updateAssetMissing` without starting a spinner.
+    /// ## No-op default — load-bearing by design
     ///
-    /// REVIEWER: Do NOT change the default to call `setDownloadStarted()`. The
-    /// no-op default is load-bearing for the post-install relaunch-failure path
-    /// in `AppUpdater+Install.swift` — see `replaceAndRelaunch`.
+    /// The default implementation is intentionally a **no-op**. This is not an
+    /// oversight. The safe default for any protocol method with potential UI
+    /// side-effects is to do nothing: a spurious no-op is always safe, whereas
+    /// a spurious `setDownloadStarted()` would trigger download-UI side-effects
+    /// (e.g. a spinner) in any conformer that wires that method to visible UI.
+    ///
+    /// **Conformers that cache zip state in memory must override this method**
+    /// to nil `updateZipURL`, `cachedUpdateVersion`, and clear both failure flags
+    /// — without starting a spinner. See `RunnerState+AppUpdater.swift` for the
+    /// reference implementation.
+    ///
+    /// REVIEWER: Do NOT change the default to call `setDownloadStarted()` or
+    /// to delegate to any other state-mutating method. The no-op is load-bearing:
+    /// conformers that do not override this method must not experience unexpected
+    /// side-effects when `AppUpdater` calls it in the relaunch-failure path.
     func clearDownloadState()
 
     /// Signals that a download completed and was integrity-verified. The zip is
@@ -140,13 +151,19 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
 /// Conformers may override any of these to customise behaviour.
 public extension UpdateStateProviding {
 
-    /// Default implementation: intentional no-op.
+    /// Default implementation: intentional no-op by design.
     ///
-    /// See the `clearDownloadState()` protocol requirement doc comment for the
-    /// full rationale. Short version: the safe default for a protocol method
-    /// with potential UI side-effects is a no-op, not `setDownloadStarted()`.
-    /// Conformers that need field clears here must override this method.
+    /// `AppUpdater` calls this only in the post-install relaunch-failure path
+    /// (see the protocol requirement doc comment above for the full call-site
+    /// description). The no-op default is safe for conformers that do not cache
+    /// zip state in memory — they have nothing to clear. Conformers that do
+    /// cache zip state **must** override this method to perform the necessary
+    /// field clears without triggering spinner UI.
+    ///
+    /// REVIEWER: Do NOT change this default to delegate to `setDownloadStarted()`
+    /// or any other state-mutating method. The no-op is load-bearing — see the
+    /// protocol requirement doc comment for the full rationale.
     func clearDownloadState() {
-        // Intentional no-op — see doc comment on the protocol requirement.
+        // Intentional no-op by design — see protocol requirement doc comment.
     }
 }
