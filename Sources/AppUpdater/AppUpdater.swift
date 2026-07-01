@@ -364,6 +364,19 @@ public final class AppUpdater {
 
     /// Downloads the zip and its SHA-256 sidecar in parallel, verifies
     /// integrity, then caches the verified zip and updates host state.
+    ///
+    /// ## HTTP status validation
+    ///
+    /// Both the zip response and the checksum sidecar response are validated
+    /// for HTTP 200 before their bodies are used. This matters most for the
+    /// sidecar: GitHub's CDN returns a 404 HTML page (not an error throw) when
+    /// a release was published without a `.sha256` file. Without the status
+    /// check the HTML body would be fed into the hex parser, `expectedHex`
+    /// would be `"<!DOCTYPE"`, `verifyChecksum` would throw a digest mismatch,
+    /// and Console.app would log "checksum mismatch" instead of "sidecar
+    /// returned HTTP 404" — making the failure significantly harder to diagnose.
+    /// The install is blocked correctly in both cases; this is purely a
+    /// diagnosability improvement.
     private func downloadUpdate( // skipcq: SW-R1002 — reviewed; complexity acceptable for this download+verify flow
         from url: URL,
         checksumURL: URL?,
@@ -386,26 +399,46 @@ public final class AppUpdater {
             async let checksumDownload = session.data(from: checksumURL)
             let (downloadedURL, zipResponse) = try await zipDownload
             tempURL = downloadedURL
-            let (checksumData, _) = try await checksumDownload
+            let (checksumData, checksumResponse) = try await checksumDownload
 
-            guard let http = zipResponse as? HTTPURLResponse else {
+            // ── Validate zip HTTP status ─────────────────────────────────────
+            guard let zipHTTP = zipResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
-            if http.statusCode != 200 {
+            guard zipHTTP.statusCode == 200 else {
+                appUpdaterLogger.error("zip download returned HTTP \(zipHTTP.statusCode, privacy: .public)")
                 throw URLError(.badServerResponse)
             }
 
+            // ── Validate checksum sidecar HTTP status ────────────────────────
+            // A non-200 here most commonly means the release was published
+            // without a .sha256 sidecar file. Without this guard the CDN's
+            // HTML error page would reach the hex parser below, producing a
+            // misleading "digest mismatch" log entry instead of the real cause.
+            // The install is blocked either way — this guard exists solely to
+            // name the failure correctly in Console.app.
+            guard let checksumHTTP = checksumResponse as? HTTPURLResponse else {
+                throw URLError(.badServerResponse)
+            }
+            guard checksumHTTP.statusCode == 200 else {
+                appUpdaterLogger.error("checksum sidecar returned HTTP \(checksumHTTP.statusCode, privacy: .public) — release may have been published without a .sha256 file")
+                throw URLError(.badServerResponse)
+            }
+
+            // ── Parse and validate the expected hex string ───────────────────
             let rawChecksum = String(bytes: checksumData, encoding: .utf8) ?? ""
             let expectedHex = rawChecksum
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .whitespaces).first ?? ""
 
             // Explicit guard: an empty expectedHex means the sidecar was
-            // unreadable or zero-length. verifyChecksum would throw a mismatch
-            // anyway ("" != 64-char SHA-256 hex), but making this explicit
+            // zero-length or contained only whitespace (the HTTP 200 / non-200
+            // cases are already handled above). verifyChecksum would throw a
+            // mismatch anyway ("" != 64-char SHA-256 hex), but this guard
             // prevents a future edit to verifyChecksum from accidentally
             // treating empty as "skip verification".
             guard !expectedHex.isEmpty else {
+                appUpdaterLogger.error("checksum sidecar returned HTTP 200 but body was empty or whitespace-only")
                 throw URLError(.cannotDecodeContentData)
             }
 
