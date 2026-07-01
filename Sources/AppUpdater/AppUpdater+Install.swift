@@ -1,6 +1,8 @@
 // AppUpdater+Install.swift
 // AppUpdater
 
+// AppKit is unavailable in the SPM headless test runner — this guard is
+// required for `swift test` even though the package is macOS(.v26)-only.
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -181,6 +183,8 @@ extension AppUpdater {
         // ordering). Use `resultingNSURL` as the authoritative post-swap bundle
         // path, falling back to `bundleURL`.
         let launchPath = ((resultingNSURL as URL?) ?? bundleURL).path
+        // AppKit is unavailable in the SPM headless test runner — this guard is
+        // required for `swift test` even though the package is macOS(.v26)-only.
         #if canImport(AppKit)
         let relaunchTask = Process()
         relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/open")
