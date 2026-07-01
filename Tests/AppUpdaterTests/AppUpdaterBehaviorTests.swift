@@ -86,8 +86,8 @@ struct AppUpdaterBehaviorTests {
 
         await updater.handle(release, state: state)
 
-        // The available-update label is still set, but the download path is guarded.
-        #expect(state.availableUpdates == ["v2.0.0"])
+        // The available-update label is not advanced while another download is in flight.
+        #expect(state.availableUpdates.isEmpty)
         #expect(state.downloadStartedCount == 0)
         #expect(state.updateZipURL == nil)
     }
