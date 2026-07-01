@@ -5,6 +5,8 @@ import Foundation
 
 // MARK: - Cache helpers
 
+/// Cache path and UserDefaults helpers for the auto-update download flow.
+/// See `AutoUpdater.swift` for the full flow description.
 extension AutoUpdater {
 
     /// Returns the destination `URL` for the cached zip in the system caches

@@ -522,5 +522,4 @@ public enum AutoUpdater {
             }
         }
     }
-
 }
