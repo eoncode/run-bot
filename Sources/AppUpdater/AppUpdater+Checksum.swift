@@ -17,26 +17,10 @@ extension AppUpdater {
     /// `update-<version>.zip` (e.g. `update-v0.8.0.zip`) so multiple cached
     /// versions never collide either.
     ///
-    /// ## Stale zip accumulation — known, acceptable, low priority
-    ///
-    /// Each update cycle writes a new version-stamped file. `downloadUpdate`
-    /// removes the file at `destination` before writing (handling interrupted
-    /// downloads of the *same* version), but files from *prior* versions
-    /// (e.g. `update-v0.7.9.zip` left over after a successful install) are
-    /// not swept here.
-    ///
-    /// In practice this means at most one stale zip per update cycle accumulates
-    /// in `~/Library/Caches/<schedulerIdentifier>/`. macOS evicts cache-directory
-    /// contents under storage pressure. This is acceptable for a low-frequency
-    /// update path.
-    ///
-    /// If a future audit shows meaningful accumulation, add a sweep here:
-    ///
-    ///     let existing = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-    ///     existing.filter { $0.lastPathComponent.hasPrefix("update-") && $0.pathExtension == "zip" }
-    ///             .forEach { try? fm.removeItem(at: $0) }
-    ///
-    /// REVIEWER: The absence of this sweep is intentional, not an oversight.
+    /// `purgeStaleZips()` is called here before returning the destination path
+    /// so stale zips from previous versions are removed before a new zip is
+    /// written. This is belt-and-suspenders alongside the launch-time call in
+    /// `rehydrateCachedUpdateIfNewer`.
     func cachedZipDestination(version: String) throws -> URL {
         let caches = try FileManager.default.url(
             for: .cachesDirectory,
@@ -46,6 +30,7 @@ extension AppUpdater {
         )
         let dir = caches.appendingPathComponent(schedulerIdentifier, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
         // Sanitise the version tag to a safe filename component. `version` is a
         // raw GitHub API string; `handle()` is public and any future caller
         // could pass an arbitrary value. Allow only alphanumerics, `.`, `-`, and
@@ -57,7 +42,14 @@ extension AppUpdater {
         let safe = version.unicodeScalars.map { scalar in
             allowedSet.contains(scalar) ? String(scalar) : "-"
         }.joined()
-        return dir.appendingPathComponent("update-\(safe).zip")
+        let destination = dir.appendingPathComponent("update-\(safe).zip")
+
+        // Purge stale zips before writing the new one. Any update-*.zip that
+        // is not the file we are about to write (destination) is spent and
+        // should not accumulate on disk.
+        purgeStaleZips(keeping: destination)
+
+        return destination
     }
 
     /// Removes the cached update entries from this updater's scoped `UserDefaults`.
@@ -67,6 +59,119 @@ extension AppUpdater {
     func clearCachedDefaults() {
         defaults.removeObject(forKey: keys.cachedUpdateVersion)
         defaults.removeObject(forKey: keys.cachedUpdateZipPath)
+    }
+
+    /// Deletes all `update-*.zip` files in this updater's scoped Caches
+    /// subdirectory, except the one currently registered in `UserDefaults`
+    /// as the live, ready-to-install zip.
+    ///
+    /// ## Why this exists
+    ///
+    /// `cachedZipDestination` writes version-stamped files
+    /// (`update-v0.8.0.zip`, `update-v0.9.0.zip`, …). Without a sweep,
+    /// files from prior versions accumulate in
+    /// `~/Library/Caches/<schedulerIdentifier>/` indefinitely. macOS does NOT
+    /// guarantee automatic eviction of `~/Library/Caches` contents on any
+    /// schedule — despite common belief, files there can linger forever under
+    /// normal disk conditions.
+    ///
+    /// ## Known accumulation paths this sweep covers
+    ///
+    /// 1. **Normal install cycle:** `replaceAndRelaunch` deletes the zip after
+    ///    `open -n` succeeds, but the *previous* version's zip (from the prior
+    ///    update cycle) is not deleted at install time — only the current one is.
+    ///    Each update cycle leaves one stale zip behind.
+    ///
+    /// 2. **`open -n` failure after `replaceItem`:** `replaceAndRelaunch` clears
+    ///    `UserDefaults` before attempting `relaunchTask.run()`. If `run()` throws,
+    ///    UserDefaults are already cleared but the zip is still on disk with no
+    ///    pointer to it. Nothing else cleans it up — it is permanently orphaned
+    ///    without this sweep.
+    ///
+    /// 3. **Any future edge case** that clears UserDefaults before deleting the
+    ///    zip (e.g. a crash between `clearCachedDefaults()` and `removeItem`).
+    ///
+    /// ## What is swept
+    ///
+    /// Only files matching ALL of:
+    /// - Inside `~/Library/Caches/<schedulerIdentifier>/` (the app's own
+    ///   scoped subdirectory — no other app's files are touched)
+    /// - Filename starts with `"update-"` and ends with `".zip"`
+    /// - NOT the `keepURL` (the currently registered live zip, if any)
+    ///
+    /// If `keepURL` is `nil` (no zip currently registered in UserDefaults),
+    /// ALL matching files are deleted.
+    ///
+    /// ## What is NOT swept
+    ///
+    /// - The live zip registered in UserDefaults (`keepURL`) — preserved so
+    ///   the ready-to-install affordance remains available.
+    /// - Any file not matching the `update-*.zip` pattern — AppUpdater does
+    ///   not own other files and must not delete them.
+    /// - Files outside `~/Library/Caches/<schedulerIdentifier>/` — the sweep
+    ///   is strictly scoped to the app's own cache subdirectory.
+    ///
+    /// ## Error handling
+    ///
+    /// All filesystem calls are `try?`. This function never throws and never
+    /// surfaces errors to the caller or the user. A failed deletion is logged
+    /// but otherwise ignored — a stale zip that could not be deleted is a disk
+    /// hygiene issue, not a correctness issue.
+    ///
+    /// ## Call sites
+    ///
+    /// - `rehydrateCachedUpdateIfNewer` — every launch, cleans up anything
+    ///   left from the previous session before the first network check runs.
+    /// - `cachedZipDestination` — just before writing a new zip, so a fresh
+    ///   download never lands next to stale files from a prior version.
+    ///
+    /// REVIEWER: Do NOT remove either call site. Each covers a distinct
+    /// accumulation window:
+    /// - Launch-time covers orphans from the previous session (including
+    ///   the open -n failure path where UserDefaults are cleared before the
+    ///   zip is deleted).
+    /// - Pre-download covers the case where the app stays running for multiple
+    ///   update cycles without a relaunch (e.g. long-running session, multiple
+    ///   updates offered and deferred).
+    func purgeStaleZips(keeping keepURL: URL? = nil) {
+        guard let caches = try? FileManager.default.url(
+            for: .cachesDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ) else { return }
+
+        let dir = caches.appendingPathComponent(schedulerIdentifier, isDirectory: true)
+
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: .skipsSubdirectoryDescendants
+        ) else { return }
+
+        // keepPath is the canonical path of the live zip (if any). Canonical
+        // form guards against symlink / relative-path aliasing so two paths
+        // pointing at the same file are not treated as distinct.
+        let keepPath = keepURL.flatMap { url in
+            (try? url.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath
+                ?? url.path
+        }
+
+        for url in contents {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("update-"), name.hasSuffix(".zip") else { continue }
+
+            let candidatePath = (try? url.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath
+                ?? url.path
+
+            if let keepPath, candidatePath == keepPath { continue }
+
+            if (try? FileManager.default.removeItem(at: url)) == nil {
+                appUpdaterLogger.error("purgeStaleZips: failed to delete stale zip: \(url.lastPathComponent, privacy: .public)")
+            } else {
+                appUpdaterLogger.debug("purgeStaleZips: deleted stale zip: \(url.lastPathComponent, privacy: .public)")
+            }
+        }
     }
 }
 
