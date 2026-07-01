@@ -1,5 +1,6 @@
 // SettingsView+Sections.swift
 // RunBot
+import AppUpdater
 import RunBotCore
 import SwiftUI
 
@@ -298,7 +299,7 @@ internal extension SettingsView {
             } else {
                 Button("Install & Relaunch") {
                     Task {
-                        await AutoUpdater.installAndRelaunch(state: runnerState)
+                        await autoUpdater.installAndRelaunch(state: runnerState)
                     }
                 }
                 .buttonStyle(.borderedProminent)

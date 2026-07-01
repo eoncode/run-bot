@@ -1,6 +1,7 @@
 // SettingsView.swift
 // RunBot
 import AppKit
+import AppUpdater
 import RunBotCore
 import ServiceManagement
 import SwiftUI
@@ -57,6 +58,10 @@ struct SettingsView: View {
     /// Injected explicitly from `AppDelegate`; no default because `RunnerState` has no
     /// singleton — the single instance lives on `AppDelegate.runnerState`.
     let runnerState: RunnerState
+    /// Auto-update driver injected from `AppDelegate`, used by the Install &
+    /// Relaunch action in `aboutSection`. No default — the single instance lives
+    /// on `AppDelegate.autoUpdater`.
+    let autoUpdater: AppUpdater
 
     // MARK: - Local UI state
     /// Mirrors `LoginItem.isEnabled`; toggled by the Launch at Login switch.
@@ -89,7 +94,8 @@ struct SettingsView: View {
         settings: AppPreferencesStore = .shared,
         notifications: NotificationPreferences = .shared,
         lifecycleService: any RunnerLifecycleServiceProtocol,
-        runnerState: RunnerState
+        runnerState: RunnerState,
+        autoUpdater: AppUpdater
     ) {
         self.onBack = onBack
         self.localRunnerStore = localRunnerStore
@@ -98,6 +104,7 @@ struct SettingsView: View {
         self.notifications = notifications
         self.lifecycleService = lifecycleService
         self.runnerState = runnerState
+        self.autoUpdater = autoUpdater
     }
 
     // MARK: - Computed properties

@@ -1,0 +1,77 @@
+// UpdateStateProviding.swift
+// AppUpdater
+import Foundation
+
+// MARK: - UpdateStateProviding
+
+/// The host-app state model that `AppUpdater` drives while an update is
+/// discovered, downloaded, and installed.
+///
+/// `AppUpdater` owns none of the UI state itself — it mutates a conforming
+/// object supplied by the host app (typically an `@Observable @MainActor`
+/// view model). The host observes that object to render its own update UI.
+///
+/// ## Why the whole protocol is `@MainActor`
+///
+/// The conforming type is expected to be observed by SwiftUI/AppKit, both of
+/// which require main-thread access. Annotating the entire protocol (not just
+/// individual requirements) is required for Swift 6 strict concurrency: it
+/// makes every requirement main-actor isolated so `AppUpdater` (also
+/// `@MainActor`) can call them synchronously without cross-actor hops, and it
+/// lets conforming `@MainActor` classes satisfy the protocol without extra
+/// `nonisolated` juggling.
+///
+/// ## Why read-only properties + explicit mutation methods
+///
+/// The properties are `{ get }` only and all state changes go through named
+/// methods. This prevents TOCTOU-shaped misuse: a caller cannot set
+/// `updateZipURL` without also setting `cachedUpdateVersion`, because there is
+/// no setter — the paired write is encapsulated in `setDownloadComplete`.
+/// Each method names an intent (download started / completed / failed) rather
+/// than exposing raw fields, keeping every write site auditable.
+///
+/// `isDownloading` is intentionally NOT part of this protocol. Whether a
+/// spinner is shown is a host-app UI detail; `AppUpdater` tracks in-flight
+/// downloads with its own instance flag. The host only needs the four mutation
+/// hooks below to render a correct UI.
+@MainActor
+public protocol UpdateStateProviding: AnyObject {
+
+    /// Local file URL of the cached, verified update zip, or `nil` while no
+    /// download is ready (in progress, not started, or failed).
+    var updateZipURL: URL? { get }
+
+    /// Version string of the cached update zip (e.g. `"v0.8.0"`), or `nil`
+    /// when nothing is cached.
+    var cachedUpdateVersion: String? { get }
+
+    /// `true` when a download **or** install attempt failed, or the release
+    /// carried no matching asset. The host shows its browser-download fallback
+    /// whenever this is `true`.
+    var updateActionFailed: Bool { get }
+
+    /// Records the version label of an available update (or clears it with
+    /// `nil`). Called on every `.updateAvailable` result and to clear a stale
+    /// row when the latest release is no longer newer.
+    func setAvailableUpdate(_ version: String?)
+
+    /// Signals that a fresh background download has begun. Implementations
+    /// should move to a "downloading" state: clear any cached zip URL / version
+    /// and clear `updateActionFailed` so a spinner is shown.
+    func setDownloadStarted()
+
+    /// Signals that a download completed and was integrity-verified. The zip is
+    /// now cached at `zipURL` for `version`; the host should surface its
+    /// install affordance.
+    func setDownloadComplete(zipURL: URL, version: String)
+
+    /// Signals that a download or install attempt failed. Implementations
+    /// should set `updateActionFailed` so the browser-download fallback shows.
+    func setUpdateFailed()
+
+    /// Rehydrates cached download state on launch: the zip at `zipURL` for
+    /// `version` was previously downloaded and still exists on disk.
+    /// Implementations should set `updateZipURL`/`cachedUpdateVersion` and
+    /// clear any stale `updateActionFailed` flag from a prior session.
+    func rehydrateCachedUpdate(zipURL: URL, version: String)
+}
