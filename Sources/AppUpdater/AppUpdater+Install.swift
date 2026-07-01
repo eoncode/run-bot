@@ -124,7 +124,9 @@ extension AppUpdater {
         #if canImport(AppKit)
         if !skipCodeSignValidation {
             let runningIdentity = await Bundle.main.codeSigningIdentity()
-            let updateIdentity = await Bundle(path: appInZip.path).codeSigningIdentity()
+            // Bundle(path:) returns Bundle? — use optional chaining so that a
+            // nil bundle (invalid path) propagates as nil to the guard below.
+            let updateIdentity = await Bundle(path: appInZip.path)?.codeSigningIdentity()
             guard let runningIdentity,
                   let updateIdentity,
                   runningIdentity == updateIdentity else {
