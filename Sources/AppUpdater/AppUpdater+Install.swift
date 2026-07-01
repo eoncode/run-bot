@@ -25,21 +25,22 @@ extension AppUpdater {
     ///
     /// On any failure the function calls `state.setUpdateFailed()` and returns
     /// without terminating — the user is left with the running version and the
-    /// host's browser-download fallback becomes visible.
+    /// host should direct them to re-run the original `curl` install command.
     ///
     /// ## ⚠️ `setUpdateFailed()` is NOT a silent failure — read before flagging ⚠️
     ///
     /// Reviewers sometimes flag the `replaceItem` catch block as a silent UX
-    /// failure because the UI switches from "Install & Relaunch" to a "Download"
-    /// button with no explanation. This is intentional and correct for a
-    /// curl-install distribution model (RunBot's): the "Download" fallback
-    /// surfaces the install command — the same path every user took for first
-    /// install. A user who hits a `replaceItem` permission error is correctly
-    /// directed back to that path.
+    /// failure because the UI switches from "Install & Relaunch" to a state
+    /// that surfaces the `curl` install command with no further explanation.
+    /// This is intentional and correct: the curl path is how every user
+    /// installed the app in the first place and it is the only safe recovery
+    /// path. **Do NOT add a browser-download fallback** — downloading via a
+    /// browser stamps the `.app` with `com.apple.quarantine`, which triggers
+    /// Gatekeeper and breaks the install.
     ///
     /// **Do NOT add `NSFileWriteNoPermissionError` special-casing** or a
     /// separate permission state. Distinguishing permission errors from other
-    /// `replaceItem` failures would add complexity for a case the fallback
+    /// `replaceItem` failures would add complexity for a case the curl fallback
     /// already handles correctly.
     ///
     /// ## `isInstalling` reset strategy — intentional, not an oversight
@@ -64,7 +65,7 @@ extension AppUpdater {
     /// helper-process self-update pattern, which is not used here.
     ///
     /// - Parameter state: The host update-state object driving the UI. On failure
-    ///   `setUpdateFailed()` is called so the fallback shows.
+    ///   `setUpdateFailed()` is called so the host can surface the curl install command.
     @MainActor
     public func installAndRelaunch(state: any UpdateStateProviding) async {
         // Double-tap guard — prevents two concurrent install attempts if the
@@ -199,9 +200,10 @@ extension AppUpdater {
             )
         } catch {
             appUpdaterLogger.error("replaceItem failed: \(String(describing: error), privacy: .public)")
-            // setUpdateFailed() here is NOT a silent failure — the browser-
-            // download fallback is the correct recovery path. See the
-            // installAndRelaunch doc comment for the full rationale.
+            // setUpdateFailed() is NOT a silent failure — the host should surface
+            // the curl install command as the recovery path. See the installAndRelaunch
+            // doc comment for the full rationale and the explicit warning against
+            // adding a browser-download path.
             isInstalling = false
             state.setUpdateFailed()
             try? fm.removeItem(at: tmpDir)
