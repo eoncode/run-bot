@@ -225,7 +225,7 @@ struct SettingsView: View {
         signOutTask = Task { @MainActor in
             for await _ in oauthService.makeSignOutStream() {
                 let postToken = githubToken()
-                log("SettingsView › didSignOut — githubToken post-signout=\(postToken != nil ? "present(len=\(postToken!.count))" : "nil")")
+                log("SettingsView › didSignOut — githubToken post-signout=\(postToken.map { "present(len=\($0.count))" } ?? "nil")")
                 isOAuthAuthenticated = false
                 isCLIAuthenticated = postToken != nil
                 log("SettingsView › didSignOut — isOAuthAuthenticated=\(isOAuthAuthenticated) isCLIAuthenticated=\(isCLIAuthenticated)")

@@ -25,10 +25,10 @@ struct AppUpdaterBehaviorTests {
         )
     }
 
-    private func makeAsset(_ name: String) -> ReleaseAsset {
+    private func makeAsset(_ name: String) throws -> ReleaseAsset {
         ReleaseAsset(
             name: name,
-            browserDownloadURL: URL(string: "https://example.com/\(name)")!
+            browserDownloadURL: try #require(URL(string: "https://example.com/\(name)"))
         )
     }
 
@@ -38,7 +38,7 @@ struct AppUpdaterBehaviorTests {
     /// `handle` rehydrates host state and starts NO download.
     @Test func cacheHitRehydratesWithoutDownloading() async throws {
         let domain = "test.cachehit.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: domain)!
+        let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
 
         // Write a real temp file and point the scoped cache keys at it.
@@ -66,9 +66,9 @@ struct AppUpdaterBehaviorTests {
 
     /// While a download is already running, a second `handle` for a downloadable
     /// release is dropped: no new "download started" transition occurs.
-    @Test func inFlightDownloadGuardDropsSecondHandle() async {
+    @Test func inFlightDownloadGuardDropsSecondHandle() async throws {
         let domain = "test.inflight.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: domain)!
+        let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
 
         let updater = makeUpdater(domain: domain, defaults: defaults)
@@ -77,7 +77,7 @@ struct AppUpdaterBehaviorTests {
         let state = MockUpdateState()
         let release = AvailableRelease(
             tagName: "v2.0.0",
-            assets: [makeAsset("RunBot.zip")],
+            assets: [try makeAsset("RunBot.zip")],
             checksumURL: URL(string: "https://example.com/RunBot.zip.sha256")
         )
 
@@ -93,16 +93,16 @@ struct AppUpdaterBehaviorTests {
 
     /// A release with no matching zip asset flips the host failure state (browser
     /// fallback) and starts no download.
-    @Test func missingAssetFailsWithoutDownloading() async {
+    @Test func missingAssetFailsWithoutDownloading() async throws {
         let domain = "test.noasset.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: domain)!
+        let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
 
         let updater = makeUpdater(domain: domain, defaults: defaults)
         let state = MockUpdateState()
         let release = AvailableRelease(
             tagName: "v2.0.0",
-            assets: [makeAsset("SomethingElse.zip")],
+            assets: [try makeAsset("SomethingElse.zip")],
             checksumURL: nil
         )
 
