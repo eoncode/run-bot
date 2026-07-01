@@ -77,6 +77,15 @@ public final class RunnerState {
         availableUpdate = version
     }
 
+    // MARK: - Init
+
+    /// Public memberwise-style initialiser required so that `RunnerPollerProtocol`
+    /// can use `RunnerState()` as a default argument value from another module
+    /// (`RunBot` app target). Without an explicit `public init()`, the
+    /// `@Observable`-synthesised initialiser is `internal` and the cross-module
+    /// default argument fails to compile.
+    public init() {}
+
     // MARK: - Auto-update download state (pushed by AutoUpdater)
 
     /// Local file URL of the cached `RunBot-update.zip`, or `nil` while the

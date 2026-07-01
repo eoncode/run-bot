@@ -127,7 +127,7 @@ extension AutoUpdater {
 @concurrent
 func verifyChecksum(zipURL: URL, expectedHex: String) async throws {
     let zipData   = try Data(contentsOf: zipURL)  // blocking read — correct here per Pillar 5; see doc comment above
-    let digest    = SHA256.hash( zipData)
+    let digest    = SHA256.hash(data: zipData)
     let actualHex = digest.map { String(format: "%02x", $0) }.joined()
     guard actualHex == expectedHex else {
         throw URLError(.cannotDecodeContentData)
