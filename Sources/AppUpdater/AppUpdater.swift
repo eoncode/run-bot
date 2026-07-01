@@ -203,7 +203,7 @@ public final class AppUpdater {
         // ── 1. Already cached? ──────────────────────────────────────────────
         let cachedVersion = defaults.string(forKey: keys.cachedUpdateVersion)
         let cachedPath = defaults.string(forKey: keys.cachedUpdateZipPath)
-        if cachedVersion == release.tagName, let path = cachedPath {
+        if let cachedVersion, cachedVersion == release.tagName, let path = cachedPath {
             if FileManager.default.fileExists(atPath: path) {
                 // `rehydrateCachedUpdate` sets the zip URL + version and clears
                 // any stale failure flag from a prior session.

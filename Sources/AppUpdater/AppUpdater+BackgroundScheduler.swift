@@ -45,8 +45,10 @@ extension AppUpdater {
         // scheduler.
         nonisolated(unsafe) let schedulerRef = scheduler
         // Capture the values the check needs so the closure holds no reference
-        // to `self` beyond these `Sendable`/in-actor captures.
-        nonisolated(unsafe) let updater = self
+        // to `self` beyond these `Sendable`/in-actor captures. `AppUpdater` is a
+        // `@MainActor final class` and thus implicitly `Sendable`, so no
+        // `nonisolated(unsafe)` is needed on this binding.
+        let updater = self
         scheduler.schedule { completion in
             // Honour the system's power-saving signal. `shouldDefer` returns true
             // when macOS is asking background tasks to pause (low battery, high
