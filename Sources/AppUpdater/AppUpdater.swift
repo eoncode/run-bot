@@ -254,6 +254,18 @@ public final class AppUpdater {
         // Plain Task (not detached): inherits @MainActor, so `state` is captured
         // in-actor. The heavy work inside suspends (URLSession) or hops off-main
         // (@concurrent verifyChecksum), keeping the main thread free.
+        //
+        // `[weak self]` means that if this `AppUpdater` is deallocated before the
+        // task runs, `self?` is nil and the download silently no-ops — leaving the
+        // host UI stuck on the spinner (`setDownloadStarted()` already fired
+        // above). This is an accepted edge case: it can only happen during app
+        // teardown/deinit, and in normal operation `AppUpdater` is owned for the
+        // full app lifetime by the host (`AppDelegate`/`RunnerState`), so it is
+        // never released between spawning this task and its first resumption. The
+        // spinner is torn down with the process, so no user-visible stuck state
+        // survives. We keep `weak` (rather than a strong capture that would extend
+        // the updater's lifetime past the host's intent) precisely because that
+        // teardown window is the only time `self` is gone.
         Task { [weak self] in
             await self?.downloadUpdate(from: downloadURL, checksumURL: checksumURL, version: tagName, state: state)
         }
