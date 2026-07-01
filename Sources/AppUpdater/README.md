@@ -58,9 +58,10 @@ await updater.installAndRelaunch(state: myState)
 
 - The release archive carries exactly one `.app` at its root.
 - Each release attaches a `<assetName>.sha256` sidecar. A missing sidecar is a hard failure.
-- On any download or install failure the host’s failure state is set via `setUpdateFailed()`
-  so the host UI can surface an appropriate fallback. This is a designed recovery path,
-  not a silent failure.
+- On any download or install failure `setUpdateFailed()` is called. The host should direct
+  the user to re-run the original `curl` install command — **not** open a browser download.
+  Downloading via a browser stamps the `.app` with `com.apple.quarantine`, which triggers
+  Gatekeeper and breaks the install. The curl path intentionally bypasses this.
 
 ## Persisted state
 
