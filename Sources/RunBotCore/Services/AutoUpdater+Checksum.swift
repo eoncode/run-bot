@@ -125,7 +125,7 @@ extension AutoUpdater {
 ///     is moved to the caches directory.
 ///   - expectedHex: The lowercase hex SHA-256 digest string from the sidecar file.
 @concurrent
-private func verifyChecksum(zipURL: URL, expectedHex: String) async throws {
+func verifyChecksum(zipURL: URL, expectedHex: String) async throws {
     let zipData   = try Data(contentsOf: zipURL)  // blocking read — correct here per Pillar 5; see doc comment above
     let digest    = SHA256.hash( zipData)
     let actualHex = digest.map { String(format: "%02x", $0) }.joined()
