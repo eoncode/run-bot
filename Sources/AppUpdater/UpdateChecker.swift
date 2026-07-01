@@ -11,8 +11,11 @@ public struct ReleaseAsset: Decodable, Sendable {
     /// The direct download URL for this asset.
     public let browserDownloadURL: URL
 
+    /// Maps Swift property names to the GitHub API's snake_case JSON keys.
     enum CodingKeys: String, CodingKey {
+        /// Maps to the JSON key `"name"`.
         case name
+        /// Maps to the GitHub API JSON key `"browser_download_url"`.
         case browserDownloadURL = "browser_download_url"
     }
 }
@@ -33,14 +36,19 @@ public struct AvailableRelease: Sendable {
 
 /// The result of an `UpdateChecker.checkForUpdate(...)` call.
 public enum UpdateCheckResult: Sendable {
+    /// The running version is already the latest eligible version.
     case upToDate
+    /// A newer eligible release was found.
     case updateAvailable(release: AvailableRelease)
+    /// The check could not complete due to the associated error.
     case failed(Error)
 }
 
 // MARK: - UpdateCheckError
 
+/// Errors produced by `UpdateChecker` and `AppUpdater.checkForUpdate`.
 public enum UpdateCheckError: Error, Sendable {
+    /// The `currentVersion` string supplied to the checker was empty.
     case missingVersionKey
     /// The releases API returned no releases, or the request/decode failed.
     /// Distinct from `noChannelMatch` — this means we could not determine
@@ -59,24 +67,51 @@ public enum UpdateCheckError: Error, Sendable {
 /// Checks a GitHub repository's Releases for a newer version.
 public enum UpdateChecker {
 
+    /// Lightweight mirror of the GitHub Releases API response object.
+    ///
+    /// Only the fields needed for version comparison and asset resolution are
+    /// decoded; all other API fields are ignored.
     private struct Release: Decodable {
+        /// The git tag name of this release (e.g. `"v0.8.0"`).
         let tagName: String
+        /// `true` when GitHub has marked this release as a pre-release.
         let prerelease: Bool
+        /// The binary assets attached to this release.
         let assets: [ReleaseAsset]
+        /// Maps Swift property names to the GitHub API's snake_case JSON keys.
         enum CodingKeys: String, CodingKey {
+            /// Maps to the GitHub API JSON key `"tag_name"`.
             case tagName = "tag_name"
+            /// Maps to the JSON key `"prerelease"`.
             case prerelease
+            /// Maps to the JSON key `"assets"`.
             case assets
         }
     }
 
+    /// A parsed, comparable representation of a semver version string.
+    ///
+    /// Strips the leading `"v"` if present, splits on `"-"` to separate the
+    /// core version from any pre-release suffix, and extracts a `betaIndex`
+    /// for `beta.N` labels so beta versions can be ordered numerically.
     private struct ParsedVersion {
+        /// The major version component (first numeric segment).
         let major: Int
+        /// The minor version component (second numeric segment).
         let minor: Int
+        /// The patch version component (third numeric segment).
         let patch: Int
+        /// `true` when the version string contained a pre-release suffix.
         let isPrerelease: Bool
+        /// The numeric index from a `beta.N` pre-release suffix, or `nil` for
+        /// any other suffix (e.g. `rc.1`, `alpha.1`) or no suffix at all.
         let betaIndex: Int?
 
+        /// Parses `version` into its semver components.
+        ///
+        /// Non-numeric or missing segments default to `0`. An unrecognised
+        /// pre-release suffix (anything other than `beta.N`) sets `betaIndex`
+        /// to `nil` while still marking `isPrerelease = true`.
         init(_ version: String) { // skipcq: SW-R1002 — reviewed; complexity acceptable for this version parser
             let parts = version.split(separator: "-", maxSplits: 1)
             let core = parts.isEmpty ? "" : String(parts[0])
@@ -172,6 +207,17 @@ public enum UpdateChecker {
         return sorted.first(where: { betaChannel ? true : !$0.prerelease })
     }
 
+    /// Returns an `AvailableRelease` for the latest release matching `betaChannel`,
+    /// or `nil` if the fetch failed or no release matched the channel.
+    ///
+    /// This is the lower-level fetch primitive used by `GitHubReleaseProvider`.
+    /// Unlike `checkForUpdate`, it does not perform a semver comparison against
+    /// `currentVersion` — it simply returns the latest eligible release from the
+    /// API, or `nil` on any failure (network, HTTP, decode, or no channel match).
+    ///
+    /// Callers that need to distinguish "fetch failed" from "no channel match"
+    /// should use `checkForUpdate` instead, which maps these to `.failed` and
+    /// `.upToDate` respectively.
     static func fetchLatestAvailableRelease(
         repo: String,
         betaChannel: Bool,
