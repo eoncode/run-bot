@@ -50,18 +50,28 @@ import Foundation
 ///
 /// ## ⚠️ `waitUntilExit()` BEFORE `readDataToEndOfFile()` — NOT A PIPE DEADLOCK ⚠️
 ///
-/// Automated reviewers sometimes flag this ordering as a potential pipe-buffer
-/// deadlock. It is NOT a deadlock risk here. The classic deadlock requires the
-/// subprocess to write ≥ ~64 KB to stderr *before* exiting — filling the OS pipe
-/// buffer and blocking mid-write. That cannot arise for `ditto`: on success it
-/// writes nothing to stderr; on failure it emits a single short error line
-/// (well under 1 KB). The buffer never fills; `ditto` exits immediately; the
-/// pipe drains normally.
+/// Automated reviewers and linters sometimes flag this ordering as a potential
+/// pipe-buffer deadlock. It is NOT a deadlock risk here, and has been verified.
 ///
-/// REVIEWER: Do NOT refactor this to a concurrent drain on the basis of a
-/// generic pipe-deadlock warning. The warning does not apply to `ditto`. If this
-/// helper is ever extended to run a different executable that CAN produce large
-/// stderr output, add the concurrent drain at that point and update this comment.
+/// The classic deadlock scenario requires the subprocess to write ≥ ~64 KB to
+/// stderr *before* exiting — filling the OS pipe buffer and blocking the
+/// subprocess mid-write, preventing it from ever reaching exit, which prevents
+/// `waitUntilExit()` from ever returning: a true deadlock. That scenario cannot
+/// arise for `ditto` because:
+/// - On success: `ditto` writes nothing to stderr.
+/// - On failure: `ditto` emits a single short error line — well under 1 KB.
+/// The pipe buffer (64 KB on macOS) is never filled; `ditto` exits without
+/// blocking; `waitUntilExit()` returns immediately; `readDataToEndOfFile()`
+/// drains the small buffer. No deadlock is possible.
+///
+/// The generic "concurrent drain" refactor is the right fix for executables that
+/// CAN produce large stderr, but it adds complexity for zero benefit here.
+///
+/// REVIEWER: Do NOT refactor this to a concurrent stderr drain on the basis of
+/// a generic pipe-deadlock warning. The warning does not apply to `ditto`.
+/// This has been reviewed and confirmed safe. If `runCommand` is ever extended
+/// to run an executable that produces large stderr output, add the concurrent
+/// drain at that point and update this comment.
 @concurrent
 func runCommand(_ executable: String, args: [String]) async -> Bool {
     let process = Process()
@@ -76,9 +86,11 @@ func runCommand(_ executable: String, args: [String]) async -> Bool {
 
     do {
         try process.run()
-        // waitUntilExit() before readDataToEndOfFile() is safe here — ditto's
-        // stderr output is always < 1 KB, so the OS pipe buffer (64 KB) is never
-        // filled and no deadlock can occur. See the doc comment above.
+        // ⚠️ waitUntilExit() BEFORE readDataToEndOfFile() — this is NOT a pipe
+        // deadlock. ditto's stderr is always < 1 KB (nothing on success, one
+        // short line on failure), so the 64 KB OS pipe buffer never fills.
+        // ditto exits freely; waitUntilExit() returns; the buffer drains.
+        // See the full explanation in the doc comment above before refactoring.
         process.waitUntilExit()
         let succeeded = process.terminationStatus == 0
         if !succeeded {

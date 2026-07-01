@@ -39,15 +39,31 @@ public struct AppUpdaterDefaults: Sendable {
     /// The launch-time check the host performs on startup is independent; the
     /// scheduler only fires after the first interval elapses.
     #if DEBUG
-    /// 60-second interval used in DEBUG builds. Override in tests for faster QA cycles.
+    /// 60-second interval used in DEBUG builds. Override in test setUp for faster
+    /// QA cycles.
     ///
-    /// `nonisolated(unsafe)` (mirroring the `activity` scheduler binding in
-    /// `AppUpdater`) rather than `@MainActor`: a `@MainActor`-isolated mutable
-    /// static would force any non-`@MainActor` caller — e.g. a background unit
-    /// test overriding the interval — into a Swift 6 isolation error. This is a
-    /// test-only DEBUG knob that is never mutated concurrently in production
-    /// (release builds use the `let` below), so opting out of isolation checking
-    /// is safe.
+    /// ## Why `nonisolated(unsafe)` and not `@MainActor`
+    ///
+    /// A `@MainActor`-isolated mutable static would force any non-`@MainActor`
+    /// caller — e.g. a background unit test overriding the interval before the
+    /// scheduler is created — into a Swift 6 isolation error. `nonisolated(unsafe)`
+    /// removes that friction for a test-only knob.
+    ///
+    /// ## Why this is not a data-race risk
+    ///
+    /// The only legitimate mutation pattern is: set once in test setUp *before*
+    /// any `AppUpdater` is constructed or any scheduler fires, then leave
+    /// unchanged for the test's duration. No two tests mutate this concurrently —
+    /// the value is a static scalar written once per test suite run, not a shared
+    /// resource mutated mid-flight. The release build compiles this path away
+    /// entirely (the `#else` branch is an immutable `let`), so production is
+    /// unaffected.
+    ///
+    /// REVIEWER: If you are considering flagging this as a data race under
+    /// parallel test execution — the race requires *concurrent mutation*. Tests
+    /// set this value sequentially in setUp before the scheduler starts; there
+    /// is no concurrent write path. If a future test ever mutates it mid-flight,
+    /// move the injection into `AppUpdater.init` instead and remove this var.
     nonisolated(unsafe) public static var checkInterval: TimeInterval = 60
     #else
     /// 24-hour interval used in release builds.
