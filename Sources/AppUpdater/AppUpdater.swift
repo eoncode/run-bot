@@ -91,6 +91,12 @@ public final class AppUpdater {
     /// `@Sendable` is required because `fetchLatestRelease` (on `ReleaseProvider`)
     /// declares its `assetName` parameter as `@Sendable` — the stored closure
     /// must match so it can be forwarded without a concurrency warning.
+    ///
+    /// REVIEWER: `assetName` is `internal` even though it is accepted as a
+    /// public `init` parameter. The host injected it — it does not need to
+    /// read it back. Exposing it publicly would widen the API surface for no
+    /// concrete consumer benefit and create a promise we'd have to maintain.
+    /// If a specific external use case emerges, make it public then.
     let assetName: @Sendable (String) -> String
 
     /// The `UserDefaults` suite persisting the cached-zip path and version.
@@ -110,6 +116,14 @@ public final class AppUpdater {
     let provider: any ReleaseProvider
 
     // MARK: - Trust model
+
+    // REVIEWER: `skipCodeSignValidation` is a `var`, not an `init` parameter —
+    // intentional. Moving it to `init` would force every caller to decide at
+    // construction time, which is wrong for hosts that read this preference from
+    // `UserDefaults` or a settings screen after `AppUpdater` is already
+    // constructed. A `var` is the correct shape for a runtime-togglable trust
+    // preference. Set it before calling `scheduleBackgroundCheck` or
+    // `checkAndHandle` — see the doc comment below.
 
     /// When `false`, `installAndRelaunch` verifies that the running bundle and
     /// the downloaded bundle share the same `codesign` `Authority=` identity
@@ -410,6 +424,11 @@ public final class AppUpdater {
             if let tmp = tempURL {
                 try? FileManager.default.removeItem(at: tmp)
             }
+            // `isDownloading` is cleared on the same @MainActor turn as
+            // `setUpdateFailed()` — no intermediate state is observable. A
+            // subsequent `handle()` call cannot slip through between these two
+            // lines because @MainActor serialises all callers onto one executor.
+            // Do NOT split these or add an `await` between them.
             isDownloading = false
             state.setUpdateFailed()
         }
