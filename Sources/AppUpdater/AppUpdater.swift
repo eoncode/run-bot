@@ -58,6 +58,12 @@ public final class AppUpdater {
 
     /// Reverse-DNS identifier for the background scheduler; also the domain
     /// used to scope this updater's `UserDefaults` keys.
+    ///
+    /// Must be a valid reverse-DNS string (e.g. `"com.your-org.update-check"`).
+    /// Must not be empty and must not contain `/` — both are enforced by
+    /// `precondition` at init time. The identifier is used verbatim as a
+    /// `UserDefaults` suite name and as a cache directory name component; a
+    /// slash would silently create a nested subdirectory path under Caches.
     public let schedulerIdentifier: String
 
     // MARK: - Internal configuration
@@ -190,8 +196,10 @@ public final class AppUpdater {
     ///   - currentVersion: The running app's version string.
     ///   - assetName: Maps a tag name to the expected zip asset filename.
     ///   - schedulerIdentifier: Reverse-DNS scheduler id / `UserDefaults` domain.
-    ///     Must not be empty — an empty string causes `UserDefaults` key
-    ///     collisions between instances (keys degrade to bare dot-prefixed strings).
+    ///     Must not be empty and must not contain `"/"` — an empty string causes
+    ///     `UserDefaults` key collisions; a slash causes `appendingPathComponent`
+    ///     to silently create a nested subdirectory under Caches rather than a
+    ///     flat scoped directory. Both are enforced by `precondition`.
     ///   - userDefaults: Suite for persisted cache state. Defaults to `.standard`.
     ///   - betaChannelProvider: Returns the host's beta-channel preference.
     ///     Defaults to always-`false` (stable channel only).
@@ -213,6 +221,7 @@ public final class AppUpdater {
     ) {
         precondition(!repo.isEmpty, "AppUpdater: repo must not be empty (expected \"owner/repo\")")
         precondition(!schedulerIdentifier.isEmpty, "AppUpdater: schedulerIdentifier must not be empty (expected a reverse-DNS string)")
+        precondition(!schedulerIdentifier.contains("/"), "AppUpdater: schedulerIdentifier must not contain '/' — it is used as a cache directory name component via appendingPathComponent; a slash would silently create a nested subdirectory path")
         self.repo = repo
         self.currentVersion = currentVersion
         self.assetName = assetName
