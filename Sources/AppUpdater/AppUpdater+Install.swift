@@ -186,7 +186,6 @@ extension AppUpdater {
     /// possible.
     ///
     /// `resultingItemURL`: On a same-volume APFS rename the returned URL equals
-    /// `bundleURL`. On a same-volume APFS rename the returned URL equals
     /// `bundleURL`. On a cross-volume copy-and-delete macOS may return a
     /// different URL; we use it as the relaunch path, falling back to `bundleURL`.
     ///
@@ -255,7 +254,8 @@ extension AppUpdater {
         } catch {
             appUpdaterLogger.error("open -n failed, aborting relaunch: \(error.localizedDescription, privacy: .public)")
             isInstalling = false
-            // See doc comment above re: why setDownloadStarted() is used here.
+            // Side-effect-only use of setDownloadStarted() — see doc comment
+            // above ('setDownloadStarted() in the open -n failure branch').
             state.setDownloadStarted()
             state.setUpdateFailed()
             return

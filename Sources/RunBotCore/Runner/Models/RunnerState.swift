@@ -128,7 +128,7 @@ public final class RunnerState {
     /// cached zip still exists on disk and its version is newer than the running
     /// app. Clears any stale `updateActionFailed` / `updateAssetMissing` flags
     /// from a prior session so a ready-to-install cached update is not masked by
-    /// the browser fallback.
+    /// the curl fallback.
     public func rehydrateCachedUpdate(zipURL: URL, version: String) {
         updateZipURL = zipURL
         cachedUpdateVersion = version
@@ -154,16 +154,20 @@ public final class RunnerState {
         updateActionFailed = false
     }
 
-    /// Flags a failed download or install attempt so the browser-download
+    /// Flags a failed download or install attempt so the curl-install
     /// fallback is shown.
     public func setUpdateFailed() {
         updateActionFailed = true
     }
 
     /// Flags that the discovered release carries no matching asset, so the
-    /// browser-download fallback is shown.
+    /// curl-install fallback is shown. Also clears `updateActionFailed` to
+    /// avoid a simultaneous dual-failure state: if a prior session left
+    /// `updateActionFailed = true` and the current release has no asset,
+    /// both flags would otherwise be `true` simultaneously.
     public func setAssetMissing() {
         updateAssetMissing = true
+        updateActionFailed = false
     }
 
     /// `true` when the latest release exists but its `RunBot.zip` asset is absent.
@@ -172,13 +176,12 @@ public final class RunnerState {
     /// matching asset; cleared by `setDownloadStarted()` (a fresh download began,
     /// so the asset is now present) and `rehydrateCachedUpdate(zipURL:version:)`
     /// (a cached zip exists, which is mutually exclusive with a missing asset).
-    /// When `true` the UI falls back to a **Download** button that opens the
-    /// releases page in the browser instead of triggering an in-app install.
+    /// When `true` the UI falls back to a **Download** button that surfaces the
+    /// curl install command.
     public internal(set) var updateAssetMissing: Bool = false
 
     /// `true` when a download **or** an install attempt has failed.
     ///
-    /// The Download fallback button is shown whenever
-    /// `updateAssetMissing || updateActionFailed`.
+    /// The curl fallback is shown whenever `updateAssetMissing || updateActionFailed`.
     public internal(set) var updateActionFailed: Bool = false
 }

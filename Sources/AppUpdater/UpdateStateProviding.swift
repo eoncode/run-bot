@@ -34,6 +34,7 @@ import Foundation
 /// spinner is shown is a host-app UI detail; `AppUpdater` tracks in-flight
 /// downloads with its own instance flag. The host only needs the four mutation
 /// hooks below to render a correct UI.
+///
 /// ## Why the protocol also refines `Sendable`
 ///
 /// `AppUpdater.scheduleBackgroundCheck` captures the host-state existential in an
@@ -54,13 +55,13 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
     var cachedUpdateVersion: String? { get }
 
     /// `true` when a download **or** install attempt failed. The host shows its
-    /// browser-download fallback whenever this is `true`.
+    /// curl-install fallback whenever this is `true`.
     var updateActionFailed: Bool { get }
 
     /// `true` when the discovered release exists but carries no matching asset
     /// to download. Tracked separately from `updateActionFailed` so the host can
     /// distinguish "release published without a binary" from "download/install
-    /// failed" — both drive the same browser-download fallback today, but the
+    /// failed" — both drive the same curl-install fallback today, but the
     /// distinct signal lets the host surface a more precise reason later.
     var updateAssetMissing: Bool { get }
 
@@ -81,13 +82,19 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
     func setDownloadComplete(zipURL: URL, version: String)
 
     /// Signals that a download or install attempt failed. Implementations
-    /// should set `updateActionFailed` so the browser-download fallback shows.
+    /// should set `updateActionFailed` so the curl-install fallback shows.
     func setUpdateFailed()
 
     /// Signals that the discovered release carries no matching downloadable
     /// asset. Implementations should set `updateAssetMissing` so the
-    /// browser-download fallback shows. Distinct from `setUpdateFailed()`:
+    /// curl-install fallback shows. Distinct from `setUpdateFailed()`:
     /// nothing was attempted and failed — there was simply nothing to download.
+    ///
+    /// Implementations must also clear `updateActionFailed` to avoid a
+    /// simultaneous dual-failure state: if a prior session left
+    /// `updateActionFailed = true` and the current release has no asset,
+    /// both flags would otherwise be `true` at the same time — a state the
+    /// protocol does not define.
     func setAssetMissing()
 
     /// Rehydrates cached download state on launch: the zip at `zipURL` for

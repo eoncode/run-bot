@@ -164,6 +164,12 @@ public final class AppUpdater {
     }
 
     /// Runs a channel-aware update check against the configured repo.
+    ///
+    /// Intentionally `internal` — `checkAndHandle` is the designed public entry
+    /// point for host apps. Hosts that need raw `UpdateCheckResult` values
+    /// (e.g. to drive custom UI before calling `handle(_:state:)`) should call
+    /// the lower-level `UpdateChecker.checkForUpdate(repo:currentVersion:betaChannel:assetName:)`
+    /// directly rather than going through this instance method.
     func checkForUpdate(betaChannel: Bool) async -> UpdateCheckResult {
         await UpdateChecker.checkForUpdate(
             repo: repo,
@@ -204,7 +210,7 @@ public final class AppUpdater {
     /// 1. If a matching cached zip already exists for this version, rehydrates
     ///    the host state and returns without re-downloading.
     /// 2. If the release has no matching zip asset, sets the host failure state
-    ///    (browser-download fallback) and returns.
+    ///    (curl-install fallback) and returns.
     /// 3. Otherwise starts a background download; the host state is updated on
     ///    the main actor when it completes.
     ///
@@ -233,7 +239,7 @@ public final class AppUpdater {
         // `setUpdateFailed()`: nothing was attempted and failed — the release
         // simply carries no binary. This mirrors the pre-refactor semantics
         // where the asset-absent path set only `updateAssetMissing`. Both flags
-        // drive the same browser-download fallback, but keeping them distinct
+        // drive the same curl-install fallback, but keeping them distinct
         // preserves the more precise reason for the host UI.
         let wantedAsset = assetName(release.tagName)
         guard let asset = release.assets.first(where: { $0.name == wantedAsset }) else {
@@ -293,7 +299,7 @@ public final class AppUpdater {
     /// is computed in the `@concurrent` `verifyChecksum` free function.
     /// Verification runs on the URLSession temp file **before** the file is
     /// moved into the cache, so an unverified zip never reaches the cache. On
-    /// any failure the host failure state is set (browser-download fallback).
+    /// any failure the host failure state is set (curl-install fallback).
     private func downloadUpdate( // skipcq: SW-R1002 — reviewed; complexity acceptable for this download+verify flow
         from url: URL,
         checksumURL: URL?,
