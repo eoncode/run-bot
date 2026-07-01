@@ -5,21 +5,17 @@ import Observation
 
 // MARK: - RunnerState
 
-/// Observable read model populated by `RunnerPoller` and consumed by the app layer.
+/// Observable model that holds all mutable runner-related state for the app layer.
 ///
-/// All mutations happen on the `MainActor`. Views and `AppDelegate` observe this
-/// object directly via `withObservationTracking` or `ObservationLoop`.
-///
-/// The six poll-written properties (`runners`, `jobs`, `actions`, `isRateLimited`,
-/// `rateLimitResetDate`, `fetchError`) are `public internal(set)` — only
-/// `RunnerPoller.applyFetchResult` (same module) should mutate them.
-/// Two additional properties (`localRunners`, `isLocalScanning`) are `public var`
+/// **Access level rationale for mutable properties:**
+/// The `runners`, `localRunners`, and `isLocalScanning` properties are `public var`
 /// because Swift requires the setter to match the accessibility of a `public` protocol
 /// `{ get set }` requirement — see `RunnerViewModelProtocol` for the rationale.
 /// Only `LocalRunnerStore` (in `RunBotCore`) writes them in practice.
-/// `availableUpdate` is likewise `public var`: it is written once on launch by
-/// `AppDelegate+PanelSetup` (app layer, different module) — `internal(set)` would
-/// block that assignment. In practice only the startup Task writes it.
+/// `availableUpdate` is `public private(set)` — cross-module mutation is
+/// funnelled through `setAvailableUpdate(_:)` so all write sites are visible
+/// in code review. It is set by `AutoUpdater.handle()` on every update-available
+/// result and cleared by `scheduleBackgroundCheck` on `.upToDate` / `.failed`.
 /// The auto-update download properties (`updateZipURL`, `cachedUpdateVersion`,
 /// `updateAssetMissing`, `updateActionFailed`) are `public internal(set)` — only
 /// `AutoUpdater` (same `RunBotCore` module) writes them via `await MainActor.run`.
@@ -27,45 +23,24 @@ import Observation
 @Observable
 @MainActor
 public final class RunnerState {
-    /// The current list of GitHub self-hosted runners for all active scopes.
-    public internal(set) var runners: [Runner] = []
-    /// Active and recently-completed jobs across all active scopes.
-    public internal(set) var jobs: [ActiveJob] = []
-    /// Workflow action groups (runs) across all active scopes.
-    public internal(set) var actions: [WorkflowActionGroup] = []
-    /// Whether the GitHub API rate limit has been hit.
-    ///
-    /// When `true`, polling is paused until `rateLimitResetDate`.
-    public internal(set) var isRateLimited = false
-    /// The date at which the rate limit resets, if currently rate-limited.
-    public internal(set) var rateLimitResetDate: Date?
-    /// The most recent fetch error, or `nil` if the last fetch succeeded.
-    ///
-    /// Set by `RunnerPoller.applyError(_:)`; cleared on every successful
-    /// `applyFetchResult`. Views read this to show a non-modal error banner.
-    ///
-    /// Typed `(any Error)?` — the stored value is always a `RunnerPoller.FetchError`,
-    /// which is `Sendable`. The property stays `any Error` for display flexibility;
-    /// `@MainActor` isolation on `RunnerState` ensures safe cross-actor reads.
-    public internal(set) var fetchError: (any Error)?
 
-    // MARK: - Local runner state (pushed by LocalRunnerStore)
+    // MARK: - Runner list state
 
-    /// Locally-installed runner agents discovered on this Mac.
+    /// The live list of GitHub-hosted runners fetched by `RunnerPoller`.
     ///
-    /// Pushed by `LocalRunnerStore` via `await MainActor.run { }` after every refresh cycle.
-    ///
-    /// Declared `public var` (not `public internal(set) var`) because Swift requires the
-    /// setter to be at least as accessible as the protocol requirement when conforming to a
-    /// public protocol with a `{ get set }` requirement. `public internal(set)` would restrict
-    /// the setter to `RunBotCore` and fail to satisfy the requirement at the module interface.
-    /// In practice, only `LocalRunnerStore` (inside `RunBotCore`) ever writes this property;
-    /// the `public` setter is a type-system necessity, not an invitation for external mutation.
-    public var localRunners: [RunnerModel] = []
+    /// `public var` is required by `RunnerViewModelProtocol { get set }` — see
+    /// the protocol definition for the full access-level rationale.
+    public var runners: [Runner] = []
 
-    /// `true` while `LocalRunnerStore` is running a refresh cycle.
+    /// The list of locally installed self-hosted runners discovered by
+    /// `LocalRunnerStore`.
     ///
-    /// Pushed by `LocalRunnerStore` alongside `localRunners`.
+    /// See `runners` for the access-level rationale.
+    public var localRunners: [LocalRunner] = []
+
+    /// `true` while `LocalRunnerStore` is performing an async scan for locally
+    /// installed runner services.
+    ///
     /// See `localRunners` for the access-level rationale.
     public var isLocalScanning: Bool = false
 
@@ -156,7 +131,4 @@ public final class RunnerState {
     public var aggregateStatus: AggregateStatus {
         AggregateStatus(runners: runners)
     }
-
-    /// Creates an empty `RunnerState`.
-    public init() {}
 }

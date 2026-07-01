@@ -70,11 +70,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          fetch-depth: 0   # full history + all tags required for tag computation
-          # Note: fetch-tags: true is technically redundant when fetch-depth: 0
-          # is set (a full clone already includes all tags), but it is kept here
-          # for self-documentation — it makes the tag dependency explicit to
-          # future readers without any runtime cost.
+          fetch-depth: 0   # full history + all tags — fetch-depth: 0 is sufficient
+                           # on its own; a full clone already includes all tags.
 
       # ── Compute next tag ───────────────────────────────────────────────────
       #
