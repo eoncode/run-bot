@@ -7,17 +7,17 @@ import Foundation
 
 /// Bridges `RunnerState` to the `AppUpdater` library's host-state protocol.
 ///
-/// The read-only properties (`updateZipURL`, `cachedUpdateVersion`,
-/// `updateActionFailed`, `updateAssetMissing`) and the mutation methods
-/// (`setAvailableUpdate`, `setDownloadStarted`, `setDownloadComplete`,
-/// `setUpdateFailed`, `setAssetMissing`, `rehydrateCachedUpdate`) are all
-/// declared on `RunnerState` itself and were added in this PR specifically
-/// to satisfy the protocol — they did not exist before the `AppUpdater`
-/// extraction.
+/// Every requirement of `UpdateStateProviding` — the read-only properties
+/// (`updateZipURL`, `cachedUpdateVersion`, `updateActionFailed`,
+/// `updateAssetMissing`) and the mutation methods (`setAvailableUpdate`,
+/// `setDownloadStarted`, `setDownloadComplete`, `setUpdateFailed`,
+/// `setAssetMissing`, `rehydrateCachedUpdate`) — was **newly added to
+/// `RunnerState` in this PR** as part of the `AppUpdater` library extraction.
+/// None of these existed on `RunnerState` before this change.
 ///
-/// `clearDownloadState` is the one exception: `RunnerState` provides an
-/// **explicit override** below rather than inheriting the protocol default.
-/// See that override for the full rationale.
+/// `clearDownloadState` is the one exception to the above: rather than
+/// inheriting the protocol's no-op default, `RunnerState` provides an
+/// **explicit override** below. See that override for the full rationale.
 ///
 /// This conformance lives in its own file so the `import AppUpdater`
 /// dependency is confined here and `RunnerState.swift` stays free of the
