@@ -11,8 +11,11 @@ public struct ReleaseAsset: Decodable, Sendable {
     /// The direct download URL for this asset.
     public let browserDownloadURL: URL
 
+    /// Maps Swift property names to the JSON keys returned by the GitHub API.
     enum CodingKeys: String, CodingKey {
+        /// Maps to the JSON `"name"` field.
         case name
+        /// Maps to the JSON `"browser_download_url"` field.
         case browserDownloadURL = "browser_download_url"
     }
 }
@@ -33,15 +36,21 @@ public struct AvailableRelease: Sendable {
 
 /// The result of an `UpdateChecker.checkForUpdate(...)` call.
 public enum UpdateCheckResult: Sendable {
+    /// The installed version is already the latest.
     case upToDate
+    /// A newer release is available; carries the decoded release metadata.
     case updateAvailable(release: AvailableRelease)
+    /// The check could not be completed; carries the underlying error.
     case failed(Error)
 }
 
 // MARK: - UpdateCheckError
 
+/// Errors thrown by `UpdateChecker` when a check cannot be completed.
 public enum UpdateCheckError: Error, Sendable {
+    /// The host supplied an empty `currentVersion` string.
     case missingVersionKey
+    /// The GitHub Releases API returned no matching releases.
     case noReleasesFound
 }
 
@@ -50,24 +59,39 @@ public enum UpdateCheckError: Error, Sendable {
 /// Checks a GitHub repository's Releases for a newer version.
 public enum UpdateChecker {
 
+    /// A raw GitHub Release payload decoded from the Releases API response.
     private struct Release: Decodable {
+        /// The git tag name (e.g. `"v1.2.0"`).
         let tagName: String
+        /// Whether GitHub marked this release as a pre-release.
         let prerelease: Bool
+        /// The binary assets attached to this release.
         let assets: [ReleaseAsset]
+        /// Maps Swift property names to GitHub API JSON keys.
         enum CodingKeys: String, CodingKey {
+            /// Maps to JSON `"tag_name"`.
             case tagName = "tag_name"
+            /// Maps to JSON `"prerelease"`.
             case prerelease
+            /// Maps to JSON `"assets"`.
             case assets
         }
     }
 
+    /// A decomposed semantic-version string used for numeric comparison.
     private struct ParsedVersion {
+        /// The major version component.
         let major: Int
+        /// The minor version component.
         let minor: Int
+        /// The patch version component.
         let patch: Int
+        /// `true` when the version string contains a pre-release suffix.
         let isPrerelease: Bool
+        /// The numeric beta index parsed from a `-beta.N` suffix, or `nil`.
         let betaIndex: Int?
 
+        /// Parses `version` into its numeric components.
         init(_ version: String) { // skipcq: SW-R1002 — reviewed; complexity acceptable for this version parser
             let parts = version.split(separator: "-", maxSplits: 1)
             let core = parts.isEmpty ? "" : String(parts[0])
@@ -148,6 +172,10 @@ public enum UpdateChecker {
         return sorted.first(where: { betaChannel ? true : !$0.prerelease })
     }
 
+    /// Wraps `latestMatchingRelease` to build a fully typed `AvailableRelease`
+    /// including the optional checksum sidecar URL.
+    ///
+    /// Returns `nil` when no matching release is found or the network call fails.
     static func fetchLatestAvailableRelease(
         repo: String,
         betaChannel: Bool,
@@ -180,6 +208,14 @@ public enum UpdateChecker {
         return false
     }
 
+    /// Checks whether a newer version of the app is available on GitHub Releases.
+    ///
+    /// - Parameters:
+    ///   - repo: The `owner/repo` slug (e.g. `"runbot-hq/run-bot"`).
+    ///   - currentVersion: The running app's version string (e.g. `"1.2.3"`).
+    ///   - betaChannel: When `true`, pre-releases are considered as candidates.
+    ///   - assetName: Closure mapping a release tag to the expected asset filename.
+    /// - Returns: An `UpdateCheckResult` indicating whether an update is available.
     public static func checkForUpdate(
         repo: String,
         currentVersion: String,

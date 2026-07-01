@@ -134,6 +134,18 @@ extension AppUpdater {
 
     // MARK: - Private helpers
 
+    /// Unzips `zipURL` into `tmpDir` via `/usr/bin/ditto` and returns the
+    /// `.app` bundle URL found at the archive root.
+    ///
+    /// Returns `nil` and cleans up `tmpDir` on any failure:
+    /// - `tmpDir` creation fails
+    /// - `ditto` exits non-zero
+    /// - No `.app` is present at the archive root
+    ///
+    /// `contentsOfDirectory` is intentionally shallow (non-recursive): the
+    /// release archive is expected to carry exactly one `.app` at its root
+    /// (RunBot's publish.yml CI verify step enforces this). A recursive search
+    /// is deliberately avoided because it would silently accept malformed archives.
     private func unzipAndLocateApp(zipURL: URL, into tmpDir: URL) async -> URL? {
         let fm = FileManager.default
         do {

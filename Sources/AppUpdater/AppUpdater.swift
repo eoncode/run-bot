@@ -221,7 +221,11 @@ public final class AppUpdater {
     ) {
         precondition(!repo.isEmpty, "AppUpdater: repo must not be empty (expected \"owner/repo\")")
         precondition(!schedulerIdentifier.isEmpty, "AppUpdater: schedulerIdentifier must not be empty (expected a reverse-DNS string)")
-        precondition(!schedulerIdentifier.contains("/"), "AppUpdater: schedulerIdentifier must not contain '/' — it is used as a cache directory name component via appendingPathComponent; a slash would silently create a nested subdirectory path")
+        precondition(
+            !schedulerIdentifier.contains("/"),
+            "AppUpdater: schedulerIdentifier must not contain '/' — used as a cache directory name"
+            + " component via appendingPathComponent; a slash would silently create a nested subdirectory path"
+        )
         self.repo = repo
         self.currentVersion = currentVersion
         self.assetName = assetName
