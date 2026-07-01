@@ -54,7 +54,7 @@ public final class AppUpdater {
 
     /// The running app's version (full semver incl. any pre-release suffix).
     /// The library never reads `Bundle` — the host supplies this.
-    let currentVersion: String
+    public let currentVersion: String
 
     /// Maps a release tag name to the expected zip asset filename.
     ///
@@ -69,7 +69,7 @@ public final class AppUpdater {
 
     /// Reverse-DNS identifier for the background scheduler; also the domain
     /// used to scope this updater's `UserDefaults` keys.
-    let schedulerIdentifier: String
+    public let schedulerIdentifier: String
 
     /// The `UserDefaults` suite persisting the cached-zip path and version.
     let defaults: UserDefaults
@@ -258,10 +258,12 @@ public final class AppUpdater {
         let cachedPath = defaults.string(forKey: keys.cachedUpdateZipPath)
         if let cachedVersion, cachedVersion == release.tagName, let path = cachedPath {
             if FileManager.default.fileExists(atPath: path) {
-                // `rehydrateCachedUpdate` sets the zip URL + version and clears
-                // any stale failure flag from a prior session.
-                state.setAvailableUpdate(release.tagName)
+                // `rehydrateCachedUpdate` clears any stale failure flags from a
+                // prior session before `setAvailableUpdate` fires, so the host
+                // never sees a stale failed state paired with a ready-to-install
+                // label.
                 state.rehydrateCachedUpdate(zipURL: URL(fileURLWithPath: path), version: cachedVersion)
+                state.setAvailableUpdate(release.tagName)
                 return
             }
             // Cached path no longer on disk — clear stale defaults and fall
@@ -315,8 +317,8 @@ public final class AppUpdater {
         //
         // REVIEWER: Do NOT collapse these two calls into one. The explicit
         // clearCachedDefaults() before setDownloadStarted() is load-bearing.
-        state.setDownloadStarted()
         clearCachedDefaults()
+        state.setDownloadStarted()
 
         let downloadURL = asset.browserDownloadURL
         let checksumURL = release.checksumURL
