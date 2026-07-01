@@ -7,14 +7,15 @@
 /// A configurable test double for `ReleaseProvider`.
 ///
 /// `actor` isolation ensures mutation of call-capture properties is safe
-/// when tests `await provider.capturedBetaChannel` — no `@unchecked Sendable`
-/// required (Pillar 6).
+/// when tests `await` on recorded values — no `@unchecked Sendable`
+/// required (Pillar 6). Zero `DispatchQueue` usage (Pillar 5).
 ///
 /// ## Usage
 ///
 /// ```swift
 /// let provider = MockReleaseProvider()
-/// await provider.set(releaseToReturn: AvailableRelease(tagName: "v2.0.0", assets: [], checksumURL: nil))
+/// provider.fetchResult = .success(AvailableRelease(tagName: "v2.0.0", assets: [], checksumURL: nil))
+/// provider.downloadResult = .success(URL(fileURLWithPath: "/tmp/App.zip"))
 /// let updater = AppUpdater(
 ///     repo: "owner/repo",
 ///     currentVersion: "1.0.0",
@@ -27,51 +28,63 @@ actor MockReleaseProvider: ReleaseProvider {
 
     // MARK: - Configuration
 
-    /// The release to return from `fetchLatestRelease`.
-    /// `nil` simulates a network failure or an empty releases list.
-    private var releaseToReturn: AvailableRelease?
+    /// Result returned from `fetchLatestRelease`. Defaults to `.success(nil)`
+    /// (no update available).
+    var fetchResult: Result<AvailableRelease?, Error> = .success(nil)
 
-    /// Creates a new mock with an optional pre-configured release to return.
-    init(releaseToReturn: AvailableRelease? = nil) {
-        self.releaseToReturn = releaseToReturn
-    }
+    /// Result returned from `downloadUpdate`. Defaults to a success with a
+    /// placeholder URL — override per test when exercising the download path.
+    var downloadResult: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/MockUpdate.zip"))
 
-    /// Updates the release that will be returned by subsequent
-    /// `fetchLatestRelease` calls.
-    func set(releaseToReturn: AvailableRelease?) {
-        self.releaseToReturn = releaseToReturn
-    }
+    /// Number of simulated progress steps emitted during `downloadUpdate`.
+    /// Each step calls `await Task.yield()` once (Pillar 5 — no DispatchQueue).
+    var simulatedSteps: Int = 5
 
     // MARK: - Call capture
 
     /// Number of times `fetchLatestRelease` was called.
-    private(set) var callCount: Int = 0
+    private(set) var fetchCallCount: Int = 0
+
+    /// Number of times `downloadUpdate` was called.
+    private(set) var downloadCallCount: Int = 0
 
     /// The `betaChannel` value last passed to `fetchLatestRelease`.
-    /// `nil` until the first call — assert this to verify beta wiring.
+    /// `nil` until the first call.
     private(set) var capturedBetaChannel: Bool?
 
     /// The `repo` value last passed to `fetchLatestRelease`.
     /// `nil` until the first call.
     private(set) var capturedRepo: String?
 
+    // MARK: - Init
+
+    init() {}
+
     // MARK: - ReleaseProvider
 
-    /// Records the call arguments and returns `releaseToReturn`.
-    ///
-    /// The `assetName` closure is intentionally ignored — checksum-sidecar
-    /// resolution is a production concern that lives in
-    /// `GitHubReleaseProvider` / `UpdateChecker.fetchLatestAvailableRelease`.
-    /// Tests that need a specific checksum URL should set it directly on the
-    /// `AvailableRelease` passed to `releaseToReturn`.
+    /// Records the call arguments and returns `fetchResult`.
     func fetchLatestRelease(
         repo: String,
         betaChannel: Bool,
         assetName: (String) -> String
-    ) async -> AvailableRelease? {
-        callCount += 1
+    ) async throws -> AvailableRelease? {
+        fetchCallCount += 1
         capturedRepo = repo
         capturedBetaChannel = betaChannel
-        return releaseToReturn
+        return try fetchResult.get()
+    }
+
+    /// Records the call and returns `downloadResult` after emitting
+    /// `simulatedSteps` progress yield points.
+    func downloadUpdate(
+        release: AvailableRelease,
+        progressHandler: ((Double) -> Void)?
+    ) async throws -> URL {
+        downloadCallCount += 1
+        for step in 1...max(1, simulatedSteps) {
+            await Task.yield()
+            progressHandler?(Double(step) / Double(simulatedSteps))
+        }
+        return try downloadResult.get()
     }
 }
