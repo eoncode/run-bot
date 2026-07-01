@@ -255,19 +255,19 @@ public final class AppUpdater {
         // in-actor. The heavy work inside suspends (URLSession) or hops off-main
         // (@concurrent verifyChecksum), keeping the main thread free.
         //
-        // `[weak self]` means that if this `AppUpdater` is deallocated before the
-        // task runs, `self?` is nil and the download silently no-ops — leaving the
-        // host UI stuck on the spinner (`setDownloadStarted()` already fired
-        // above). This is an accepted edge case: it can only happen during app
-        // teardown/deinit, and in normal operation `AppUpdater` is owned for the
-        // full app lifetime by the host (`AppDelegate`/`RunnerState`), so it is
-        // never released between spawning this task and its first resumption. The
-        // spinner is torn down with the process, so no user-visible stuck state
-        // survives. We keep `weak` (rather than a strong capture that would extend
-        // the updater's lifetime past the host's intent) precisely because that
-        // teardown window is the only time `self` is gone.
-        Task { [weak self] in
-            await self?.downloadUpdate(from: downloadURL, checksumURL: checksumURL, version: tagName, state: state)
+        // Strong capture (no `[weak self]`) is deliberate and correct here. The
+        // host owns `AppUpdater` as a stored `let` on its `NSApplicationDelegate`
+        // (`AppDelegate.autoUpdater`), so it is a de facto singleton that lives
+        // for the entire process lifetime — the updater can never be deallocated
+        // between spawning this task and its resumption. A `weak` capture would
+        // provide no real protection and instead introduce a latent stuck-state
+        // bug: were `self` ever nil, `downloadUpdate` would never run, `isDownloading`
+        // would stay `true` forever, and every later `handle()` call would silently
+        // no-op via the in-flight guard — permanently breaking updates for that
+        // session. Retaining `self` for the duration of the download is exactly
+        // the intended lifetime.
+        Task {
+            await self.downloadUpdate(from: downloadURL, checksumURL: checksumURL, version: tagName, state: state)
         }
     }
 
