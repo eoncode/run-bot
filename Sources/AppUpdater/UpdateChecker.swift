@@ -50,16 +50,11 @@ public enum UpdateCheckResult: Sendable {
 public enum UpdateCheckError: Error, Sendable {
     /// The `currentVersion` string supplied to the checker was empty.
     case missingVersionKey
-    /// The releases API returned no releases, or the request/decode failed.
-    /// Distinct from `noChannelMatch` — this means we could not determine
-    /// the release list at all.
+    /// The releases API request failed, the HTTP response was non-200, or
+    /// the response body could not be decoded. This does not mean
+    /// "no channel match" — when releases exist but none match the requested
+    /// channel the result is `.upToDate`, not this error.
     case noReleasesFound
-    /// Releases were fetched and decoded successfully, but none of them
-    /// matched the requested channel (e.g. `betaChannel: false` and every
-    /// release on the repository is a pre-release). The caller is already on
-    /// the latest version they are eligible for; this is not an error in the
-    /// traditional sense and should be treated like `.upToDate` for UI purposes.
-    case noChannelMatch
 }
 
 // MARK: - UpdateChecker
