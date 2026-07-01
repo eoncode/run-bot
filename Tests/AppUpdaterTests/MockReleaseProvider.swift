@@ -7,15 +7,14 @@
 /// A configurable test double for `ReleaseProvider`.
 ///
 /// `actor` isolation ensures mutation of call-capture properties is safe
-/// when tests `await` on recorded values — no `@unchecked Sendable`
-/// required (Pillar 6). Zero `DispatchQueue` usage (Pillar 5).
+/// when tests `await` recorded values — no `@unchecked Sendable` required
+/// (Pillar 6). Zero `DispatchQueue` usage (Pillar 5).
 ///
 /// ## Usage
 ///
 /// ```swift
 /// let provider = MockReleaseProvider()
-/// provider.fetchResult = .success(AvailableRelease(tagName: "v2.0.0", assets: [], checksumURL: nil))
-/// provider.downloadResult = .success(URL(fileURLWithPath: "/tmp/App.zip"))
+/// provider.releaseToReturn = AvailableRelease(tagName: "v2.0.0", assets: [], checksumURL: nil)
 /// let updater = AppUpdater(
 ///     repo: "owner/repo",
 ///     currentVersion: "1.0.0",
@@ -28,63 +27,52 @@ actor MockReleaseProvider: ReleaseProvider {
 
     // MARK: - Configuration
 
-    /// Result returned from `fetchLatestRelease`. Defaults to `.success(nil)`
-    /// (no update available).
-    var fetchResult: Result<AvailableRelease?, Error> = .success(nil)
+    /// The release to return from `fetchLatestRelease`. `nil` simulates a
+    /// network failure or empty releases list.
+    var releaseToReturn: AvailableRelease?
 
-    /// Result returned from `downloadUpdate`. Defaults to a success with a
-    /// placeholder URL — override per test when exercising the download path.
-    var downloadResult: Result<URL, Error> = .success(URL(fileURLWithPath: "/tmp/MockUpdate.zip"))
-
-    /// Number of simulated progress steps emitted during `downloadUpdate`.
-    /// Each step calls `await Task.yield()` once (Pillar 5 — no DispatchQueue).
-    var simulatedSteps: Int = 5
+    /// Convenience: number of simulated async yield points per fetch call.
+    /// Uses `await Task.yield()` (Pillar 5 — no DispatchQueue).
+    var simulatedSteps: Int = 1
 
     // MARK: - Call capture
 
     /// Number of times `fetchLatestRelease` was called.
     private(set) var fetchCallCount: Int = 0
 
-    /// Number of times `downloadUpdate` was called.
-    private(set) var downloadCallCount: Int = 0
+    /// Alias kept for backward compatibility with existing tests.
+    var callCount: Int { fetchCallCount }
 
     /// The `betaChannel` value last passed to `fetchLatestRelease`.
-    /// `nil` until the first call.
     private(set) var capturedBetaChannel: Bool?
 
     /// The `repo` value last passed to `fetchLatestRelease`.
-    /// `nil` until the first call.
     private(set) var capturedRepo: String?
 
     // MARK: - Init
 
-    init() {}
+    /// Creates a mock with an optional pre-configured release.
+    init(releaseToReturn: AvailableRelease? = nil) {
+        self.releaseToReturn = releaseToReturn
+    }
+
+    /// Mutates `releaseToReturn` from the outside (for tests that can't use
+    /// the initialiser after construction).
+    func set(releaseToReturn: AvailableRelease?) {
+        self.releaseToReturn = releaseToReturn
+    }
 
     // MARK: - ReleaseProvider
 
-    /// Records the call arguments and returns `fetchResult`.
     func fetchLatestRelease(
         repo: String,
         betaChannel: Bool,
-        assetName: (String) -> String
-    ) async throws -> AvailableRelease? {
+        assetName: @Sendable (String) -> String
+    ) async -> AvailableRelease? {
         fetchCallCount += 1
         capturedRepo = repo
         capturedBetaChannel = betaChannel
-        return try fetchResult.get()
-    }
-
-    /// Records the call and returns `downloadResult` after emitting
-    /// `simulatedSteps` progress yield points.
-    func downloadUpdate(
-        release: AvailableRelease,
-        progressHandler: ((Double) -> Void)?
-    ) async throws -> URL {
-        downloadCallCount += 1
-        for step in 1...max(1, simulatedSteps) {
-            await Task.yield()
-            progressHandler?(Double(step) / Double(simulatedSteps))
-        }
-        return try downloadResult.get()
+        for _ in 0..<simulatedSteps { await Task.yield() }
+        return releaseToReturn
     }
 }
