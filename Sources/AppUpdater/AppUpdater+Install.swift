@@ -188,12 +188,16 @@ extension AppUpdater {
         do {
             try relaunchTask.run()
         } catch {
-            // `open -n` failed — the new binary could not be launched. Do NOT
-            // terminate: the current process is still running correctly, so we
-            // surface the failure and leave the user with a working app rather
-            // than no app at all.
+            // `open -n` failed — the new binary could not be launched. The zip
+            // was already deleted (step 4) so updateZipURL must be cleared to
+            // prevent the next "Install & Relaunch" tap from entering ditto on a
+            // nonexistent file and cycling into setUpdateFailed() permanently.
+            // setDownloadStarted() clears updateZipURL + cachedUpdateVersion per
+            // its protocol contract, fully resetting state before setUpdateFailed()
+            // surfaces the browser-download fallback.
             appUpdaterLogger.error("open -n failed, aborting relaunch: \(error.localizedDescription, privacy: .public)")
             isInstalling = false
+            state.setDownloadStarted() // clears updateZipURL — zip was already deleted above
             state.setUpdateFailed()
             return
         }
