@@ -103,6 +103,11 @@ let updater = AppUpdater(
 updater.skipCodeSignValidation = false // enable identity check for Developer ID builds
 ```
 
+> **Note:** Set `skipCodeSignValidation` before calling `scheduleBackgroundCheck`
+> or `checkAndHandle`. The value is read at `installAndRelaunch` time, but
+> establishing it early removes any ambiguity about which value was in effect
+> when a background check fired.
+
 > **Why `codesign -dvvv` instead of the Security framework?**
 > The subprocess approach avoids Hardened Runtime entitlement requirements and
 > produces the same `Authority=` string that developers already see in Console.app.
@@ -112,11 +117,12 @@ updater.skipCodeSignValidation = false // enable identity check for Developer ID
 ## Distribution assumptions
 
 - The release archive carries exactly one `.app` at its root.
-- Each release attaches a `<assetName>.sha256` sidecar. A missing sidecar is a hard failure.
-- On any download or install failure `setUpdateFailed()` is called. The host should direct
-  the user to re-run the original `curl` install command — **not** open a browser download.
-  Downloading via a browser stamps the `.app` with `com.apple.quarantine`, which triggers
-  Gatekeeper and breaks the install. The curl path intentionally bypasses this.
+- Each release attaches a `<assetName>.sha256` sidecar. A missing or empty sidecar
+  is a hard failure — verification is skipped for neither.
+- On any download or install failure `setUpdateFailed()` is called. The host should
+  direct the user to re-run the original `curl` install command — **not** open a
+  browser download. Downloading via a browser stamps the `.app` with
+  `com.apple.quarantine`, which triggers Gatekeeper and breaks the install.
 
 ## Persisted state
 
@@ -132,6 +138,23 @@ The verified zip is cached at `~/Library/Caches/<schedulerIdentifier>/update-<ve
 
 Messages appear in Console.app under subsystem `io.github.appupdater`, category `AppUpdater`.
 `.debug` calls are elided at zero cost in release builds when no one is streaming.
+
+## Known limitations
+
+### 100-release ceiling
+
+`AppUpdater` fetches releases with `per_page=100` and makes a single request —
+no pagination. If your repository has published more than 100 releases, releases
+beyond the first page are never evaluated. In practice the newest release is
+always in the first page (GitHub returns releases newest-first by default), so
+this is not a correctness problem for the common case.
+
+It becomes a problem only if you publish hotfixes to old branches and those
+releases sort after the 100th entry by semver. Recommended mitigations:
+- Keep total published releases ≤ 100 by converting old releases to drafts.
+- Or tag hotfixes with a version that sorts into the top 100 by semver.
+
+Pagination support is a future enhancement if there is demand.
 
 ## Alternatives
 

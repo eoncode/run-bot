@@ -79,15 +79,28 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
     /// Clears stale cached-download state without signalling that a new download
     /// is starting.
     ///
-    /// Called when a post-install recovery path needs to reset `updateZipURL`
-    /// and `cachedUpdateVersion` (which are now invalid — the zip was deleted as
-    /// part of the install) without implying a download is about to begin.
+    /// Called in two situations:
+    /// 1. Before a new download begins — to remove a stale cached zip URL and
+    ///    version from a prior session without implying a spinner should show.
+    /// 2. After `replaceItem` succeeds but `open -n` fails — the new binary is
+    ///    on disk so the zip is spent; cached state should be cleared without
+    ///    surfacing the curl-install fallback.
     ///
-    /// The default implementation calls `setDownloadStarted()` because the
-    /// underlying field writes are identical. **Conformers that give
-    /// `setDownloadStarted()` visible download-UI side-effects (e.g. showing a
-    /// spinner) must override this method** to perform only the field clears,
-    /// so the spinner is not shown during a post-install failure recovery.
+    /// ## Safe default: no-op
+    ///
+    /// The default implementation is intentionally a **no-op**. This is the
+    /// correct safe default for a protocol method that conformers may not
+    /// implement: a spurious no-op is always safe; a spurious
+    /// `setDownloadStarted()` would trigger download-UI side-effects (e.g. a
+    /// spinner) in any conformer that wires that method to visible UI.
+    ///
+    /// **Conformers that need field clears here must override this method.**
+    /// A typical override clears `updateZipURL`, `cachedUpdateVersion`,
+    /// `updateActionFailed`, and `updateAssetMissing` without starting a spinner.
+    ///
+    /// REVIEWER: Do NOT change the default to call `setDownloadStarted()`. The
+    /// no-op default is load-bearing for the post-install relaunch-failure path
+    /// in `AppUpdater+Install.swift` — see `replaceAndRelaunch`.
     func clearDownloadState()
 
     /// Signals that a download completed and was integrity-verified. The zip is
@@ -127,10 +140,13 @@ public protocol UpdateStateProviding: AnyObject, Sendable {
 /// Conformers may override any of these to customise behaviour.
 public extension UpdateStateProviding {
 
-    /// Default implementation: delegates to `setDownloadStarted()` because the
-    /// field writes are identical. Override if `setDownloadStarted()` has
-    /// download-UI side-effects (e.g. a spinner) that must not fire here.
+    /// Default implementation: intentional no-op.
+    ///
+    /// See the `clearDownloadState()` protocol requirement doc comment for the
+    /// full rationale. Short version: the safe default for a protocol method
+    /// with potential UI side-effects is a no-op, not `setDownloadStarted()`.
+    /// Conformers that need field clears here must override this method.
     func clearDownloadState() {
-        setDownloadStarted()
+        // Intentional no-op — see doc comment on the protocol requirement.
     }
 }
