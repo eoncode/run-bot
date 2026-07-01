@@ -323,8 +323,11 @@ public final class AppUpdater {
     ///
     /// 1. If a matching cached zip already exists for this version, rehydrates
     ///    the host state and returns without re-downloading.
-    /// 2. If the release has no matching zip asset, sets the host failure state
-    ///    (curl-install fallback) and returns.
+    /// 2. If the release has no matching zip asset **or** no checksum sidecar
+    ///    URL, sets the host failure state (curl-install fallback) and returns.
+    ///    Both are treated identically: the release cannot be safely downloaded
+    ///    and verified, so the download path is never entered and
+    ///    `setDownloadStarted()` is never called.
     /// 3. Otherwise starts a background download; the host state is updated on
     ///    the main actor when it completes.
     ///
@@ -344,9 +347,24 @@ public final class AppUpdater {
             clearCachedDefaults()
         }
 
-        // ── 2. Asset absent from release? ─────────────────────────────────────────────────────────
+        // ── 2. Asset or checksum sidecar absent from release? ────────────────────────────────────
+        // Both conditions are treated identically: the release cannot be safely
+        // downloaded and integrity-verified, so we surface the curl-install
+        // fallback without ever entering the download path.
+        //
+        // ⚠️ The checksumURL guard MUST live here (step 2), not inside
+        // downloadUpdate(). Allowing a nil checksumURL to reach the download
+        // path would cause setDownloadStarted() to fire first — producing a
+        // visible spinner flash — before downloadUpdate() throws and eventually
+        // calls setUpdateFailed(). Catching it here keeps the UI transition
+        // direct: setAssetMissing() → curl-install fallback, no spinner shown.
         let wantedAsset = assetName(release.tagName)
         guard let asset = release.assets.first(where: { $0.name == wantedAsset }) else {
+            state.setAvailableUpdate(release.tagName)
+            state.setAssetMissing()
+            return
+        }
+        guard release.checksumURL != nil else {
             state.setAvailableUpdate(release.tagName)
             state.setAssetMissing()
             return
@@ -404,6 +422,11 @@ public final class AppUpdater {
             let session = URLSession(configuration: sessionConfig)
             defer { session.finishTasksAndInvalidate() }
 
+            // Safety net: handle() now guards against nil checksumURL in step 2
+            // before entering the download path, so this branch should be
+            // unreachable in normal flow. It is kept as a last-resort defensive
+            // check — if a future refactor bypasses the step-2 guard, this
+            // prevents a nil URL from reaching URLSession.
             guard let checksumURL else {
                 throw URLError(.resourceUnavailable)
             }
