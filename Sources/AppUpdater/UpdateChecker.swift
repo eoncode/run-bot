@@ -228,6 +228,32 @@ public enum UpdateChecker {
         return sorted.first(where: { betaChannel ? true : !$0.prerelease })
     }
 
+    /// Fetches the latest release matching `betaChannel` and constructs a fully
+    /// populated `AvailableRelease`, including the SHA-256 checksum sidecar URL.
+    ///
+    /// This is the module-internal seam for `GitHubReleaseProvider` — it returns
+    /// `AvailableRelease?` directly so the provider never needs to reference the
+    /// private `Release` type. `checkForUpdate` also delegates here to avoid
+    /// duplicating the checksum-resolution logic.
+    ///
+    /// Returns `nil` on any failure (network error, empty list, no channel match).
+    /// All failure modes are best-effort and must never surface error UI.
+    static func fetchLatestAvailableRelease(
+        repo: String,
+        betaChannel: Bool,
+        assetName: (String) -> String
+    ) async -> AvailableRelease? {
+        guard let latest = await latestMatchingRelease(repo: repo, betaChannel: betaChannel)
+        else { return nil }
+        let checksumAssetName = assetName(latest.tagName) + ".sha256"
+        let checksumAsset = latest.assets.first(where: { $0.name == checksumAssetName })
+        return AvailableRelease(
+            tagName: latest.tagName,
+            assets: latest.assets,
+            checksumURL: checksumAsset?.browserDownloadURL
+        )
+    }
+
     /// Returns `true` when `candidate` is strictly newer than `current` using
     /// numeric semver comparison, including beta ordering.
     ///
@@ -262,6 +288,13 @@ public enum UpdateChecker {
     ///   - betaChannel: When `true`, pre-release builds are candidates.
     ///   - assetName: Maps a tag name to the expected zip asset filename; used
     ///     to locate the SHA-256 sidecar (`<assetName>.sha256`) for this release.
+    ///
+    /// This method is intentionally kept `public` as an escape hatch for callers
+    /// who need a raw `UpdateCheckResult` without constructing an `AppUpdater`
+    /// instance. `AppUpdater.checkForUpdate(betaChannel:)` delegates to
+    /// `fetchLatestAvailableRelease` and performs its own `isNewer` comparison,
+    /// so injecting a `ReleaseProvider` mock bypasses this method entirely in
+    /// tests — which is the correct behaviour.
     public static func checkForUpdate(
         repo: String,
         currentVersion: String,
@@ -272,22 +305,18 @@ public enum UpdateChecker {
             return .failed(UpdateCheckError.missingVersionKey)
         }
 
-        guard let latest = await latestMatchingRelease(repo: repo, betaChannel: betaChannel) else {
+        guard let release = await fetchLatestAvailableRelease(
+            repo: repo,
+            betaChannel: betaChannel,
+            assetName: assetName
+        ) else {
             return .failed(UpdateCheckError.noReleasesFound)
         }
 
-        guard isNewer(latest.tagName, than: currentVersion) else {
+        guard isNewer(release.tagName, than: currentVersion) else {
             return .upToDate
         }
 
-        // Locate the SHA-256 sidecar from the already-decoded assets array.
-        let checksumAssetName = assetName(latest.tagName) + ".sha256"
-        let checksumAsset = latest.assets.first(where: { $0.name == checksumAssetName })
-        let release = AvailableRelease(
-            tagName: latest.tagName,
-            assets: latest.assets,
-            checksumURL: checksumAsset?.browserDownloadURL
-        )
         return .updateAvailable(release: release)
     }
 }
