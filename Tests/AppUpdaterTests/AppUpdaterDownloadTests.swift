@@ -19,9 +19,9 @@ struct AppUpdaterDownloadTests {
 
     private func makeUpdater(
         currentVersion: String = "1.0.0"
-    ) -> (updater: AppUpdater, state: MockUpdateState, defaults: UserDefaults) {
+    ) throws -> (updater: AppUpdater, state: MockUpdateState, defaults: UserDefaults) {
         let domain = "AppUpdaterDownloadTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: domain)!
+        let defaults = try #require(UserDefaults(suiteName: domain))
         let updater = AppUpdater(
             repo: "owner/repo",
             currentVersion: currentVersion,
@@ -38,10 +38,10 @@ struct AppUpdaterDownloadTests {
     /// throws `URLError(.resourceUnavailable)` → catch → `setUpdateFailed()`.
     /// This is the fastest failure path and exercises the catch block without
     /// any network activity.
-    private func releaseWithNilChecksum(tagName: String = "v2.0.0") -> AvailableRelease {
+    private func releaseWithNilChecksum(tagName: String = "v2.0.0") throws -> AvailableRelease {
         let asset = ReleaseAsset(
             name: "App.zip",
-            browserDownloadURL: URL(string: "https://example.com/App.zip")!
+            browserDownloadURL: try #require(URL(string: "https://example.com/App.zip"))
         )
         return AvailableRelease(tagName: tagName, assets: [asset], checksumURL: nil)
     }
@@ -52,8 +52,8 @@ struct AppUpdaterDownloadTests {
     /// activity. The catch block must call `setUpdateFailed()` and clear
     /// `isDownloading`.
     @Test func downloadError_nilChecksumURL_setsUpdateFailed() async throws {
-        let (updater, state, _) = makeUpdater()
-        await updater.handle(releaseWithNilChecksum(), state: state)
+        let (updater, state, _) = try makeUpdater()
+        await updater.handle(try releaseWithNilChecksum(), state: state)
         // Allow the spawned Task to complete.
         await Task.yield()
         await Task.yield()
@@ -66,8 +66,8 @@ struct AppUpdaterDownloadTests {
     /// guard for the stuck-state bug where it stays `true` and every
     /// subsequent `handle()` silently no-ops via the in-flight guard.
     @Test func downloadError_clearsIsDownloadingFlag() async throws {
-        let (updater, state, _) = makeUpdater()
-        await updater.handle(releaseWithNilChecksum(), state: state)
+        let (updater, state, _) = try makeUpdater()
+        await updater.handle(try releaseWithNilChecksum(), state: state)
         await Task.yield()
         await Task.yield()
         await Task.yield()
@@ -77,8 +77,8 @@ struct AppUpdaterDownloadTests {
 
     /// A nil checksumURL must call `setUpdateFailed()`, NOT `setDownloadComplete()`.
     @Test func checksumURLNil_setsUpdateFailed_notDownloadComplete() async throws {
-        let (updater, state, _) = makeUpdater()
-        await updater.handle(releaseWithNilChecksum(), state: state)
+        let (updater, state, _) = try makeUpdater()
+        await updater.handle(try releaseWithNilChecksum(), state: state)
         await Task.yield()
         await Task.yield()
         await Task.yield()
@@ -91,9 +91,9 @@ struct AppUpdaterDownloadTests {
     /// provider stays at 0 (no new download starts) and `downloadStartedCount`
     /// on the state is not incremented again.
     @Test func concurrentHandle_secondDropped_whenIsDownloadingTrue() async throws {
-        let (updater, state, _) = makeUpdater()
+        let (updater, state, _) = try makeUpdater()
         updater.isDownloading = true   // simulate an in-flight download
-        await updater.handle(releaseWithNilChecksum(), state: state)
+        await updater.handle(try releaseWithNilChecksum(), state: state)
         #expect(state.downloadStartedCount == 0)
         #expect(state.updateFailedCount == 0)
     }
@@ -101,8 +101,8 @@ struct AppUpdaterDownloadTests {
     /// `setDownloadStarted()` must be called exactly once when a fresh download
     /// begins (after the in-flight guard passes).
     @Test func freshDownload_setsDownloadStartedOnce() async throws {
-        let (updater, state, _) = makeUpdater()
-        await updater.handle(releaseWithNilChecksum(), state: state)
+        let (updater, state, _) = try makeUpdater()
+        await updater.handle(try releaseWithNilChecksum(), state: state)
         // setDownloadStarted fires synchronously before the Task spawns.
         #expect(state.downloadStartedCount == 1)
     }

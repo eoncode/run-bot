@@ -18,9 +18,9 @@ struct AppUpdaterDefaultsTests {
 
     private func makeUpdater(
         currentVersion: String = "1.0.0"
-    ) -> (updater: AppUpdater, keys: AppUpdaterDefaults, defaults: UserDefaults, domain: String) {
+    ) throws -> (updater: AppUpdater, keys: AppUpdaterDefaults, defaults: UserDefaults, domain: String) {
         let domain = "AppUpdaterDefaultsTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: domain)!
+        let defaults = try #require(UserDefaults(suiteName: domain))
         let keys = AppUpdaterDefaults(domain: domain)
         let updater = AppUpdater(
             repo: "owner/repo",
@@ -52,7 +52,7 @@ struct AppUpdaterDefaultsTests {
     // MARK: - clearCachedDefaults
 
     @Test func clearCachedDefaults_removesPersistedKeys() throws {
-        let (updater, keys, defaults, domain) = makeUpdater()
+        let (updater, keys, defaults, domain) = try makeUpdater()
         defer { defaults.removePersistentDomain(forName: domain) }
         // Write values manually as if a prior download completed.
         defaults.set("/tmp/test.zip", forKey: keys.cachedUpdateZipPath)
@@ -68,7 +68,7 @@ struct AppUpdaterDefaultsTests {
     // MARK: - Rehydrate round-trip
 
     @Test func rehydrate_existingFileNewerVersion_setsStateCorrectly() throws {
-        let (updater, keys, defaults, domain) = makeUpdater(currentVersion: "1.0.0")
+        let (updater, keys, defaults, domain) = try makeUpdater(currentVersion: "1.0.0")
         defer { defaults.removePersistentDomain(forName: domain) }
         // Write a real temp file.
         let tmp = FileManager.default.temporaryDirectory
@@ -86,7 +86,7 @@ struct AppUpdaterDefaultsTests {
     }
 
     @Test func rehydrate_fileExistsButVersionNotNewer_clearsKeys() throws {
-        let (updater, keys, defaults, domain) = makeUpdater(currentVersion: "2.0.0")
+        let (updater, keys, defaults, domain) = try makeUpdater(currentVersion: "2.0.0")
         defer { defaults.removePersistentDomain(forName: domain) }
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("rehydrate-old-\(UUID().uuidString).zip")
@@ -102,7 +102,7 @@ struct AppUpdaterDefaultsTests {
     }
 
     @Test func rehydrate_noKeysWritten_noStateTransition() throws {
-        let (updater, _, defaults, domain) = makeUpdater()
+        let (updater, _, defaults, domain) = try makeUpdater()
         defer { defaults.removePersistentDomain(forName: domain) }
         let state = MockUpdateState()
         updater.rehydrateCachedUpdateIfNewer(state: state)

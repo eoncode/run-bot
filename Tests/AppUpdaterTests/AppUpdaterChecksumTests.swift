@@ -17,14 +17,14 @@ struct AppUpdaterChecksumTests {
 
     // MARK: - Helpers
 
-    private func makeUpdater() -> AppUpdater {
+    private func makeUpdater() throws -> AppUpdater {
         let domain = "AppUpdaterChecksumTests.\(UUID().uuidString)"
         return AppUpdater(
             repo: "owner/repo",
             currentVersion: "1.0.0",
             assetName: { _ in "App.zip" },
             schedulerIdentifier: domain,
-            userDefaults: UserDefaults(suiteName: domain)!
+            userDefaults: try #require(UserDefaults(suiteName: domain))
         )
     }
 
@@ -99,26 +99,26 @@ struct AppUpdaterChecksumTests {
     // MARK: - cachedZipDestination
 
     @Test func cachedZipDestination_filenameContainsVersion() throws {
-        let updater = makeUpdater()
+        let updater = try makeUpdater()
         let url = try updater.cachedZipDestination(version: "v2.0.0")
         #expect(url.lastPathComponent.contains("v2.0.0"))
     }
 
     @Test func cachedZipDestination_extensionIsZip() throws {
-        let updater = makeUpdater()
+        let updater = try makeUpdater()
         let url = try updater.cachedZipDestination(version: "v1.0.0")
         #expect(url.pathExtension == "zip")
     }
 
     @Test func cachedZipDestination_unsafeCharsSanitised() throws {
-        let updater = makeUpdater()
+        let updater = try makeUpdater()
         let url = try updater.cachedZipDestination(version: "v1.0/malicious..zip")
         // Slashes and dots in the version must be replaced or safe in filename
         #expect(!url.lastPathComponent.contains("/"))
     }
 
     @Test func cachedZipDestination_scopedToSchedulerIdentifier() throws {
-        let updater = makeUpdater()
+        let updater = try makeUpdater()
         let url = try updater.cachedZipDestination(version: "v1.0.0")
         // Directory component should contain the schedulerIdentifier
         let parentDir = url.deletingLastPathComponent().lastPathComponent

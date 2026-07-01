@@ -19,11 +19,11 @@ struct AppUpdaterFetchTests {
     private func makeStack(
         currentVersion: String = "1.0.0",
         betaChannel: Bool = false
-    ) -> (updater: AppUpdater, provider: MockReleaseProvider, state: MockUpdateState) {
+    ) throws -> (updater: AppUpdater, provider: MockReleaseProvider, state: MockUpdateState) {
         let provider = MockReleaseProvider()
         let state = MockUpdateState()
         let domain = "AppUpdaterFetchTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: domain)!
+        let defaults = try #require(UserDefaults(suiteName: domain))
         let updater = AppUpdater(
             repo: "owner/repo",
             currentVersion: currentVersion,
@@ -38,10 +38,10 @@ struct AppUpdaterFetchTests {
 
     private func makeRelease(
         tagName: String = "v2.0.0"
-    ) -> AvailableRelease {
+    ) throws -> AvailableRelease {
         let asset = ReleaseAsset(
             name: "App.zip",
-            browserDownloadURL: URL(string: "https://example.com/App.zip")!
+            browserDownloadURL: try #require(URL(string: "https://example.com/App.zip"))
         )
         return AvailableRelease(tagName: tagName, assets: [asset], checksumURL: nil)
     }
@@ -49,23 +49,23 @@ struct AppUpdaterFetchTests {
     // MARK: - Tests
 
     @Test func checkAndHandle_updateAvailable_callsSetAvailableUpdate() async throws {
-        let (updater, provider, state) = makeStack()
-        await provider.set(releaseToReturn: makeRelease())
+        let (updater, provider, state) = try makeStack()
+        await provider.set(releaseToReturn: try makeRelease())
         await updater.checkAndHandle(state: state)
         #expect(!state.availableUpdates.isEmpty)
     }
 
     @Test func checkAndHandle_upToDate_noStateTransition() async throws {
         // Provider returns the same version as currentVersion → .upToDate
-        let (updater, provider, state) = makeStack(currentVersion: "2.0.0")
-        await provider.set(releaseToReturn: makeRelease(tagName: "v2.0.0"))
+        let (updater, provider, state) = try makeStack(currentVersion: "2.0.0")
+        await provider.set(releaseToReturn: try makeRelease(tagName: "v2.0.0"))
         await updater.checkAndHandle(state: state)
         #expect(state.availableUpdates.isEmpty)
         #expect(state.downloadStartedCount == 0)
     }
 
     @Test func checkAndHandle_nilRelease_noStateTransition() async throws {
-        let (updater, _, state) = makeStack()
+        let (updater, _, state) = try makeStack()
         // Default releaseToReturn is nil — no mutation expected
         await updater.checkAndHandle(state: state)
         #expect(state.availableUpdates.isEmpty)
@@ -73,7 +73,7 @@ struct AppUpdaterFetchTests {
     }
 
     @Test func checkAndHandle_betaOff_capturedBetaChannelIsFalse() async throws {
-        let (updater, provider, state) = makeStack(betaChannel: false)
+        let (updater, provider, state) = try makeStack(betaChannel: false)
         await provider.set(releaseToReturn: nil)
         await updater.checkAndHandle(state: state)
         let captured = await provider.capturedBetaChannel
@@ -82,8 +82,8 @@ struct AppUpdaterFetchTests {
     }
 
     @Test func checkAndHandle_betaOn_capturedBetaChannelIsTrue() async throws {
-        let (updater, provider, state) = makeStack(betaChannel: true)
-        await provider.set(releaseToReturn: makeRelease(tagName: "v2.0.0-beta.1"))
+        let (updater, provider, state) = try makeStack(betaChannel: true)
+        await provider.set(releaseToReturn: try makeRelease(tagName: "v2.0.0-beta.1"))
         await updater.checkAndHandle(state: state)
         let captured = await provider.capturedBetaChannel
         #expect(captured == true)
@@ -91,7 +91,7 @@ struct AppUpdaterFetchTests {
     }
 
     @Test func checkAndHandle_fetchCallCount_exactlyOne() async throws {
-        let (updater, provider, state) = makeStack()
+        let (updater, provider, state) = try makeStack()
         await updater.checkAndHandle(state: state)
         let count = await provider.fetchCallCount
         #expect(count == 1)
