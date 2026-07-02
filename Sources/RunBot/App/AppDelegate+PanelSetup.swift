@@ -190,7 +190,7 @@ extension AppDelegate: NSPopoverDelegate {
         log("AppDelegate › setupSubscriptions — begin")
 
         // local runner list changes are now pushed directly from LocalRunnerStore
-        // into runnerState.localRunners via await MainActor.run — no Combine sink needed.
+        // into runnerState.localRunners via await MainActor.run { } — no Combine sink needed.
 
         // Everything below makes live network calls — skip entirely in UI tests.
         guard ProcessInfo.processInfo.environment["UI_TESTING"] == nil else {
@@ -302,24 +302,19 @@ extension AppDelegate: NSPopoverDelegate {
         await store.start()
         log("AppDelegate › startup — runnerStore poll loop started")
 
-        // ── Update cache rehydration ───────────────────────────────────────────────────
-        // Runs before the network check so a user who force-quit between download and
-        // install tap can see the Install & Relaunch button immediately, even offline.
-        // `rehydrateCachedUpdateIfNewer` reads AppUpdater's scoped UserDefaults keys,
-        // verifies the cached zip still exists and its version is newer than the running
-        // build, then rehydrates host state (or clears the stale keys otherwise).
-        autoUpdater.rehydrateCachedUpdateIfNewer(state: runnerState)
-
-        // ── Update check ───────────────────────────────────────────────────────────────
+        // ── Update check ──────────────────────────────────────────────────────────────
         // Channel-aware check + download/cache on the main actor. `checkAndHandle`
         // reads the injected betaChannelProvider itself, so no beta flag is passed here.
+        // fixedZipURL means there is no UserDefaults rehydration step: handle() checks
+        // FileManager.fileExists(atPath: fixedZipURL.path) and advances to .ready
+        // directly if a cached zip is already present from a prior session.
         await autoUpdater.checkAndHandle(state: runnerState)
 
         // ── Background scheduler ───────────────────────────────────────────────────────
-        // Fires every AppUpdaterDefaults.checkInterval (24 h release / 60 s debug).
+        // Fires every AppUpdater.checkInterval (24 h release / 60 s debug).
         // The launch-time check above already ran once; the scheduler fires only
         // after the first interval elapses — this is intentional.
         autoUpdater.scheduleBackgroundCheck(state: runnerState)
-        log("AppDelegate › startup — update background scheduler registered (interval=\(AppUpdaterDefaults.checkInterval)s)")
+        log("AppDelegate › startup — update background scheduler registered (interval=\(AppUpdater.checkInterval)s)")
     }
 }
