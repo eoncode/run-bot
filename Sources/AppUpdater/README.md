@@ -20,17 +20,50 @@ GitHub Releases poll → semver compare (incl. beta.N) → zip download
     → install & relaunch on user confirmation
 ```
 
+## Design Principles
+
+These principles govern this library and all future changes to it. They are not negotiable.
+
+**1. One enum owns all state.**
+There is one `UpdatePhase` enum. All state is expressed as a case of that enum. There are no boolean flags, no parallel URL properties, no implicit combinations. Illegal states are unrepresentable by construction.
+
+**2. No mid-flight recovery. Binary outcomes only.**
+An update either succeeds or it doesn’t. An app is either installable or it isn’t. There is no partial-success path, no `open -n` failure recovery, no rehydration-on-launch. If something goes wrong mid-flow, the phase becomes `.failed`. The user relaunches or retries. We do not attempt to recover state across process boundaries.
+
+**3. The task is exactly: check → download → verify → cache → install.**
+Nothing else. This is the entire feature surface. Any requirement that adds a step outside this pipeline is out of scope.
+
+**4. No sprawl.**
+Do not add features to handle edge cases that arise from other features. If an edge case requires new state, new flags, or new recovery paths — the correct response is to remove the feature that created the edge case, not to add more code around it.
+
+**5. Strict feature plane. Unsupported is correct.**
+Not supporting every scenario is a feature, not a gap. A smaller, correct update flow is better than a large one with subtle state bugs that can leave users with a bricked app. When in doubt, do less.
+
+**6. The library owns the flow, not the host.**
+`AppUpdater` drives all phase transitions. The host only calls `apply()` — it never constructs or transitions phases itself. The seam is one-directional: library writes, host reads.
+
+**7. No UserDefaults as state.**
+UserDefaults is persistence, not state. The source of truth is the enum. The rehydration complexity deleted in this refactor came entirely from treating UserDefaults as a second state store.
+
 ## Quick start
 
 ### 1. Conform your state model to `UpdateStateProviding`
 
+Implement two requirements: a single mutation method and a readable phase property.
+
 ```swift
-extension MyUpdateState: UpdateStateProviding {}
+@Observable @MainActor
+final class MyUpdateState: UpdateStateProviding {
+    private(set) var currentPhase: UpdatePhase = .idle
+
+    func apply(_ phase: UpdatePhase) {
+        currentPhase = phase
+    }
+}
 ```
 
-All properties are read-only `{ get }`; mutations go through named methods
-(`setDownloadComplete`, `setUpdateFailed`, etc.) so no caller can write
-`updateZipURL` without also setting the paired version.
+All state transitions go through `apply(_:)`. The library drives every phase
+change; the host only reads `currentPhase` to render UI.
 
 ### 2. Construct the updater
 
@@ -39,7 +72,7 @@ let updater = AppUpdater(
     repo: "your-org/your-repo",
     currentVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
     assetName: { _ in "YourApp.zip" },               // SHA-256 sidecar expected at "<assetName>.sha256"
-    schedulerIdentifier: "com.your-org.update-check" // also scopes UserDefaults keys
+    schedulerIdentifier: "com.your-org.update-check" // also scopes the on-disk cache directory
 )
 // If you distribute a Developer ID-signed app, also set:
 // updater.skipCodeSignValidation = false
@@ -49,13 +82,62 @@ let updater = AppUpdater(
 ### 3. Drive it from your app delegate
 
 ```swift
-updater.rehydrateCachedUpdateIfNewer(state: myState) // offline-ready, before any network
-await updater.checkAndHandle(state: myState)          // channel-aware check + download/cache
-updater.scheduleBackgroundCheck(state: myState)       // daily background re-check
+await updater.checkAndHandle(state: myState)    // channel-aware check + download/cache
+updater.scheduleBackgroundCheck(state: myState)  // daily background re-check
 
 // From the "Install & Relaunch" button:
 await updater.installAndRelaunch(state: myState)
 ```
+
+### 4. Render your update UI
+
+Switch on `myState.currentPhase` to render the appropriate UI:
+
+```swift
+switch myState.currentPhase {
+case .idle:
+    // No update — hide the update row
+case .available(let version):
+    // Update found; download is starting — show disabled Install button
+case .downloading(let version):
+    // Show ProgressView("Downloading update…")
+case .ready(let version, let zipURL):
+    // Download complete — show active Install & Relaunch button
+case .failed(let version):
+    // Show error label + Retry button that calls checkAndHandle again
+}
+```
+
+## Protocol shape
+
+```swift
+@MainActor
+public protocol UpdateStateProviding: AnyObject, Sendable {
+    /// Advance the update state to `phase`.
+    func apply(_ phase: UpdatePhase)
+    /// The current update phase.
+    var currentPhase: UpdatePhase { get }
+}
+
+public enum UpdatePhase: Equatable {
+    /// No update activity — nothing available, nothing in progress.
+    case idle
+    /// A newer release was found; version is the tag string (e.g. `"v1.2.0"`).
+    case available(version: String)
+    /// A download is in progress for the given version.
+    case downloading(version: String)
+    /// Download complete and integrity-verified; zip is at `zipURL`.
+    case ready(version: String, zipURL: URL)
+    /// A download or install attempt failed.
+    case failed(version: String?)
+}
+```
+
+The library advances through these phases in order during a normal update:
+`.idle` → `.available` → `.downloading` → `.ready`. If anything goes wrong the
+phase becomes `.failed`. There is no partial-success path and no rehydration on
+relaunch — if the user quits before installing, the next background check
+rediscovers and re-downloads the update.
 
 ## Choosing an entry point
 
@@ -110,8 +192,8 @@ For apps distributed with a Developer ID signature, enable identity verification
    freshly unzipped candidate bundle.
 3. The `Authority=` identity strings (leaf certificate common name, e.g.
    `"Developer ID Application: Acme Corp (XXXXXXXX)"`) must match exactly.
-4. A mismatch calls `state.setUpdateFailed()` and aborts the install. No bundle
-   swap is performed.
+4. A mismatch applies `.failed` via `state.apply(.failed(version:))` and aborts
+   the install. No bundle swap is performed.
 
 ```swift
 let updater = AppUpdater(
@@ -138,25 +220,25 @@ updater.skipCodeSignValidation = false // enable identity check for Developer ID
 
 - The release archive carries exactly one `.app` at its root.
 - Each release attaches a `<assetName>.sha256` sidecar.
-- **Missing zip asset or missing sidecar** (checksumURL is nil on the
-  `AvailableRelease`) → `state.setAssetMissing()` is called. This is the cue
-  to direct the user to the curl-install fallback — not a generic retry.
-  `setDownloadStarted()` is never called in this path.
+- **Missing zip asset or missing checksum sidecar** (`checksumURL` is nil on the
+  `AvailableRelease`, or no asset matches `assetName`) — `AppUpdater` logs a
+  warning and stays `.idle`. This is a publishing/CI problem; the background
+  scheduler will retry on the next interval.
 - **Download or verification failure** (network error, HTTP non-200, checksum
-  mismatch, empty sidecar body) → `state.setUpdateFailed()` is called. The host
-  should direct the user to re-run the original `curl` install command — **not**
-  open a browser download. Downloading via a browser stamps the `.app` with
-  `com.apple.quarantine`, which triggers Gatekeeper and breaks the install.
+  mismatch, empty sidecar body) → phase advances to `.failed`. The host should
+  offer a Retry button that calls `checkAndHandle` again.
 
-## Persisted state
+## Cache location
 
-Two `UserDefaults` keys scoped by `schedulerIdentifier` survive a relaunch so a
-downloaded-but-not-yet-installed update is offered again on next launch:
+The verified zip is always written to a fixed path:
 
-- `<domain>.cachedUpdateZipPath`
-- `<domain>.cachedUpdateVersion`
+```
+~/Library/Caches/<schedulerIdentifier>/update.zip
+```
 
-The verified zip is cached at `~/Library/Caches/<schedulerIdentifier>/update-<version>.zip`.
+The path is deterministic from `schedulerIdentifier` alone — no `UserDefaults`
+persistence is required. The file is deleted at the start of each new download
+and on successful install.
 
 ## Logging
 
