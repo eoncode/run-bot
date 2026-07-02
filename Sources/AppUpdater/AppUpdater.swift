@@ -62,44 +62,76 @@ public final class AppUpdater {
     ///
     /// Must be a valid reverse-DNS string (e.g. `"com.your-org.update-check"`).
     /// Must not be empty and must not contain `/` — both are enforced by
-    /// `precondition` at init time.
+    /// `precondition` at init time. The identifier is used verbatim as a
+    /// `UserDefaults` suite name and as a cache directory name component; a
+    /// slash would silently create a nested subdirectory path under Caches
+    /// rather than a flat scoped directory.
     public let schedulerIdentifier: String
 
     // MARK: - Internal configuration
     //
-    // `assetName`, `defaults`, `keys`, `betaChannelProvider`, `provider` are
-    // `internal` by design — implementation details not part of the public
-    // contract. `isInstalling`/`isDownloading` are accessed via `@testable
-    // import`; make them `public` if this library is extracted to its own repo.
+    // The properties below are `internal` (not `public`) by deliberate design:
     //
-    // REVIEWER: Do NOT make closures or defaults public without a concrete
-    // external-consumer use case — every public symbol is a promise.
+    // • `assetName` — a `@Sendable` closure injected at init; the host has no
+    //   need to inspect it after construction, and exposing it publicly would
+    //   widen the API surface for no benefit.
+    // • `defaults` / `keys` — implementation details of the persistence layer;
+    //   not part of the public contract.
+    // • `betaChannelProvider` — injected closure; same rationale as `assetName`.
+    // • `provider` — the `ReleaseProvider` seam; injectable for tests, not
+    //   intended for host-app inspection.
+    // • `isInstalling` / `isDownloading` — runtime guards accessed via
+    //   `@testable import` in the same-package test target. If this library is
+    //   ever extracted to its own repository these should be `public` so
+    //   external test targets can reach them without `@testable import`.
+    //
+    // REVIEWER: The asymmetry between `repo`/`currentVersion`/`schedulerIdentifier`
+    // (public) and the properties below (internal) is intentional. Do NOT make
+    // the closures or defaults public without a concrete external-consumer use
+    // case — every public symbol is a promise.
 
     /// Maps a release tag name to the expected zip asset filename.
-    /// `@Sendable` so it can be forwarded to `fetchLatestRelease`.
     ///
-    /// REVIEWER: `internal` by design even though accepted as a public `init`
-    /// parameter — the host injected it and has no need to read it back.
+    /// Injected so hosts can use a fixed name (`{ _ in "App.zip" }`) or a
+    /// versioned one (`{ v in "App-\(v).zip" }`). The SHA-256 sidecar is
+    /// expected at `<assetName>.sha256`.
+    ///
+    /// `@Sendable` is required because `fetchLatestRelease` (on `ReleaseProvider`)
+    /// declares its `assetName` parameter as `@Sendable` — the stored closure
+    /// must match so it can be forwarded without a concurrency warning.
+    ///
+    /// REVIEWER: `assetName` is `internal` even though it is accepted as a
+    /// public `init` parameter. The host injected it — it does not need to
+    /// read it back. Exposing it publicly would widen the API surface for no
+    /// concrete consumer benefit and create a promise we'd have to maintain.
+    /// If a specific external use case emerges, make it public then.
     let assetName: @Sendable (String) -> String
 
     /// The `UserDefaults` suite persisting the cached-zip path and version.
     let defaults: UserDefaults
 
-    /// Reads the host's current beta-channel preference on the main actor.
+    /// Reads the host's current beta-channel preference. Invoked on the main
+    /// actor before each check so pre-release builds are included when enabled.
     let betaChannelProvider: @MainActor () -> Bool
 
     /// Scoped `UserDefaults` key names, derived from `schedulerIdentifier`.
     let keys: AppUpdaterDefaults
 
     /// The release-fetch abstraction. Defaults to `GitHubReleaseProvider`.
+    ///
+    /// Injected at `init` time; immutable after construction (AppUpdater's
+    /// immutable-configuration model — all dependencies are `let`).
     let provider: any ReleaseProvider
 
     // MARK: - Trust model
 
     // REVIEWER: `skipCodeSignValidation` is a `var`, not an `init` parameter —
-    // intentional. A `var` is the correct shape for a runtime-togglable trust
-    // preference read from UserDefaults or a settings screen post-init.
-    // Set it before calling `scheduleBackgroundCheck` or `checkAndHandle`.
+    // intentional. Moving it to `init` would force every caller to decide at
+    // construction time, which is wrong for hosts that read this preference from
+    // `UserDefaults` or a settings screen after `AppUpdater` is already
+    // constructed. A `var` is the correct shape for a runtime-togglable trust
+    // preference. Set it before calling `scheduleBackgroundCheck` or
+    // `checkAndHandle` — see the doc comment below.
 
     /// When `false`, `installAndRelaunch` verifies that the running bundle and
     /// the downloaded bundle share the same `codesign` `Authority=` identity
@@ -107,9 +139,29 @@ public final class AppUpdater {
     ///
     /// Default `true` — RunBot's unsigned distribution model relies solely on
     /// the SHA-256 sidecar for integrity. External consumers distributing
-    /// Developer ID-signed apps should set this to `false`.
+    /// Developer ID-signed apps should set this to `false` so mismatched
+    /// signing identities (e.g. a compromised build pipeline) are caught before
+    /// the swap.
     ///
-    /// Set this **before** calling `scheduleBackgroundCheck` or `checkAndHandle`.
+    /// ## Call-ordering note
+    ///
+    /// Set this property **before** calling `scheduleBackgroundCheck` or
+    /// `checkAndHandle`. The value is read at `installAndRelaunch` time (not at
+    /// check time), but establishing it early avoids any ambiguity about which
+    /// value was in effect when a background check fired.
+    ///
+    /// ## Unsigned path (`skipCodeSignValidation = true`)
+    /// - Download integrity guaranteed by SHA-256 sidecar only.
+    /// - No `codesign` invocation on the downloaded bundle.
+    /// - Correct for apps distributed without a Developer ID signature.
+    ///
+    /// ## Signed path (`skipCodeSignValidation = false`)
+    /// - SHA-256 verification runs first (always).
+    /// - After checksum passes, `codesign -dvvv` is run on both the running
+    ///   bundle and the downloaded bundle.
+    /// - `Authority=` identity strings must match; a mismatch calls
+    ///   `setUpdateFailed()` and aborts the install.
+    /// - For external consumers distributing Developer ID-signed apps.
     ///
     /// REVIEWER: The default `true` is intentional for RunBot. Do NOT change
     /// the default to `false` without updating the host's `AppDelegate` setup.
@@ -120,47 +172,100 @@ public final class AppUpdater {
     /// `true` while `installAndRelaunch` is mid-flight — guards a double-tap.
     var isInstalling: Bool = false
 
-    /// `true` while a background download is running — guards concurrent downloads.
+    /// `true` while a background download is running — guards concurrent
+    /// downloads of the same or a different release.
     ///
-    /// REVIEWER: No `downloadTask` handle alongside this flag — intentional.
-    /// See the "Fire-and-forget rationale" section in `downloadUpdate`.
+    /// REVIEWER: There is no stored `downloadTask` handle alongside this flag —
+    /// this is intentional. See the "Fire-and-forget rationale" section in the
+    /// `downloadUpdate` doc comment for the full explanation. Do NOT add a
+    /// stored task handle or cancellation without re-reading that section first.
     var isDownloading: Bool = false
 
     // MARK: - Background scheduler storage
     //
-    // AppKit unavailable in SPM headless runner — #if guard required for
-    // `swift test` even though the package is macOS(.v26)-only.
+    // AppKit is unavailable in the SPM headless test runner — the #if guard is
+    // required for `swift test` even though the package is macOS(.v26)-only.
     //
-    // SAFETY — nonisolated(unsafe) var activity:
-    // `deinit` is nonisolated; the Swift compiler forbids accessing a
-    // @MainActor-isolated property from deinit. NSBackgroundActivityScheduler
-    // MUST be invalidated before deallocation or its system-wide registration
-    // leaks. nonisolated(unsafe) is the only mechanism that lets deinit reach
-    // `activity` — Task { @MainActor in invalidate() } would be use-after-free.
+    // ── Why nonisolated(unsafe) var, and why it is safe ──────────────────────
     //
-    // Why it is safe: AppUpdater is @MainActor final class, so every non-deinit
-    // access is compiler-enforced on the main actor. deinit only calls
-    // activity?.invalidate(), which Apple documents as thread-safe. No
-    // non-isolated write path exists, so the race nonisolated(unsafe) silences
-    // cannot be triggered in practice.
+    // `deinit` is a nonisolated context — the Swift compiler does not permit
+    // accessing a `@MainActor`-isolated property from `deinit` directly.
+    // `NSBackgroundActivityScheduler` MUST be explicitly invalidated before
+    // deallocation; failing to do so leaks the activity registration system-wide
+    // (it survives the AppUpdater instance). `nonisolated(unsafe)` is the only
+    // mechanism that allows `deinit` to reach `activity` without a
+    // `Task { @MainActor in }` (which would be a use-after-free: `self` is
+    // already deallocating when deinit runs).
     //
-    // Tension with concurrency-overview.md: that doc reserves `nonisolated` for
-    // immutable-post-init cases. This is a justified narrow exception driven by
-    // a platform constraint (deinit isolation), not a design shortcut. Do NOT
-    // copy this pattern for other properties.
+    // **Why this is safe in practice:**
     //
-    // Known alternative (low priority): refactor to nonisolated(unsafe) let set
-    // once by scheduleBackgroundCheck. Not pursued — activity is legitimately
-    // nil when scheduleBackgroundCheck is never called (e.g. test contexts).
+    // 1. `AppUpdater` is `@MainActor final class`. Every method and property
+    //    access — except `deinit` — runs on the main actor. The compiler
+    //    enforces this for all non-`nonisolated` call sites. There is no
+    //    non-isolated code path that reads or writes `activity` other than
+    //    `deinit`.
     //
-    // REVIEWER: Do NOT remove nonisolated(unsafe) without an alternative deinit
-    // invalidation path. Do NOT add any non-deinit, non-@MainActor access to
-    // `activity` — that would invalidate the safety argument above.
+    // 2. `deinit` only calls `activity?.invalidate()`. It does not write the
+    //    reference, does not race with `scheduleBackgroundCheck` (which assigns
+    //    it on the main actor), and `NSBackgroundActivityScheduler.invalidate()`
+    //    is explicitly documented as thread-safe by Apple.
+    //
+    // 3. The data race that `nonisolated(unsafe)` silences — a concurrent write
+    //    from a non-isolated context — cannot arise here because there is no
+    //    non-isolated write path. `scheduleBackgroundCheck` runs on `@MainActor`;
+    //    `deinit` only reads the reference to call `invalidate()`. The reference
+    //    itself is never written from `deinit`.
+    //
+    // ── Tension with concurrency-overview.md ─────────────────────────────────
+    //
+    // The project's concurrency doc (docs/architecture/concurrency-overview.md)
+    // reserves `nonisolated` for immutable-post-init cases and forbids
+    // `@unchecked Sendable` / unsafe escape hatches as general patterns.
+    // This usage is a justified, narrow exception:
+    //
+    // - It is the ONLY `nonisolated(unsafe)` annotation in AppUpdater.
+    // - It is required by a concrete platform constraint (deinit isolation),
+    //   not by a design choice or convenience.
+    // - The safety argument is fully enumerated above, not assumed.
+    //
+    // Do NOT copy this pattern for other properties. If a future property needs
+    // nonisolated access, re-evaluate whether the underlying constraint is the
+    // same (deinit invalidation of a thread-safe object) before using it.
+    //
+    // ── Known alternative (not pursued, low priority) ─────────────────────────
+    //
+    // `scheduleBackgroundCheck` assigns `activity` exactly once. It could
+    // theoretically be refactored to `nonisolated(unsafe) let` — set once at
+    // `scheduleBackgroundCheck` call time — which would satisfy the concurrency
+    // doc's "immutable-post-init" requirement more precisely.
+    //
+    // This was not pursued because:
+    // - It would require restructuring init (activity can't be a `let` without
+    //   a value at init time) or using a lazy wrapper.
+    // - `scheduleBackgroundCheck` is optional — not every host calls it — so
+    //   `activity` is legitimately nil for the full lifetime in test contexts.
+    // - The current approach is correct and safe for the actual access patterns.
+    //
+    // If AppUpdater is ever extracted to its own standalone repo and the
+    // concurrency doc exception becomes a problem for external consumers,
+    // revisit the `let`-after-scheduleBackgroundCheck approach at that point.
+    //
+    // REVIEWER: Do NOT:
+    // - Remove `nonisolated(unsafe)` without providing an alternative deinit
+    //   invalidation path for NSBackgroundActivityScheduler.
+    // - Change this to `nonisolated(unsafe) let` without verifying that
+    //   scheduleBackgroundCheck is always called exactly once before deinit
+    //   (it is not guaranteed — hosts that never call it leave activity nil).
+    // - Add any non-`deinit`, non-`@MainActor` access to `activity` — doing so
+    //   would invalidate the safety argument above.
     #if canImport(AppKit)
     /// Retains the `NSBackgroundActivityScheduler` for the app's lifetime.
-    /// `nonisolated(unsafe)` so `deinit` can call `invalidate()` — all other
-    /// accesses are `@MainActor`-isolated via the enclosing class.
-    /// See the block comment above for the full safety rationale.
+    ///
+    /// Declared `nonisolated(unsafe)` so `deinit` (a nonisolated context) can
+    /// call `invalidate()`. All non-deinit accesses are `@MainActor`-isolated
+    /// via the enclosing class — the compiler enforces this at every call site
+    /// that is not `deinit`. See the block comment above for the full safety
+    /// rationale and the known alternative approach.
     nonisolated(unsafe) var activity: NSBackgroundActivityScheduler?
     #endif
 
@@ -169,17 +274,25 @@ public final class AppUpdater {
     /// Creates a configured updater.
     ///
     /// - Parameters:
-    ///   - repo: `"owner/name"` GitHub repository slug. Must not be empty.
+    ///   - repo: `"owner/name"` GitHub repository slug (e.g. `"runbot-hq/run-bot"`).
+    ///     Must not be empty — an empty string produces a malformed API URL.
     ///   - currentVersion: The running app's version string.
     ///   - assetName: Maps a tag name to the expected zip asset filename.
     ///   - schedulerIdentifier: Reverse-DNS scheduler id / `UserDefaults` domain.
-    ///     Must not be empty and must not contain `"/"` — both enforced by
-    ///     `precondition`.
+    ///     Must not be empty and must not contain `"/"` — an empty string causes
+    ///     `UserDefaults` key collisions; a slash causes `appendingPathComponent`
+    ///     to silently create a nested subdirectory under Caches rather than a
+    ///     flat scoped directory. Both are enforced by `precondition`.
     ///   - userDefaults: Suite for persisted cache state. Defaults to `.standard`.
     ///   - betaChannelProvider: Returns the host's beta-channel preference.
     ///     Defaults to always-`false` (stable channel only).
-    ///   - releaseProvider: Defaults to `GitHubReleaseProvider()`. Override in
-    ///     tests with a `MockReleaseProvider` — no live network required.
+    ///   - releaseProvider: The `ReleaseProvider` to use for fetching releases.
+    ///     Defaults to `GitHubReleaseProvider()`. Override in tests by passing a
+    ///     `MockReleaseProvider` — no live network required.
+    ///
+    /// The generic `<P: ReleaseProvider>` constraint enforces `Sendable` at the
+    /// call site. Storage as `any ReleaseProvider` is standard Swift 6 practice
+    /// — constraint at call site, existential for storage.
     public init<P: ReleaseProvider>(
         repo: String,
         currentVersion: String,
@@ -207,15 +320,20 @@ public final class AppUpdater {
     }
 
     deinit {
+        // NSBackgroundActivityScheduler must be explicitly invalidated;
+        // failing to do so leaks the activity registration system-wide.
         // NSBackgroundActivityScheduler.invalidate() is thread-safe per Apple
-        // docs — safe to call from nonisolated deinit. See MARK: Background
-        // scheduler storage above for the full nonisolated(unsafe) rationale.
+        // docs — safe to call from a nonisolated deinit.
+        // See the MARK: Background scheduler storage block comment above for
+        // the full safety rationale on the nonisolated(unsafe) annotation.
         #if canImport(AppKit)
         activity?.invalidate()
         #endif
-        // REVIEWER: No downloadTask?.cancel() here — intentional. AppUpdater
-        // lives for the entire app lifetime; deinit while a download is in
-        // flight is architecturally impossible. See downloadUpdate doc comment.
+        // REVIEWER: There is no downloadTask?.cancel() here — intentional.
+        // AppUpdater is owned by AppDelegate for the app's entire lifetime;
+        // deinit is never reached while a download is in flight. Adding a
+        // cancel call here would be dead code. See the "Fire-and-forget
+        // rationale" section in the downloadUpdate doc comment.
     }
 
     // MARK: - Convenience entry points
@@ -223,8 +341,9 @@ public final class AppUpdater {
     /// Runs a full update check and handles the result.
     ///
     /// On `.updateAvailable` the release is downloaded/cached via `handle`.
-    /// `.upToDate` and `.failed` are no-ops here — the background scheduler
-    /// owns the stale-row-clearing policy.
+    /// `.upToDate` and `.failed` are no-ops here (the background scheduler owns
+    /// the stale-row-clearing policy) — this mirrors a launch-time check that
+    /// must never clear a ready-to-install update after a transient failure.
     public func checkAndHandle(state: any UpdateStateProviding) async {
         let beta = betaChannelProvider()
         switch await checkForUpdate(betaChannel: beta) {
@@ -240,10 +359,13 @@ public final class AppUpdater {
 
     /// Runs a channel-aware update check via the injected `ReleaseProvider`.
     ///
-    /// `UpdateChecker.checkForUpdate` remains `public` as an escape hatch for
-    /// callers who need a raw `UpdateCheckResult` without constructing an
-    /// `AppUpdater` instance. Intentionally `internal` here — `checkAndHandle`
-    /// is the designed public entry point for host apps.
+    /// Fetches via `provider.fetchLatestRelease` and performs the `isNewer`
+    /// comparison here in `AppUpdater`. `UpdateChecker.checkForUpdate` remains
+    /// `public` as an escape hatch for callers who need a raw `UpdateCheckResult`
+    /// without constructing an `AppUpdater` instance.
+    ///
+    /// Intentionally `internal` — `checkAndHandle` is the designed public entry
+    /// point for host apps.
     func checkForUpdate(betaChannel: Bool) async -> UpdateCheckResult {
         guard !currentVersion.isEmpty else {
             return .failed(UpdateCheckError.missingVersionKey)
@@ -263,30 +385,48 @@ public final class AppUpdater {
 
     /// Rehydrates cached download state on launch, if a newer zip is cached.
     ///
-    /// If a cached zip still exists on disk and its version is newer than
-    /// `currentVersion`, the host state is rehydrated and the available-update
-    /// label is set — even offline, before any network check runs.
+    /// Reads this updater's scoped `UserDefaults` keys. If a cached zip still
+    /// exists on disk and its version is newer than `currentVersion`, the host
+    /// state is rehydrated and the available-update label is set so the install
+    /// affordance is visible immediately — even offline, before any network
+    /// check runs. Otherwise stale keys are cleared.
     ///
     /// ## Stale zip purge
     ///
-    /// `purgeStaleZips(keeping:)` is called unconditionally before the guard so
-    /// orphaned zips (including the open-n failure path) are swept even when
-    /// rehydration fails. The keep URL is derived before the guard so the live
-    /// zip is never deleted during early return.
+    /// `purgeStaleZips(keeping:)` is called unconditionally at the top of this
+    /// function, before the guard, so orphaned zips from the previous session
+    /// are swept regardless of whether rehydration succeeds or fails. The
+    /// `keepURL` is derived from `UserDefaults` before the guard block so the
+    /// live zip (if any) is never deleted even when rehydration returns early.
     ///
-    /// REVIEWER: Do NOT move `purgeStaleZips` inside the guard's success branch
-    /// — orphans are present precisely when the guard fails.
+    /// REVIEWER: Do NOT move the `purgeStaleZips` call inside the guard's
+    /// success branch. The orphans this sweep targets — specifically the open-n
+    /// failure path where UserDefaults are cleared before the zip is deleted —
+    /// are present precisely when the guard fails (no valid path in UserDefaults).
+    /// Moving it inside the success branch would silently miss every orphan.
     ///
     /// Call this before `checkAndHandle` on startup.
     public func rehydrateCachedUpdateIfNewer(state: any UpdateStateProviding) {
+        // Derive the live zip URL from UserDefaults before the guard so
+        // purgeStaleZips knows which file to preserve regardless of which
+        // branch is taken below.
         let liveZipURL = defaults.string(forKey: keys.cachedUpdateZipPath)
             .map { URL(fileURLWithPath: $0) }
+
+        // Purge stale zips unconditionally. Covers:
+        // - Normal install cycles (prior version's zip left on disk)
+        // - open -n failure path (UserDefaults cleared, zip orphaned)
+        // - Any future edge case leaving zips without a UserDefaults pointer
+        // The live zip (liveZipURL) is preserved if present.
         purgeStaleZips(keeping: liveZipURL)
 
         guard let path = defaults.string(forKey: keys.cachedUpdateZipPath),
               let version = defaults.string(forKey: keys.cachedUpdateVersion),
               FileManager.default.fileExists(atPath: path),
               UpdateChecker.isNewer(version, than: currentVersion) else {
+            // Reached when the keys were never written, the zip was deleted, or
+            // the cached version is no longer newer (already installed). In all
+            // cases clear the stale keys.
             clearCachedDefaults()
             return
         }
@@ -470,9 +610,11 @@ public final class AppUpdater {
             let session = URLSession(configuration: sessionConfig)
             defer { session.finishTasksAndInvalidate() }
 
-            // Safety net: handle() guards against nil checksumURL in step 2
-            // before entering the download path, so this branch is unreachable
-            // in normal flow. Kept as a last-resort defensive check.
+            // Safety net: handle() now guards against nil checksumURL in step 2
+            // before entering the download path, so this branch should be
+            // unreachable in normal flow. It is kept as a last-resort defensive
+            // check — if a future refactor bypasses the step-2 guard, this
+            // prevents a nil URL from reaching URLSession.
             guard let checksumURL else {
                 throw URLError(.resourceUnavailable)
             }
@@ -493,10 +635,12 @@ public final class AppUpdater {
             }
 
             // ── Validate checksum sidecar HTTP status ────────────────────────
-            // Non-200 most commonly means the release was published without a
-            // .sha256 sidecar. Without this guard the CDN's HTML error page
-            // would reach the hex parser, producing a misleading "digest
-            // mismatch" log instead of the real cause.
+            // A non-200 here most commonly means the release was published
+            // without a .sha256 sidecar file. Without this guard the CDN's
+            // HTML error page would reach the hex parser below, producing a
+            // misleading "digest mismatch" log entry instead of the real cause.
+            // The install is blocked either way — this guard exists solely to
+            // name the failure correctly in Console.app.
             guard let checksumHTTP = checksumResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -511,9 +655,12 @@ public final class AppUpdater {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .whitespaces).first ?? ""
 
-            // Guard against empty sidecar body — verifyChecksum would throw a
-            // mismatch anyway, but this guard prevents a future edit from
-            // accidentally treating empty as "skip verification".
+            // Explicit guard: an empty expectedHex means the sidecar was
+            // zero-length or contained only whitespace (the HTTP 200 / non-200
+            // cases are already handled above). verifyChecksum would throw a
+            // mismatch anyway ("" != 64-char SHA-256 hex), but this guard
+            // prevents a future edit to verifyChecksum from accidentally
+            // treating empty as "skip verification".
             guard !expectedHex.isEmpty else {
                 appUpdaterLogger.error("checksum sidecar returned HTTP 200 but body was empty or whitespace-only")
                 throw URLError(.cannotDecodeContentData)
@@ -534,9 +681,11 @@ public final class AppUpdater {
             if let tmp = tempURL {
                 try? FileManager.default.removeItem(at: tmp)
             }
-            // `isDownloading` and `setUpdateFailed()` are cleared on the same
-            // @MainActor turn — no intermediate state is observable. Do NOT
-            // split these or add an `await` between them.
+            // `isDownloading` is cleared on the same @MainActor turn as
+            // `setUpdateFailed()` — no intermediate state is observable. A
+            // subsequent `handle()` call cannot slip through between these two
+            // lines because @MainActor serialises all callers onto one executor.
+            // Do NOT split these or add an `await` between them.
             isDownloading = false
             state.setUpdateFailed()
         }
