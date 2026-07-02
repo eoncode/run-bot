@@ -9,26 +9,25 @@ import Foundation
 extension AppUpdater {
 
     /// Downloads the zip and its SHA-256 sidecar in parallel, verifies
-    /// integrity, then caches the verified zip and advances host state.
+    /// integrity, then caches the verified zip at `fixedZipURL` and advances
+    /// host state.
     ///
-    /// State transitions driven by this function:
-    ///   `.available` → `.downloading` (immediately on entry)
-    ///   `.downloading` → `.ready`     (on checksum-verified success)
-    ///   `.downloading` → `.failed`    (on any error)
+    /// State transitions:
+    ///   `.available` → `.downloading` (on entry)
+    ///   `.downloading` → `.ready`     (checksum-verified success)
+    ///   `.downloading` → `.failed`    (any error)
     ///
     /// ## Fire-and-forget rationale
     ///
-    /// This function is invoked from a fire-and-forget `Task(name: "AppUpdater.download")`
-    /// in `handle()`. See the full rationale in the original doc comment — the
-    /// summary is: AppUpdater is process-lifetime, `isDownloading` prevents
-    /// concurrent downloads, and `@MainActor` serialises all state mutations.
+    /// Invoked from a fire-and-forget `Task(name: "AppUpdater.download")` in
+    /// `handle()`. AppUpdater is process-lifetime; `@MainActor` serialises all
+    /// state mutations. No stored task handle or cancellation is needed.
     func downloadUpdate( // skipcq: SW-R1002 — reviewed; complexity acceptable for this download+verify flow
         from url: URL,
         checksumURL: URL?,
         version: String,
         state: any UpdateStateProviding
     ) async {
-        // Signal that the download is actively in progress.
         state.apply(.downloading(version: version))
 
         var tempURL: URL?
@@ -39,8 +38,6 @@ extension AppUpdater {
             let session = URLSession(configuration: sessionConfig)
             defer { session.finishTasksAndInvalidate() }
 
-            // Safety net: handle() guards against nil checksumURL before
-            // entering the download path. This is a last-resort defensive check.
             guard let checksumURL else {
                 throw URLError(.resourceUnavailable)
             }
@@ -82,20 +79,16 @@ extension AppUpdater {
 
             try await verifyChecksum(zipURL: downloadedURL, expectedHex: expectedHex)
 
-            let destination = try cachedZipDestination(version: version)
+            // ── Move verified zip to fixed destination ───────────────────────
+            let destination = try cachedZipDestination()
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: downloadedURL, to: destination)
 
-            defaults.set(version, forKey: keys.cachedUpdateVersion)
-            defaults.set(destination.path, forKey: keys.cachedUpdateZipPath)
-
-            isDownloading = false
             state.apply(.ready(version: version, zipURL: destination))
         } catch {
             if let tmp = tempURL {
                 try? FileManager.default.removeItem(at: tmp)
             }
-            isDownloading = false
             state.apply(.failed(version: version))
         }
     }
