@@ -34,14 +34,29 @@ struct AppUpdaterFetchTests {
         return (updater, provider, state)
     }
 
+    /// Builds an `AvailableRelease` with a matching `App.zip` asset **and** a
+    /// real `checksumURL` (pointing at a `.sha256` sidecar).
+    ///
+    /// `handle()` guards on `release.checksumURL != nil` before applying any
+    /// phase — a nil checksum causes an early return with no state transition,
+    /// which would silently break every test that expects `.available`.
     private func makeRelease(
         tagName: String = "v2.0.0"
     ) throws -> AvailableRelease {
+        let base = "https://example.com"
         let asset = ReleaseAsset(
             name: "App.zip",
-            browserDownloadURL: try #require(URL(string: "https://example.com/App.zip"))
+            browserDownloadURL: try #require(URL(string: "\(base)/App.zip"))
         )
-        return AvailableRelease(tagName: tagName, assets: [asset], checksumURL: nil)
+        let checksumAsset = ReleaseAsset(
+            name: "App.zip.sha256",
+            browserDownloadURL: try #require(URL(string: "\(base)/App.zip.sha256"))
+        )
+        return AvailableRelease(
+            tagName: tagName,
+            assets: [asset, checksumAsset],
+            checksumURL: checksumAsset.browserDownloadURL
+        )
     }
 
     // MARK: - Tests
