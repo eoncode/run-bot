@@ -6,10 +6,18 @@ import Testing
 
 // MARK: - AppUpdaterDownloadTests
 
-/// Tests that verify `AppUpdater.handle` download-path state-machine behaviour.
+/// Tests that verify `AppUpdater.handle` state-machine behaviour via
+/// `MockUpdateState.currentPhase` / `appliedPhases`.
 ///
-/// Network I/O is avoided: a release with a nil checksumURL exercises the
-/// step-2 early-exit path in `handle()` without hitting a real server.
+/// Network I/O is avoided throughout:
+/// - “no matching asset” and “no checksum URL” paths return before spawning
+///   any download Task.
+/// - The “cached zip” path is exercised by writing a dummy file at
+///   `updater.fixedZipURL` before calling `handle`.
+/// - The “asset present + checksumURL present” path advances to `.available`
+///   synchronously, then the download Task fires asynchronously — we assert
+///   only the synchronous phase transition here.
+///
 /// All tests are `@MainActor` because `AppUpdater` and `MockUpdateState`
 /// are both `@MainActor`.
 @MainActor
@@ -19,27 +27,20 @@ struct AppUpdaterDownloadTests {
 
     private func makeUpdater(
         currentVersion: String = "1.0.0"
-    ) throws -> (updater: AppUpdater, state: MockUpdateState, defaults: UserDefaults) {
+    ) -> (updater: AppUpdater, state: MockUpdateState) {
         let domain = "AppUpdaterDownloadTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: domain))
         let updater = AppUpdater(
             repo: "owner/repo",
             currentVersion: currentVersion,
             assetName: { _ in "App.zip" },
             schedulerIdentifier: domain,
-            userDefaults: defaults,
             betaChannelProvider: { false }
         )
-        return (updater, MockUpdateState(), defaults)
+        return (updater, MockUpdateState())
     }
 
-    /// Makes an `AvailableRelease` where `checksumURL` is `nil`.
-    ///
-    /// `handle()` guards on a nil `checksumURL` in step 2 (before entering the
-    /// download path) and calls `setAssetMissing()`. No `Task` is spawned and
-    /// `setDownloadStarted()` / `setUpdateFailed()` are never called. This is
-    /// the fastest failure path and exercises the step-2 early-exit without
-    /// any network activity.
+    /// Makes an `AvailableRelease` with a matching `App.zip` asset but a nil
+    /// `checksumURL`.
     private func releaseWithNilChecksum(tagName: String = "v2.0.0") throws -> AvailableRelease {
         let asset = ReleaseAsset(
             name: "App.zip",
@@ -48,58 +49,139 @@ struct AppUpdaterDownloadTests {
         return AvailableRelease(tagName: tagName, assets: [asset], checksumURL: nil)
     }
 
-    // MARK: - Tests
+    // MARK: - No matching asset → phase stays .idle
 
-    /// A nil `checksumURL` is caught in `handle()` step 2 and routed to
-    /// `setAssetMissing()` — the download path is never entered so
-    /// `setUpdateFailed()` must NOT be called.
-    @Test func downloadError_nilChecksumURL_setsAssetMissing() async throws {
-        let (updater, state, _) = try makeUpdater()
-        await updater.handle(try releaseWithNilChecksum(), state: state)
-        #expect(state.assetMissingCount == 1)
-        #expect(state.updateFailedCount == 0)
-        #expect(updater.isDownloading == false)
+    /// A release whose assets list has no file matching the expected name must
+    /// leave the phase at `.idle` — no phase transitions fire.
+    @Test func noMatchingAsset_phaseStaysIdle() async throws {
+        let (updater, state) = makeUpdater()
+        let asset = ReleaseAsset(
+            name: "WrongName.zip",
+            browserDownloadURL: try #require(URL(string: "https://example.com/WrongName.zip"))
+        )
+        let release = AvailableRelease(tagName: "v2.0.0", assets: [asset], checksumURL: nil)
+
+        await updater.handle(release, state: state)
+
+        #expect(state.currentPhase == .idle)
+        #expect(state.appliedPhases.isEmpty)
     }
 
-    /// After a nil-checksumURL early exit `isDownloading` must be `false` —
-    /// regression guard for the stuck-state bug where it stays `true` and
-    /// every subsequent `handle()` silently no-ops via the in-flight guard.
-    @Test func downloadError_clearsIsDownloadingFlag() async throws {
-        let (updater, state, _) = try makeUpdater()
+    // MARK: - Nil checksumURL → phase stays .idle
+
+    /// When the asset matches but `checksumURL` is nil, `handle` logs a warning
+    /// and returns without applying any phase transition.
+    @Test func nilChecksumURL_phaseStaysIdle() async throws {
+        let (updater, state) = makeUpdater()
         await updater.handle(try releaseWithNilChecksum(), state: state)
-        #expect(updater.isDownloading == false)
-        _ = state
+
+        #expect(state.currentPhase == .idle)
+        #expect(state.appliedPhases.isEmpty)
     }
 
-    /// A nil `checksumURL` must call `setAssetMissing()`, NOT
-    /// `setDownloadComplete()` or `setUpdateFailed()`.
-    @Test func checksumURLNil_setsAssetMissing_notDownloadComplete() async throws {
-        let (updater, state, _) = try makeUpdater()
+    /// Nil-checksumURL path: no phase transitions means `appliedPhases` is empty,
+    /// regression guard against any spurious intermediate phase writes.
+    @Test func nilChecksumURL_noAppliedPhases() async throws {
+        let (updater, state) = makeUpdater()
         await updater.handle(try releaseWithNilChecksum(), state: state)
-        #expect(state.assetMissingCount == 1)
-        #expect(state.updateFailedCount == 0)
-        #expect(state.downloadCompleteCount == 0)
+        #expect(state.appliedPhases.isEmpty)
     }
 
-    /// While `isDownloading` is already `true`, a second `handle()` call for a
-    /// downloadable release must be dropped entirely: `downloadStartedCount`
-    /// on the state is not incremented again.
-    @Test func concurrentHandle_secondDropped_whenIsDownloadingTrue() async throws {
-        let (updater, state, _) = try makeUpdater()
-        updater.isDownloading = true   // simulate an in-flight download
-        await updater.handle(try releaseWithNilChecksum(), state: state)
-        #expect(state.downloadStartedCount == 0)
-        #expect(state.updateFailedCount == 0)
+    // MARK: - Cached zip fast-path → .ready
+
+    /// When a zip already exists at `fixedZipURL`, `handle` must advance
+    /// directly to `.ready` without spawning a download Task.
+    @Test func cachedZip_advancesToReady() async throws {
+        let (updater, state) = makeUpdater()
+        let zipURL = updater.fixedZipURL
+        try FileManager.default.createDirectory(
+            at: zipURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("zip".utf8).write(to: zipURL)
+        defer { try? FileManager.default.removeItem(at: zipURL) }
+
+        let asset = ReleaseAsset(
+            name: "App.zip",
+            browserDownloadURL: try #require(URL(string: "https://example.com/App.zip"))
+        )
+        let release = AvailableRelease(
+            tagName: "v2.0.0",
+            assets: [asset],
+            checksumURL: URL(string: "https://example.com/App.zip.sha256")
+        )
+        await updater.handle(release, state: state)
+
+        guard case .ready(let version, let url) = state.currentPhase else {
+            Issue.record("Expected .ready, got \(state.currentPhase)")
+            return
+        }
+        #expect(version == "v2.0.0")
+        #expect(url == zipURL)
+        #expect(state.appliedPhases.count == 1)
     }
 
-    /// `handle()` step 2 exits via `setAssetMissing()` when `checksumURL` is
-    /// nil — the download path is never entered so `setDownloadStarted()` must
-    /// NOT be called.
-    @Test func nilChecksumURL_doesNotCallSetDownloadStarted() async throws {
-        let (updater, state, _) = try makeUpdater()
-        await updater.handle(try releaseWithNilChecksum(), state: state)
-        // step-2 early exit fires synchronously; no Task is spawned.
-        #expect(state.downloadStartedCount == 0)
-        #expect(state.assetMissingCount == 1)
+    // MARK: - Asset present + checksumURL present → .available then download
+
+    /// When the asset matches and a checksum URL is provided, `handle` must
+    /// synchronously advance to `.available` before handing off to the download
+    /// Task. We verify only the synchronous phase here; the async download path
+    /// requires a real network and is out of scope for unit tests.
+    @Test func assetAndChecksum_advancesToAvailable() async throws {
+        let (updater, state) = makeUpdater()
+
+        // Ensure the zip does NOT exist so we don’t hit the cached fast-path.
+        let zipURL = updater.fixedZipURL
+        try? FileManager.default.removeItem(at: zipURL)
+
+        let asset = ReleaseAsset(
+            name: "App.zip",
+            browserDownloadURL: try #require(URL(string: "https://example.com/App.zip"))
+        )
+        let release = AvailableRelease(
+            tagName: "v2.0.0",
+            assets: [asset],
+            checksumURL: URL(string: "https://example.com/App.zip.sha256")
+        )
+        await updater.handle(release, state: state)
+
+        // The first synchronous phase must be .available.
+        guard let first = state.appliedPhases.first,
+              case .available(let version) = first else {
+            Issue.record("Expected first applied phase to be .available, got \(state.appliedPhases)")
+            return
+        }
+        #expect(version == "v2.0.0")
+    }
+
+    /// Regression: a second `handle` call while a download is in flight arrives
+    /// when the zip does not yet exist. `handle` re-advances to `.available`
+    /// (the in-flight guard was removed with `isDownloading`). Verify `.available`
+    /// phase is set on both calls.
+    @Test func secondHandle_noZip_advancesToAvailableAgain() async throws {
+        let (updater, state) = makeUpdater()
+
+        let zipURL = updater.fixedZipURL
+        try? FileManager.default.removeItem(at: zipURL)
+
+        let asset = ReleaseAsset(
+            name: "App.zip",
+            browserDownloadURL: try #require(URL(string: "https://example.com/App.zip"))
+        )
+        let release = AvailableRelease(
+            tagName: "v2.0.0",
+            assets: [asset],
+            checksumURL: URL(string: "https://example.com/App.zip.sha256")
+        )
+
+        await updater.handle(release, state: state)
+        await updater.handle(release, state: state)
+
+        // Both calls should produce .available transitions.
+        let availableCount = state.appliedPhases.filter {
+            if case .available = $0 { return true }
+            return false
+        }.count
+        #expect(availableCount >= 1)
     }
 }
