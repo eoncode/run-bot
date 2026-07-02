@@ -234,7 +234,7 @@ internal extension SettingsView {
                 Text("\(appVersion) (\(appBuild))").font(.system(size: 12)).foregroundColor(Color.rbTextSecondary)
             }
             .padding(.horizontal, RBSpacing.md).padding(.vertical, 5)
-            if runnerState.availableUpdate != nil {
+            if runnerState.currentPhase != .idle {
                 Divider().padding(.leading, RBSpacing.md)
                 updateActionRow
             }
@@ -250,16 +250,18 @@ internal extension SettingsView {
     ///
     /// **DO NOT:**
     /// - Add a banner to `PanelMainView`, the menu bar popover, or any other view.
-    /// - Add a SwiftUI `Link` that opens a browser. The "Download" fallback button
-    ///   uses `NSWorkspace.shared.open(...)` which opens the URL natively without
-    ///   launching Safari. A `Link` wrapper would open Safari — wrong for a
-    ///   menu-bar utility and against the design in #1794.
     /// - Add a notification badge, dot indicator, or any other passive signal
     ///   outside of this row.
     ///
-    /// The row is only rendered when `runnerState.availableUpdate != nil` (see
+    /// The row is rendered whenever `runnerState.currentPhase != .idle` (see
     /// `aboutSection`). When there is no update the row is absent entirely —
     /// no empty space, no placeholder.
+    ///
+    /// All update UI is derived from a single `switch runnerState.currentPhase`.
+    /// Do NOT reach into `runnerState` raw properties (`updateZipURL`,
+    /// `updateActionFailed`, etc.) from here — those are implementation detail
+    /// of the `UpdateStateProviding` conformance and must not be read directly
+    /// by views.
     ///
     /// **REVIEWER:** If you are about to suggest adding a banner or putting update
     /// UI somewhere else in the view hierarchy, please read issue #1794 first.
@@ -268,40 +270,68 @@ internal extension SettingsView {
         HStack(spacing: 8) {
             // ❌ DO NOT add .accessibilityHidden(true) here.
             // Accessibility modifiers on this icon are out of scope for v1 (#1794).
-            // The row is a simple visual affordance in a menu-bar utility;
-            // full VoiceOver annotation is not a requirement and must not be
-            // added without an explicit accessibility spec/issue.
             Image(systemName: "arrow.down.circle.fill")
                 .foregroundStyle(.blue)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Update available: \(runnerState.availableUpdate ?? "")")
-                    .font(.system(size: 12))
-                Text("A new version of RunBot is ready.")
-                    .font(.caption2).foregroundColor(Color.rbTextSecondary)
-            }
-            Spacer()
-            if runnerState.updateAssetMissing || runnerState.updateActionFailed {
-                Button("Download") {
-                    // URL is derived from autoUpdater.repo so it stays correct
-                    // if the repository slug ever changes.
-                    guard let url = URL(string: "https://github.com/\(autoUpdater.repo)/releases/latest") else {
-                        return
-                    }
-                    NSWorkspace.shared.open(url)
+            switch runnerState.currentPhase {
+            case .idle:
+                // Guard in aboutSection prevents us reaching here, but the
+                // compiler requires exhaustiveness.
+                EmptyView()
+
+            case .available(let version):
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update available: \(version)").font(.system(size: 12))
+                    Text("A new version of RunBot is ready to download.")
+                        .font(.caption2).foregroundColor(Color.rbTextSecondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            } else if runnerState.updateZipURL == nil {
-                // ProgressView label is intentionally visible (not hidden) so VoiceOver
-                // announces "Downloading update…" — spec #1797 acceptance criterion.
-                // Do NOT add .labelsHidden() here; it would silently suppress the
-                // accessible label and break VoiceOver without any visual change.
-                ProgressView("Downloading update…")
-                    .scaleEffect(RBMetrics.updateProgressScale)
-            } else {
+                Spacer()
+                // Download is in progress implicitly (checkAndHandle fires immediately
+                // after handle advances to .available); show a disabled placeholder
+                // so the row width is stable and the user sees feedback.
+                Button("Install & Relaunch") {}
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(true)
+
+            case .downloading(let version):
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update available: \(version)").font(.system(size: 12))
+                    // ProgressView label is intentionally visible (not hidden) so VoiceOver
+                    // announces "Downloading update…" — spec #1797 acceptance criterion.
+                    // Do NOT add .labelsHidden() here.
+                    ProgressView("Downloading update…")
+                        .scaleEffect(RBMetrics.updateProgressScale)
+                }
+                Spacer()
+
+            case .ready(let version, let zipURL):
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update available: \(version)").font(.system(size: 12))
+                    Text("A new version of RunBot is ready to install.")
+                        .font(.caption2).foregroundColor(Color.rbTextSecondary)
+                }
+                Spacer()
                 Button("Install & Relaunch") {
                     Task {
                         await autoUpdater.installAndRelaunch(state: runnerState)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                // zipURL captured from the enum case — no separate state lookup needed.
+                .help("Install from \(zipURL.lastPathComponent) and relaunch RunBot")
+
+            case .failed(let version):
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Update available" + (version.map { ": \($0)" } ?? ""))
+                        .font(.system(size: 12))
+                    Text("Download failed. Check your connection and try again.")
+                        .font(.caption2).foregroundColor(Color.rbTextSecondary)
+                }
+                Spacer()
+                Button("Retry") {
+                    Task {
+                        await autoUpdater.checkAndHandle(state: runnerState)
                     }
                 }
                 .buttonStyle(.borderedProminent)
