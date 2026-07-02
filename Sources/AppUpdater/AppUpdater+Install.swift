@@ -17,88 +17,25 @@ extension AppUpdater {
     /// relaunches the new version.
     ///
     /// ## Flow
-    /// 1. Unzip the cached zip into a temporary directory via `/usr/bin/ditto`.
-    /// 2. Locate the `.app` bundle inside the unzipped contents.
-    /// 3. (Optional) If `skipCodeSignValidation` is `false`: verify that the
-    ///    running bundle and the downloaded bundle share the same `codesign`
-    ///    `Authority=` identity. A mismatch calls `setUpdateFailed()` and aborts.
+    /// 1. Verify host is in `.ready` phase and extract zip URL + version.
+    /// 2. Unzip into a temporary directory via `/usr/bin/ditto`.
+    /// 3. (Optional) Verify `codesign` identity if `skipCodeSignValidation` is `false`.
     /// 4. Replace the running bundle via `FileManager.replaceItem` (atomic swap).
-    /// 5. Relaunch the new binary with `/usr/bin/open`.
-    /// 6. Delete the zip (spent — relaunch confirmed).
+    /// 5. Relaunch the new binary with `/usr/bin/open -n`.
+    /// 6. Delete the zip (spend — relaunch confirmed).
     /// 7. Terminate this process via `NSApp.terminate`.
     ///
-    /// On any failure the function calls `state.setUpdateFailed()` and returns
-    /// without terminating — the user is left with the running version and the
-    /// host should direct them to re-run the original `curl` install command.
-    ///
-    /// **Exception — post-replaceItem relaunch failure:** if `replaceItem`
-    /// succeeds but `open -n` throws, the new binary is already on disk.
-    /// `clearDownloadState()` is called instead of `setUpdateFailed()` so the
-    /// host shows a neutral state. The zip is NOT deleted in this branch, but
-    /// UserDefaults were cleared in step 2, so `rehydrateCachedUpdateIfNewer()`
-    /// cannot find the path key on next launch. The zip is left on disk but is
-    /// unreachable via rehydration — it will be swept by `purgeStaleZips` on
-    /// the next launch. The user relaunches manually to run the new binary that
-    /// is already installed.
-    ///
-    /// ## Why curl is the only correct install and recovery path
-    ///
-    /// This app is **ad-hoc signed** — it carries a local code signature but
-    /// has NOT been submitted to Apple for notarisation. Gatekeeper will block
-    /// any `.app` that arrives with the `com.apple.quarantine` extended
-    /// attribute set, because without a notarisation ticket it cannot verify
-    /// the binary.
-    ///
-    /// `com.apple.quarantine` is stamped by any process that has opted in via
-    /// `LSFileQuarantineEnabled = YES` in its `Info.plist` — this includes
-    /// every browser (Safari, Chrome, Firefox) and the macOS Finder copy
-    /// operation when dragging from a Downloads folder. A `curl` invocation
-    /// does **not** set `LSFileQuarantineEnabled`, so the downloaded `.app`
-    /// arrives clean, Gatekeeper never inspects it, and the install succeeds.
-    ///
-    /// Consequences for this updater:
-    /// - `URLSession` (used by `AppUpdater`) does NOT set the quarantine bit
-    ///   because the host omits `LSFileQuarantineEnabled`. The in-app download
-    ///   is therefore safe.
-    /// - **Do NOT add a browser-download fallback.** A browser-downloaded
-    ///   `.app` will be quarantine-stamped and Gatekeeper will block it on
-    ///   launch, leaving the user with a broken install.
-    /// - **Do NOT add a Finder/drag-install path.** Same reason.
-    /// - The curl install command is the only other safe path: it mirrors the
-    ///   original first-install flow that every user already completed
-    ///   successfully.
-    ///
-    /// ## ⚠️ `setUpdateFailed()` is NOT a silent failure — read before flagging ⚠️
-    ///
-    /// Reviewers sometimes flag the `replaceItem` catch block as a silent UX
-    /// failure because the UI switches from "Install & Relaunch" to a state
-    /// that surfaces the `curl` install command with no further explanation.
-    /// This is intentional and correct — see the curl distribution model
-    /// section above for the full rationale.
-    ///
-    /// **Do NOT add `NSFileWriteNoPermissionError` special-casing** or a
-    /// separate permission state. Distinguishing permission errors from other
-    /// `replaceItem` failures would add complexity for a case the curl fallback
-    /// already handles correctly.
-    ///
-    /// ## `isInstalling` reset strategy — intentional, not an oversight
-    ///
-    /// `isInstalling` is set to `true` at the start and cleared **only in
-    /// failure branches**. It is deliberately NOT reset on the success path:
-    /// `NSApp.terminate(nil)` fires synchronously after `open -n` is launched, so
-    /// the process exits before any subsequent UI tick can observe
-    /// `isInstalling == true`. Resetting it would be a no-op and could introduce
-    /// a brief window where a second tap slips through.
-    ///
-    /// - Parameter state: The host update-state object driving the UI.
+    /// On any failure `state.apply(.failed(version:))` is called and the
+    /// function returns without terminating.
     @MainActor
     public func installAndRelaunch(state: any UpdateStateProviding) async {
         guard !isInstalling else { return }
         isInstalling = true
 
-        guard let zipURL = state.updateZipURL else {
+        // Extract zip URL and version from the .ready phase.
+        guard case .ready(let version, let zipURL) = state.currentPhase else {
             isInstalling = false
-            state.setUpdateFailed()
+            state.apply(.failed(version: nil))
             return
         }
 
@@ -108,7 +45,7 @@ extension AppUpdater {
 
         guard let appInZip = await unzipAndLocateApp(zipURL: zipURL, into: tmpDir) else {
             isInstalling = false
-            state.setUpdateFailed()
+            state.apply(.failed(version: version))
             return
         }
 
@@ -121,7 +58,7 @@ extension AppUpdater {
                   runningIdentity == updateIdentity else {
                 appUpdaterLogger.error("code-sign identity mismatch — aborting install")
                 isInstalling = false
-                state.setUpdateFailed()
+                state.apply(.failed(version: version))
                 try? FileManager.default.removeItem(at: tmpDir)
                 return
             }
@@ -132,6 +69,7 @@ extension AppUpdater {
             appInZip: appInZip,
             bundleURL: bundleURL,
             zipURL: zipURL,
+            version: version,
             tmpDir: tmpDir,
             state: state
         )
@@ -141,16 +79,6 @@ extension AppUpdater {
 
     /// Unzips `zipURL` into `tmpDir` via `/usr/bin/ditto` and returns the
     /// `.app` bundle URL found at the archive root.
-    ///
-    /// Returns `nil` and cleans up `tmpDir` on any failure:
-    /// - `tmpDir` creation fails
-    /// - `ditto` exits non-zero
-    /// - No `.app` is present at the archive root
-    ///
-    /// `contentsOfDirectory` is intentionally shallow (non-recursive): the
-    /// release archive is expected to carry exactly one `.app` at its root
-    /// (RunBot's publish.yml CI verify step enforces this). A recursive search
-    /// is deliberately avoided because it would silently accept malformed archives.
     private func unzipAndLocateApp(zipURL: URL, into tmpDir: URL) async -> URL? {
         let fm = FileManager.default
         do {
@@ -174,96 +102,11 @@ extension AppUpdater {
 
     /// Atomically replaces the running bundle, relaunches via `open -n`, deletes
     /// the zip once relaunch is confirmed, then terminates via `NSApp.terminate`.
-    ///
-    /// ## Step ordering and rationale
-    ///
-    /// The sequence is deliberately:
-    ///
-    /// ```
-    /// 1. replaceItem    — new .app atomically on disk
-    /// 2. clearCachedDefaults()  — UserDefaults wiped
-    /// 3. removeItem(tmpDir)     — scratch dir cleaned up
-    /// 4. open -n                — relaunch the new binary
-    /// 5. removeItem(zipURL)     — zip deleted (relaunch confirmed)
-    /// 6. NSApp.terminate(nil)   — this process exits
-    /// ```
-    ///
-    /// ### Why the zip is deleted AFTER `open -n` succeeds (step 5, not earlier)
-    ///
-    /// **The decision:** zip deletion is gated on `relaunchTask.run()` succeeding.
-    ///
-    /// **Pros of this ordering:**
-    /// - If `run()` throws (see failure scenarios below), the zip is still on
-    ///   disk. However, UserDefaults were cleared in step 2, so
-    ///   `rehydrateCachedUpdateIfNewer()` cannot find the path key on next launch.
-    ///   The zip is an orphan — unreachable via rehydration, swept by
-    ///   `purgeStaleZips` on the next launch. The new binary is already installed;
-    ///   the user relaunches manually.
-    /// - The zip being present is harmless — it lives in the app's scoped
-    ///   Caches directory and is < the size of the app bundle itself.
-    /// - The ordering matches the logical invariant: the zip is spent only
-    ///   when we are certain the handoff to the new process worked.
-    ///
-    /// **Cons / known side effects:**
-    /// - If `NSApp.terminate(nil)` is somehow skipped (it cannot be — it is
-    ///   unconditional and synchronous after `run()` succeeds), the zip would
-    ///   survive this process. On next launch `purgeStaleZips` sweeps it.
-    ///   This is a safe, recoverable state.
-    /// - There is a very brief window between `run()` returning and
-    ///   `removeItem(zipURL)` where the zip exists on disk while the new
-    ///   process is starting. This is not a correctness issue — the zip is
-    ///   in a scoped Caches directory, not user-visible.
-    ///
-    /// **Why the previous ordering (zip before open) was wrong:**
-    /// - Deleting the zip before `run()` meant a `run()` failure left the user
-    ///   with `clearDownloadState()` called, no zip on disk, and no recovery
-    ///   path short of a full re-download. That is a worse failure mode for
-    ///   what is already an edge case.
-    ///
-    /// ### Failure scenarios for `relaunchTask.run()`
-    ///
-    /// `Process.run()` throws `CocoaError` / `POSIXError` if:
-    /// - `executableURL` points at a non-existent binary (would be our bug)
-    /// - A sandboxing restriction blocks `Process` from spawning (RunBot is
-    ///   not sandboxed — this path is currently unreachable)
-    /// - `/usr/bin/open` is missing or corrupt (essentially impossible on macOS)
-    ///
-    /// In all cases the new `.app` is already on disk (step 1 succeeded).
-    /// UserDefaults are cleared (step 2). The zip is still on disk but orphaned
-    /// (unreachable via rehydration). The catch block calls
-    /// `clearDownloadState()` (NOT `setUpdateFailed()` — see below) and logs
-    /// a distinct error message. The user relaunches manually.
-    ///
-    /// ### Why the post-open-failure branch calls `clearDownloadState()` not `setUpdateFailed()`
-    ///
-    /// REVIEWER: Do NOT change the post-open-failure catch to call `setUpdateFailed()`.
-    ///
-    /// `setUpdateFailed()` surfaces the curl-install fallback UI, which implies
-    /// the user needs to reinstall. They do NOT — the new binary is already on
-    /// disk from step 1. Showing the curl-install UI here would be actively
-    /// misleading. `clearDownloadState()` resets in-memory state to neutral;
-    /// the user sees no install affordance but also no false alarm. The distinct
-    /// log message in Console.app (`open -n failed after successful replaceItem`)
-    /// is the diagnostic signal for this branch.
-    ///
-    /// ### Zip is NOT deleted in the post-open-failure catch branch
-    ///
-    /// REVIEWER: Do NOT add `removeItem(zipURL)` to the post-open-failure catch.
-    ///
-    /// The zip is intentionally left on disk if `run()` throws. It is an orphan
-    /// at this point (UserDefaults cleared, no path key), so it will not trigger
-    /// a rehydration offer. `purgeStaleZips` sweeps it on next launch. Deleting
-    /// it here would be redundant and removes no user-visible benefit.
-    ///
-    /// ### `replaceItem` atomicity
-    /// `FileManager.replaceItem` moves the old bundle aside as a named backup,
-    /// moves the new bundle into place, then deletes the backup. If the process
-    /// is killed mid-swap, macOS guarantees the bundle is either fully old or
-    /// fully new.
     private func replaceAndRelaunch( // skipcq: SW-R1002 — reviewed; sequential install steps, complexity is inherent
         appInZip: URL,
         bundleURL: URL,
         zipURL: URL,
+        version: String,
         tmpDir: URL,
         state: any UpdateStateProviding
     ) async {
@@ -271,7 +114,7 @@ extension AppUpdater {
         let backupItemName = bundleURL.lastPathComponent + ".bak"
         var resultingNSURL: NSURL?
 
-        // ── Step 1: atomic bundle swap ───────────────────────────────────────────
+        // ── Step 1: atomic bundle swap ───────────────────────────────────────
         do {
             try fm.replaceItem(
                 at: bundleURL,
@@ -283,26 +126,18 @@ extension AppUpdater {
         } catch {
             appUpdaterLogger.error("replaceItem failed: \(String(describing: error), privacy: .public)")
             isInstalling = false
-            state.setUpdateFailed()
+            state.apply(.failed(version: version))
             try? fm.removeItem(at: tmpDir)
             return
         }
 
-        // ── Step 2: wipe cached defaults ─────────────────────────────────────────
-        // The new .app is on disk. Clear the persisted zip path and version now
-        // so a crash between here and terminate() leaves UserDefaults clean.
-        // NOTE: after this point the zip is still on disk but its UserDefaults
-        // path key is gone, so rehydrateCachedUpdateIfNewer() will NOT offer it
-        // on next launch. purgeStaleZips() sweeps it instead.
+        // ── Step 2: wipe cached defaults ─────────────────────────────────────
         clearCachedDefaults()
 
-        // ── Step 3: clean up scratch dir ─────────────────────────────────────────
-        // The unzipped .app has been moved into place by replaceItem. The tmpDir
-        // is now empty (or contains only the ditto extraction artifacts). Delete
-        // it unconditionally — it is not the zip and not the installed bundle.
+        // ── Step 3: clean up scratch dir ─────────────────────────────────────
         try? fm.removeItem(at: tmpDir)
 
-        // ── Step 4: relaunch ─────────────────────────────────────────────────────
+        // ── Step 4: relaunch ─────────────────────────────────────────────────
         #if canImport(AppKit)
         let launchPath = ((resultingNSURL as URL?) ?? bundleURL).path
         let relaunchTask = Process()
@@ -312,40 +147,19 @@ extension AppUpdater {
             try relaunchTask.run()
         } catch {
             // `open -n` failed AFTER replaceItem succeeded.
-            //
-            // State at this point:
-            //   • New .app IS on disk (replaceItem step 1 succeeded).
-            //   • UserDefaults ARE cleared (step 2) — the zip path key is gone.
-            //   • tmpDir IS deleted (step 3).
-            //   • The zip is NOT yet deleted — still on disk, but orphaned.
-            //
-            // Recovery:
-            //   UserDefaults are cleared so rehydrateCachedUpdateIfNewer() cannot
-            //   find the path key on next launch. The zip is an unreachable orphan
-            //   and will be swept by purgeStaleZips() on next launch. The new
-            //   binary is already installed — the user relaunches manually.
-            //
-            // REVIEWER: Do NOT call setUpdateFailed() here — see the
-            // replaceAndRelaunch doc comment for full rationale.
-            // Do NOT add removeItem(zipURL) here — it is redundant; purgeStaleZips
-            // handles orphaned zips on next launch.
+            // The new .app IS on disk. UserDefaults ARE cleared.
+            // Apply .failed so the host shows a recoverable error state.
+            // The user can relaunch manually — the new binary is already installed.
             appUpdaterLogger.error("open -n failed after successful replaceItem — new binary is on disk, relaunch manually: \(error.localizedDescription, privacy: .public)")
             isInstalling = false
-            state.clearDownloadState()
+            state.apply(.failed(version: version))
             return
         }
 
-        // ── Step 5: delete zip (relaunch confirmed) ──────────────────────────────
-        // `run()` returned without throwing — the new process handoff is
-        // initiated. The zip has served its purpose and is now spent.
-        //
-        // REVIEWER: This removeItem is intentionally placed AFTER run() succeeds,
-        // not before. See the "Why the zip is deleted AFTER open -n succeeds"
-        // section in the replaceAndRelaunch doc comment for the full rationale.
-        // Do NOT move this above the relaunchTask.run() call.
+        // ── Step 5: delete zip (relaunch confirmed) ──────────────────────────
         try? fm.removeItem(at: zipURL)
 
-        // ── Step 6: terminate ────────────────────────────────────────────────────
+        // ── Step 6: terminate ────────────────────────────────────────────────
         NSApp.terminate(nil)
         #endif
     }
