@@ -4,6 +4,7 @@ import Foundation
 
 // MARK: - Update flow entry points
 
+/// Update-flow entry points: check, rehydrate, and handle available releases.
 extension AppUpdater {
 
     // MARK: - Convenience entry points

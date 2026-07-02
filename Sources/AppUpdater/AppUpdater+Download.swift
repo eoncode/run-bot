@@ -5,6 +5,7 @@ import Foundation
 
 // MARK: - Download
 
+/// Download, checksum verification, and local cache management for AppUpdater.
 extension AppUpdater {
 
     /// Downloads the zip and its SHA-256 sidecar in parallel, verifies
