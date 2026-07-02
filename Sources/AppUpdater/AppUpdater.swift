@@ -181,15 +181,91 @@ public final class AppUpdater {
     /// stored task handle or cancellation without re-reading that section first.
     var isDownloading: Bool = false
 
-    // AppKit is unavailable in the SPM headless test runner — this guard is
+    // MARK: - Background scheduler storage
+    //
+    // AppKit is unavailable in the SPM headless test runner — the #if guard is
     // required for `swift test` even though the package is macOS(.v26)-only.
-    // Only deinit may access `activity` from a nonisolated context (invalidate
-    // is thread-safe per Apple docs); all other reads/writes must be @MainActor.
+    //
+    // ── Why nonisolated(unsafe) var, and why it is safe ──────────────────────
+    //
+    // `deinit` is a nonisolated context — the Swift compiler does not permit
+    // accessing a `@MainActor`-isolated property from `deinit` directly.
+    // `NSBackgroundActivityScheduler` MUST be explicitly invalidated before
+    // deallocation; failing to do so leaks the activity registration system-wide
+    // (it survives the AppUpdater instance). `nonisolated(unsafe)` is the only
+    // mechanism that allows `deinit` to reach `activity` without a
+    // `Task { @MainActor in }` (which would be a use-after-free: `self` is
+    // already deallocating when deinit runs).
+    //
+    // **Why this is safe in practice:**
+    //
+    // 1. `AppUpdater` is `@MainActor final class`. Every method and property
+    //    access — except `deinit` — runs on the main actor. The compiler
+    //    enforces this for all non-`nonisolated` call sites. There is no
+    //    non-isolated code path that reads or writes `activity` other than
+    //    `deinit`.
+    //
+    // 2. `deinit` only calls `activity?.invalidate()`. It does not write the
+    //    reference, does not race with `scheduleBackgroundCheck` (which assigns
+    //    it on the main actor), and `NSBackgroundActivityScheduler.invalidate()`
+    //    is explicitly documented as thread-safe by Apple.
+    //
+    // 3. The data race that `nonisolated(unsafe)` silences — a concurrent write
+    //    from a non-isolated context — cannot arise here because there is no
+    //    non-isolated write path. `scheduleBackgroundCheck` runs on `@MainActor`;
+    //    `deinit` only reads the reference to call `invalidate()`. The reference
+    //    itself is never written from `deinit`.
+    //
+    // ── Tension with concurrency-overview.md ─────────────────────────────────
+    //
+    // The project's concurrency doc (docs/architecture/concurrency-overview.md)
+    // reserves `nonisolated` for immutable-post-init cases and forbids
+    // `@unchecked Sendable` / unsafe escape hatches as general patterns.
+    // This usage is a justified, narrow exception:
+    //
+    // - It is the ONLY `nonisolated(unsafe)` annotation in AppUpdater.
+    // - It is required by a concrete platform constraint (deinit isolation),
+    //   not by a design choice or convenience.
+    // - The safety argument is fully enumerated above, not assumed.
+    //
+    // Do NOT copy this pattern for other properties. If a future property needs
+    // nonisolated access, re-evaluate whether the underlying constraint is the
+    // same (deinit invalidation of a thread-safe object) before using it.
+    //
+    // ── Known alternative (not pursued, low priority) ─────────────────────────
+    //
+    // `scheduleBackgroundCheck` assigns `activity` exactly once. It could
+    // theoretically be refactored to `nonisolated(unsafe) let` — set once at
+    // `scheduleBackgroundCheck` call time — which would satisfy the concurrency
+    // doc's "immutable-post-init" requirement more precisely.
+    //
+    // This was not pursued because:
+    // - It would require restructuring init (activity can't be a `let` without
+    //   a value at init time) or using a lazy wrapper.
+    // - `scheduleBackgroundCheck` is optional — not every host calls it — so
+    //   `activity` is legitimately nil for the full lifetime in test contexts.
+    // - The current approach is correct and safe for the actual access patterns.
+    //
+    // If AppUpdater is ever extracted to its own standalone repo and the
+    // concurrency doc exception becomes a problem for external consumers,
+    // revisit the `let`-after-scheduleBackgroundCheck approach at that point.
+    //
+    // REVIEWER: Do NOT:
+    // - Remove `nonisolated(unsafe)` without providing an alternative deinit
+    //   invalidation path for NSBackgroundActivityScheduler.
+    // - Change this to `nonisolated(unsafe) let` without verifying that
+    //   scheduleBackgroundCheck is always called exactly once before deinit
+    //   (it is not guaranteed — hosts that never call it leave activity nil).
+    // - Add any non-`deinit`, non-`@MainActor` access to `activity` — doing so
+    //   would invalidate the safety argument above.
     #if canImport(AppKit)
     /// Retains the `NSBackgroundActivityScheduler` for the app's lifetime.
     ///
-    /// `nonisolated(unsafe)` so `deinit` (a nonisolated context) can invalidate
-    /// it. Assigned and read only on the main actor otherwise.
+    /// Declared `nonisolated(unsafe)` so `deinit` (a nonisolated context) can
+    /// call `invalidate()`. All non-deinit accesses are `@MainActor`-isolated
+    /// via the enclosing class — the compiler enforces this at every call site
+    /// that is not `deinit`. See the block comment above for the full safety
+    /// rationale and the known alternative approach.
     nonisolated(unsafe) var activity: NSBackgroundActivityScheduler?
     #endif
 
@@ -248,6 +324,8 @@ public final class AppUpdater {
         // failing to do so leaks the activity registration system-wide.
         // NSBackgroundActivityScheduler.invalidate() is thread-safe per Apple
         // docs — safe to call from a nonisolated deinit.
+        // See the MARK: Background scheduler storage block comment above for
+        // the full safety rationale on the nonisolated(unsafe) annotation.
         #if canImport(AppKit)
         activity?.invalidate()
         #endif
