@@ -32,12 +32,14 @@ extension AppUpdater {
     /// host should direct them to re-run the original `curl` install command.
     ///
     /// **Exception — post-replaceItem relaunch failure:** if `replaceItem`
-    /// succeeds but `open -n` throws, the new binary is already on disk and the
-    /// curl-install fallback is misleading (the user does not need to reinstall).
-    /// In this case `clearDownloadState()` is called instead of `setUpdateFailed()`
-    /// so the host shows a neutral state. The zip is NOT deleted in this branch —
-    /// `rehydrateCachedUpdateIfNewer()` will find it on next launch and offer the
-    /// install without requiring a re-download. The user can relaunch manually.
+    /// succeeds but `open -n` throws, the new binary is already on disk.
+    /// `clearDownloadState()` is called instead of `setUpdateFailed()` so the
+    /// host shows a neutral state. The zip is NOT deleted in this branch, but
+    /// UserDefaults were cleared in step 2, so `rehydrateCachedUpdateIfNewer()`
+    /// cannot find the path key on next launch. The zip is left on disk but is
+    /// unreachable via rehydration — it will be swept by `purgeStaleZips` on
+    /// the next launch. The user relaunches manually to run the new binary that
+    /// is already installed.
     ///
     /// ## Why curl is the only correct install and recovery path
     ///
@@ -192,9 +194,11 @@ extension AppUpdater {
     ///
     /// **Pros of this ordering:**
     /// - If `run()` throws (see failure scenarios below), the zip is still on
-    ///   disk. `rehydrateCachedUpdateIfNewer()` finds it on next launch and
-    ///   offers the install without requiring a full re-download. The user
-    ///   experience is: "Install & Relaunch" is available again immediately.
+    ///   disk. However, UserDefaults were cleared in step 2, so
+    ///   `rehydrateCachedUpdateIfNewer()` cannot find the path key on next launch.
+    ///   The zip is an orphan — unreachable via rehydration, swept by
+    ///   `purgeStaleZips` on the next launch. The new binary is already installed;
+    ///   the user relaunches manually.
     /// - The zip being present is harmless — it lives in the app's scoped
     ///   Caches directory and is < the size of the app bundle itself.
     /// - The ordering matches the logical invariant: the zip is spent only
@@ -203,9 +207,8 @@ extension AppUpdater {
     /// **Cons / known side effects:**
     /// - If `NSApp.terminate(nil)` is somehow skipped (it cannot be — it is
     ///   unconditional and synchronous after `run()` succeeds), the zip would
-    ///   survive this process. On next launch `rehydrateCachedUpdateIfNewer()`
-    ///   would offer the install again. This is a safe, recoverable state —
-    ///   the worst outcome is a redundant "install available" affordance.
+    ///   survive this process. On next launch `purgeStaleZips` sweeps it.
+    ///   This is a safe, recoverable state.
     /// - There is a very brief window between `run()` returning and
     ///   `removeItem(zipURL)` where the zip exists on disk while the new
     ///   process is starting. This is not a correctness issue — the zip is
@@ -225,10 +228,11 @@ extension AppUpdater {
     ///   not sandboxed — this path is currently unreachable)
     /// - `/usr/bin/open` is missing or corrupt (essentially impossible on macOS)
     ///
-    /// In all cases the new `.app` is already on disk (step 1 succeeded). The
-    /// zip is still present (not yet deleted). The catch block calls
+    /// In all cases the new `.app` is already on disk (step 1 succeeded).
+    /// UserDefaults are cleared (step 2). The zip is still on disk but orphaned
+    /// (unreachable via rehydration). The catch block calls
     /// `clearDownloadState()` (NOT `setUpdateFailed()` — see below) and logs
-    /// a distinct error message. The user can relaunch manually.
+    /// a distinct error message. The user relaunches manually.
     ///
     /// ### Why the post-open-failure branch calls `clearDownloadState()` not `setUpdateFailed()`
     ///
@@ -246,10 +250,10 @@ extension AppUpdater {
     ///
     /// REVIEWER: Do NOT add `removeItem(zipURL)` to the post-open-failure catch.
     ///
-    /// The zip is intentionally left on disk if `run()` throws. This means
-    /// `rehydrateCachedUpdateIfNewer()` will find it on next launch and offer
-    /// the install again without a re-download. Deleting it here would silently
-    /// discard the only recovery path available to the user in this failure mode.
+    /// The zip is intentionally left on disk if `run()` throws. It is an orphan
+    /// at this point (UserDefaults cleared, no path key), so it will not trigger
+    /// a rehydration offer. `purgeStaleZips` sweeps it on next launch. Deleting
+    /// it here would be redundant and removes no user-visible benefit.
     ///
     /// ### `replaceItem` atomicity
     /// `FileManager.replaceItem` moves the old bundle aside as a named backup,
@@ -287,8 +291,9 @@ extension AppUpdater {
         // ── Step 2: wipe cached defaults ─────────────────────────────────────────
         // The new .app is on disk. Clear the persisted zip path and version now
         // so a crash between here and terminate() leaves UserDefaults clean.
-        // rehydrateCachedUpdateIfNewer() will find the zip still on disk (we
-        // haven't deleted it yet) and rehydrate correctly on next launch.
+        // NOTE: after this point the zip is still on disk but its UserDefaults
+        // path key is gone, so rehydrateCachedUpdateIfNewer() will NOT offer it
+        // on next launch. purgeStaleZips() sweeps it instead.
         clearCachedDefaults()
 
         // ── Step 3: clean up scratch dir ─────────────────────────────────────────
@@ -310,23 +315,20 @@ extension AppUpdater {
             //
             // State at this point:
             //   • New .app IS on disk (replaceItem step 1 succeeded).
-            //   • UserDefaults ARE cleared (step 2).
+            //   • UserDefaults ARE cleared (step 2) — the zip path key is gone.
             //   • tmpDir IS deleted (step 3).
-            //   • The zip is NOT yet deleted — intentionally.
+            //   • The zip is NOT yet deleted — still on disk, but orphaned.
             //
-            // Recovery path:
-            //   rehydrateCachedUpdateIfNewer() will find the zip on next launch
-            //   (UserDefaults were cleared in step 2, but the zip file still
-            //   exists on disk). Wait — actually UserDefaults are cleared, so
-            //   rehydrateCachedUpdateIfNewer() won't find the path key. The user
-            //   will need to relaunch manually to run the new binary that is
-            //   already on disk. The zip will be cleaned up on next successful
-            //   install or by OS cache pressure.
+            // Recovery:
+            //   UserDefaults are cleared so rehydrateCachedUpdateIfNewer() cannot
+            //   find the path key on next launch. The zip is an unreachable orphan
+            //   and will be swept by purgeStaleZips() on next launch. The new
+            //   binary is already installed — the user relaunches manually.
             //
             // REVIEWER: Do NOT call setUpdateFailed() here — see the
             // replaceAndRelaunch doc comment for full rationale.
-            // Do NOT add removeItem(zipURL) here — the zip is the only
-            // recovery artefact left and deleting it helps no one.
+            // Do NOT add removeItem(zipURL) here — it is redundant; purgeStaleZips
+            // handles orphaned zips on next launch.
             appUpdaterLogger.error("open -n failed after successful replaceItem — new binary is on disk, relaunch manually: \(error.localizedDescription, privacy: .public)")
             isInstalling = false
             state.clearDownloadState()
