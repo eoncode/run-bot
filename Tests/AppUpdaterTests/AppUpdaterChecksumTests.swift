@@ -8,23 +8,21 @@ import Testing
 // MARK: - AppUpdaterChecksumTests
 
 /// Tests for `verifyChecksum` (a free function) and
-/// `AppUpdater.cachedZipDestination`.
+/// `AppUpdater.fixedZipURL`.
 ///
-/// Both functions are pure filesystem operations that require no network.
-/// Zero `DispatchQueue` usage (Pillar 5).
+/// Both verifyChecksum and fixedZipURL require no network.
 @MainActor
 struct AppUpdaterChecksumTests {
 
     // MARK: - Helpers
 
-    private func makeUpdater() throws -> AppUpdater {
+    private func makeUpdater() -> AppUpdater {
         let domain = "AppUpdaterChecksumTests.\(UUID().uuidString)"
         return AppUpdater(
             repo: "owner/repo",
             currentVersion: "1.0.0",
             assetName: { _ in "App.zip" },
-            schedulerIdentifier: domain,
-            userDefaults: try #require(UserDefaults(suiteName: domain))
+            schedulerIdentifier: domain
         )
     }
 
@@ -96,32 +94,35 @@ struct AppUpdaterChecksumTests {
         #expect(thrown != nil)
     }
 
-    // MARK: - cachedZipDestination
+    // MARK: - fixedZipURL
 
-    @Test func cachedZipDestination_filenameContainsVersion() throws {
-        let updater = try makeUpdater()
-        let url = try updater.cachedZipDestination(version: "v2.0.0")
-        #expect(url.lastPathComponent.contains("v2.0.0"))
+    @Test func fixedZipURL_filenameIsUpdateZip() {
+        let updater = makeUpdater()
+        #expect(updater.fixedZipURL.lastPathComponent == "update.zip")
     }
 
-    @Test func cachedZipDestination_extensionIsZip() throws {
-        let updater = try makeUpdater()
-        let url = try updater.cachedZipDestination(version: "v1.0.0")
-        #expect(url.pathExtension == "zip")
+    @Test func fixedZipURL_extensionIsZip() {
+        let updater = makeUpdater()
+        #expect(updater.fixedZipURL.pathExtension == "zip")
     }
 
-    @Test func cachedZipDestination_unsafeCharsSanitised() throws {
-        let updater = try makeUpdater()
-        let url = try updater.cachedZipDestination(version: "v1.0/malicious..zip")
-        // Slashes and dots in the version must be replaced or safe in filename
-        #expect(!url.lastPathComponent.contains("/"))
-    }
-
-    @Test func cachedZipDestination_scopedToSchedulerIdentifier() throws {
-        let updater = try makeUpdater()
-        let url = try updater.cachedZipDestination(version: "v1.0.0")
-        // Directory component should contain the schedulerIdentifier
-        let parentDir = url.deletingLastPathComponent().lastPathComponent
+    @Test func fixedZipURL_scopedToSchedulerIdentifier() {
+        let updater = makeUpdater()
+        let parentDir = updater.fixedZipURL.deletingLastPathComponent().lastPathComponent
         #expect(parentDir == updater.schedulerIdentifier)
+    }
+
+    @Test func fixedZipURL_differentIdentifiers_differentPaths() {
+        let updaterA = AppUpdater(
+            repo: "o/r", currentVersion: "1.0.0",
+            assetName: { _ in "App.zip" },
+            schedulerIdentifier: "com.test.a"
+        )
+        let updaterB = AppUpdater(
+            repo: "o/r", currentVersion: "1.0.0",
+            assetName: { _ in "App.zip" },
+            schedulerIdentifier: "com.test.b"
+        )
+        #expect(updaterA.fixedZipURL != updaterB.fixedZipURL)
     }
 }
