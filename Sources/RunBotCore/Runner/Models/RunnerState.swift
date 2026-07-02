@@ -60,6 +60,7 @@ public final class RunnerState {
 
     // MARK: - Init
 
+    /// Creates a default-initialised `RunnerState` with all properties at their zero values.
     public init() {}
 
     // MARK: - Auto-update storage (written via UpdateStateProviding.apply(_:))
