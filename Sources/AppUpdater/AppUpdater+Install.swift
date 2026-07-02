@@ -131,13 +131,10 @@ extension AppUpdater {
             return
         }
 
-        // ── Step 2: wipe cached defaults ─────────────────────────────────────
-        clearCachedDefaults()
-
-        // ── Step 3: clean up scratch dir ─────────────────────────────────────
+        // ── Step 2: clean up scratch dir ─────────────────────────────────────
         try? fm.removeItem(at: tmpDir)
 
-        // ── Step 4: relaunch ─────────────────────────────────────────────────
+        // ── Step 3: relaunch ─────────────────────────────────────────────────
         #if canImport(AppKit)
         let launchPath = ((resultingNSURL as URL?) ?? bundleURL).path
         let relaunchTask = Process()
@@ -147,7 +144,7 @@ extension AppUpdater {
             try relaunchTask.run()
         } catch {
             // `open -n` failed AFTER replaceItem succeeded.
-            // The new .app IS on disk. UserDefaults ARE cleared.
+            // The new .app IS on disk.
             // Apply .failed so the host shows a recoverable error state.
             // The user can relaunch manually — the new binary is already installed.
             appUpdaterLogger.error("open -n failed after successful replaceItem — new binary is on disk, relaunch manually: \(error.localizedDescription, privacy: .public)")
@@ -156,10 +153,10 @@ extension AppUpdater {
             return
         }
 
-        // ── Step 5: delete zip (relaunch confirmed) ──────────────────────────
+        // ── Step 4: delete zip (relaunch confirmed) ──────────────────────────
         try? fm.removeItem(at: zipURL)
 
-        // ── Step 6: terminate ────────────────────────────────────────────────
+        // ── Step 5: terminate ────────────────────────────────────────────────
         NSApp.terminate(nil)
         #endif
     }
