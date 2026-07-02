@@ -1,0 +1,174 @@
+// AppUpdater.swift
+// AppUpdater
+import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
+
+// MARK: - AppUpdater
+
+/// Drives the in-app auto-update flow: GitHub Releases poll → semver compare →
+/// zip download → SHA-256 verification → host-state mutation → install &
+/// relaunch on user confirmation.
+///
+/// `AppUpdater` is a configurable `@MainActor` class carrying no host-specific
+/// state of its own beyond what the caller injects. All UI-facing state lives
+/// in a caller-supplied `any UpdateStateProviding`; the single cached zip lives
+/// at a fixed path derived from `schedulerIdentifier`.
+///
+/// ## Isolation model
+///
+/// The class is `@MainActor`, so `isInstalling` and the scheduler reference are
+/// race-free without extra locking. The blocking work runs off the main thread
+/// regardless: `URLSession` downloads suspend rather than block, checksum
+/// verification runs in the `@concurrent` `verifyChecksum` free function, and
+/// subprocess launches run in the `@concurrent` `runCommand` helper.
+///
+/// ## Typical usage
+///
+/// ```swift
+/// let updater = AppUpdater(
+///     repo: "your-org/your-repo",
+///     currentVersion: "1.2.3",
+///     assetName: { _ in "YourApp.zip" },
+///     schedulerIdentifier: "com.your-org.update-check",
+///     betaChannelProvider: { UserDefaults.standard.bool(forKey: "betaChannel") }
+/// )
+/// await updater.checkAndHandle(state: myState)
+/// updater.scheduleBackgroundCheck(state: myState)
+/// ```
+@MainActor
+public final class AppUpdater {
+
+    // MARK: - Public configuration
+
+    /// `"owner/name"` GitHub repository slug polled for releases.
+    public let repo: String
+
+    /// The running app's version (full semver incl. any pre-release suffix).
+    public let currentVersion: String
+
+    /// Reverse-DNS identifier for the background scheduler; also used to scope
+    /// this updater's cache directory under `~/Library/Caches`.
+    ///
+    /// Must not be empty and must not contain `/` — both are enforced by
+    /// `precondition` at init time.
+    public let schedulerIdentifier: String
+
+    // MARK: - Internal configuration
+
+    /// Maps a release tag name to the expected zip asset filename.
+    let assetName: @Sendable (String) -> String
+
+    /// Reads the host's current beta-channel preference.
+    let betaChannelProvider: @MainActor () -> Bool
+
+    /// The release-fetch abstraction. Defaults to `GitHubReleaseProvider()`.
+    let provider: any ReleaseProvider
+
+    // MARK: - Fixed zip URL
+
+    /// The single fixed on-disk destination for the cached update zip.
+    ///
+    /// All update cycles write to this same path — no version-stamped filenames,
+    /// no accumulation of old zips. The file is at:
+    /// `~/Library/Caches/<schedulerIdentifier>/update.zip`
+    ///
+    /// Because the path is fixed, `purgeStaleZips` is no longer needed and
+    /// `UserDefaults` is no longer used for zip-path persistence. The zip either
+    /// exists at this path (install affordance available) or it doesn't (check
+    /// + download needed).
+    var fixedZipURL: URL {
+        let caches = (try? FileManager.default.url(
+            for: .cachesDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? FileManager.default.temporaryDirectory
+        return caches
+            .appendingPathComponent(schedulerIdentifier, isDirectory: true)
+            .appendingPathComponent("update.zip")
+    }
+
+    // MARK: - Background check interval
+
+    /// How often `NSBackgroundActivityScheduler` fires a background update check.
+    ///
+    /// - **Release:** 24 hours.
+    /// - **DEBUG:** 60 seconds, overridable per-test.
+    #if DEBUG
+    /// 60-second interval used in DEBUG builds. Override in test setUp for faster
+    /// QA cycles.
+    ///
+    /// `nonisolated(unsafe)` — written once in test setUp before any scheduler
+    /// is constructed; no concurrent mutation path exists in practice.
+    nonisolated(unsafe) public static var checkInterval: TimeInterval = 60
+    #else
+    /// 24-hour interval used in release builds.
+    public static let checkInterval: TimeInterval = 24 * 60 * 60
+    #endif
+
+    // MARK: - Trust model
+
+    /// When `false`, `installAndRelaunch` verifies that the running bundle and
+    /// the downloaded bundle share the same `codesign` `Authority=` identity.
+    ///
+    /// Default `true` — RunBot's unsigned distribution model relies solely on
+    /// the SHA-256 sidecar for integrity.
+    public var skipCodeSignValidation: Bool = true
+
+    // MARK: - Runtime flags
+
+    /// `true` while `installAndRelaunch` is mid-flight — guards a double-tap.
+    var isInstalling: Bool = false
+
+    // MARK: - Background scheduler storage
+
+    #if canImport(AppKit)
+    /// Retains the `NSBackgroundActivityScheduler` for the app's lifetime.
+    ///
+    /// Declared `nonisolated(unsafe)` so `deinit` (a nonisolated context) can
+    /// call `invalidate()`. All non-deinit accesses are `@MainActor`-isolated.
+    nonisolated(unsafe) var activity: NSBackgroundActivityScheduler?
+    #endif
+
+    // MARK: - Init / deinit
+
+    /// Creates a configured updater.
+    ///
+    /// - Parameters:
+    ///   - repo: `"owner/name"` GitHub repository slug.
+    ///   - currentVersion: The running app's version string.
+    ///   - assetName: Maps a tag name to the expected zip asset filename.
+    ///   - schedulerIdentifier: Reverse-DNS scheduler id / cache directory name.
+    ///     Must not be empty and must not contain `"/"`.
+    ///   - betaChannelProvider: Returns the host's beta-channel preference.
+    ///   - releaseProvider: The `ReleaseProvider` to use. Defaults to `GitHubReleaseProvider()`.
+    public init<P: ReleaseProvider>(
+        repo: String,
+        currentVersion: String,
+        assetName: @escaping @Sendable (String) -> String,
+        schedulerIdentifier: String,
+        betaChannelProvider: @escaping @MainActor () -> Bool = { false },
+        releaseProvider: P = GitHubReleaseProvider()
+    ) {
+        precondition(!repo.isEmpty, "AppUpdater: repo must not be empty")
+        precondition(!schedulerIdentifier.isEmpty, "AppUpdater: schedulerIdentifier must not be empty")
+        precondition(
+            !schedulerIdentifier.contains("/"),
+            "AppUpdater: schedulerIdentifier must not contain '/' — used as a cache directory name component"
+        )
+        self.repo = repo
+        self.currentVersion = currentVersion
+        self.assetName = assetName
+        self.schedulerIdentifier = schedulerIdentifier
+        self.betaChannelProvider = betaChannelProvider
+        self.provider = releaseProvider
+    }
+
+    deinit {
+        #if canImport(AppKit)
+        activity?.invalidate()
+        #endif
+    }
+}
